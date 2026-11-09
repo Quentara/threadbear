@@ -22,7 +22,8 @@ import { changedFiles, originUrl, packGit, repoKey, repoTop, unpackGit, type Git
 import type { MoveInfo, MovePlan, MovePreview, MoveRow, ThreadMoving } from '../moves.ts';
 import { projectDirName, sessionTranscriptPath } from '../transcripts.ts';
 import { findWorktreePatch } from '../patches.ts';
-import { cleanUpWorktree, makeWorktree, mainCheckoutOf, realpath, type WorktreeRecord } from '../worktrees.ts';
+import { cleanUpWorktree, makeWorktree, mainCheckoutOf, realpath, stillCheckedOut, type Cleanup, type WorktreeRecord } from '../worktrees.ts';
+import type { ThreadState } from '../runner.ts';
 
 // What T placed for a move, so adopting after a restart and throwing it
 // away after a failure both know (<home>/moves/<moveId>/placed.json).
@@ -151,6 +152,9 @@ export const movesPart = {
     const dir = paths.thread(this.cfg.home, threadId);
     const moved = path.join(this.cfg.home, 'moved');
     fs.mkdirSync(moved, { recursive: true });
+    // Before the folder goes: if the runner stops in between, the thread
+    // loads again at its next start and this runs again.
+    if (st) await this.freeMovedWorktree(st, moved);
     if (fs.existsSync(dir)) fs.renameSync(dir, path.join(moved, `${threadId}-${Date.now()}`));
     for (const name of fs.readdirSync(moved)) {
       const at = Number(/-(\d+)$/.exec(name)?.[1]);
@@ -158,6 +162,35 @@ export const movesPart = {
     }
     this.notify({ method: 'thread.deleted', params: { threadId } });
     this.log.info('moved a thread away', { threadId });
+  },
+
+  // The worktree and branch of a thread that has gone: the slot is free for
+  // the next thread, and the branch's name for the thread if it moves back
+  // (makeWorktree refuses one that exists). Its work went with it, and the
+  // next runner has said it's running, but deleting commits can't be undone,
+  // so a bundle of them stays in moved/ for as long as the thread's old
+  // folder does. If that can't be made, the worktree stays.
+  async freeMovedWorktree(this: Runner, st: ThreadState, moved: string): Promise<void> {
+    const { rec } = st;
+    const w = rec.worktree;
+    if (!w || w.removedAt) return;
+    if (await stillCheckedOut(w)) {
+      const dest = path.join(moved, `${rec.id}-git-${Date.now()}`);
+      fs.mkdirSync(dest, { recursive: true });
+      const saved = await packGit(w.path, w.path, path.join(dest, 'move.bundle'));
+      if (!saved.ok) {
+        fs.rmSync(dest, { recursive: true, force: true });
+        this.log.warn("couldn't save a moved thread's git work, so its worktree stays", { threadId: rec.id, path: w.path, reason: saved.reason });
+        this.notice('info', `"${rec.title}" moved, but its old worktree at ${w.path} and branch ${w.branch} stay here, as its work couldn't be saved first: ${saved.reason}`);
+        return;
+      }
+      if (saved.bundle) fs.writeFileSync(path.join(dest, 'meta.json'), JSON.stringify(saved.meta));
+      else fs.rmSync(dest, { recursive: true, force: true });
+      await this.tearDownWorktree(st, true, () => true, 'moved').catch((e: unknown) => this.log.error('worktree teardown failed', { threadId: rec.id, error: String(e) }));
+    }
+    const result = await cleanUpWorktree(w, () => true, { carried: true }).catch((e: unknown): Cleanup => ({ removed: false, reason: String((e as Error).message ?? e) }));
+    this.log.info('moved thread worktree cleanup', { threadId: rec.id, path: w.path, ...result });
+    if (!result.removed) this.notice('info', `"${rec.title}" moved, but its old worktree at ${w.path} and branch ${w.branch} stay here: ${result.reason}`);
   },
 
   // T: where the thread will run here, and on which login, or why it can't.
@@ -353,7 +386,8 @@ export const movesPart = {
     if (fs.existsSync(placedFile) && !this.threads.has(row.threadId)) {
       const placed = JSON.parse(fs.readFileSync(placedFile, 'utf8')) as Placed;
       for (const f of placed.transcript) fs.rmSync(f, { force: true });
-      if (placed.worktree) await cleanUpWorktree(placed.worktree).catch(() => undefined);
+      // Made for this move, and what's in it is still on the old machine.
+      if (placed.worktree) await cleanUpWorktree(placed.worktree, () => true, { carried: true }).catch(() => undefined);
     }
     fs.rmSync(stage, { recursive: true, force: true });
   },

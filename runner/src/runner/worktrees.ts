@@ -187,7 +187,7 @@ export const worktreesPart = {
   // archive (tornDownAt). Its output goes in the transcript as an
   // action.run; a deleted thread has no transcript, so a notice says if it
   // didn't run or failed. A failure never stops the cleanup.
-  async tearDownWorktree(this: Runner, st: ThreadState, deleted: boolean, stillOurs: () => boolean): Promise<void> {
+  async tearDownWorktree(this: Runner, st: ThreadState, deleted: boolean, stillOurs: () => boolean, gone: 'deleted' | 'moved' = 'deleted'): Promise<void> {
     const { rec } = st;
     const w = rec.worktree;
     if (!w || w.removedAt || w.tornDownAt) return;
@@ -195,7 +195,7 @@ export const worktreesPart = {
     // thread's by now (THREADBEAR-16), and its teardown isn't ours to run.
     if (!(await stillCheckedOut(w)) || !stillOurs()) return;
     const say = (text: string) => {
-      if (deleted) this.notice('info', `"${rec.title}" was deleted, but ${text}`);
+      if (deleted) this.notice('info', `"${rec.title}" was ${gone}, but ${text}`);
       else if (!st.rt.deleted) {
         this.emit(st, { type: 'system.note', text });
         this.markDirty(st);
@@ -235,7 +235,7 @@ export const worktreesPart = {
       if (!outcome.ok) {
         const end = outcome.text.trim().split('\n').slice(-5).join('\n');
         const code = outcome.exitCode !== undefined ? ` (exit code ${outcome.exitCode})` : '';
-        this.notice('info', `"${rec.title}" was deleted, but its worktree's teardown (${found.command}) failed${code}${end ? `: ${end}` : '.'}`);
+        this.notice('info', `"${rec.title}" was ${gone}, but its worktree's teardown (${found.command}) failed${code}${end ? `: ${end}` : '.'}`);
       }
       return;
     }

@@ -184,7 +184,8 @@ File references are where to look.
   its Claude transcript, its worktree's git work), sealed to the other
   machine's key, uploaded in pieces and deleted from the deployment once
   it lands; this machine keeps its old copy in `moved/` in the data folder
-  for a week. One arriving is unpacked in `moves/` first, and may make a
+  for a week, with a git bundle of its worktree's work, and frees the
+  worktree and its branch. One arriving is unpacked in `moves/` first, and may make a
   worktree for it, write its transcript into a login's Claude folder, and
   `git clone` its repo from `origin` if this machine has no copy.
 - **Presence** (`runner/src/presence.ts`): reads how long the keyboard and

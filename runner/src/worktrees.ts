@@ -586,13 +586,15 @@ export async function stillCheckedOut(w: WorktreeRecord): Promise<boolean> {
 // on main is removed with its branch (`--force` only for untracked
 // files), or, with `keep` and room for another spare, set aside as one;
 // otherwise both stay, and the reason says why.
-export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolean = () => true): Promise<Cleanup> {
+// `carried`: its work went with a thread that moved to another runner
+// (runner/moves.ts), so what isn't on main or isn't committed goes too.
+export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolean = () => true, opts: { carried?: boolean } = {}): Promise<Cleanup> {
   // Checked before each change: a runner handing the thread over stops
   // waiting for a slow git after a while, and from then the folder may be
   // the new runner's to use, so nothing more is changed here.
   const LET_GO: Cleanup = { removed: false, reason: 'the thread was handed to another runner' };
   let branchThere = (await git(w.mainCheckout, ['rev-parse', '--verify', '--quiet', `refs/heads/${w.branch}`])).ok;
-  if (branchThere) {
+  if (branchThere && !opts.carried) {
     const merged = await git(w.mainCheckout, ['merge-base', '--is-ancestor', w.branch, MAIN]);
     if (!merged.ok) return { removed: false, reason: `${w.branch} has commits that aren't on ${MAIN}` };
   }
@@ -620,7 +622,7 @@ export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolea
     const status = await gitOut(w.path, ['status', '--porcelain', '--untracked-files=all']);
     if (status === undefined) return { removed: false, reason: `git couldn't read ${w.path}` };
     const lines = status ? status.split('\n') : [];
-    if (lines.some((l) => !l.startsWith('??'))) return { removed: false, reason: `the worktree has uncommitted changes` };
+    if (!opts.carried && lines.some((l) => !l.startsWith('??'))) return { removed: false, reason: `the worktree has uncommitted changes` };
     if (w.keep && (await spares(w.mainCheckout, path.dirname(w.path))).length < MAX_SPARES) {
       // Detached where it is (no files change), so the branch can go; its
       // untracked files go when the next thread takes it.
@@ -641,7 +643,8 @@ export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolea
     if (!stillOurs()) return LET_GO;
     await git(w.mainCheckout, ['worktree', 'prune']);
   }
-  // Checked above that it's all on main, so -D loses nothing.
+  // Checked above that it's all on main (or it went with a moved thread),
+  // so -D loses nothing.
   if (branchThere) {
     if (!stillOurs()) return LET_GO;
     const del = await git(w.mainCheckout, ['branch', '-D', w.branch]);

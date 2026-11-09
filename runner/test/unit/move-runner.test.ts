@@ -160,3 +160,74 @@ test("a place that can't finish undoes what it made", async () => {
   assert.equal(fs.existsSync(path.join(t.home, 'moves', r.moveId)), false);
   assert.equal(t.runner.threads.has(id), false);
 });
+
+// A repo with a thread's own worktree on S: one commit nothing else has,
+// and an uncommitted change.
+function threadWorktree(id: string) {
+  const main = realpath(tmpDir('tb-move-main-'));
+  const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, '-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { encoding: 'utf8' }).trim();
+  git(main, 'init', '-q', '-b', 'main');
+  fs.writeFileSync(path.join(main, 'a.txt'), 'a\n');
+  git(main, 'add', '-A');
+  git(main, 'commit', '-qm', 'A');
+  const where = path.join(realpath(tmpDir('tb-move-slots-')), 'slot-1');
+  const branch = `thread/${id.slice(0, 8)}`;
+  git(main, 'worktree', 'add', '-q', '-b', branch, where, 'main');
+  fs.writeFileSync(path.join(where, 'b.txt'), 'unlanded\n');
+  git(where, 'add', '-A');
+  git(where, 'commit', '-qm', 'B');
+  fs.writeFileSync(path.join(where, 'a.txt'), 'edited\n');
+  return { git, main, where, branch, record: { repo: 'r', mainCheckout: main, path: where, branch, base: git(main, 'rev-parse', 'main') } };
+}
+
+test("once a thread has gone, the old machine frees its worktree and branch, keeping the work for a week", async () => {
+  const s = machine([{ id: 'claude-main', provider: 'claude', title: 'S', configDir: tmpDir() }]);
+  const id = s.runner.create({ text: 'hello', accountId: 'claude-main', cwd: tmpDir('tb-move-work-') }).thread.id;
+  s.adapter.last.init();
+  s.adapter.last.result('completed');
+  await tick();
+  const w = threadWorktree(id);
+  s.runner.threads.get(id)!.rec.worktree = w.record;
+  await s.runner.putAwayMoved(id);
+  assert.equal(fs.existsSync(w.where), false, 'the slot is free');
+  assert.equal(w.git(w.main, 'branch', '--list', w.branch), '', 'so a move back can make the branch again');
+  const kept = fs.readdirSync(path.join(s.home, 'moved')).filter((n) => n.includes('-git-'));
+  assert.equal(kept.length, 1);
+  const dir = path.join(s.home, 'moved', kept[0]!);
+  // The unlanded commit and the uncommitted change are both still in it.
+  const restored = realpath(tmpDir('tb-move-restored-'));
+  w.git(restored, 'init', '-q', '-b', 'main');
+  w.git(restored, 'fetch', '-q', path.join(dir, 'move.bundle'), '+refs/threadbear/move/*:refs/threadbear/move/*');
+  const meta = JSON.parse(fs.readFileSync(path.join(dir, 'meta.json'), 'utf8'));
+  assert.equal(w.git(restored, 'show', `${meta.head}:b.txt`), 'unlanded');
+  assert.equal(w.git(restored, 'show', `${meta.wip}:a.txt`), 'edited');
+});
+
+test("a worktree that can't be saved first is left alone", async () => {
+  const s = machine([{ id: 'claude-main', provider: 'claude', title: 'S', configDir: tmpDir() }]);
+  const id = s.runner.create({ text: 'hello', accountId: 'claude-main', cwd: tmpDir('tb-move-work-') }).thread.id;
+  s.adapter.last.init();
+  s.adapter.last.result('completed');
+  await tick();
+  const w = threadWorktree(id);
+  s.runner.threads.get(id)!.rec.worktree = w.record;
+  // git can't read the checkout, so there's no copy of its work to keep.
+  fs.writeFileSync(path.join(w.where, '.git'), 'gitdir: /nowhere\n');
+  await s.runner.putAwayMoved(id);
+  assert.equal(fs.existsSync(path.join(w.where, 'b.txt')), true);
+  assert.notEqual(w.git(w.main, 'branch', '--list', w.branch), '');
+  assert.equal(s.runner.threads.has(id), false, 'the thread itself still goes');
+  assert.ok(s.notes.some((n) => n.method === 'runner.notice' && /stay here/.test(n.params.message)), 'and it says so');
+});
+
+test("a move that fails after its worktree was made leaves no slot or branch on the new machine", async () => {
+  const t = machine([{ id: 'claude-1', provider: 'claude', title: 'T', configDir: tmpDir() }]);
+  const w = threadWorktree('ab12cd34-0000-0000-0000-000000000000');
+  const r = row('ab12cd34-0000-0000-0000-000000000000');
+  const stage = path.join(t.home, 'moves', r.moveId);
+  fs.mkdirSync(stage, { recursive: true });
+  fs.writeFileSync(path.join(stage, 'placed.json'), JSON.stringify({ cwd: w.where, worktree: w.record, transcript: [], leftBehind: [], fromName: 'S1' }));
+  await t.runner.discardMove(r);
+  assert.equal(fs.existsSync(w.where), false);
+  assert.equal(w.git(w.main, 'branch', '--list', w.branch), '');
+});

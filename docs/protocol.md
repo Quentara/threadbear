@@ -4960,7 +4960,7 @@ ended in the last day) and acts on the state:
 | `packing` | S packs, seals, uploads: `moves:movePacked { moveId, chunks, sha256, bytes }` | `unpacking` |
 | `unpacking` | T downloads (`moves:moveChunks`, T only, the chunks' URLs), checks, opens and unpacks into staging, then `moves:moveClaim` | `claimed` |
 | `claimed` | T adopts the thread and mirrors it: `moves:moveDone` | `done` |
-| `done` | S puts its copy away (`<home>/moved/<id>`, kept 7 days) | |
+| `done` | S puts its copy away (`<home>/moved/<id>`, kept 7 days) and frees the thread's worktree and branch, keeping a bundle of its git work in `<home>/moved/` for the same 7 days. If that bundle can't be made, the worktree stays and a notice says so | |
 
 Any state before `claimed` can go to `failed` (`moves:moveFailed { moveId,
 note }`, by S or T, with what went wrong in a line Mike can read) or

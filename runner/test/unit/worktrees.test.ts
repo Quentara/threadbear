@@ -965,6 +965,29 @@ test("archiving a thread with work that isn't on main keeps the worktree and bra
   assert.ok(h.runner.get(id).worktree, 'still shown');
 });
 
+test("a moved thread's worktree goes with work that isn't on main, as that went with the thread", async () => {
+  const { main } = makeRepo();
+  const t = makeBranch(main);
+  write(t.path, { 'landed-nowhere.txt': 'x\n' });
+  sh(t.path, 'git add -A && git -c user.name=t -c user.email=t@t commit -qm unlanded');
+  write(t.path, { 'README.md': 'edited\n', 'new.txt': 'untracked\n' });
+  const rec = { repo: 'proj', mainCheckout: main, path: t.path, branch: t.branch, base: sh(main, 'git rev-parse main') };
+  assert.equal((await cleanUpWorktree(rec)).removed, false, 'an ordinary cleanup still refuses');
+  assert.deepEqual(await cleanUpWorktree(rec, () => true, { carried: true }), { removed: true });
+  assert.ok(!fs.existsSync(t.path));
+  assert.equal(sh(main, `git branch --list ${t.branch}`), '');
+});
+
+test("a moved thread's worktree with build caches to keep becomes a spare, its changes and all", async () => {
+  const { main } = makeRepo();
+  const t = makeBranch(main);
+  write(t.path, { 'README.md': 'edited\n' });
+  const rec = { repo: 'proj', mainCheckout: main, path: t.path, branch: t.branch, base: sh(main, 'git rev-parse main'), keep: ['.build'] };
+  assert.deepEqual(await cleanUpWorktree(rec, () => true, { carried: true }), { removed: true, spare: true });
+  assert.ok(fs.existsSync(t.path));
+  assert.equal(sh(main, `git branch --list ${t.branch}`), '');
+});
+
 test('cleanUpWorktree keeps a worktree with uncommitted changes to tracked files', async () => {
   const { main } = makeRepo();
   const t = makeBranch(main);
