@@ -614,6 +614,15 @@ public final class FakeBackend: Backend, @unchecked Sendable {
         return newCommand(threadId: started)
     }
 
+    /// Stops the turn as a runner would: the thread goes idle, its working line gone.
+    public func interrupt(threadId: String) async throws -> String {
+        mutate { s in
+            s.threadsById[threadId]?.status = .idle
+            s.threadsById[threadId]?.working = nil
+        }
+        return newCommand()
+    }
+
     /// A Claude thread's list, as a runner would send it, for the palette
     /// in the simulator and the screenshots.
     public func slashCommands(threadId: String) async throws -> String {

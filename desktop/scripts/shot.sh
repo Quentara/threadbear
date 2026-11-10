@@ -28,7 +28,14 @@ done
 mkdir -p "$out"
 tmp="$(mktemp -d "${TMPDIR:-/tmp}/tb-desktop-shot-XXXX")"
 pids=()
-cleanup() { for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done; rm -rf "$tmp"; }
+bus=""
+# The whole group for the bus: dbus-run-session dies on a signal without
+# stopping its daemon, and that and its portals would outlive every run.
+cleanup() {
+  [ -z "$bus" ] || kill -- "-$bus" 2>/dev/null || true
+  for p in "${pids[@]}"; do kill "$p" 2>/dev/null || true; done
+  rm -rf "$tmp"
+}
 trap cleanup EXIT
 
 if [ -z "$home" ]; then
@@ -45,9 +52,9 @@ pids+=($!)
 sleep 1
 # The app asks a session bus for desktop settings and portals, and a server
 # doesn't have one, so it gets its own.
-DISPLAY="$display" THREADBEAR_HOME="$home" NO_AT_BRIDGE=1 LIBGL_ALWAYS_SOFTWARE=1 dbus-run-session -- \
+DISPLAY="$display" THREADBEAR_HOME="$home" NO_AT_BRIDGE=1 LIBGL_ALWAYS_SOFTWARE=1 setsid dbus-run-session -- \
   "${THREADBEAR_DESKTOP_BIN:-$here/target/debug/threadbear-gpui}" > "$tmp/app.log" 2>&1 &
-pids+=($!)
+bus=$!
 sleep "$wait"
 wid="$(DISPLAY="$display" xdotool search --onlyvisible --name '^Threadbear' | head -1 || true)"
 [ -n "$wid" ] || { echo "no window; the app said:" >&2; cat "$tmp/app.log" >&2; exit 1; }

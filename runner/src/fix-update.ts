@@ -133,11 +133,11 @@ function handOverMessage(f: UpdateFailure, home: string, checkout: string | unde
 
 Threadbear started this thread in the background in place of a banner, on this install's default mode. Sort it out without me if you can.
 
-This machine follows GitHub's main (followOrigin in runner.json), and nothing lands here. Never commit on main in ${here}, and tb land refuses in this repo: a commit on this machine's main is how bruce and the Pixel sat days behind GitHub.
+This machine follows GitHub's main (followOrigin in runner.json), and nothing lands here. Never commit on main in ${here}, and tb land refuses in this repo: a commit on a following machine's main leaves it days behind GitHub, as it can no longer fast-forward.
 
 1. Read the output and work out why. Fetch GitHub's main first (git fetch origin): if a commit since ${f.short} already fixes it, or another thread is on it, don't do it twice.
 2. If it was a one-off with nothing to fix (this machine was busy, say), remove "${path.join(home, 'runner', 'update.json')}" and the runner tries again within 5 minutes.
-3. Otherwise get the fix to the main Mac, which lands it. A test that failed because this machine is slow gets made to hold up under load rather than just run again. Make the fix on a branch of your own. Then start a thread with create_thread, runner: "main", folder "${there}", with the failure and your reasoning, and ask it to land the fix: pushing alone lands nothing. If this machine can push (git push origin HEAD:cloud/<topic>), name that branch in the brief; if it can't, put the whole diff in the brief, as the main Mac can't see this machine's branches.
+3. Otherwise get the fix to the main Mac, which lands it. A test that failed because this machine is slow gets made to hold up under load rather than just run again. Make the fix on a branch of your own. Then start a thread with create_thread, runner: "main", folder "${there}", with the failure and your reasoning, and ask it to land the fix: pushing alone lands nothing. If this machine can push a branch of its own (git push origin HEAD:<branch>, with a name the repo's rules let this machine push), name that branch in the brief; if it can't, put the whole diff in the brief, as the main Mac can't see this machine's branches.
 4. Watch \`tb status\`: the fix reaches this machine by itself once it's on GitHub's main. While you wait, call end_turn with needs "nothing" and snooze "1d" (a newer failure wakes you). Once its "Following GitHub's main" line no longer says failed, call end_turn with needs "nothing" and archive: true. Only leave it for me if it needs a decision only I can make, a step is waiting on my yes, or it still fails after a real attempt.`;
 }
 

@@ -10,13 +10,27 @@ Like the Mac app, it holds no agent state of its own. It talks to a runner
 
 So far it signs in to the runner, shows the inbox, opens a thread (live, as
 it streams), answers a card's asks and approvals, sends messages and stops a
-turn.
+turn, in the Swift app's window: the panels in BearDock with the activity bar
+and right rail, the thread's title line and menu, banners, notes, the menu bar
+and the keyboard shortcuts. It starts new threads (the new-thread page, on any
+runner) and offers the slash command palette. Other runners' threads are listed
+and open through this Mac's runner.
+The pane beside the thread has Highlights, file previews, Patches and the
+folder browser.
 
 ## How it's put together
 
 - **`core/`, what the app knows with no window**: the inbox rules, and
   `reducer/`, a port of how the Swift app turns events into rows, checked
   against golden files both languages test (`core/tests/golden`).
+- **`dock/`, BearDock for GPUI**: splits, tabs, panel dragging and torn-out
+  windows, the shell of the app's window (`gpui/src/shell.rs`). Its layout tree
+  (`dock/layout`) has no GPUI in it and reads what the Swift `dock/` saved. See
+  `dock/README.md`.
+- **`gpui/src/settings.rs`, what the app remembers** (window frame, zoom,
+  folds, the Inbox's sort, the panel layout): one JSON file in the runner's data
+  folder, `desktop-settings.json`, keyed by the Swift app's UserDefaults names
+  so a one-time import is mechanical.
 - **`client/`, the runner connection** (`runner.rs`): the challenge sign-in
   (`auth.rs`, the same HMAC as `runner/src/rpc-auth.ts`), hello, requests and
   replies, and reconnecting when the runner restarts. `tests/mock_runner.rs`
@@ -50,6 +64,19 @@ To run it against the mock runner instead of your real one, start
 `node ../app/Tools/mock-runner/server.mjs --data-dir /tmp/tb-mock` and run
 the app with `THREADBEAR_HOME=/tmp/tb-mock`.
 
+## Installing it on a Mac
+
+It's an experiment (`runner/src/experiments/gpuiApp.md`): turn it on in
+`runner.json`, then:
+
+```bash
+scripts/install-app.sh                      # builds here, about 10 minutes
+scripts/install-app.sh --build-on <host>    # builds on another Mac and copies it
+```
+
+That puts `Threadbear GPUI.app` in `~/Applications`, beside the Swift app, using
+the same runner.
+
 ## Tests
 
 ```bash
@@ -62,6 +89,11 @@ mock runner. Run Rust builds and suites elsewhere (`scripts/remote.sh`):
 ```bash
 scripts/remote.sh cloud -- bash -c 'cd desktop && cargo test -p threadbear-core'
 ```
+
+`scripts/spec.sh` is the one-command version for use through `remote.sh`: it
+builds the app (Swift or GPUI), keeps its own copy of the GPUI binary so another
+checkout's build can't swap it mid-run (the cargo target folder is shared), and
+runs specs by tag or takes a picture (`--shot "<thread title>" out.png`).
 
 `desktop/test/auth-vector-*.txt` are fixed sign-in proofs. The Rust tests
 check them, and so does `runner/test/unit/desktop-auth-vector.test.ts` with
@@ -84,5 +116,3 @@ each.
 - On Windows, path handling (`folderName` splits on `/`) and the runner's
   data dir are still Mac-shaped. The runner itself doesn't run on Windows
   yet.
-- Opening a thread marks it read, and the sidebar then re-sorts with the open
-  thread moving. The Mac app keeps it in place.

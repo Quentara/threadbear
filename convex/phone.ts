@@ -714,6 +714,19 @@ export const slashCommands = mutation({
   },
 });
 
+// Stop (API 69): ends the thread's running turn, as Stop on the Mac does.
+// The `interrupt` command the main Mac sends another runner (relay.ts),
+// which every runner from API 44 on applies.
+export const interrupt = mutation({
+  args: { token: v.string(), threadId: v.string() },
+  returns: v.id('commands'),
+  handler: async (ctx, { token, threadId }) => {
+    await checkPhoneToken(ctx, token);
+    const t = await findThread(ctx, threadId);
+    return queue(ctx, t.runnerId, 'interrupt', threadId, {});
+  },
+});
+
 export const respond = mutation({
   args: { token: v.string(), threadId: v.string(), approvalId: v.string(), decision: v.union(v.literal('allow'), v.literal('allowAlways'), v.literal('deny')), message: v.optional(v.string()) },
   returns: v.id('commands'),
@@ -1091,7 +1104,7 @@ async function knownRunner(ctx: QueryCtx, runnerId: string): Promise<string> {
 // what the runner's own pendingCommands reads. One that waits too long goes
 // (sync:pruneFiles, COMMAND_KEEP_MS). Its photos are recorded in commandFiles
 // so a delete elsewhere sees they're still on their way (sync.ts storageInUse).
-async function queue(ctx: MutationCtx, runnerId: string, kind: 'send' | 'respond' | 'update' | 'create' | 'page' | 'share' | 'quickAsk' | 'schedule' | 'picture' | 'press' | 'slashCommands', threadId: string | undefined, args: Record<string, unknown>) {
+async function queue(ctx: MutationCtx, runnerId: string, kind: 'send' | 'respond' | 'update' | 'create' | 'page' | 'share' | 'quickAsk' | 'schedule' | 'picture' | 'press' | 'slashCommands' | 'interrupt', threadId: string | undefined, args: Record<string, unknown>) {
   let n = 0;
   let bytes = docBytes(args);
   for await (const c of ctx.db.query('commands').withIndex('by_runner_state', (q) => q.eq('runnerId', runnerId).eq('state', 'pending'))) {

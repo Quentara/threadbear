@@ -120,5 +120,44 @@ pub fn expanding_tilde(path: &str) -> String {
 
 /// `NSHomeDirectory()`.
 pub fn home_directory() -> String {
-    std::env::var("HOME").unwrap_or_default()
+    // With / between its parts, so it matches a path that's been through
+    // `forward_slashes` on Windows.
+    forward_slashes(&home_directory_as_reported())
+}
+
+fn home_directory_as_reported() -> String {
+    // Windows sets USERPROFILE; HOME only exists there under Git Bash.
+    std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default()
+}
+
+/// A Windows path (`C:\\x\\y`, `\\\\server\\share`) with `/` between its
+/// parts, as the rest of this code writes paths. A runner on Windows reports
+/// them this way, and folder names and "relative to the thread" need one
+/// separator to look for. Anything else is left exactly as it came: a
+/// backslash in a Mac or Linux path is just a character.
+pub fn forward_slashes(path: &str) -> String {
+    if is_windows_path(path) {
+        path.replace('\\', "/")
+    } else {
+        path.to_owned()
+    }
+}
+
+/// Whether a path is a Windows one: it starts with a drive or a server share.
+pub fn is_windows_path(path: &str) -> bool {
+    let bytes = path.as_bytes();
+    (bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')) || path.starts_with("\\\\")
+}
+
+#[cfg(test)]
+mod windows_path_tests {
+    use super::*;
+
+    #[test]
+    fn windows_paths_get_forward_slashes_and_others_stay_as_they_are() {
+        assert_eq!(forward_slashes(r"C:\work\site\docs\a.md"), "C:/work/site/docs/a.md");
+        assert_eq!(forward_slashes(r"\\server\share\a.md"), "//server/share/a.md");
+        assert_eq!(forward_slashes(r"/Users/mike/odd\name.txt"), r"/Users/mike/odd\name.txt");
+        assert_eq!(forward_slashes(r"notes\today.md"), r"notes\today.md");
+    }
 }

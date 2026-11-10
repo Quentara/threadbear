@@ -20,8 +20,9 @@ export class SwiftDriver implements Driver {
       timeout: timeoutSeconds * 1000,
       maxBuffer: 32 * 1024 * 1024,
       // The other Macs' demo threads are their own feature's business, and
-      // leaving them out makes the inbox the same for both apps.
-      env: { ...process.env, TB_MOCK_NO_REMOTE: '1' },
+      // leaving them out makes the inbox the same for both apps. A scenario
+      // about them sets TB_MOCK_REMOTE (@remote-threads).
+      env: { ...process.env, TB_MOCK_NO_REMOTE: process.env.TB_MOCK_REMOTE ? '' : '1' },
     });
     return stdout.trim();
   }
@@ -29,7 +30,8 @@ export class SwiftDriver implements Driver {
   async start(): Promise<void> {
     // The build is done once, up front (features/README.md): `start` would
     // otherwise spend several seconds finding nothing to build each scenario.
-    await this.script(['start', '--mock', '--no-build', '--id', this.id, '--size', '1180x800'], 120);
+    const fixtures = process.env.TB_MOCK_FIXTURES ? ['--fixtures', process.env.TB_MOCK_FIXTURES] : [];
+    await this.script(['start', '--mock', ...fixtures, '--no-build', '--id', this.id, '--size', '1180x800'], 120);
   }
 
   async do(cmd: Record<string, unknown>, timeoutSeconds = 30): Promise<string> {
@@ -46,6 +48,10 @@ export class SwiftDriver implements Driver {
 
   async shot(file: string): Promise<void> {
     await this.script(['--id', this.id, 'shot', file]);
+  }
+
+  async relaunch(): Promise<void> {
+    await this.script(['--id', this.id, 'rebuild', '--no-build'], 120);
   }
 
   async stop(): Promise<void> {

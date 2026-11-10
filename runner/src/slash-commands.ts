@@ -26,6 +26,10 @@ export type SlashCommand = {
   scope?: string;
   plugin?: string;
   path?: string; // its file on this machine, when found
+  // Its frontmatter has `disable-model-invocation: true`: it runs only as
+  // the start of a message, as the agent can't run it when it's named
+  // partway through one. Absent: unknown, or the agent can.
+  userOnly?: boolean;
 };
 
 export type ParsedCommand = { name: string; args: string };

@@ -3,20 +3,21 @@ import { denySecrets } from '../../secrets-guard.ts';
 import { CONFINED_NO_SANDBOX, sandboxSpawner, type SandboxConfig } from '../../sandbox.ts';
 import os from 'node:os';
 import { query as sdkQuery } from '@anthropic-ai/claude-agent-sdk';
-import type { HookInput, McpServerConfig, ModelInfo, Options, PermissionResult, Query, SDKUserMessage, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
-import type { Account, EffortLevel, ModelChoice, PermissionMode, Question, QueuedAnswers, QueuedCall } from '../../protocol.ts';
+import type { HookInput, McpServerConfig, ModelInfo, Options, PermissionResult, Query, SDKControlGetContextUsageResponse, SDKUserMessage, PermissionUpdate } from '@anthropic-ai/claude-agent-sdk';
+import type { Account, ContextUsage, EffortLevel, ModelChoice, PermissionMode, Question, QueuedAnswers, QueuedCall } from '../../protocol.ts';
 import { isEffortLevel } from '../../protocol.ts';
 import fs from 'node:fs';
 import type { AgentAdapter, AgentSession, RewindRequest, RewindResult, SessionSink, StartSessionOptions, UserInput } from '../types.ts';
 import { RewindRefusedError } from '../types.ts';
 import type { SlashCommand } from '../../slash-commands.ts';
+import { frontmatter } from '../../claude-trust.ts';
 import { cutPointBefore, sessionTranscriptPath } from '../../transcripts.ts';
 import type { Logger } from '../../log.ts';
 import { ClaudeNormalizer, fileContext } from './normalize.ts';
 import { groupSpawner, type ProcessRegistry } from '../../proc.ts';
 import { prepareImageForModel } from '../../media.ts';
 import { placePictures } from '../../pictures.ts';
-import { EDIT_TOOLS, cardInput, toolTitle, tooLongForCard } from '../../tools.ts';
+import { EDIT_TOOLS, cardDecisive, cardInput, toolTitle, tooLongForCard } from '../../tools.ts';
 import { codeWriteNote, codeWriteReason, runsAsCodeByName, type CodeWrite } from '../../code-writes.ts';
 import path from 'node:path';
 import { RUNNER_VERSION } from '../../config.ts';
@@ -644,7 +645,7 @@ class ClaudeSession implements AgentSession {
       if (!after || shown?.has(id) || this.queuedAnswers.has(id) || this.checkedCalls.has(id) || !this.wouldAsk(call.name, call.input)) continue;
       const target = EDIT_TOOLS.has(call.name) ? this.editTarget(call.input) : undefined;
       const code: CodeWrite = target !== undefined && this.runsAsCode(target);
-      const card = cardInput(call.input, call.name.startsWith('mcp__') || code ? 'all' : ['command']);
+      const card = cardInput(call.input, cardDecisive(call.name, code));
       if (card.tooLong) continue;
       const title = toolTitle(call.name, call.input, this.opts.cwd);
       grants.set(id, { name: call.name, input: JSON.stringify(call.input), code });
@@ -801,7 +802,7 @@ class ClaudeSession implements AgentSession {
   private async canUseTool(
     name: string,
     input: Record<string, unknown>,
-    o: { signal: AbortSignal; suggestions?: PermissionUpdate[]; toolUseID: string; title?: string; suppressAlwaysAllowRule?: boolean; agentID?: string },
+    o: { signal: AbortSignal; suggestions?: PermissionUpdate[]; toolUseID: string; title?: string; suppressAlwaysAllowRule?: boolean; agentID?: string; decisionReason?: string; decisionReasonType?: string },
   ): Promise<PermissionResult> {
     // A subagent's tool calls stay inside its Agent call (the normaliser
     // drops them), so there's no tool.call to wait for or point at.
@@ -844,14 +845,16 @@ class ClaudeSession implements AgentSession {
     // the card says why (code-writes.ts).
     const target = EDIT_TOOLS.has(name) ? this.editTarget(input) : undefined;
     const code: CodeWrite = (target !== undefined && this.runsAsCode(target)) || this.codeWrites.has(o.toolUseID);
-    // The card shows the whole command, or every argument of an MCP tool
-    // (what it does elsewhere is in them); one too long for that is refused
-    // rather than allowed from its start (tools.ts, cardInput).
-    // An edit of a file that runs as code shows all it writes, too (Codex review).
-    const card = cardInput(input, name.startsWith('mcp__') || code ? 'all' : ['command']);
+    // The card shows the whole command, every argument of an MCP tool (what
+    // it does elsewhere is in them), and all an edit writes; one too long
+    // for that is refused rather than allowed from its start (tools.ts,
+    // cardDecisive and cardInput).
+    const card = cardInput(input, cardDecisive(name, code));
     if (card.tooLong) return { behavior: 'deny', message: tooLongForCard(card.tooLong), toolUseID: o.toolUseID };
     if (!sub) for (const out of this.normalizer.beforeApproval(o.toolUseID, name, input)) this.sink.output(out);
     const title = toolTitle(name, input, this.opts.cwd);
+    // A code write's title already says why it asks.
+    const reason = code ? undefined : askReason(o.decisionReason, o.decisionReasonType);
     // The rest of the reply's calls that will ask, on the same card.
     let waiting: WaitingCard | undefined;
     if (!sub && !plan) {
@@ -862,6 +865,7 @@ class ClaudeSession implements AgentSession {
     let ans: Awaited<ReturnType<SessionSink['requestApproval']>>;
     try {
       ans = await this.sink.requestApproval({
+        ...(reason ? { reason } : {}),
         toolUseId: itemId,
         name,
         title: code ? `${title} (${codeWriteNote(code)})` : title,
@@ -967,6 +971,14 @@ class ClaudeSession implements AgentSession {
     return claudeCommands(await this.q.supportedCommands(), { cwd: this.opts.cwd, configDir: this.opts.account.configDir });
   }
 
+  // The /context breakdown. 'full' counts each row with the token-count
+  // API (about a second on a warm CLI, and no model turn), so the rows
+  // match what the CLI itself would say.
+  async contextUsage(): Promise<Omit<ContextUsage, 'at'> | undefined> {
+    if (this.exited) return undefined;
+    return claudeContextUsage(await this.q.getContextUsage({ detail: 'full' }));
+  }
+
   async setModel(model: string | undefined): Promise<void> {
     if (this.exited) return;
     await this.q.setModel(model);
@@ -1022,6 +1034,24 @@ class ClaudeSession implements AgentSession {
   }
 }
 
+// getContextUsage's answer as the protocol's ContextUsage: the rows and
+// totals, without the grid, per-file and per-tool lists (about 50 KB on a
+// busy login) the popover doesn't show. A row that isn't a name and a
+// number is left out rather than failing the lot.
+export function claudeContextUsage(r: SDKControlGetContextUsageResponse): Omit<ContextUsage, 'at'> {
+  const categories: ContextUsage['categories'] = [];
+  for (const c of Array.isArray(r.categories) ? r.categories : []) {
+    if (typeof c?.name !== 'string' || typeof c.tokens !== 'number' || !Number.isFinite(c.tokens)) continue;
+    categories.push({ ...(typeof c.id === 'string' ? { id: c.id } : {}), name: c.name, tokens: c.tokens, kind: typeof c.kind === 'string' ? c.kind : c.isDeferred ? 'deferred' : 'used' });
+  }
+  return {
+    ...(typeof r.model === 'string' ? { model: r.model } : {}),
+    totalTokens: Number(r.totalTokens) || 0,
+    maxTokens: Number(r.maxTokens) || 0,
+    categories,
+  };
+}
+
 // The SDK's list, as the picker's. Claude Code's own are marked builtin;
 // the rest are Mike's or the folder's commands and skills. Rows can share
 // a name, and a builtin one is what /name runs, so that one is kept.
@@ -1044,6 +1074,7 @@ export function claudeCommands(
     if (plugin) out.plugin = plugin;
     const file = where && (scope === 'user' || scope === 'project') ? commandFile(name, scope === 'user' ? where.configDir : path.join(where.cwd, '.claude')) : undefined;
     if (file) out.path = file;
+    if (file && userOnlyFile(file)) out.userOnly = true;
     byName.set(name, out);
   }
   return [...byName.values()];
@@ -1063,6 +1094,28 @@ export function commandScope(description: string | undefined): { text?: string; 
   // words in brackets that end a sentence ("(see below)") stay put.
   if (/^[\w.@-]+(:[\w.@-]+)?$/.test(tag)) return { text, scope: 'plugin', plugin: tag.replace(/^plugin:/, '') };
   return { text: description };
+}
+
+// Why the CLI is asking, for the card: Auto's safety check handing the call
+// to Mike, a rule or a hook that asks. Not the mode itself, which every card
+// in Ask before edits would say. David, 8 Nov 2026: a deploy's card gave no
+// reason, and he couldn't tell what the check had balked at.
+export function askReason(reason: string | undefined, type: string | undefined): string | undefined {
+  const text = typeof reason === 'string' ? reason.trim().slice(0, 1000) : '';
+  if (!text || type === 'mode') return undefined;
+  return type === 'classifier' ? `Auto mode's safety check couldn't clear this: ${text}` : text;
+}
+
+// A skill or command whose frontmatter says `disable-model-invocation:
+// true`: the agent can't run it, so it works only at the start of a
+// message, not named partway through one (claude -p, 9 Nov 2026).
+export function userOnlyFile(file: string): boolean {
+  try {
+    const yaml = frontmatter(fs.readFileSync(file, 'utf8'));
+    return yaml !== undefined && /^disable-model-invocation[ \t]*:[ \t]*["']?true["']?[ \t]*(#.*)?$/m.test(yaml);
+  } catch {
+    return false;
+  }
 }
 
 // A user or project command's file: its skill, else its command (a ":"

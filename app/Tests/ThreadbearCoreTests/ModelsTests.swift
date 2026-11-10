@@ -97,6 +97,12 @@ final class ModelsTests: XCTestCase {
             "approvalId": "ap1", "name": "Bash", "title": "rm -rf build", "input": [:], "options": ["allow", "allowAlways", "deny", "somethingNew"],
         ]).payload else { return XCTFail() }
         XCTAssertEqual(approval.options, [.allow, .allowAlways, .deny])
+        XCTAssertNil(approval.reason)
+        guard case .approvalRequested(let asked) = E.event(7, "approval.requested", [
+            "approvalId": "ap2", "name": "Bash", "title": "./deploy.sh", "input": [:], "options": ["allow", "deny"],
+            "reason": "Auto mode's safety check couldn't clear this: Deploys to production.",
+        ]).payload else { return XCTFail() }
+        XCTAssertEqual(asked.reason, "Auto mode's safety check couldn't clear this: Deploys to production.")
         guard case .questionRequested(let question) = E.event(8, "question.requested", [
             "approvalId": "q1", "questions": [["question": "Which?", "header": "Pick", "multiSelect": false, "options": [["label": "A"], ["label": "B", "description": "bee"]]]],
         ]).payload else { return XCTFail() }

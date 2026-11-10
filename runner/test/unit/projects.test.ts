@@ -836,7 +836,7 @@ test('a git worktree counts as its main checkout, never as a folder of its own',
 });
 
 test('the librarian keeps its line on where the thread is up to as the thread\'s brief', async () => {
-  const s = setup({ models: () => reply({ projects: [], new: null, state: {}, thread: 'Waiting on Mike to pick a layout.', why: 'A one-off' }) });
+  const s = setup({ models: () => reply({ projects: [], new: null, state: {}, thread: 'Waiting on Mike to pick a layout.', purpose: 'A mockup for the landing page.', why: 'A one-off' }) });
   const { h, create, finish, librarian } = s;
   const { thread } = create('Make a mockup');
   await finish(thread.id, []);
@@ -844,6 +844,7 @@ test('the librarian keeps its line on where the thread is up to as the thread\'s
   await tick(6);
   assert.equal(librarian.status().recent[0]?.text, 'Nothing to change: a one-off', 'the brief is not a project change');
   assert.equal(h.runner.highlights(thread.id).brief?.text, 'Waiting on Mike to pick a layout.');
+  assert.equal((h.runner.highlights(thread.id).brief as { purpose?: string }).purpose, 'A mockup for the landing page.', 'what the recap box says it is for');
   assert.ok(h.runner.get(thread.id).highlightsAt);
 });
 

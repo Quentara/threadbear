@@ -61,6 +61,8 @@ export const threadFields = {
   // What Mike last said to it, one line: the row's "You: ..."
   // (docs/protocol.md, "What Mike last asked"). Since API 31.
   asked: v.optional(v.string()),
+  // The librarian's recap: what it's for, then where it stands. Since API 70.
+  recap: v.optional(v.string()),
   archivedAt: v.optional(v.string()),
   // Mike starred it: the phone's Starred section. Since API 27.
   starredAt: v.optional(v.string()),
@@ -90,6 +92,8 @@ export const threadFields = {
         suggested: v.optional(v.number()),
         links: v.optional(v.array(v.object({ title: v.string(), url: v.string() }))),
         ticked: v.optional(v.boolean()),
+        // A command with a Run button, pressed like a reply button (phone:press). Since API 71.
+        run: v.optional(v.object({ command: v.string(), buttonId: v.string(), cwd: v.optional(v.string()), running: v.optional(v.boolean()), failed: v.optional(v.string()) })),
       }),
     ),
   ),
@@ -261,6 +265,7 @@ export default defineSchema({
     startedBy: v.optional(v.object({ kind: v.string(), label: v.string(), icon: v.optional(v.string()), threadTitle: v.optional(v.string()), why: v.optional(v.string()) })),
     // What Mike last said to it, one line: the Mac row's "You: ...". Since API 32.
     asked: v.optional(v.string()),
+    recap: v.optional(v.string()), // the recap box, since API 70
     // Since API 29: when the backend last wrote the row, so a watching
     // runner reads only rows changed since its last answer
     // (sync:threadIndexSince), and `deleted` marks a thread that's gone,
@@ -343,8 +348,13 @@ export default defineSchema({
     at: v.number(),
     bytes: v.optional(v.number()),
     attachedAt: v.optional(v.number()),
+    // A move's chunk (moves.ts moveChunkUrl): charged to its runner like
+    // any upload, and deleted with the rest of the move's when it ends,
+    // whether or not movePacked ever named it.
+    moveId: v.optional(v.string()),
   })
     .index('by_storageId', ['storageId'])
+    .index('by_move', ['moveId'])
     // A runner's bytes uploaded in the last hour (sync:redeemUpload's cap).
     .index('by_runner_at', ['runnerId', 'at'])
     .index('by_unattached', ['attachedAt', 'at']),

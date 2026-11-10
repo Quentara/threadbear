@@ -229,6 +229,18 @@ test('codex: the first start installs the latest into its own copy and activates
   assert.equal(resolve(t.u.codexBinary()).native, true);
 });
 
+test('codex: npm installs from public npm whatever ~/.npmrc says (a stale company token gave E401)', async () => {
+  const npmArgs: string[][] = [];
+  const t = setup({ exec: (cmd, args, opts) => { if (cmd.endsWith('/npm')) npmArgs.push(args); return cmd === '/bin/ps' ? Promise.resolve({ code: 0, stdout: '', stderr: '' }) : defaultExec(cmd, args, opts); } });
+  t.u.start();
+  t.clock.advance(60_000);
+  await t.u.settled();
+  t.u.stop();
+  assert.equal(npmArgs.length, 1);
+  const i = npmArgs[0].indexOf('--registry');
+  assert.ok(i >= 0 && npmArgs[0][i + 1] === 'https://registry.npmjs.org/', npmArgs[0].join(' '));
+});
+
 test('codex: a version whose schema lacks a method we use is held; the first start falls back to the tested one; force installs it anyway', async () => {
   const t = setup({ latest: { codex: '0.166.0' } });
   fs.writeFileSync(path.join(t.root, 'drop-0.166.0'), '');

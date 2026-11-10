@@ -79,7 +79,10 @@ test('on a machine that follows GitHub the thread is told not to land, and to ha
   assert.match(text, /\/home\/mike\/dev\/me\/threadbear/);
   assert.match(text, /tb land refuses/);
   assert.match(text, /runner: "main"/);
-  assert.match(text, /cloud\//);
+  // The branch name isn't ours to pick: Mike's cloud box may push only
+  // cloud/** (AGENTS.md says so), and a fork has no cloud box.
+  assert.match(text, /HEAD:<branch>/);
+  assert.doesNotMatch(text, /cloud\//);
   assert.match(text, /ask it to land/);
   assert.doesNotMatch(text, /Land the fix on main/);
   // A flake still needs nothing more than a rerun.

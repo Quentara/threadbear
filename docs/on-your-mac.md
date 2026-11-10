@@ -34,9 +34,16 @@ File references are where to look.
   your tailnet. The backend's admin key is in
   `secrets/convex-self-hosted.env`, and setup sets `PUSH_RELAY=off` on it,
   as the push relay only works with Convex cloud. runner.json gets
-  `sync.site`, the website's address.
+  `sync.site`, the website's address. With `--local` there's no
+  `tailscale serve` at all: the three stay on 127.0.0.1, the API and the
+  website on 13210 and 13211 inside the container as well as out, and
+  only this Mac can reach them.
 - **Apps:** `~/Applications/Threadbear.app` and
   `~/Applications/Threadbear Runner.app`, both built and signed on your Mac.
+  If you turn on the `gpuiApp` experiment and run
+  `desktop/scripts/install-app.sh`, also `~/Applications/Threadbear GPUI.app`,
+  which keeps its window and panel layout in `desktop-settings.json` and
+  `gpui-prefs.json` in the data folder.
 - **A LaunchAgent:** `~/Library/LaunchAgents/com.mikerosoft.threadbear.runner.plist`,
   which keeps the runner going while you're logged in. A runner on a Linux
   server (INSTALL.md, section 6) has a systemd user service in its place,
@@ -51,7 +58,9 @@ File references are where to look.
   them stop when the app quits (`app/Sources/Threadbear/Views/TerminalPanel.swift`).
 - **Files:** the data folder `~/Library/Application Support/Threadbear`
   (threads, settings, `secrets/`, runner releases, the pinned release key
-  `upstream-signers`, and `sync-sent.json`, hashes of what's already in your
+  `upstream-signers`, the Mac app's `app-drafts.json`, what's typed but not
+  sent in each message box, so a quit or relaunch doesn't lose it, and
+  `sync-sent.json`, hashes of what's already in your
   Convex mirror so a restart sends only what changed, and
   `shared-pools.json`, the last pools your Convex backend had, which every
   runner shares, so one starts with them while the backend can't be reached,
@@ -180,8 +189,9 @@ File references are where to look.
   beside it what the check last printed (`<id>.<hash>.kept.json`, readable
   only by you) until a run carrying it has been sent, and, while a check
   runs, which runner process is running it (`<id>.running.json`).
-- **Keeping the Mac awake** (`runner/src/keep-awake.ts`, experiment
-  `keepAwake`, off by default): while a thread is working and for 3
+- **Keeping the Mac awake** (`runner/src/keep-awake.ts`, on unless
+  Settings > General > Sleep or `"keepAwake": false` in `runner.json`
+  turns it off): while a thread is working and for 3
   minutes after, the runner runs macOS's `/usr/bin/caffeinate -i -w
   <runner pid>`, which stops idle sleep only (the display still sleeps
   and the screen still locks). While it does, it reads `pmset -g batt`
@@ -256,7 +266,10 @@ File references are where to look.
   held back the same way (`runner/src/claude-trust.ts`): the runner reads
   those files and the scripts they reach to hash them, runs `git ls-files`
   in the folder to find skills in folders under it, and keeps what you
-  trusted in the same `patch-trust.json`.
+  trusted in the same `patch-trust.json`. Beside it,
+  `patch-trust-unvouched.json` lists worktrees a thread moved from another
+  Mac changed the patches or Claude settings of, which Threadbear's own
+  checkout's standing trust doesn't reach.
 - **Menus on macOS 27.2** (`app/Sources/Threadbear/DragSpace.swift`): every
   5 seconds, and before a button opens a menu, the app asks the window
   server which Spaces its own windows are on, and takes them off the drag
@@ -307,7 +320,7 @@ File references are where to look.
 | Your other Macs, over ssh | yours | Only when you run `tb runner add <name> --ssh <host>` or `tb runner check --ssh <host>` on your first Mac: it reads that Mac's Threadbear `runner.json`, writes its id and the deployment's address there if it hasn't them, writes its new key into that Mac's `secrets/convex-key`, and looks whether that Mac has a deploy key, Convex panel keys or a Convex login (names only, never a key), through your own ssh setup with agent and port forwarding off (`runner/src/runner-keys.ts`). `tb runner audit` asks this Mac's runner for its threads' last seqs and your deployment for what the main key made. `tb runner rotate-owner` sets env vars on your deployment with your deploy key, and, if you give it a Convex team access token for that run (`CONVEX_TEAM_TOKEN`, never kept), asks api.convex.dev for the deployment's deploy keys (their names and dates) before it rotates. |
 | GitHub | Mike's repo | Release tags fetched every 6 hours; the fork at setup |
 | downloads.claude.ai, registry.npmjs.org | Anthropic, npm | CLI version checks and installs; `npm ci` |
-| Anthropic, OpenAI | yours | Your threads, through the official CLIs on your own logins. With the `cardReviewer` experiment on (off by default), an approval card in a thread on Auto, with the thread's first and latest messages, goes to Opus through the same CLI so it can decide in your place. With the `labReview` experiment on (off by default), a thread's code change, with your message and the agent's reply, goes to your other provider's CLI as a review thread, as if you'd started one. After a turn fails because the API couldn't be reached, the runner itself opens (and straight away closes) a connection to api.anthropic.com or chatgpt.com on port 443, at most once a minute, until one opens and the thread carries on. Nothing is sent over it (`runner/src/net-probe.ts`). |
+| Anthropic, OpenAI | yours | Your threads, through the official CLIs on your own logins. With the `cardReviewer` experiment on (off by default), an approval card in a thread on Auto, with the thread's first and latest messages, goes to Opus through the same CLI so it can decide in your place. Unless you turn off Settings > General > Code review (`"labReview": false`), a thread's code change, with your message and the agent's reply, goes to your other provider's CLI as a review thread, as if you'd started one (or a fresh session of the same provider, with no other login). After a turn fails because the API couldn't be reached, the runner itself opens (and straight away closes) a connection to api.anthropic.com or chatgpt.com on port 443, at most once a minute, until one opens and the thread carries on. Nothing is sent over it (`runner/src/net-probe.ts`). |
 | OpenCode's Zen (opencode.ai), models.dev, and whichever providers you've logged it into | theirs | Only with the `acpAgents` experiment on and a thread on OpenCode: that thread's prompts and tool output, through the official CLI, and small jobs' text when a pool of only OpenCode logins is picked for them in Settings |
 | Cursor (api2.cursor.sh) | theirs | Only with the `acpAgents` experiment on and a thread on Cursor: the same, on your own login |
 | Mike's push relay | Mike's | Only when a paired iPhone or Android phone gets a notification (an Android phone's goes on to Google's Firebase Cloud Messaging, from the relay). It's sent from your Convex deployment, not the Mac. The text is encrypted for the phone; the relay sees the device token and thread id (`convex/push.ts`, `docs/push-relay.md`). The first time, your deployment registers with it, giving its own address; the relay keeps that address and checks it by posting a one-time code back to your deployment's `/relay/verify` (`convex/http.ts`). |

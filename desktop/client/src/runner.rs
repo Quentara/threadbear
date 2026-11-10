@@ -59,6 +59,8 @@ pub struct Client {
     pending: Mutex<Pending>,
     next_id: AtomicU64,
     status: Mutex<Status>,
+    /// Wakes the reconnect wait when someone presses Try again.
+    retry: tokio::sync::Notify,
 }
 
 impl Client {
@@ -72,7 +74,13 @@ impl Client {
             // 1 is auth.prove's.
             next_id: AtomicU64::new(2),
             status: Mutex::new(Status::Connecting { url }),
+            retry: tokio::sync::Notify::new(),
         })
+    }
+
+    /// "Try again" in the connection banner: stop waiting and reconnect now.
+    pub fn retry_now(&self) {
+        self.retry.notify_one();
     }
 
     pub fn status(&self) -> Status {
@@ -128,7 +136,11 @@ impl Client {
                 let _ = tx.send(Err(RpcError::local("The connection to the runner closed")));
             }
             self.set_status(Status::Disconnected { url, reason, retry_in_ms: backoff_ms });
-            tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            // "Try again" in the connection banner cuts the wait short.
+            tokio::select! {
+                _ = tokio::time::sleep(Duration::from_millis(backoff_ms)) => {}
+                _ = self.retry.notified() => {}
+            }
             backoff_ms = (backoff_ms * 2).min(10_000);
         }
     }

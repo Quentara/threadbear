@@ -19,6 +19,7 @@ import { landRefusal } from './follow-origin.ts';
 import { activityCommand } from './activity.ts';
 import { pairCommand } from './pair.ts';
 import { runnerKeysCommand } from './runner-keys.ts';
+import { pickRunner } from './moves.ts';
 
 const OPTIONS = {
   cwd: { type: 'string' },
@@ -772,6 +773,8 @@ function printSettings(s: Settings): void {
   console.log(`Follow main      ${s.followMain ? 'on' : 'off'}`);
   console.log(`Bullet replies   ${s.bulletReplies === false ? 'off' : 'on'}`);
   console.log(`One reply        ${s.oneReply ? 'on' : 'off'}`);
+  console.log(`Lab review       ${s.labReview === false ? 'off' : 'on'}`);
+  if (s.keepAwake !== undefined) console.log(`Keep Mac awake   ${s.keepAwake ? 'on' : 'off'}`);
   printModels(s);
 }
 
@@ -867,12 +870,11 @@ async function resolveApproval(client: RunnerClient, threadId: string, prefix: s
 // tb move --to: the runner by name or id (runners.list), then
 // threads.movePreview or threads.move on this runner.
 async function moveToRunner(client: RunnerClient, threadId: string, f: Flags): Promise<number> {
-  const want = String(f.to).toLowerCase();
   const { runners } = await client.call<{ runners: { id: string; name: string; online: boolean; isSelf?: boolean }[] }>('runners.list', {});
-  // Its id, its name, or a word of its name only it has ("cloud" for "Hetzner Cloud").
-  const partly = runners.filter((r) => r.name.toLowerCase().includes(want));
-  const runner = runners.find((r) => r.id === f.to) ?? runners.find((r) => r.name.toLowerCase() === want) ?? (partly.length === 1 ? partly[0] : undefined);
-  if (!runner) throw new Error(`No runner called ${String(f.to)}. There are: ${runners.map((r) => r.name).join(', ')}.`);
+  // Its id, its name, or a word of its name only it has ("cloud" for
+  // "Hetzner Cloud"), and never a guess between two (moves.ts pickRunner).
+  const runner = pickRunner(String(f.to), runners);
+  if ('problem' in runner) throw new Error(runner.problem);
   const params: Record<string, unknown> = { threadId, runnerId: runner.id };
   if (typeof f.cwd === 'string') params.cwd = f.cwd;
   if (typeof f.account === 'string') params.accountId = f.account;

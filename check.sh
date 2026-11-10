@@ -172,6 +172,22 @@ skip() {
   printf 'skip  %-20s (%s; --all runs it)\n' "$1" "$2"
 }
 
+# Swift's test modules (XCTest, Testing) come with Xcode, not the Command
+# Line Tools: with only those, swift test can't build a test target, so its
+# steps are skipped and say why (the app's build still runs).
+# (An if, not a case: patch trust follows check.sh, and it reads no case.)
+XCODE_DIR="${DEVELOPER_DIR:-}"
+if [ -z "$XCODE_DIR" ]; then XCODE_DIR="$(xcode-select -p 2>/dev/null || true)"; fi
+NO_XCODE=""
+if [ -z "$XCODE_DIR" ] || [ "${XCODE_DIR%/CommandLineTools}" != "$XCODE_DIR" ]; then NO_XCODE=1; fi
+swift_test_step() {
+  if [ -n "$NO_XCODE" ]; then
+    printf 'skip  %-20s (needs Xcode; only the Command Line Tools are here)\n' "$1"
+  else
+    step "$@"
+  fi
+}
+
 TMP_ROOT="${TMPDIR:-/tmp}"
 LOGS="$(mktemp -d "${TMP_ROOT%/}/threadbear-check.XXXXXX")"
 FAILED=""
@@ -215,7 +231,7 @@ runner_unit_tests() {
   local name="runner unit tests" dir="$ROOT/runner"
   local log="$LOGS/runner-unit-tests.log" list="$LOGS/runner-unit-tests.failed"
   local start=$SECONDS
-  local run=(node --test --test-timeout=300000 --test-force-exit --test-reporter=spec)
+  local run=(node --import=./test/helpers/clean-env.ts --test --test-timeout=300000 --test-force-exit --test-reporter=spec)
   if (cd "$dir" && "${run[@]}" --test-reporter-destination=stdout \
       --test-reporter=./test/helpers/failed-files-reporter.mjs --test-reporter-destination="$list" \
       "test/unit/**/*.test.ts") >"$log" 2>&1; then
@@ -294,20 +310,24 @@ if [ "$QUICK" = 0 ]; then
     step "mock runner packages" "$ROOT/app/Tools/mock-runner" npm ci --no-audit --no-fund
   fi
   step "app build" "$ROOT/app" "${LIMITED[@]}" swift build --disable-keychain
-  step "app tests" "$ROOT/app" env THREADBEAR_REQUIRE_MOCK=1 "${LIMITED[@]}" swift test --disable-keychain
+  swift_test_step "app tests" "$ROOT/app" env THREADBEAR_REQUIRE_MOCK=1 "${LIMITED[@]}" swift test --disable-keychain
   # BearDock, the window's docking panels: its layout tests.
   if needed '^dock/'; then
-    step "dock tests" "$ROOT/dock" "${LIMITED[@]}" swift test --disable-keychain
+    swift_test_step "dock tests" "$ROOT/dock" "${LIMITED[@]}" swift test --disable-keychain
   else
     skip "dock tests" "nothing in dock/ changed"
   fi
 fi
 # The iPhone app's logic and source checks (ios/ThreadbearKit), on the Mac.
 # The app itself only builds with Xcode; ios/scripts/sim-shots.sh does that.
+# Convex's Swift library (convex-swift) ships for Apple silicon only, so
+# on an Intel Mac the kit can't build at all.
 if [ "$RUNNER_ONLY" = 1 ]; then
   :
+elif [ "$(uname -s)" = Darwin ] && [ "$(uname -m)" != arm64 ]; then
+  printf 'skip  %-20s (%s)\n' "iphone kit tests" "Convex's Swift library is Apple silicon only"
 elif needed "$IOS_NEEDS"; then
-  step "iphone kit tests" "$ROOT/ios/ThreadbearKit" "${LIMITED[@]}" swift test --disable-keychain
+  swift_test_step "iphone kit tests" "$ROOT/ios/ThreadbearKit" "${LIMITED[@]}" swift test --disable-keychain
 else
   skip "iphone kit tests" "nothing in ios/ changed"
 fi

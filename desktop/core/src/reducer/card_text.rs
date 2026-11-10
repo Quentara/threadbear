@@ -53,6 +53,18 @@ impl ApprovalText {
         title
     }
 
+    /// Why Threadbear's own tool is asking, in the runner's words ("Switch
+    /// this thread to Full access"), for under the card's title: the
+    /// generic "Use update thread?" alone hid what Allow allowed (Daybreak,
+    /// 9 Nov 2026, finding 67). The fields below it are still all of it.
+    pub fn runner_reason(request: &ApprovalRequest) -> Option<String> {
+        if !request.name.starts_with("mcp__threadbear__") {
+            return None;
+        }
+        let title = request.title.trim();
+        (!title.is_empty()).then(|| Self::shown(title))
+    }
+
     /// The decision in a word or two.
     pub fn decision(decision: ApprovalDecision) -> &'static str {
         match decision {
@@ -79,6 +91,74 @@ impl ApprovalText {
             } else {
                 out.push(scalar);
             }
+        }
+        out
+    }
+
+    /// What a file card's diff doesn't draw, which Allow allows too: every
+    /// argument but the path and the text the diff shows (`replace_all`, a
+    /// notebook cell's id and kind, an edit's own flags), named as for a
+    /// command (Codex review, 10 Nov 2026: `replace_all: true` and
+    /// `false` drew the same card).
+    pub fn fields_beyond_diff(input: &Value) -> Vec<Field> {
+        const DRAWN: &[&str] = &["file_path", "notebook_path", "path", "content", "old_string", "new_string", "edits"];
+        let mut out: Vec<Field> = super::tool_presentation::ToolPresentation::fields(input, true).into_iter().filter(|f| !DRAWN.contains(&f.key.as_str())).collect();
+        if let Some(edits) = input.get("edits").and_then(Value::as_array) {
+            for (i, edit) in edits.iter().enumerate() {
+                let rest = match edit.as_object() {
+                    Some(fields) => {
+                        let rest: serde_json::Map<String, Value> = fields.iter().filter(|(k, _)| k.as_str() != "old_string" && k.as_str() != "new_string").map(|(k, v)| (k.clone(), v.clone())).collect();
+                        (!rest.is_empty()).then(|| Value::Object(rest).to_string())
+                    }
+                    None => Some(edit.to_string()),
+                };
+                if let Some(rest) = rest {
+                    out.push(Field { key: format!("edit {}", i + 1), value: rest });
+                }
+            }
+        }
+        out.extend(Self::line_break_notes(input));
+        Self::shown_fields(&out)
+    }
+
+    /// Whether an edit's new text ends with a line break where its old text
+    /// doesn't, or the other way round: a diff drawn by lines can't show it,
+    /// and it moves the next line of the file (a commented-out `rm` onto a
+    /// line of its own, Codex review, 10 Nov 2026).
+    pub fn line_break_notes(input: &Value) -> Vec<Field> {
+        fn note(key: String, edit: &Value) -> Option<Field> {
+            let ends = |k: &str| edit.get(k).and_then(Value::as_str).map(|s| s.ends_with('\n'));
+            match (ends("old_string"), ends("new_string")) {
+                (Some(false), Some(true)) => Some(Field { key, value: "the new text adds a line break at its end, so what follows it starts a new line".to_owned() }),
+                (Some(true), Some(false)) => Some(Field { key, value: "the new text drops the line break at its end, so what follows it joins its last line".to_owned() }),
+                _ => None,
+            }
+        }
+        let mut out: Vec<Field> = note("line break".to_owned(), input).into_iter().collect();
+        // A whole file that doesn't end with one (a cron entry needs it).
+        if input.get("content").and_then(Value::as_str).is_some_and(|c| !c.is_empty() && !c.ends_with('\n')) {
+            out.push(Field { key: "line break".to_owned(), value: "the file doesn't end with a line break".to_owned() });
+        }
+        if let Some(edits) = input.get("edits").and_then(Value::as_array) {
+            out.extend(edits.iter().enumerate().filter_map(|(i, e)| note(format!("edit {} line break", i + 1), e)));
+        }
+        out
+    }
+
+    /// `shown`, with the whitespace a diff or a command can hide made
+    /// visible: a tab as `⇥` (it was drawn as four spaces, so swapping one
+    /// for the other drew nothing, and a `<<-` heredoc ends on one), and
+    /// spaces at a line's end as `·`. For what Allow runs or writes: a
+    /// command and an edit's lines (Codex review, 10 Nov 2026).
+    pub fn shown_exactly(text: &str) -> String {
+        let named = Self::shown(text);
+        let mut out = String::with_capacity(named.len() + 8);
+        for line in named.split_inclusive('\n') {
+            let (body, end) = line.strip_suffix('\n').map_or((line, ""), |b| (b, "\n"));
+            let kept = body.trim_end_matches(' ');
+            out.push_str(&kept.replace('\t', "\u{21E5}   "));
+            out.extend(std::iter::repeat('\u{B7}').take(body.len() - kept.len()));
+            out.push_str(end);
         }
         out
     }

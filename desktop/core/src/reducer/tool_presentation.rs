@@ -316,6 +316,7 @@ impl PathDisplay {
     /// folder `root`: "Sources/Upload" for a file in there, empty for one
     /// at its top. Outside it (or with no root), as `folder`.
     pub fn folder_relative(path: &str, root: Option<&str>) -> String {
+        let path = &text::forward_slashes(path);
         if let Some(relative) = root.and_then(|r| Self::relative_path(path, r)) {
             return text::deleting_last_path_component(&relative);
         }
@@ -325,7 +326,8 @@ impl PathDisplay {
     /// `path` inside `root` without the root ("scripts/release.sh"), or None
     /// when it isn't inside it.
     pub fn relative_path(path: &str, root: &str) -> Option<String> {
-        let mut base = text::expanding_tilde(root);
+        let path = &text::forward_slashes(path);
+        let mut base = text::expanding_tilde(&text::forward_slashes(root));
         while text::count(&base) > 1 && base.ends_with('/') {
             base.pop();
         }
@@ -344,6 +346,7 @@ impl PathDisplay {
     /// A file's folder, short: its last two components ("Sources/Upload"),
     /// "~" for something right in the home folder, empty at the root.
     pub fn folder(path: &str) -> String {
+        let path = &text::forward_slashes(path);
         let parent = text::deleting_last_path_component(path);
         if parent.is_empty() || parent == "/" {
             return String::new();
@@ -353,5 +356,16 @@ impl PathDisplay {
         }
         let parts: Vec<&str> = parent.split('/').filter(|p| !p.is_empty()).collect();
         parts[parts.len().saturating_sub(2)..].join("/")
+    }
+}
+
+#[cfg(test)]
+mod windows_path_display_tests {
+    use super::*;
+
+    #[test]
+    fn a_windows_path_is_named_relative_to_its_thread_the_same_way() {
+        assert_eq!(PathDisplay::folder_relative(r"C:\work\site\mockups\home.html", Some(r"C:\work\site")), "mockups");
+        assert_eq!(PathDisplay::relative_path(r"C:\work\site\src\components\Hero.astro", r"C:\work\site").as_deref(), Some("src/components/Hero.astro"));
     }
 }

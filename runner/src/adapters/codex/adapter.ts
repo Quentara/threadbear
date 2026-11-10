@@ -85,7 +85,8 @@ export type CodexAdapterDeps = {
   // A runner.notice warning (configWarning: a broken config.toml).
   onNotice?: (text: string) => void;
   // More developer instructions for a new thread with tools, read at its
-  // start (an experiment's line, RICH_BLOCKS_LINE).
+  // start (RICH_BLOCKS_LINE, which the in-process server has in its own
+  // instructions).
   extraGuidance?: () => string;
   timings?: Partial<CodexTimings>;
   maxLineBytes?: number;

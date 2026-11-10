@@ -40,6 +40,11 @@ export const newThreadsPart = {
     // Started by a sandboxed thread's agent in a sandbox folder: shut in
     // one too (ThreadRecord.confined).
     confined?: boolean;
+    // The user has said this thread may run outside the sandbox the thread
+    // in startedBy is shut in (a create_thread card they allowed, their
+    // press of a button they allowed). Without it, a thread started from a
+    // sandboxed one is shut in too (makeThread).
+    unconfine?: boolean;
     // Projects it starts in (New Thread on a project's page), joined
     // before its first turn, so that turn already has the project's brief.
     projectIds?: string[];
@@ -169,6 +174,7 @@ export const newThreadsPart = {
     worktree?: boolean;
     startedBy?: ThreadStartedBy;
     confined?: boolean;
+    unconfine?: boolean;
   }): { st: ThreadState; notes: string[] } {
     this.checkAccepting();
     // New threads belong on the new release.
@@ -194,7 +200,13 @@ export const newThreadsPart = {
     // refused rather than started outside (sandbox.ts).
     const canSandbox = providerInfo(account.provider).sandbox;
     const sandboxed = canSandbox && this.sandboxed(cwd);
-    if (params.confined && !sandboxed) {
+    // Started from a thread that's shut in a sandbox: shut in too, unless
+    // the user said otherwise. A caller that forgets `confined` (a lab
+    // review did, Daybreak 10 Nov 2026) gets a refusal, not a thread
+    // outside the sandbox with the same access.
+    const parent = params.startedBy?.threadId ? this.threads.get(params.startedBy.threadId) : undefined;
+    const confined = Boolean(params.confined) || (Boolean(parent?.rec.confined) && params.unconfine !== true);
+    if (confined && !sandboxed) {
       throw new RpcError(ErrorCode.badParams, canSandbox ? `${cwd} isn't in a sandbox folder, and a sandboxed thread can only start threads in one without asking.` : `A sandboxed thread can only start Claude threads, as ${providerName(account.provider)} doesn't run in the sandbox.`);
     }
     const now = this.isoNow();

@@ -55,6 +55,9 @@ export const worktreesPart = {
       this.emit(st, { type: 'system.note', text: `Couldn't make a worktree for this thread: ${made.reason}. It starts in ${asked} instead.` }, turnId);
       return;
     }
+    // Made afresh from main (or a spare reset to it): what a move left
+    // there is gone, so the checkout's own trust reaches it again.
+    this.patchTrust.vouch?.(made.worktree.path);
     rec.worktree = made.worktree;
     rec.cwd = made.cwd;
     rec.updatedAt = this.isoNow();

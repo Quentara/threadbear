@@ -69,7 +69,7 @@ test('with the experiment off, an installed agent adds no account', () => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-disc-'));
   const bin = path.join(d, 'oc');
   fs.writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 });
-  const cfg = { claudeMainDir: path.join(d, 'none'), claudeMainJson: path.join(d, 'none.json'), tokenStatsAccountsDir: path.join(d, 'none2'), opencodePath: bin };
+  const cfg = { claudeMainDir: path.join(d, 'none'), claudeMainJson: path.join(d, 'none.json'), tokenStatsAccountsDir: path.join(d, 'none2'), opencodePath: bin, cursorPath: path.join(d, 'no-cursor') };
   assert.deepEqual(discoverAccounts({ ...cfg, home: home(false) }), []);
   assert.deepEqual(discoverAccounts({ ...cfg, home: home(true) }).map((a) => a.id), ['opencode-main']);
 });

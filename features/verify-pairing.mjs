@@ -22,7 +22,7 @@ for (const f of features) {
 // Every scenario says which features.md row it covers, so the parity table
 // can be worked out from what passes.
 const ids = new Set([...fs.readFileSync(path.join(here, '../docs/gpui-port/features.md'), 'utf8').matchAll(/^\| `([a-z0-9.\-_]+)` \|/gm)].map((m) => m[1]));
-const notIds = new Set(['manual', 'wip', 'swift-pending', 'gpui-pending']);
+const notIds = new Set(['manual', 'wip', 'swift-pending', 'gpui-pending', 'long-thread', 'remote-threads', 'quiet-thread', 'project-decisions']);
 for (const f of features) {
   const lines = fs.readFileSync(path.join(here, f), 'utf8').split('\n');
   lines.forEach((line, i) => {

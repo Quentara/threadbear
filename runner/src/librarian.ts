@@ -52,7 +52,7 @@ export type LibrarianHost = {
   publish(n: Notification): void;
   // Keeps the look's line on where the thread is up to, shown at the top
   // of its Highlights (docs/protocol.md).
-  setBrief?(threadId: string, text: string): void;
+  setBrief?(threadId: string, text: string, purpose?: string): void;
   // Renames a thread whose title no longer says what it's about; returns
   // the title it took, or nothing when it kept the old one.
   retitleFromLibrarian?(threadId: string, title: string, from: string): string | undefined;
@@ -150,6 +150,7 @@ type Answer = {
   addFolders?: unknown;
   links?: unknown;
   thread?: unknown;
+  purpose?: unknown;
   title?: unknown;
   // New names for projects the thread is in, by id.
   retitle?: unknown;
@@ -883,7 +884,7 @@ export class Librarian {
       }
     }
     // Not a change to any project, so not in what the look says it did.
-    if (typeof a.thread === 'string' && a.thread.trim()) this.host.setBrief?.(rec.id, a.thread);
+    if (typeof a.thread === 'string' && a.thread.trim()) this.host.setBrief?.(rec.id, a.thread, typeof a.purpose === 'string' ? a.purpose : undefined);
     // A thread that has moved on from its title gets a new one. Not from
     // the first message alone: the title model has only just named it.
     if (typeof a.title === 'string' && a.title.trim() && job.reason !== 'first-message') {
@@ -1415,7 +1416,8 @@ Reply with JSON only, no prose and no code fence:
  "state": {"<project id>": "the project's new state"} only when this thread changed where the whole project stands (shipped or finished something, made a decision, hit a blocker), else {},
  "addFolders": {"<project id>": ["~/path"]} for repos this thread shows belong to a project it's in, else {},
  "links": {"<project id>": [{"title": "Live site", "url": "https://..."}]} for lasting places of a project it's in that the messages give and the project doesn't list yet, else {},
- "thread": "where this thread itself is up to, as two or three short bullets, one per line, each starting \"- \": what it did or found, and what it's waiting on or doing next",
+ "thread": "where this thread itself is up to, as two or three short bullets, one per line, each starting \"- \": what it did or found, and what it's waiting on or doing next, and who that's on. About the work, never about how the thread was filed or renamed",
+ "purpose": "one plain sentence, under 20 words, on what this thread is for, for someone who has forgotten: name the thing and why it came up",
  "title": null, or a new title when the thread's title no longer says what it's about (see below),
  "retitle": {"<project id>": "the project's new name"} for a project it's in whose name has gone out of date (see below), else {},
  "wake": ["<ids of hibernating threads the user is talking about here>"], or [] (see below),

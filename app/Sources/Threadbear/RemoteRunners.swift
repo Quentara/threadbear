@@ -180,6 +180,16 @@ extension AppModel {
         return remoteRunner(of: thread)?.name ?? "another Mac"
     }
 
+    /// The runner's name on a sidebar row ("M5", "bruce"), this Mac's own
+    /// threads included: Mike moves threads between machines and asked to
+    /// see at a glance where each one is (9 Nov). Nil with only this Mac,
+    /// where every row would just repeat the same name.
+    func runnerLabel(of thread: ThreadSummary) -> String? {
+        if thread.isRemote { return runnerName(of: thread) }
+        guard !remoteRunners.isEmpty else { return nil }
+        return runners.first(where: \.isSelf)?.name
+    }
+
     /// The SF Symbol for the runner a thread lives on, as the schedule
     /// editor draws runners.
     func runnerIcon(of thread: ThreadSummary) -> String { RunnerIcon.symbol(remoteRunner(of: thread)?.icon) }

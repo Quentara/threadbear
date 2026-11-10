@@ -407,7 +407,9 @@ launch_app() {
   I_PID="$pid"
   for i in $(seq 1 400); do grep -qx ready "$I_LOG" 2>/dev/null && break; sleep 0.05; done
   grep -qx ready "$I_LOG" 2>/dev/null || { cat "$I_LOG" >&2 2>/dev/null || true; die "the app didn't take commands (see $I_DIR/app.stderr)"; }
-  send '{"cmd":"waitFor","ready":true,"timeout":20}' >/dev/null || { tail -n 20 "$I_DIR/app.log" >&2; die "the app didn't connect to the runner"; }
+  # TB_DEV_APP_NO_READY: a spec of what the app shows before its first list
+  # (the loading rows) needs to look at it before the list lands.
+  [ -n "${TB_DEV_APP_NO_READY:-}" ] || send '{"cmd":"waitFor","ready":true,"timeout":20}' >/dev/null || { tail -n 20 "$I_DIR/app.log" >&2; die "the app didn't connect to the runner"; }
 }
 
 cmd_start() {
@@ -662,9 +664,13 @@ cmd_dump() {
 }
 
 cmd_rebuild() {
+  # --no-build quits and reopens the same binary, keeping its data and
+  # settings: a spec's "opened again" (features/ steps).
+  local no_build=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --id) ID="${2:?--id needs an id}"; shift ;;
+      --no-build) no_build=1 ;;
       *) die "unknown option for rebuild: $1" ;;
     esac
     shift
@@ -675,9 +681,11 @@ cmd_rebuild() {
   local status selection
   status="$(send '{"cmd":"status"}')" || exit 1
   selection="$(printf '%s' "$status" | sed -n 's/.*"selection":"\([^"]*\)".*/\1/p')"
-  echo "Building the debug app..."
-  # The running app stays up if the build fails.
-  build_binary "$I_ID" || exit 1
+  if [ "$no_build" = 0 ]; then
+    echo "Building the debug app..."
+    # The running app stays up if the build fails.
+    build_binary "$I_ID" || exit 1
+  fi
   # So reap leaves it while the old app's gone and the new one isn't up.
   set_field starter "$$"
   set_field starter_since "$(started_at $$)"

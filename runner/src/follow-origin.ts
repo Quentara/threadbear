@@ -162,5 +162,5 @@ export function landRefusal(home: string, mainCheckout: string): string | undefi
   const id = currentLink(home);
   const checkout = id ? readRelease(path.join(home, 'runner', 'releases', id))?.checkout : undefined;
   if (!checkout || repoOf(checkout) !== repoOf(mainCheckout)) return undefined;
-  return "This machine follows GitHub's main (followOrigin in runner.json), so nothing lands here: it would only leave its main apart from GitHub's. Give the work to the main Mac to land instead: create_thread with runner: \"main\". If this machine can push (git push origin HEAD:cloud/<topic>), name that branch in the brief; if not, put the whole diff in it.";
+  return "This machine follows GitHub's main (followOrigin in runner.json), so nothing lands here: it would only leave its main apart from GitHub's. Give the work to the main Mac to land instead: create_thread with runner: \"main\". If this machine can push a branch of its own (git push origin HEAD:<branch>, with a name the repo's rules let this machine push), name that branch in the brief; if not, put the whole diff in it.";
 }

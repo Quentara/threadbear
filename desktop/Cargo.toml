@@ -2,4 +2,4 @@
 # together with one lock file and one target folder.
 [workspace]
 resolver = "2"
-members = ["client", "core", "gpui"]
+members = ["client", "core", "gpui", "dock", "dock/layout"]

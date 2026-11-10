@@ -14,6 +14,8 @@ anything. The Convex mirror, the iPhone app (`ios/`) and the website (`web/`)
 are in `docs/convex-backend.md` and `docs/website.md`. The public landing
 page (threadbear.mikecann.app) is `site/`, a separate
 static site with its own `package.json`; its comments say how to build it.
+Its What's new page (`/changelog`) gets an entry per release, with pictures:
+`docs/changelog.md`.
 
 This file is written for Mike's own copy. The machines it names (the M5,
 `bruce`, `cloud`, `tinker-desk`) and paths under `~/dev/me` are his: in
@@ -63,6 +65,12 @@ and ask the user what they use instead, rather than trying to reach them.
   another Mac and the phone see the same, or a difference listed there
   with why. The backend tests' fake Convex checks the real schema and
   validators, so a field Convex would refuse fails there too.
+  Nightly, `scripts/parity/nightly.sh` plays the same scenarios into a
+  throwaway backend on Tinker Desk and has the real website, iPhone app
+  and Mac app read them, with a picture of each side by side in
+  `~/Library/Caches/Threadbear/parity/<time>/index.html` (its first run
+  found the website and the iPhone drawing cards without their notes).
+  A scenario's `shows` are the words each surface must show.
 - Only ever spawn the official `claude` (and later `codex`) binaries under
   Mike's own logins. Never read or copy OAuth tokens or Keychain credentials.
 - Tests that hit a real model use the cheapest model, tiny prompts, a temp

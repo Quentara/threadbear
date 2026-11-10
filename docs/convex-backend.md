@@ -626,6 +626,10 @@ phone names must be one that has heartbeated (or `"any"`), else
   with its `threads.commands` list as the command's `result` (kept by
   `sync:finishCommand` as for a `call`); an older runner fails it as
   unknown.
+- `phone:interrupt({ token, threadId })` (API 69) → commandId: Stop,
+  queued as an `interrupt` command, which ends the thread's running turn as
+  Stop on the Mac does. Runners have applied it since API 44 (the main
+  Mac sends it for another runner's thread).
 - `phone:respond({ token, threadId, approvalId, decision: "allow" |
   "allowAlways" | "deny", message? })`
 - `phone:answer({ token, threadId, approvalId, answers: Record<string,

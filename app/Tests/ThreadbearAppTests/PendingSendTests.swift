@@ -453,6 +453,112 @@ final class PendingSendTests: XCTestCase {
         XCTAssertNil(app.errorMessage)
     }
 
+    /// On its way as a handing-over runner closed its port, so no answer
+    /// came: an idle thread's message waits for the new runner and goes
+    /// there, rather than back into a box Mike may have left (10 Nov).
+    func testASendCutOffByARestartGoesAgainToTheNewRunner() async throws {
+        let (app, old) = try await connected()
+        let session = app.session(for: "th1")
+        _ = app.restart(notice: "The runner is restarting onto a new release.")
+        app.drafts["th1"] = Draft(text: "make the demo")
+        app.send(threadId: "th1")
+        try await until { old.waiting("threads.send") }
+        old.drop()
+        app.connectionLostForTesting()
+        session.connectionLost()
+        try await until { session.pending.first?.waitingForRunner == true }
+        XCTAssertEqual(session.pending.map(\.text), ["make the demo"], "still on its way, with the note")
+        XCTAssertNil(app.drafts["th1"])
+        XCTAssertNil(app.errorMessage)
+        let new = try await newRunner(app)
+        try await until { new.waiting("threads.list") }
+        new.answer("threads.list", ["threads": [["id": "th1", "title": "Fix it", "lastSeq": 12, "status": "idle"]]])
+        try await until { new.waiting("threads.events") }
+        XCTAssertEqual(new.params("threads.events")?["afterSeq"] as? Int, 12, "it looks after the seq it was sent at")
+        new.answer("threads.events", ["events": [], "firstSeq": 0, "lastSeq": 12])
+        try await until { new.waiting("threads.send") }
+        XCTAssertEqual(new.params("threads.send")?["text"] as? String, "make the demo")
+        new.answer("threads.send", ["turnId": "turn_1"])
+        try await until { session.pending.first?.queued == true }
+        XCTAssertNil(app.drafts["th1"])
+        XCTAssertNil(app.errorMessage)
+    }
+
+    /// If the old runner took it before the port closed, the thread shows
+    /// it, and it isn't sent a second time.
+    func testASendCutOffThatHadArrivedIsntSentTwice() async throws {
+        let (app, old) = try await connected()
+        _ = app.restart(notice: "The runner is restarting onto a new release.")
+        app.drafts["th1"] = Draft(text: "make the demo")
+        app.send(threadId: "th1")
+        try await until { old.waiting("threads.send") }
+        old.drop()
+        app.connectionLostForTesting()
+        let new = try await newRunner(app)
+        try await until { new.waiting("threads.list") }
+        new.answer("threads.list", ["threads": [["id": "th1", "title": "Fix it", "lastSeq": 13, "status": "idle"]]])
+        try await until { new.waiting("threads.events") }
+        let landed: [String: Any] = ["seq": 13, "ts": "2026-11-10T02:36:54Z", "threadId": "th1", "turnId": "t1", "type": "user.message", "text": "make the demo"]
+        new.answer("threads.events", ["events": [landed], "firstSeq": 13, "lastSeq": 13])
+        try await Task.sleep(for: .milliseconds(200))
+        XCTAssertEqual(new.count("threads.send"), 0)
+        XCTAssertNil(app.drafts["th1"])
+        XCTAssertNil(app.errorMessage)
+    }
+
+    /// A busy thread's runner may have queued it where nothing shows, so it
+    /// isn't sent again on a guess: it goes back in the box, and the banner
+    /// names the thread and stays once the app reconnects.
+    func testACutOffSendToABusyThreadGoesBackInTheBoxAndSaysWhere() async throws {
+        let (app, old) = try await connected()
+        app.threads["th1"] = try JSONDecoder().decode(ThreadSummary.self, from: Data(#"{"id":"th1","title":"Fix it","lastSeq":12,"status":"running"}"#.utf8))
+        _ = app.restart(notice: "The runner is restarting onto a new release.")
+        app.drafts["th1"] = Draft(text: "and the docs")
+        app.send(threadId: "th1")
+        try await until { old.waiting("threads.send") }
+        old.drop()
+        try await until { app.drafts["th1"] != nil }
+        XCTAssertEqual(app.drafts["th1"]?.text, "and the docs")
+        XCTAssertEqual(app.errorMessage, "Lost the connection to the runner. Your message to “Fix it” wasn't sent. It's back in its box.")
+        app.clearConnectionError()
+        XCTAssertNotNil(app.errorMessage, "reconnecting doesn't take it away")
+    }
+
+    /// Still with the old runner (a turn-end hook running, say), it may be
+    /// queued there where nothing shows: back in the box, not sent twice.
+    func testACutOffSendToAThreadStillOnTheOldRunnerGoesBackInTheBox() async throws {
+        let (app, old) = try await connected()
+        _ = app.restart(notice: "The runner is restarting onto a new release.")
+        app.drafts["th1"] = Draft(text: "make the demo")
+        app.send(threadId: "th1")
+        try await until { old.waiting("threads.send") }
+        old.drop()
+        app.connectionLostForTesting()
+        let new = try await newRunner(app)
+        try await until { new.waiting("threads.list") }
+        new.answer("threads.list", ["threads": [["id": "th1", "title": "Fix it", "lastSeq": 12, "status": "idle", "onOldRunner": true]]])
+        try await until { app.drafts["th1"] != nil }
+        XCTAssertEqual(app.drafts["th1"]?.text, "make the demo")
+        XCTAssertEqual(new.count("threads.send"), 0)
+        XCTAssertEqual(app.errorMessage, "Lost the connection to the runner. Your message to “Fix it” wasn't sent. It's back in its box.")
+    }
+
+    /// With another message still on its way, the runner may have queued
+    /// this one where nothing shows, so it goes back in the box instead.
+    func testACutOffSendWithAnotherOnItsWayGoesBackInTheBox() async throws {
+        let (app, old) = try await connected()
+        _ = app.restart(notice: "The runner is restarting onto a new release.")
+        app.drafts["th1"] = Draft(text: "first")
+        app.send(threadId: "th1")
+        app.drafts["th1"] = Draft(text: "second")
+        app.send(threadId: "th1")
+        try await until { old.count("threads.send") == 2 }
+        old.drop()
+        try await until { app.drafts["th1"] != nil }
+        XCTAssertTrue(app.drafts["th1"]?.text.contains("second") == true)
+        XCTAssertNotNil(app.errorMessage)
+    }
+
     /// Two sent while it's down go in the order they were sent.
     func testMessagesHeldForARestartGoInOrder() async throws {
         let (app, _) = try await connected()
@@ -628,6 +734,15 @@ final class HoldingTransport: RPCTransport, @unchecked Sendable {
     }
 
     func close() {}
+
+    /// The runner closes the socket with requests unanswered.
+    func drop() {
+        lock.lock()
+        let waiter = self.waiter
+        self.waiter = nil
+        lock.unlock()
+        waiter?.resume(throwing: URLError(.networkConnectionLost))
+    }
 
     private func push(_ object: [String: Any]) {
         let data = try! JSONSerialization.data(withJSONObject: object)

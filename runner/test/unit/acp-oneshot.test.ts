@@ -153,9 +153,16 @@ test('Codex logins still answer nothing', async () => {
   assert.equal((r as { reason: string }).reason, 'no-pool');
 });
 
-test('Cursor takes no small jobs, as its read tools cannot be turned off', () => {
+test('Cursor takes no small jobs, as its read tools cannot be turned off', async () => {
   assert.equal(providerInfo('cursor').smallJobs, false);
   assert.equal(providerInfo('opencode').smallJobs, true);
+  // Daybreak, 10 Nov (finding 68): an asker for it, however made, never
+  // starts it or sends it the text.
+  const r = rig(ACP_AGENTS.cursor);
+  const res = await r.ask({ account: { id: 'cursor-main', provider: 'cursor', title: 'Cursor', configDir: '/x' }, user: 'SECRET', cwd: r.root, timeoutMs: 8000 });
+  assert.equal(res.ok, false);
+  assert.match((res as { message: string }).message, /can't take small jobs/);
+  assert.deepEqual(r.log(), [], 'never started');
 });
 
 test('a read-only mode the agent did not confirm means no text is sent', async () => {

@@ -1147,6 +1147,9 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
     /// Every login in its pool is out of room: it carries on by itself at
     /// `until`.
     public var waitingForRoom: WaitingForRoom?
+    /// Whether a turn that hits its login's limit waits for room and
+    /// carries on by itself. On unless Mike turned it off on the limit box.
+    public var carryOnAtReset = true
     /// Its last turn couldn't reach the API (the internet went): it carries
     /// on by itself once the runner reaches it again. Since when.
     public var waitingForNetwork: Date?
@@ -1177,6 +1180,9 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
     /// Mike's last message to it, one line, for the sidebar's "You: ...".
     /// Nil until he's sent one, and from runners before it (3 Nov).
     public var asked: String?
+    /// The librarian's recap, for the box above the message box
+    /// (`Recap`, docs/protocol.md "The recap box"). Nil from an older runner.
+    public var recap: String?
     /// A panel the agent asked to show Mike, waiting for him to look at the
     /// thread. Nil when there's none, and from a runner older than this.
     public var panelRequest: PanelRequest?
@@ -1321,6 +1327,7 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
         projects = c.lossyArray(ThreadProject.self, forKey: .projects)
         poolId = ((try? c.decodeIfPresent(String.self, forKey: .poolId)) ?? nil).flatMap { $0.isEmpty ? nil : $0 }
         waitingForRoom = (try? c.decodeIfPresent(WaitingForRoom.self, forKey: .waitingForRoom)) ?? nil
+        carryOnAtReset = ((try? c.decodeIfPresent(Bool.self, forKey: .carryOnAtReset)) ?? nil) ?? true
         waitingForNetwork = (try? c.nestedContainer(keyedBy: NetworkWaitKeys.self, forKey: .waitingForNetwork))
             .flatMap { try? $0.decode(String.self, forKey: .since) }
             .flatMap(ISO8601.parse)
@@ -1334,6 +1341,7 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
         schedule = (try? c.decodeIfPresent(ThreadSchedule.self, forKey: .schedule)) ?? nil
         startedBy = (try? c.decodeIfPresent(ThreadStartedBy.self, forKey: .startedBy)) ?? nil
         asked = (try? c.decodeIfPresent(String.self, forKey: .asked)) ?? nil
+        recap = (try? c.decodeIfPresent(String.self, forKey: .recap)) ?? nil
         panelRequest = (try? c.decodeIfPresent(PanelRequest.self, forKey: .panelRequest)) ?? nil
         share = (try? c.decodeIfPresent(ThreadShare.self, forKey: .share)) ?? nil
         looseEnds = (try? c.decodeIfPresent(LooseEnds.self, forKey: .looseEnds)) ?? nil
@@ -1384,6 +1392,7 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
         if !projects.isEmpty { try c.encode(projects, forKey: .projects) }
         try c.encodeIfPresent(poolId, forKey: .poolId)
         try c.encodeIfPresent(waitingForRoom, forKey: .waitingForRoom)
+        if !carryOnAtReset { try c.encode(false, forKey: .carryOnAtReset) }
         if let since = waitingForNetwork {
             var w = c.nestedContainer(keyedBy: NetworkWaitKeys.self, forKey: .waitingForNetwork)
             try w.encode(ISO8601.format(since), forKey: .since)
@@ -1397,6 +1406,7 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
         try c.encodeIfPresent(schedule, forKey: .schedule)
         try c.encodeIfPresent(startedBy, forKey: .startedBy)
         try c.encodeIfPresent(asked, forKey: .asked)
+        try c.encodeIfPresent(recap, forKey: .recap)
         try c.encodeIfPresent(panelRequest, forKey: .panelRequest)
         try c.encodeIfPresent(share, forKey: .share)
         try c.encodeIfPresent(looseEnds, forKey: .looseEnds)
@@ -1407,7 +1417,7 @@ public struct ThreadSummary: Sendable, Hashable, Codable, Identifiable {
         case id, title, cwd, accountId, provider, model, effort, modelInUse, effortInUse, permissionMode, status, live, needsYou, pendingReviews
         case createdAt, updatedAt, lastActivityAt, snoozedUntil, snoozedUntilRestart, snoozedUntilRelease, wakeWhen, waitingOn, woke, archivedAt, starredAt, onOldRunner, preview
         case lastSeq, lastSeenSeq, nativeSessionId, contextTokens, contextWindow, costUsd, panels, actions, hooks, patches, background, subagents
-        case projects, worktree, needs, asks, asksSeq, highlightsAt, schedule, startedBy, asked, poolId, waitingForRoom, waitingForNetwork, panelRequest, share, sample, looseEnds, moving
+        case projects, worktree, needs, asks, asksSeq, highlightsAt, schedule, startedBy, asked, recap, poolId, waitingForRoom, carryOnAtReset, waitingForNetwork, panelRequest, share, sample, looseEnds, moving
     }
 
     enum NetworkWaitKeys: String, CodingKey { case since }
@@ -2016,6 +2026,25 @@ public enum ISO8601 {
 /// you"): the action, where he does it, and the words to send back. With
 /// options it's a decision: a line of why, the likely answers, and the
 /// agent's own pick (an index into options).
+/// An ask's command, with the id of the button that runs it once the
+/// runner has made the card. `running` and `failed` are the runner's own
+/// copy of the button's state, for a client that only has the card.
+public struct AskRun: Sendable, Hashable, Codable {
+    public var command: String
+    public var buttonId: String?
+    public var cwd: String?
+    public var running: Bool?
+    public var failed: String?
+
+    public init(command: String, buttonId: String? = nil, cwd: String? = nil, running: Bool? = nil, failed: String? = nil) {
+        self.command = command
+        self.buttonId = buttonId
+        self.cwd = cwd
+        self.running = running
+        self.failed = failed
+    }
+}
+
 public struct Ask: Sendable, Hashable, Codable {
     public var action: String
     public var where_: String?
@@ -2029,6 +2058,8 @@ public struct Ask: Sendable, Hashable, Codable {
     public var suggested: Int?
     /// Where to go to do it or judge it, shown as buttons on the card.
     public var links: [AskLink]
+    /// A command the card offers to run (docs/protocol.md, "Run on the card").
+    public var run: AskRun?
     /// Ticked on the open card (only in a summary's `asks`).
     public var ticked: Bool
 
@@ -2065,6 +2096,7 @@ public struct Ask: Sendable, Hashable, Codable {
         let pick = (try? c.decodeIfPresent(Int.self, forKey: .suggested)) ?? nil
         suggested = pick.flatMap { options.indices.contains($0) ? $0 : nil }
         links = c.lossyArray(AskLink.self, forKey: .links)
+        run = (try? c.decodeIfPresent(AskRun.self, forKey: .run)) ?? nil
         ticked = ((try? c.decodeIfPresent(Bool.self, forKey: .ticked)) ?? nil) ?? false
     }
 
@@ -2078,11 +2110,12 @@ public struct Ask: Sendable, Hashable, Codable {
         if !optionNotes.isEmpty { try c.encode(optionNotes, forKey: .optionNotes) }
         try c.encodeIfPresent(suggested, forKey: .suggested)
         if !links.isEmpty { try c.encode(links, forKey: .links) }
+        try c.encodeIfPresent(run, forKey: .run)
         if ticked { try c.encode(true, forKey: .ticked) }
     }
 
     enum CodingKeys: String, CodingKey {
-        case action, reply, ticked, why, options, optionNotes, suggested, links
+        case action, reply, ticked, why, options, optionNotes, suggested, links, run
         case where_ = "where"
     }
 }

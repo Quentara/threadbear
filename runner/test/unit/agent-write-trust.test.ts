@@ -689,6 +689,7 @@ test('a login with no settings.json yet: writing one is code, and a saved edit r
   put(path.join(login, '.claude.json'), '{}');
   const h = makeHarness(home, {}, {
     accounts: new FakeAccounts([...ACCOUNTS, { id: 'claude-9', provider: 'claude', title: 'nine', configDir: login }]),
+    panelsRoot: tmpDir(),
     patchTrust: new PatchTrust({ file: path.join(home, 'patch-trust.json'), claudeHome: tmpDir() }),
   });
   const { thread } = h.runner.create({ text: 'hi', accountId: 'claude-3', cwd: project, permissionMode: 'ask' });

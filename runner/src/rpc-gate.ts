@@ -10,7 +10,7 @@
 // that's added later is closed until someone decides it's safe here.
 import type { PermissionMode } from './protocol.ts';
 import { ErrorCode, RpcError } from './protocol.ts';
-import { above, MODE_NAMES, raises, type Authority } from './threadbear-mcp.ts';
+import { above, MODE_NAMES, raises, scheduleModes, type Authority } from './threadbear-mcp.ts';
 
 type Params = Record<string, unknown>;
 
@@ -29,6 +29,7 @@ export const GATED_READS: ReadonlySet<string> = new Set([
   'threads.subagent',
   'threads.highlights',
   'threads.commands',
+  'threads.contextUsage',
   'buttons.list',
   'reviews.list',
   'reviews.get',
@@ -129,7 +130,9 @@ export class CallerGate {
         const mode = (p.permissionMode ?? caller.mode) as PermissionMode;
         if (above({ mode, confined: false }, caller)) throw needs(`starting a thread with ${MODE_NAMES[mode] ?? mode}`, 'create_thread');
         const given = p.startedBy && typeof p.startedBy === 'object' ? (p.startedBy as Params) : {};
-        return { ...p, permissionMode: mode, startedBy: { ...given, kind: 'thread', threadId, label: typeof given.label === 'string' && given.label ? given.label : 'Agent' } };
+        // Never out of a sandbox from here.
+        const { unconfine: _u, ...rest } = p;
+        return { ...rest, permissionMode: mode, startedBy: { ...given, kind: 'thread', threadId, label: typeof given.label === 'string' && given.label ? given.label : 'Agent' } };
       }
       case 'threads.send': {
         const id = str(p, 'threadId');
@@ -226,8 +229,9 @@ export class CallerGate {
   private scheduleUpdate(caller: Authority, p: Params, needs: (what: string, tool?: string) => RpcError): Params {
     const out: Params = { ...p };
     const sc = this.findSchedule(p, needs);
-    const was: Authority = sc.threadId ? this.targetAccess(sc.threadId) : { mode: sc.permissionMode ?? 'full', confined: false };
-    const raised = !sc.threadId && typeof p.permissionMode === 'string' && raises(p.permissionMode as PermissionMode, was.mode);
+    const modes = scheduleModes(sc);
+    const was: Authority = sc.threadId ? this.targetAccess(sc.threadId) : { mode: modes.ceiling, confined: false };
+    const raised = !sc.threadId && typeof p.permissionMode === 'string' && raises(p.permissionMode as PermissionMode, modes.floor);
     if (raised) throw needs(`switching the schedule "${sc.title}" to ${MODE_NAMES[p.permissionMode as PermissionMode] ?? p.permissionMode}`, 'update_schedule');
     if (typeof p.check === 'string' && p.check.trim()) throw needs('adding a check to a schedule (a shell command that runs by itself)', 'update_schedule');
     if (p.checkTimeoutSecs !== undefined && p.check === undefined && sc.check) throw needs(`changing how long the schedule "${sc.title}"'s shell command may run`, 'update_schedule');
@@ -235,13 +239,13 @@ export class CallerGate {
     // that it runs again do, if its runs are above the caller or it has a check.
     const changes = ['text', 'title', 'at', 'cron', 'cwd'].some((k) => p[k] !== undefined) || (p.paused === false && sc.paused);
     if (changes && (above(was, caller) || sc.check)) throw needs(`changing the schedule "${sc.title}"`, 'update_schedule');
-    if (p.permissionMode !== undefined && !sc.threadId && p.permissionMode === was.mode) delete out.permissionMode;
+    if (p.permissionMode !== undefined && !sc.threadId && p.permissionMode === sc.permissionMode) delete out.permissionMode;
     return out;
   }
 
   private scheduleRun(caller: Authority, p: Params, needs: (what: string, tool?: string) => RpcError): Params {
     const sc = this.findSchedule(p, needs);
-    const will: Authority = sc.threadId ? this.targetAccess(sc.threadId) : { mode: sc.permissionMode ?? 'full', confined: false };
+    const will: Authority = sc.threadId ? this.targetAccess(sc.threadId) : { mode: scheduleModes(sc).ceiling, confined: false };
     if (above(will, caller) || sc.check) throw needs(`running the schedule "${sc.title}" now`, 'update_schedule');
     return p;
   }

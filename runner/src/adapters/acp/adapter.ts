@@ -28,6 +28,19 @@ import { AcpExitedError, AcpProcess, AcpRpcError, AUTH_REQUIRED, type AcpTimings
 import { AcpMcpServer } from './mcp-http.ts';
 import { AcpNormalizer, absolutePath, isPlainEdit, isPlainObject, requestPaths, writesFiles, type AcpToolCall } from './normalize.ts';
 
+// Where an execute call can say it runs (OpenCode's bash tool: workdir).
+const FOLDER_KEYS = ['workdir', 'cwd', 'workingDirectory', 'directory', 'dir'];
+// What an execute call can carry that doesn't change what runs or where.
+const BENIGN_KEYS = new Set(['description', 'timeout']);
+
+function realFolder(p: string): string | undefined {
+  try {
+    return fs.realpathSync.native(p);
+  } catch {
+    return undefined;
+  }
+}
+
 export type AcpAdapterDeps = {
   agent: AcpAgent;
   // Read for every process: runner.json's path, or wherever it's installed.
@@ -399,9 +412,29 @@ export class AcpSession implements AgentSession {
     const argv = command ? shellWords(command) : null;
     // A tool can name its own folder (OpenCode's workdir): the rule and the
     // card go by where the command really runs.
-    const said = [input.workdir, input.cwd, input.workingDirectory, input.directory, input.dir].find((d): d is string => typeof d === 'string' && d !== '');
-    const where = said ? absolutePath(said, this.opts.cwd) : this.opts.cwd;
-    const rule = argv?.length && ruleMayCover(argv) ? commandRule(argv, where) : null;
+    // Each as the disk has it (realpath(3): a link followed before any "..",
+    // as chdir does), bound to the rule that way, so `link/..` or a link
+    // pointed somewhere new isn't the folder a rule was saved for. One that
+    // can't be resolved, or that reads differently taken as written (as a CLI
+    // that tidies the path first would use it), is somewhere unknown (Codex's
+    // review, 10 Nov).
+    const named = FOLDER_KEYS.map((k) => input[k]).filter((d): d is string => typeof d === 'string' && d !== '');
+    const resolve = () =>
+      named.map((d) => {
+        const disk = realFolder(path.isAbsolute(d) ? d : `${this.opts.cwd}/${d}`);
+        return disk !== undefined && disk === realFolder(absolutePath(d, this.opts.cwd)) ? disk : undefined;
+      });
+    const places = resolve();
+    const said = [...new Set(places.filter((d): d is string => d !== undefined))];
+    const unknownPlace = places.includes(undefined);
+    const where = said[0] ?? (named[0] !== undefined ? absolutePath(named[0], this.opts.cwd) : (realFolder(this.opts.cwd) ?? this.opts.cwd));
+    // A saved rule is for this command in this folder and nothing else. Two
+    // folders that disagree, or anything else the call carries that could
+    // change what runs (an env, a shell, a folder under a name not listed
+    // here), and it can't be known which applies: no rule covers it, Always
+    // allow isn't offered, and the card shows the lot (Daybreak, 10 Nov).
+    const exact = Boolean(command) && !unknownPlace && said.length <= 1 && Object.entries(input).every(([k, v]) => k === 'command' || BENIGN_KEYS.has(k) || (FOLDER_KEYS.includes(k) && (typeof v === 'string' || v === undefined)));
+    const rule = exact && argv?.length && ruleMayCover(argv) ? commandRule(argv, where) : null;
 
     let code: CodeWrite = false;
     if (writesFiles(kind)) {
@@ -421,8 +454,12 @@ export class AcpSession implements AgentSession {
       : writesFiles(kind) && paths.length === 1
         ? `Edit ${displayPath(paths[0], this.opts.cwd)}`
         : firstLineSafely(seen.title || kind || 'Use a tool', 200, '…');
-    const shown: Record<string, unknown> = command ? { command, cwd: where } : writesFiles(kind) ? { paths } : input;
-    const card = cardInput(shown, command ? ['command', 'cwd'] : writesFiles(kind) ? ['paths'] : 'all');
+    // The folder as the agent gave it goes on the card too when it reads
+    // differently (a link): what the card says it resolved to is checked
+    // again once it's answered, below.
+    const given = Object.fromEntries(FOLDER_KEYS.filter((k) => typeof input[k] === 'string' && input[k] !== where).map((k) => [k, input[k]]));
+    const shown: Record<string, unknown> = command ? (exact ? { command, cwd: where, ...given } : { ...input, command, ...(FOLDER_KEYS.some((k) => k in input) ? {} : { cwd: where }) }) : writesFiles(kind) ? { paths } : input;
+    const card = cardInput(shown, command ? 'all' : writesFiles(kind) ? ['paths'] : 'all');
     if (card.tooLong) {
       this.sink.output({ kind: 'event', event: { type: 'system.note', text: tooLongForCard(card.tooLong) } });
       return this.answer(id, options, false);
@@ -451,6 +488,12 @@ export class AcpSession implements AgentSession {
     if (!this.pending.delete(id)) return;
     if (a.decision === 'expired') return void this.proc.respond(id, { outcome: { outcome: 'cancelled' } });
     const allow = a.decision === 'allow' || a.decision === 'allowAlways';
+    // A link pointed somewhere else while the card waited: what was allowed
+    // isn't where it would run now (Codex's second look, 10 Nov).
+    if (allow && named.length && JSON.stringify(resolve()) !== JSON.stringify(places)) {
+      this.sink.output({ kind: 'event', event: { type: 'system.note', text: `The folder for "${firstLineSafely(command, 80, '…')}" changed while it waited for an answer, so it wasn't run. The agent can ask again.` } });
+      return this.answer(id, options, false);
+    }
     if (a.decision === 'allowAlways' && !code) {
       if (editRule) this.addRules([EDIT_RULE]);
       else if (rule) this.addRules([rule]);

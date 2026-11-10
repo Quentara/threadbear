@@ -1,7 +1,7 @@
 # Porting the desktop app to GPUI
 
-Status: approved by Mike on 9 Nov 2026. Stage 0 is under way; progress is in
-[PARITY.md](gpui-port/PARITY.md).
+Status: approved by Mike on 9 Nov 2026. Stage 0 is done and stage 1 (the daily
+driver) is nearly there; progress is in [PARITY.md](gpui-port/PARITY.md).
 
 The goal is one Rust desktop app, drawn with [GPUI](https://gpui.rs) and
 [gpui-kit](https://gpui-kit.com), for Mac, Windows and Linux. It replaces the
@@ -427,10 +427,26 @@ for real browsing. I'd skip it: two engines means two sandboxes to prove.
 
 What stage 0 found (9 Nov):
 
-- **The transcript's speed: fine.** On Tinker Desk's M2, a release build loads
-  and folds 12,500 rows in 94 ms and draws a scrolling frame in 0.6 ms (2.5 ms
-  at worst). Scroll anchoring and streaming with no jumps still have to prove
-  themselves as the real rows arrive.
+- **The transcript's speed: fine once the panels around it were cached.** On
+  Tinker Desk's M2, a release build loads and folds 12,500 rows in 94 ms. The
+  first frame times (0.6 ms) came from scripted frames and missed what real
+  scrolling costs. With real trackpad flings (`features/tools/scroll-perf.ts`,
+  GPUI's own frame profiler) and 60 threads in the list, a frame took 7.4 ms
+  in the middle and 22 to 28 ms for the slowest 1 in 100, so more than half
+  would be late on Mike's 120 Hz screen (8.3 ms a frame). GPUI draws every
+  view again on every frame unless it's cached, and the list's scroll marks
+  every view above it as changed, so each frame was rebuilding the whole
+  window, thread list included. Caching the Threads panel and the side pane,
+  sorting threads by keys worked out once, and rebuilding the menu bar only
+  when something changes took it to about 6 ms in the middle, 8 ms at 90% and
+  10 ms at 99% (10 Nov). View > Show Frame Rate shows it live in the
+  installed app. The rule that follows: a big panel is a cached view
+  (`AnyView::cached`), and it observes whatever it draws from, as a cached
+  view only draws again when it's notified. What's left each frame is the
+  root, the dock's bars and the thread pane above the list; caching those
+  needs the dock to hand out its bars as views. Scroll anchoring and
+  streaming with no jumps still have to prove themselves as the real rows
+  arrive.
 - **Web pages inside GPUI: works on the Mac.** A spike put a real Chromium page
   in a normal layout slot, resizing with it. GPUI's own menus can't draw over a
   page, so those popups open in small borderless windows of their own, as

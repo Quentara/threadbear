@@ -37,6 +37,80 @@ public enum ApprovalText {
         return title
     }
 
+    /// Why Threadbear's own tool is asking, in the runner's words ("Switch
+    /// this thread to Full access"), for under the card's title: the
+    /// generic "Use update thread?" alone hid what Allow allowed (Daybreak,
+    /// 9 Nov 2026, finding 67). The fields below it are still all of it.
+    public static func runnerReason(_ request: ApprovalRequest) -> String? {
+        guard request.name.hasPrefix("mcp__threadbear__") else { return nil }
+        let title = request.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? nil : shown(title)
+    }
+
+    /// `shown`, with the whitespace a diff or a command can hide made
+    /// visible: a tab as `⇥` (it was drawn as four spaces, so swapping one
+    /// for the other drew nothing, and a `<<-` heredoc ends on one), and
+    /// spaces at a line's end as `·`. For what Allow runs or writes: a
+    /// command and an edit's lines (Codex review, 10 Nov 2026).
+    public static func shownExactly(_ text: String) -> String {
+        shown(text).split(separator: "\n", omittingEmptySubsequences: false).map { line -> String in
+            let body = String(line)
+            var kept = body
+            while kept.hasSuffix(" ") { kept.removeLast() }
+            return kept.replacingOccurrences(of: "\t", with: "\u{21E5}   ") + String(repeating: "\u{B7}", count: body.count - kept.count)
+        }.joined(separator: "\n")
+    }
+
+    /// What a file card's diff doesn't draw, which Allow allows too: every
+    /// argument but the path and the text the diff shows (`replace_all`, a
+    /// notebook cell's id and kind, an edit's own flags), named as for a
+    /// command (Codex review, 10 Nov 2026: `replace_all: true` and
+    /// `false` drew the same card).
+    public static func fieldsBeyondDiff(_ input: JSONValue) -> [ToolPresentation.Field] {
+        let drawn: Set<String> = ["file_path", "notebook_path", "path", "content", "old_string", "new_string", "edits"]
+        var out = ToolPresentation.fields(input, whole: true).filter { !drawn.contains($0.key) }
+        if case .array(let edits)? = input["edits"] {
+            for (i, edit) in edits.enumerated() {
+                var rest: JSONValue?
+                if case .object(let fields) = edit {
+                    let kept = fields.filter { $0.key != "old_string" && $0.key != "new_string" }
+                    if !kept.isEmpty { rest = .object(kept) }
+                } else {
+                    rest = edit
+                }
+                if let rest {
+                    out.append(ToolPresentation.Field(key: "edit \(i + 1)", value: rest.compactText))
+                }
+            }
+        }
+        out += lineBreakNotes(input)
+        return shown(out)
+    }
+
+    /// Whether an edit's new text ends with a line break where its old text
+    /// doesn't, or the other way round: a diff drawn by lines can't show it,
+    /// and it moves the next line of the file (a commented-out `rm` onto a
+    /// line of its own, Codex review, 10 Nov 2026).
+    public static func lineBreakNotes(_ input: JSONValue) -> [ToolPresentation.Field] {
+        func note(_ key: String, _ edit: JSONValue) -> ToolPresentation.Field? {
+            guard let old = edit["old_string"]?.stringValue, let new = edit["new_string"]?.stringValue else { return nil }
+            switch (old.hasSuffix("\n"), new.hasSuffix("\n")) {
+            case (false, true): return ToolPresentation.Field(key: key, value: "the new text adds a line break at its end, so what follows it starts a new line")
+            case (true, false): return ToolPresentation.Field(key: key, value: "the new text drops the line break at its end, so what follows it joins its last line")
+            default: return nil
+            }
+        }
+        var out = [note("line break", input)].compactMap { $0 }
+        // A whole file that doesn't end with one (a cron entry needs it).
+        if let content = input["content"]?.stringValue, !content.isEmpty, !content.hasSuffix("\n") {
+            out.append(ToolPresentation.Field(key: "line break", value: "the file doesn't end with a line break"))
+        }
+        if case .array(let edits)? = input["edits"] {
+            out += edits.enumerated().compactMap { note("edit \($0.offset + 1) line break", $0.element) }
+        }
+        return out
+    }
+
     /// The decision in a word or two.
     public static func decision(_ decision: ApprovalDecision) -> String {
         switch decision {

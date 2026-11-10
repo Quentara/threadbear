@@ -219,3 +219,25 @@ test("a bundle that doesn't arrive whole fails before the switch", async () => {
   assert.equal(w.b.rows('threads').find((r) => r.threadId === 'T4')!.runnerId, BRUCE);
   assert.equal(t.adopted, 0);
 });
+
+// Moved away and back (Codex's review, 10 Nov 2026): an old move's switch
+// marked the thread gone for good, and its done, heard again after a
+// restart, put the thread that had come back away again.
+test("a thread moved away and back is this runner's again, and the old move's done leaves it alone", async () => {
+  let putAway = 0;
+  const host = { has: () => true, putAway: async () => void putAway++, setMoving() {}, runnerName: (id: string) => id, adopt: async () => {} } as unknown as MovesHost;
+  const row = (moveId: string, from: string, to: string, state: MoveRow['state'], createdAt: number): MoveRow => ({ moveId, threadId: 'T1', from, to, state, createdAt, updatedAt: createdAt });
+  const away = row('aaaaaaaa0001', M5, BRUCE, 'done', 1);
+  const back = row('aaaaaaaa0002', BRUCE, M5, 'done', 2);
+  const ms = new Moves({ self: () => M5, on: () => true, backend: () => undefined, host, log });
+  ms.update([away, back]);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(ms.gone('T1'), false);
+  assert.equal(putAway, 0);
+  // Only the move away: gone, and put away.
+  const once = new Moves({ self: () => M5, on: () => true, backend: () => undefined, host, log });
+  once.update([away]);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(once.gone('T1'), true);
+  assert.equal(putAway, 1);
+});

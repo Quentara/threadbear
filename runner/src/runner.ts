@@ -52,6 +52,7 @@ import type {
   ThreadSummary,
   TurnOutcome,
 } from './protocol.ts';
+import { experimentOn } from './experiments.ts';
 import { agentsStillWorking, ErrorCode, LIMITS, PROTOCOL_VERSION, RpcError, sentByAgent } from './protocol.ts';
 import { activeProviders, cliName, providerInfo, providerName, providersForHello } from './providers.ts';
 import type { ArchivedBy, ArchiveVerdict, LibrarianStatus, Project, Schedule } from './protocol.ts';
@@ -127,7 +128,7 @@ import {
   projectPatchFiles,
   webPage,
 } from './patches.ts';
-import { cutSafely, firstLineSafely, isSafeSlice } from './safe-cut.ts';
+import { cutSafely, firstLineSafely, isSafeSlice, safeEndOfPartial } from './safe-cut.ts';
 import { FolderCache } from './folder-cache.ts';
 import { worktreesPart, type WorktreesPart } from './runner/worktrees.ts';
 import { networkPart, type NetworkPart } from './runner/network.ts';
@@ -148,6 +149,7 @@ import { patchesPart, type PatchesPart } from './runner/patches.ts';
 import { highlightsPart, type HighlightsPart } from './runner/highlights.ts';
 import { titlesPart, type TitlesPart } from './runner/titles.ts';
 import { commandsPart, type CommandsPart } from './runner/commands.ts';
+import { contextUsagePart, type ContextUsageAnswer, type ContextUsagePart } from './runner/context-usage.ts';
 import type { SlashCommand } from './slash-commands.ts';
 import { hibernationPart, type HibernationPart } from './runner/hibernation.ts';
 import { newThreadsPart, type NewThreadsPart } from './runner/new-threads.ts';
@@ -615,7 +617,7 @@ export const UNTIL_RESTART = '9999-12-31T00:00:00.000Z';
 export const NO_WAKE_TIME = UNTIL_RESTART;
 
 // Parts of the Runner that live in runner/ (see each file's top).
-export interface Runner extends LooseEndsPart, LabReviewPart, NewThreadsPart, HibernationPart, TitlesPart, HighlightsPart, PatchesPart, EditingPart, ClisPart, ReviewsPart, ButtonsPart, ApprovalsPart, ProjectsHostPart, StoppedWorkPart, HandoversPart, PoolsPart, NetworkPart, WorktreesPart, CommandsPart, MovesPart {}
+export interface Runner extends LooseEndsPart, LabReviewPart, NewThreadsPart, HibernationPart, TitlesPart, HighlightsPart, PatchesPart, EditingPart, ClisPart, ReviewsPart, ButtonsPart, ApprovalsPart, ProjectsHostPart, StoppedWorkPart, HandoversPart, PoolsPart, NetworkPart, WorktreesPart, CommandsPart, ContextUsagePart, MovesPart {}
 export class Runner {
   // While main.ts is still starting up: waking a thread for its waits
   // (reconcileWaits) would start a CLI whose tools aren't ready, so they
@@ -628,12 +630,15 @@ export class Runner {
   // threads hibernating until a new one (snoozedUntil "release"). Tests set it.
   release: string | undefined = RELEASE.release;
   cfg: Config;
+  private recapFlag = { at: -Infinity, on: false };
   store: ThreadStore;
   adapters: Record<string, AgentAdapter>;
   accounts: AccountSource;
   usage?: UsageSink;
   // Each login and folder's slash commands, for the picker (runner/commands.ts).
   commandCache = new Map<string, { at: number; commands: SlashCommand[] }>();
+  // threads.contextUsage asks in flight, by thread, so two at once share one.
+  contextAsks = new Map<string, Promise<ContextUsageAnswer>>();
   pickAccount: AccountPicker;
   clis?: CliControl;
   clock: Clock;
@@ -666,6 +671,9 @@ export class Runner {
   threads = new Map<string, ThreadState>();
   // Other runners' names by id, for what a move says (main.ts sets it).
   runnerNames?: (runnerId: string) => string | undefined;
+  // True on the main Mac (the owner key): a thread moved here from another
+  // runner arrives with at most Ask (runner/moves.ts capMovedMode).
+  movedInAtMostAsk?: () => boolean;
   listeners = new Set<(n: Notification) => void>();
   dirty = new Set<string>();
   flushScheduled = false;
@@ -1404,6 +1412,8 @@ export class Runner {
 
   sendTo(st: ThreadState, text: string, images: ImageRef[], opts: SendOptions = {}): string {
     const { rec, rt } = st;
+    // Read before anything below moves these: was the recap box up?
+    const recapped = this.recapShowing(rec);
     if (opts.origin !== 'runner') {
       rt.hookTurns = undefined;
       delete rec.stoppedWorkWakes;
@@ -1454,6 +1464,7 @@ export class Runner {
     if (opts.scheduleId) msg.scheduleId = opts.scheduleId;
     if (opts.answers?.length) msg.answers = opts.answers;
     if (opts.editOf) msg.editOf = opts.editOf;
+    if (recapped) msg.recapped = true;
     rec.lastActivityAt = this.isoNow();
     if (rt.turn && !opts.queue && fromMike(text, opts) && this.switchWaiting(st)) {
       // He picked another login (another provider, usually) during this
@@ -1605,6 +1616,36 @@ export class Runner {
     return `[Sent from the iPhone app${where}]\n${msg.text}`;
   }
 
+  // The switch is read from runner.json, and every row of every list asks.
+  recapOn(): boolean {
+    const now = this.clock.now();
+    if (now - this.recapFlag.at >= 5_000) this.recapFlag = { at: now, on: experimentOn(this.cfg.home, 'recapBox') };
+    return this.recapFlag.on;
+  }
+
+  // Whether the apps are showing the recap box (the same rule in each:
+  // docs/protocol.md, "The recap box"), so the agent needn't say it again.
+  // Only when the box says what the thread is for: a note from before
+  // purposes has just the where-it-stands, so the agent still adds that.
+  recapShowing(rec: ThreadRecord): boolean {
+    if (!rec.brief?.purpose || rec.status !== 'idle' || rec.archivedAt || !this.recapOn()) return false;
+    return this.clock.now() - Date.parse(rec.lastActivityAt) >= AWAY_MS;
+  }
+
+  // The line that asks for a recap when he comes back to a thread after a
+  // long gap, read from the last turn's own event so threads from before
+  // this line get it too. Only here and not in forAgent: a message steered
+  // into a running turn isn't a return, however old the last finished turn.
+  // Not for an answer to a card or a review: the question is in front of him.
+  awayLine(st: ThreadState, msg: QueuedSend): string | undefined {
+    const { rec } = st;
+    if (msg.recapped || !rec.lastTurnCompletedSeq || !fromMike(msg.text, msg) || msg.answers?.length || msg.reviewId) return undefined;
+    const ended = this.store.log(rec.id).read(rec.lastTurnCompletedSeq, rec.lastTurnCompletedSeq)[0];
+    const gap = ended ? this.clock.now() - Date.parse(ended.ts) : NaN;
+    if (!(gap >= AWAY_MS)) return undefined;
+    return `[This thread's last turn ended ${agoWords(gap)}, so the user may have lost track: open your reply with a line or two on what this thread is for and where it stands, then answer.]`;
+  }
+
   // Writes the turn's first events before changing any state, so if the
   // disk refuses (full, permissions) the thread is left as it was rather
   // than stuck on a turn that never started.
@@ -1634,6 +1675,7 @@ export class Runner {
       delete rec.waitingForRoom;
       this.armRoomTimer();
     }
+    delete rec.limitHitTurn;
     // Likewise a wait for the network: a message from Mike goes now, and
     // if the line's still down it fails and the wait starts over. A turn
     // that isn't the runner's carry-on ends that outage's count.
@@ -1678,6 +1720,8 @@ export class Runner {
       if (/^\/(compact|review|clear)\b/i.test(msg.text.trim())) rt.turn.noSteer = true;
     }
     let text = command ? msg.text : this.forAgent(msg);
+    const away = command ? undefined : this.awayLine(st, msg);
+    if (away) text = `${away}\n${text}`;
     // Claude's CLI starts a new session for /clear, which the runner follows
     // (its next init), but says nothing.
     if (command && rec.provider === 'claude' && /^\/clear\b/i.test(msg.text.trim())) {
@@ -2251,6 +2295,7 @@ export class Runner {
     // What it needs from Mike: its end_turn call, else its closing "What I
     // need from you". Only a turn it finished; a stopped one says nothing.
     const said = outcome === 'completed' ? turnNeeds(turn) : undefined;
+    if (said?.asks) said.asks = this.armRunAsks(st, said.asks, turn.turnId);
     if (said) {
       body.needs = said.needs;
       if (said.asks) body.asks = said.asks;
@@ -2311,7 +2356,7 @@ export class Runner {
     if (outcome === 'completed' && said?.needs === 'nothing' && !archive) void this.checkLooseEnds(st);
     this.recheckStarter(st);
     // A code change gets another lab's review before it counts as done
-    // (experiment labReview, runner/lab-review.ts): the thread waits on
+    // (runner/lab-review.ts, unless Settings turns it off): the thread waits on
     // the review, so anything waiting on it hears once it's been fixed.
     // One the last runner owed (a handover) is settled by the next turn to
     // complete: a finish gives this turn's change if it made one worth it,
@@ -2652,6 +2697,10 @@ export class Runner {
     archivedBy?: ArchivedBy;
     verdict?: ArchiveVerdict;
     starred?: boolean;
+    // Whether a turn that hits its login's limit waits for room and
+    // carries on by itself (the limit box's menu). false also ends a wait
+    // under way; true starts one if the thread is stuck at its limit now.
+    carryOnAtReset?: boolean;
     // A move Mike made (the app, tb) or allowed on a card: a thread shut in
     // a sandbox may leave it. Without it, a move or login change that would
     // take it out is refused (ThreadRecord.confined).
@@ -2879,6 +2928,7 @@ export class Runner {
     }
     if (params.starred === true) rec.starredAt ??= this.isoNow();
     else if (params.starred === false) delete rec.starredAt;
+    if (params.carryOnAtReset !== undefined) this.setCarryOnAtReset(st, params.carryOnAtReset);
     if (accountChanged && rt.turn && rt.session && !stop) {
       // The turn carries on where it started; say so, or the picker reads
       // as if the new model were already doing the work.
@@ -3258,6 +3308,7 @@ export class Runner {
     };
     if (rec.poolId) s.poolId = rec.poolId;
     if (rec.waitingForRoom) s.waitingForRoom = { ...rec.waitingForRoom };
+    if (rec.carryOnAtReset === false) s.carryOnAtReset = false;
     if (rec.waitingForNetwork) s.waitingForNetwork = { since: rec.waitingForNetwork.since };
     if (rec.needs && rec.needs.seq === rec.lastTurnCompletedSeq) {
       s.needs = rec.needs.needs;
@@ -3309,6 +3360,7 @@ export class Runner {
     if (rec.schedule) s.schedule = { ...rec.schedule };
     if (rec.startedBy) s.startedBy = { ...rec.startedBy };
     if (rec.asked) s.asked = rec.asked;
+    if (rec.brief && this.recapOn()) s.recap = recapText(rec.brief);
     if (rec.panelRequest) s.panelRequest = { ...rec.panelRequest };
     // A record from 28 Oct may say "people" (sharing with specific people,
     // since dropped): that's not shared.
@@ -3552,7 +3604,7 @@ export class Runner {
 
 // The Runner's other methods live in parts under runner/, one area each;
 // they go onto its prototype here, as the class's own methods would be.
-for (const part of [looseEndsPart, labReviewPart, newThreadsPart, hibernationPart, titlesPart, highlightsPart, patchesPart, editingPart, clisPart, reviewsPart, buttonsPart, approvalsPart, projectsHostPart, stoppedWorkPart, handoversPart, poolsPart, networkPart, worktreesPart, commandsPart, movesPart]) {
+for (const part of [looseEndsPart, labReviewPart, newThreadsPart, hibernationPart, titlesPart, highlightsPart, patchesPart, editingPart, clisPart, reviewsPart, buttonsPart, approvalsPart, projectsHostPart, stoppedWorkPart, handoversPart, poolsPart, networkPart, worktreesPart, commandsPart, contextUsagePart, movesPart]) {
   for (const [key, d] of Object.entries(Object.getOwnPropertyDescriptors(part))) {
     Object.defineProperty(Runner.prototype, key, { ...d, enumerable: false });
   }
@@ -3588,6 +3640,39 @@ export type SendOptions = { origin?: MessageOrigin; scheduleId?: string; queue?:
 export function fromMike(text: string, opts: SendOptions): boolean {
   if (opts.origin && opts.origin !== 'phone') return false;
   return !sentByAgent(text);
+}
+
+// How long after a thread's last turn a message from Mike counts as coming
+// back to it. From 1,872 messages he typed in real threads up to 9 Nov 2026:
+// 5% come 12 hours or more after the last turn. Those coming back after 8 to
+// 12 hours just carry on from the night before, and from about 12 hours they
+// start to ask what a thing was ("what's this project?", "what's next?").
+// Each time he said outright that he'd lost track was 45 to 124 hours after.
+const AWAY_MS = 12 * 3_600_000;
+
+// What the recap box says: the sentence on what the thread is for, on a line
+// of its own above the librarian's bullets.
+// The most setBrief keeps of each (runner/titles.ts). Before 10 Nov it cut
+// both to 200 and 600 with a plain slice, and those records are still about.
+export const RECAP_PURPOSE_CHARS = 199;
+export const RECAP_BRIEF_CHARS = 600;
+export function recapText(brief: { text: string; purpose?: string }): string {
+  // An old purpose of 200 may have been cut partway through a secret whose
+  // end (a URL's "@", a closing quote) was never kept, and mid-recap the
+  // scrub can't tell. What's left of it can't be found either (a quoted
+  // password with a space in it), so one that long is left out: a new one is
+  // never more than 199 (Codex's review of Daybreak's 75). The brief comes
+  // last, where the scrub's rules for a value cut off at the end apply, and
+  // loses its last unseen run too, as text read up to a limit does.
+  const purpose = brief.purpose && brief.purpose.length <= RECAP_PURPOSE_CHARS ? brief.purpose : '';
+  const text = brief.text.length >= RECAP_BRIEF_CHARS ? brief.text.slice(0, safeEndOfPartial(brief.text, brief.text.length)).trimEnd() : brief.text;
+  return purpose ? `${purpose}\n${text}` : text;
+}
+
+// "14 hours ago", "3 days ago": rounded, as it's only there to say how long.
+function agoWords(ms: number): string {
+  const hours = Math.round(ms / 3_600_000);
+  return hours < 48 ? `${hours} hours ago` : `${Math.round(hours / 24)} days ago`;
 }
 
 // What the agent is told when Mike writes a message while its question or

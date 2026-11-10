@@ -48,8 +48,11 @@ fn start_mock() -> (Mock, RunnerConfig) {
     (mock, RunnerConfig { home, port })
 }
 
+// A counter, not the clock: Windows' timer can give two tests started together
+// the same reading, and then one's "wrong token" overwrote the other's.
 fn rand_suffix() -> u32 {
-    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().subsec_nanos()
+    static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 enum Seen {

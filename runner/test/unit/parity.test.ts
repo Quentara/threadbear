@@ -38,6 +38,7 @@ function relay(): Relay {
 // What each request is sent with, where it needs something.
 const PARAMS: Record<string, Record<string, unknown>> = {
   'threads.send': { text: 'x' },
+  'buttons.press': { buttonId: 'abcd1234' },
   'threads.update': { title: 't' },
   'threads.heldBody': { seq: 8 },
   'threads.hibernateWhen': { said: 'when the build is done' },

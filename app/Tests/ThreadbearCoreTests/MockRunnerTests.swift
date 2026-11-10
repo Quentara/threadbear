@@ -520,12 +520,17 @@ final class MockRunnerTests: XCTestCase {
         XCTAssertEqual(remote.threads.first { $0.threadId == "bruce_backup" }?.unread, true)
         XCTAssertEqual(remote.threads.first { $0.threadId == "bruce_render" }?.status, .running)
 
-        // Not this runner's to list or open.
+        // Not this runner's to list...
         let own = try await client.listThreads(include: [.inbox, .snoozed, .archived])
         XCTAssertFalse(own.contains { $0.id.hasPrefix("bruce_") })
+        // ...but it answers for them through the backend, the app's default
+        // way in (docs/protocol.md, "Other runners' threads through the backend").
+        let relayed = try await client.events(threadId: "bruce_backup")
+        XCTAssertFalse(relayed.events.isEmpty)
+        // A thread nobody has is still not found.
         do {
-            _ = try await client.events(threadId: "bruce_backup")
-            XCTFail("this runner doesn't have bruce's threads")
+            _ = try await client.events(threadId: "no_such_thread")
+            XCTFail("nobody has this thread")
         } catch RPCError.server(let code, _) {
             XCTAssertEqual(code, RPCError.threadNotFound)
         }

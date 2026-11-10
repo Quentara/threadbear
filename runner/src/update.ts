@@ -21,6 +21,7 @@ import type { RestartResult } from './restart.ts';
 import { atomicWriteFileSync, readJsonSync } from './fsutil.ts';
 import { inBackground } from './background.ts';
 import type { UpdateFailure } from './fix-update.ts';
+import { machineTrouble } from './machine-trouble.ts';
 import { cleanGitError, followOrigin as fetchAndFollowOrigin, oldestMissingAt, type OriginResult } from './follow-origin.ts';
 
 export const CHECK_INTERVAL_MS = 5 * 60_000;
@@ -37,7 +38,7 @@ export const BACKGROUND_WAIT_MS = 30 * 60_000;
 // What a release holds from runner/, as deploy.mjs's RELEASE_PATHS: only a
 // change to these changes what runs, so a commit that only touches tests
 // or docs doesn't restart the runner.
-export const RELEASE_PATHS = ['src', 'bin', 'package.json', 'package-lock.json'];
+export const RELEASE_PATHS = ['src', 'bin', 'package.json', 'package-lock.json', '.npmrc'];
 // Failures that say nothing about the commit, so it's tried again later
 // rather than marked failed: another deploy holding the lock, and a step
 // that failed while the Mac slept through it, which deploy.mjs exits with
@@ -48,6 +49,15 @@ const SLEPT_EXIT = 75;
 // marked failed after all, with what the last try said, so a real break on
 // a laptop that sleeps through every build can't stay hidden (Codex, 9 Nov).
 export const MAX_SLEPT_TRIES = 3;
+// A build that failed while this machine was short of something
+// (machine-trouble.ts) waits for it to recover and is built again, this many
+// tries at one build tree before it counts as the code's fault after all.
+export const MAX_MACHINE_TRIES = 3;
+// How long a failure blamed on the machine can wait for it to recover
+// before it goes to a fix thread anyway. A sick machine that never recovers
+// mustn't hide a commit that really is broken (Codex, 10 Nov), and it needs
+// someone to look at it by then regardless.
+export const MACHINE_WAIT_MS = 6 * 60 * 60_000;
 // deploy.mjs's exit when its checks went to a check host and no check step
 // failed there (the host too full, or busy past check-remote.sh's limit):
 // the host's trouble, so tried again like a sleep, with the same limit
@@ -96,8 +106,10 @@ export type DeployResult = { ok: true; id: string } | { ok: false; error: string
 
 // <home>/runner/update.json: the build that failed, so it isn't retried
 // every five minutes.
-// buildTree is missing in files written before it was kept.
-export type UpdateFile = { failed?: { tree: string; buildTree?: string; commit: string; at: string; error: string } };
+// buildTree is missing in files written before it was kept. machine is
+// what was wrong with this machine when the failure is blamed on that, and
+// machineTries how many builds of this tree it has failed that way.
+export type UpdateFile = { failed?: { tree: string; buildTree?: string; commit: string; at: string; error: string; machine?: string; machineTries?: number } };
 
 export type UpdateDeps = {
   home: string;
@@ -129,6 +141,8 @@ export type UpdateDeps = {
   // built (scripts/deploy-backend.mjs): a no-op when they haven't changed.
   deployBackend?: (repoDir: string, runnerDir: string, home: string, commit: string, logFile: string) => Promise<{ ok: boolean; error?: string }>;
   watch?: (checkout: string, onChange: () => void) => () => void;
+  // What's wrong with this machine, if anything (machine-trouble.ts).
+  machineTrouble?: () => string | undefined;
   // The environment launchAgentBehind reads (process.env; tests replace it).
   env?: NodeJS.ProcessEnv;
   // The launcher app above launch.mjs (launcherAppAbove; tests replace it).
@@ -602,19 +616,23 @@ export class RunnerUpdater {
       const treeOf = this.deps.treeOf ?? releaseTreeAt;
       const running = { id: release.id, tree: release.tree ?? (release.dirty ? undefined : treeOf(dir, release.prefix, release.commit)) };
       const file = readJsonSync<UpdateFile>(updateFilePath(home));
+      // The machine's fault, and the machine has recovered: not a failure of
+      // this tree any more. The same tree only, as a new one is built anyway.
+      const recovered = Boolean(file?.failed?.machine && failedAlready(file.failed, main) && !this.troubleNow());
       const decision = decideUpdate({
         mainTree: main.tree,
         mainBuildTree: main.buildTree,
         running,
         current: currentLink(home),
         pendingRestart: this.deps.pendingRestart(),
-        failed: file?.failed,
+        failed: recovered ? undefined : file?.failed,
         crashedTrees: this.crashedTrees(dir, release.prefix, treeOf),
       });
       if (decision.action === 'nothing') {
         log.debug('main checked', { commit: main.short, why: decision.why });
         // A failure stays on show until main moves on from it.
         this.state = wasFailed && failedAlready(file?.failed, main) ? 'failed' : 'idle';
+        if (!recovered && file?.failed?.machine && failedAlready(file.failed, main) && this.deps.clock.now() - Date.parse(file.failed.at) >= MACHINE_WAIT_MS) this.machineWaitOver(file.failed, main);
         return decision;
       }
       this.state = 'building';
@@ -635,7 +653,26 @@ export class RunnerUpdater {
           return decision;
         }
         if (tries) this.slept = undefined;
-        const error = !tries
+        // Only for a failure that really ran here: after slept or no-host
+        // tries the checks may never have touched this machine.
+        const trouble = tries ? undefined : this.troubleNow();
+        const machineTries = trouble ? (file?.failed?.machine && failedAlready(file.failed, main) ? (file.failed.machineTries ?? 1) : 0) + 1 : 0;
+        const failedRecord = { tree: main.tree, buildTree: main.buildTree, commit: main.commit, at: this.checkedAt, error: result.error };
+        if (trouble && machineTries < MAX_MACHINE_TRIES) {
+          this.state = 'failed';
+          this.reason = `this machine ${trouble}, so the build of main failed; it tries again by itself once that clears`;
+          atomicWriteFileSync(updateFilePath(home), JSON.stringify({ failed: { ...failedRecord, machine: trouble, machineTries } } as UpdateFile, null, 2) + '\n');
+          log.warn('could not build a release of main while this machine is short of something', { commit: main.short, trouble, machineTries, error: result.error });
+          // No fix thread: there's no code to fix. The same trouble at a
+          // newer commit isn't worth saying again.
+          if (file?.failed?.machine !== trouble) {
+            this.deps.notice('warning', `The runner couldn't update to main at ${main.short}: this machine ${trouble}. It tries again by itself once that clears. The output is in ${updateLogPath(home)}.`);
+          }
+          return decision;
+        }
+        const error = trouble
+          ? `${result.error} (this machine ${trouble} in all ${machineTries} tries at this commit, so this may be a real failure)`
+          : !tries
           ? result.error
           : !result.ok && result.unavailable
             ? `${result.error} (no check host could run the checks in all ${tries} tries at this commit)`
@@ -643,7 +680,7 @@ export class RunnerUpdater {
         result = { ...result, error };
         this.state = 'failed';
         this.reason = result.error;
-        atomicWriteFileSync(updateFilePath(home), JSON.stringify({ failed: { tree: main.tree, buildTree: main.buildTree, commit: main.commit, at: this.checkedAt, error: result.error } } as UpdateFile, null, 2) + '\n');
+        atomicWriteFileSync(updateFilePath(home), JSON.stringify({ failed: { ...failedRecord, error: result.error } } as UpdateFile, null, 2) + '\n');
         log.error('could not build a release of main', { commit: main.short, error: result.error });
         this.failed(
           { kind: 'build', commit: main.commit, short: main.short, subject: main.subject, error: result.error, logFile: updateLogPath(home) },
@@ -672,6 +709,23 @@ export class RunnerUpdater {
       this.busy = false;
       this.deps.onChange?.();
     }
+  }
+
+  // Still sick after MACHINE_WAIT_MS: a failure like any other from here on.
+  private machineWaitOver(failed: NonNullable<UpdateFile['failed']>, main: MainInfo): void {
+    const { machine, machineTries: _tries, ...rest } = failed;
+    const error = `${failed.error} (this machine ${machine} for ${hours(this.deps.clock.now() - Date.parse(failed.at))} since, so this may be a real failure)`;
+    atomicWriteFileSync(updateFilePath(this.deps.home), JSON.stringify({ failed: { ...rest, error } } as UpdateFile, null, 2) + '\n');
+    this.state = 'failed';
+    this.reason = error;
+    this.failed(
+      { kind: 'build', commit: main.commit, short: main.short, subject: main.subject, error, logFile: updateLogPath(this.deps.home) },
+      `The runner couldn't update to main at ${main.short} (${main.subject}): ${error}. The output is in ${updateLogPath(this.deps.home)}.`,
+    );
+  }
+
+  private troubleNow(): string | undefined {
+    return (this.deps.machineTrouble ?? (() => machineTrouble(this.deps.home)))();
   }
 
   // What followOrigin found, with GitHub out of reach only once it's lasted.

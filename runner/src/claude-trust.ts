@@ -500,7 +500,7 @@ function frontmatterParts(text: string, grants: boolean): Record<string, unknown
 // The text between a file's opening `---` and the next, or the rest of
 // the file when there's no closing one. Leading blank lines and a BOM are
 // let through: reading more as frontmatter than Claude does only asks more.
-function frontmatter(text: string): string | undefined {
+export function frontmatter(text: string): string | undefined {
   const body = text.replace(/^\uFEFF/, '').trimStart();
   if (!/^---[ \t]*\r?\n/.test(body)) return undefined;
   const rest = body.replace(/^---[ \t]*\r?\n/, '');

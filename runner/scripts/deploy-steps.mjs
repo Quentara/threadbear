@@ -193,7 +193,7 @@ export function unitTests(c, opts, io = {}) {
       say(`The second run passed (first run's output: ${e.logFile})`);
       return;
     }
-    step(`Rerunning ${files.join(', ')}`, c.node ?? process.execPath, ['--test', '--test-reporter=spec', '--test-concurrency=1', ...TEST_LIMITS, ...files], opts, io);
+    step(`Rerunning ${files.join(', ')}`, c.node ?? process.execPath, ['--import=./test/helpers/clean-env.ts', '--test', '--test-reporter=spec', '--test-concurrency=1', ...TEST_LIMITS, ...files], opts, io);
     say(`Flaky: ${files.join(', ')} failed in the full run and passed alone (first run's output: ${e.logFile})`);
   }
 }

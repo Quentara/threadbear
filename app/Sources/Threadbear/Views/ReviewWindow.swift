@@ -652,7 +652,7 @@ struct ReviewWindow: View {
                     .foregroundStyle(picked ? Color.accentColor : Color.secondary)
                 if count > 1 { Text("\(count) shots").font(.system(size: TypeScale.detail)).foregroundStyle(.tertiary) }
                 if session.review.recommended == option.id {
-                    Text("my pick").font(.system(size: TypeScale.detail)).foregroundStyle(Color.accentColor)
+                    Self.recommendedMark
                 }
             }
             .lineLimit(1).frame(height: Self.captionHeight, alignment: .topLeading)
@@ -776,13 +776,22 @@ struct ReviewWindow: View {
         }
     }
 
+    /// The agent's pick: a small gold star and "Recommended" in grey, as on
+    /// an asks card (RowRenderer), after Ghostex's (Mike, 9 Nov 2026).
+    static var recommendedText: Text {
+        Text(Image(systemName: "star.fill")).font(.system(size: TypeScale.detail - 2)).foregroundStyle(Color(nsColor: Theme.recommendedStar))
+            + Text(" Recommended").font(.system(size: TypeScale.detail)).foregroundStyle(.secondary)
+    }
+
+    static var recommendedMark: some View { recommendedText.accessibilityLabel("Recommended") }
+
     private func choiceText(_ option: ReviewOption) -> some View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 // The agent's pick, worded and coloured as on an asks card.
                 (Text(option.label).font(.system(size: TypeScale.work, weight: .semibold))
                     + (session.review.recommended == option.id
-                        ? Text("  my pick").font(.system(size: TypeScale.detail)).foregroundStyle(Color.accentColor)
+                        ? Text("  ") + Self.recommendedText
                         : Text("")))
                     .fixedSize(horizontal: false, vertical: true)
                 if let reason = option.note, !reason.isEmpty {

@@ -23,6 +23,9 @@ import Testing
         #expect(all.nextBefore == nil)
     }
 
+    /// Going back is never cut off by the cap: what you load is room on
+    /// top of it (Codex's review: a cap that stopped Load earlier left a
+    /// long thread's start out of reach for good).
     @Test func chunksGoAboveTheLivePageUntilTheStart() {
         var h = MessageHistory()
         h.takeLive(page(7421...7500, hasMore: true))
@@ -36,6 +39,121 @@ import Testing
         #expect(!h.hasMore)
         #expect(h.nextBefore == nil)
         #expect(h.images.map(\.seq) == [7310])
+    }
+
+    /// After loading, rows sliding off the live page still only get the
+    /// cap on top of what was loaded; the oldest go, and can be loaded again.
+    @Test func aStreamAfterLoadingEarlierKeepsWithinWhatWasLoadedPlusTheCap() {
+        var h = MessageHistory()
+        h.takeLive(page(3001...3080, hasMore: true))
+        _ = h.takeOlder(page(2001...3000, hasMore: true), before: 3001)
+        for i in 1...400 { h.takeLive(page((3001 + i * 10)...(3080 + i * 10), hasMore: true)) }
+        #expect(h.older.count == 1000 + MessageHistory.olderMaxRows)
+        #expect(h.older.last?.seq == (h.live?.messages.first?.seq ?? 0) - 1)
+        #expect(h.hasMore)
+        #expect(h.nextBefore == h.older.first?.seq)
+    }
+
+    /// Codex's second review: the phone loads a chunk by itself when Load
+    /// earlier comes into view, so rows the cap let go were read again and
+    /// earned more room each time, without anyone asking. They earn
+    /// nothing now, and a chunk that brings nothing that stays ends loading.
+    @Test func rowsLetGoAndReadAgainEarnNoRoomAndLoadingStops() {
+        var h = MessageHistory()
+        h.takeLive(page(1...80, hasMore: true))
+        for i in 1...300 { h.takeLive(page((1 + i * 10)...(80 + i * 10), hasMore: true)) }
+        #expect(h.older.count == MessageHistory.olderMaxRows)
+        let before = h.nextBefore ?? 0
+        _ = h.takeOlder(page((before - 22)...(before - 1), hasMore: true), before: before)
+        #expect(h.older.count == MessageHistory.olderMaxRows)
+        #expect(!h.hasMore)
+        #expect(h.nextBefore == nil)
+    }
+
+    /// However far back you go, what loading adds stops at loadedMax times
+    /// the caps.
+    @Test func loadingEarlierAddsRoomOnlyUpToItsCeiling() {
+        let top = 100_000
+        var h = MessageHistory()
+        h.takeLive(page((top - 79)...top, hasMore: true))
+        for _ in 0..<60 {
+            guard let before = h.nextBefore else { break }
+            _ = h.takeOlder(page((before - 1000)...(before - 1), hasMore: true), before: before)
+        }
+        #expect(h.older.count <= MessageHistory.olderMaxRows * (MessageHistory.loadedMax + 1))
+        #expect(h.older.count >= MessageHistory.olderMaxRows * MessageHistory.loadedMax)
+        #expect(!h.hasMore)
+    }
+
+    /// Daybreak, 10 Nov: another runner writing its own thread a few rows
+    /// at a time, fewer than the live page holds so the pages always
+    /// overlap, with nobody pressing Load earlier. Every row that slid off
+    /// the page was kept for as long as the thread was open. Now `older`
+    /// stays within its caps, nearest the live page, and each update is cheap.
+    @Test func aPacedStreamOfBigRowsKeepsOlderWithinItsByteCap() {
+        let text = String(repeating: "x", count: 8192)
+        func big(_ seqs: ClosedRange<Int>) -> MessagePage {
+            MessagePage(messages: seqs.map { PhoneMessage(seq: $0, role: .assistant, text: text, at: t0) }, hasMore: true, images: [])
+        }
+        var h = MessageHistory()
+        let pages = (0...1250).map { big((1 + $0 * 8)...(80 + $0 * 8)) }
+        let clock = ContinuousClock()
+        let took = clock.measure { for p in pages { h.takeLive(p) } }
+        let bytes = h.older.reduce(0) { $0 + MessageHistory.bytes(of: $1) }
+        #expect(bytes <= MessageHistory.olderMaxBytes)
+        #expect(h.older.count < 1100)
+        #expect(h.older.last?.seq == (h.live?.messages.first?.seq ?? 0) - 1)
+        // What went can be loaded again.
+        #expect(h.nextBefore == h.older.first?.seq)
+        // 1,251 updates; well under a tenth of a millisecond each would do.
+        #expect(took < .seconds(2), "took \(took)")
+    }
+
+    @Test func aLongStreamOfSmallRowsKeepsOlderWithinItsRowCap() {
+        var h = MessageHistory()
+        for i in 0..<400 { h.takeLive(page((1 + i * 10)...(80 + i * 10), hasMore: true)) }
+        #expect(h.older.count == MessageHistory.olderMaxRows)
+        #expect(h.older.last?.seq == (h.live?.messages.first?.seq ?? 0) - 1)
+    }
+
+    /// Pictures between rows (at seqs no row has) count with the row
+    /// before them, so a stream of pictures can't grow `older` past its
+    /// bytes either.
+    @Test func picturesBetweenRowsCountAgainstTheCap() {
+        let url = "https://x/" + String(repeating: "p", count: 100_000)
+        var h = MessageHistory()
+        for i in 0..<300 {
+            let a = 1 + i * 1000
+            h.takeLive(MessagePage(messages: [PhoneMessage(seq: a, role: .user, text: "a", at: t0), PhoneMessage(seq: a + 1000, role: .user, text: "b", at: t0)],
+                                   hasMore: true, images: [MessageImage(seq: a + 500, url: "\(url)?\(i)")]))
+        }
+        let bytes = h.older.reduce(0) { $0 + MessageHistory.bytes(of: $1) } + h.olderImages.reduce(0) { $0 + MessageHistory.bytes(of: $1) }
+        #expect(bytes <= MessageHistory.olderMaxBytes)
+        #expect(h.olderImages.count < 100)
+        #expect(h.olderImages.allSatisfy { $0.seq >= (h.older.first?.seq ?? .max) })
+    }
+
+    /// Codex's review: a picture at a seq below the only row, with no
+    /// older rows, was added to `older` again on every live update (a
+    /// button's title changing is enough to send one), N copies after N.
+    @Test func aPictureBeforeEveryRowIsKeptOnceHoweverManyUpdatesCome() {
+        let one = MessagePage(messages: [PhoneMessage(seq: 10, role: .user, text: "a", at: t0)], hasMore: false,
+                              images: [MessageImage(seq: 1, url: "https://x/1.png")])
+        var h = MessageHistory()
+        for _ in 0..<1000 { h.takeLive(one) }
+        #expect(h.olderImages.count == 1)
+        #expect(h.images.map(\.seq) == [1])
+    }
+
+    @Test func picturesWithNoOlderRowsAreCappedToo() {
+        var h = MessageHistory()
+        for i in 0..<3000 {
+            h.takeLive(MessagePage(messages: [PhoneMessage(seq: 1_000_000, role: .user, text: "a", at: t0)], hasMore: false,
+                                   images: [MessageImage(seq: i, url: "https://x/\(i).png")]))
+        }
+        #expect(h.older.isEmpty)
+        #expect(h.olderImages.count <= MessageHistory.olderMaxPictures)
+        #expect(h.olderImages.map(\.seq).max() == 2998)
     }
 
     /// New messages slide the oldest off the live page. Those rows stay, or

@@ -383,6 +383,18 @@ rollback covers a release that doesn't come up.
   is often fixed that way. Its output is in `<home>/runner/update.log`. A tree whose
   release crashed at startup isn't built again either. A deploy that
   couldn't run (another deploy holds the lock) is just tried next time.
+- A build that fails while the machine is short of something a build needs
+  (no file watches left, under 1 GB free, can't start processes:
+  `runner/src/machine-trouble.ts`) isn't the code's fault, so it gets no fix
+  thread, just one notice. It's kept in `update.json` with what was wrong
+  (`machine`), and built again as soon as a five-minute check finds the
+  machine well, up to three tries at one build tree before it counts as a
+  real failure. If it's still sick six hours on it goes to a fix thread
+  anyway, so a machine that never recovers can't hide a broken commit. A new
+  commit is still built meanwhile, so a sick machine can't stop every update.
+  The check only runs here: a failure on a check host is treated as the
+  code's, as before. The cloud box sat 13 hours behind main
+  on 9 Nov after its watches had come back.
 - Nothing happens while a restart is pending, while `current` names a
   release that hasn't started yet, from a runner run from a checkout, or
   from a release built before `release.json` recorded its checkout (deploy

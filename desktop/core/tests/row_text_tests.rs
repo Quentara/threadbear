@@ -302,6 +302,55 @@ fn testApprovalTitlesAndTargets() {
     assert_eq!(ApprovalText::decision(ApprovalDecision::AllowAlways), "Always allowed");
 }
 
+/// Finding 67: Threadbear's own gates say what they'd do in the runner's
+/// words, and the card shows them under its generic title; another
+/// server's tool doesn't get to put words there.
+#[test]
+fn threadbear_cards_say_what_the_runner_is_asking() {
+    let raise = ApprovalRequest::new("ap1", "mcp__threadbear__update_thread", "Switch this thread to Full access", json!({"threadId": "t1", "permissionMode": "full"}));
+    assert_eq!(ApprovalText::title(&raise), "Use update thread?");
+    assert_eq!(ApprovalText::runner_reason(&raise).as_deref(), Some("Switch this thread to Full access"));
+    let fields = threadbear_core::reducer::ToolPresentation::fields(&raise.input, true);
+    assert!(fields.iter().any(|f| f.key == "permissionMode" && f.value == "full"), "the card's fields still show the mode");
+    let other = ApprovalRequest::new("ap2", "mcp__github__merge", "Switch this thread to Full access", json!({}));
+    assert_eq!(ApprovalText::runner_reason(&other), None);
+    let hidden = ApprovalRequest::new("ap3", "mcp__threadbear__send_message", "Send\u{2028}it", json!({}));
+    assert_eq!(ApprovalText::runner_reason(&hidden).as_deref(), Some("Send\u{27E8}U+2028\u{27E9}it"));
+}
+
+/// Codex review of the 10 Nov fix: a tab drew as four spaces and spaces
+/// at a line's end as nothing, so swapping them drew the same card.
+#[test]
+fn approval_text_shows_tabs_and_trailing_spaces() {
+    assert_eq!(ApprovalText::shown_exactly("    END"), "    END");
+    assert_eq!(ApprovalText::shown_exactly("\tEND"), "\u{21E5}   END");
+    assert_eq!(ApprovalText::shown_exactly("+END  \n+next"), "+END\u{B7}\u{B7}\n+next");
+    assert_ne!(ApprovalText::shown_exactly("    END"), ApprovalText::shown_exactly("\tEND"));
+    assert_eq!(ApprovalText::shown_exactly("a\u{2028}b"), "a\u{27E8}U+2028\u{27E9}b");
+    let ends = |c: &str| ApprovalText::fields_beyond_diff(&json!({"file_path": "/etc/cron.d/x", "content": c})).len();
+    assert_eq!(ends("* * * * * root true\n"), 0);
+    assert_eq!(ends("* * * * * root true"), 1);
+}
+
+/// Codex review of the 10 Nov fix: what a file card's diff doesn't draw is
+/// still part of what Allow allows, so it's listed under the diff.
+#[test]
+fn file_cards_list_what_the_diff_doesnt_draw() {
+    let keys = |input: Value| ApprovalText::fields_beyond_diff(&input).into_iter().map(|f| format!("{}={}", f.key, f.value)).collect::<Vec<_>>();
+    assert_eq!(keys(json!({"file_path": "/w/a", "old_string": "a", "new_string": "b", "replace_all": true})), ["replace_all=true"]);
+    assert_eq!(keys(json!({"file_path": "/w/a", "content": "x\n"})), Vec::<String>::new());
+    assert_eq!(keys(json!({"file_path": "/w/a", "edits": [{"old_string": "a", "new_string": "b"}, {"old_string": "c", "new_string": "d", "replace_all": true}]})), ["edit 2={\"replace_all\":true}"]);
+    assert_eq!(keys(json!({"notebook_path": "/w/n.ipynb", "cell_id": "c1", "new_source": "x"})), ["cell_id=c1", "new_source=x"]);
+    // A line break the diff can't draw: the commented-out `rm` after it
+    // would start a line of its own.
+    let adds = keys(json!({"file_path": "/w/build.sh", "old_string": "# original comment\n# Disabled: ", "new_string": "# updated comment\n# Disabled: \n"}));
+    assert_eq!(adds.len(), 1);
+    assert!(adds[0].starts_with("line break=the new text adds a line break"), "{adds:?}");
+    assert!(keys(json!({"file_path": "/w/build.sh", "old_string": "# original comment\n# Disabled: ", "new_string": "# updated comment\n# Disabled: "})).is_empty());
+    let drops = keys(json!({"file_path": "/w/a", "edits": [{"old_string": "a\n", "new_string": "b"}]}));
+    assert!(drops[0].starts_with("edit 1 line break=the new text drops"), "{drops:?}");
+}
+
 /// A character that hides, breaks or reorders text is named on the card,
 /// not drawn: `ls`, six U+2028 and `;curl` must not look like `ls` alone,
 /// and a bidi override must not turn the line around (security review, 9
@@ -566,6 +615,15 @@ fn testReviewReplyEventReachesTheBubble() {
     let model = from_events(vec![e]);
     let Some(RowContent::User(message)) = model.rows().first().map(|r| &r.content) else { panic!("no bubble") };
     assert_eq!(message.text, words);
+    assert_eq!(message.review.as_ref().map(|r| r.lines.clone()), Some(vec![ReviewAnswerLine { label: "Picker".into(), text: "Picked A: Auto account".into() }]));
+}
+
+#[test]
+fn testReviewReplyLeavesOutWhatHePassedOver() {
+    let words = format!("Review: Picker (r1)\n\nPicked A. Auto account.\n\nPassed over: B. Manual. {}", ReviewAnswer::PASSED_OVER_TAIL);
+    let e = event(4, "user.message", json!({"text": words, "images": [], "reviewId": "r1", "reviewResponse": {"pickedId": "A", "notes": {}}}));
+    let model = from_events(vec![e]);
+    let Some(RowContent::User(message)) = model.rows().first().map(|r| &r.content) else { panic!("no bubble") };
     assert_eq!(message.review.as_ref().map(|r| r.lines.clone()), Some(vec![ReviewAnswerLine { label: "Picker".into(), text: "Picked A: Auto account".into() }]));
 }
 

@@ -103,7 +103,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `sidebar.row.menu` | Row context menu | Star, Hibernate, Archive, Move to, Projects, Rename, Open in New Panel, Copy thread id, Ask the librarian to look, Delete… | gpui-kit menu with submenus, in-window. | kit | M | `SidebarView` |
 | `sidebar.subagents` | Sub-agent tree | Indented sub-agents with a drawn trunk, click to read | Custom rows with a drawn trunk. | build | M | `SubagentViews`, `SubagentRows` |
 | `sidebar.archived.paging` | Archived paging | Recent few, then Show more; the open thread is always included | Port the rule and draw a Show more row. | build | S | `SidebarView` (`ArchiveRows`) |
-| `sidebar.archived.foot` | Archived pinned to foot | Folded heading always in sight, scrolls in when opened | Layout outside the scrolling list while folded. | build | S | `SidebarView` |
+| `sidebar.archived.foot` | Archived pinned to foot | Not present: tried 8 Nov, undone 9 Nov (cfbf3cb3); Archived sits directly under the other sections | Not ported: the Swift app no longer has it. | drop | none | none |
 | `sidebar.skeleton` | Loading skeleton | Pulsing grey rows until the first list lands | Drawn rows with `Animation`. | build | S | `SidebarView` (`LoadingRows`) |
 | `sidebar.hibernate.presets` | Hibernate presets | Hour, evening, tomorrow, Monday, until restart | gpui-kit menu, from the snooze logic. | kit | S | `SidebarView`, `Snooze` |
 | `sidebar.hibernate.pick` | Pick a time | Calendar and time sheet | gpui-kit sheet with a calendar and time field drawn by us (unverified that a date picker exists). | build | M | `SidebarView` (`SnoozePicker`) |
@@ -219,7 +219,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `composer.textbox` | Text box | Multi-line, grows, undo, wrap, per-thread drafts | `Textarea`, tested early with IME and dictation (XIM on X11, text-input on Wayland). | kit | L | `ComposerView` (`ComposerTextView`) |
 | `composer.return` | Return, Shift-Return | Send, new line | Key bindings on `Textarea`. | build | S | `ComposerView` |
 | `composer.listcontinue` | List continuation | "2. " after "1. x", empty item ends it, one undo | Port the rule on `Textarea` (unverified that it can make one undo step). | build | S | `ComposerView` (`insertLineContinuingList`) |
-| `composer.picturechips` | Picture chips | Paste, drop or + goes in at the cursor, thumbnails over the words | Risk: stock `Textarea` has no inline pills, Ghostex had to fork it for them, and pasted HEIC or TIFF needs decoding. | hard | L | `ComposerView`, `PictureChips` |
+| `composer.picturechips` | Picture chips | Paste, drop or + goes in at the cursor, thumbnails over the words | Stock since gpui-kit 0.9.0: inline tokens on `TextareaState` (`InlineToken`), atomic in editing and undo, drawn by our own renderer. Ghostex forked for this before they existed. The runner converts pasted HEIC and TIFF (`media.import`). | kit | L | `ComposerView`, `PictureChips` |
 | `composer.chiphover` | Chip hover and × | Peek, remove chip and picture | `Popover` on hover and a drawn ×, on top of `composer.picturechips`. | build | S | `ComposerView` |
 | `composer.chipcopy` | Copy or cut chips | Paste brings the pictures back | Keep chip data in app memory, matched to the plain text on the clipboard, so no private pasteboard type is needed. | build | S | `ComposerView` |
 | `composer.filedrop` | File path drop | Video, PDF, folder go in as a path | GPUI file drop, on every OS. | kit | S | `ComposerView`, `DroppedFiles` |
@@ -231,7 +231,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `composer.account` | Account chip | When not using pools | `Popover`. | kit | M | `ComposerControls` (`AccountPickerView`) |
 | `composer.modelpicker` | Model picker | Search, provider rail, logos, Older, Effort, Speed, Unpin | Custom content in a `Popover`, with `Input` for search. | build | L | `ComposerControls` (`ModelPickerView`), `ModelPicker` |
 | `composer.permission` | Permission chip | Full access, Ask, Auto, Plan | gpui-kit menu. | kit | S | `ComposerControls` (`permissionMenu`) |
-| `composer.contextring` | Context ring | Fill ring, orange near full, popover with tokens, login, cost | Drawn ring and `Popover`. | build | S | `ComposerControls` (`ContextRing`, `ContextPopover`) |
+| `composer.contextring` | Context ring | Fill ring, orange near full, popover with tokens, login, cost; on a Claude thread, Claude's breakdown of what fills it (`threads.contextUsage`: stacked bar, a row per category, deferred tools, its age and a refresh button) | Drawn ring and `Popover`. | build | S | `ComposerControls` (`ContextRing`, `ContextPopover`) |
 | `composer.send` | Send and Stop | Send, Stop (⌘.), spinner when starting | Drawn button with the busy pattern. | build | S | `ComposerControls` (`SendButton`) |
 | `composer.schedulefromsend` | Schedule from send | Right-click Send | gpui-kit menu. | kit | S | `ComposerControls` |
 | `composer.editing` | Editing banner | Cancel returns the old draft | Drawn. | build | S | `ComposerView` (`EditingBanner`) |
@@ -248,6 +248,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | ID | Feature | What it does | How in GPUI | Route | Size | Swift |
 |---|---|---|---|---|---|---|
 | `card.done` | Done card | Archive, Or carry on list, tick and ? | Drawn card with `TextView`. | build | M | `ComposerCard`, `RowRenderer` (`asksText`) |
+| `composer.recap` | Recap box | Above the message box on a thread quiet for 12 hours: what it's for, where it stands, × to put away | Drawn box from `recap`, same rule as `Recap.swift`. | build | S | `RecapBox` |
 | `card.needsyou` | Needs you card | Outlined asks, button rows | Drawn card with blocks for each ask, holding its thread identity (a security fix). | build | L | `ComposerCard`, `RowRenderer` |
 | `card.paging` | Paging | ‹ 1 of 3 ›, moves on after a pick | Drawn, with a slide from `Animation`. | build | S | `ComposerCard` (`CardDeck`) |
 | `card.collapse` | Collapse | Chevron to heading | Drawn. | build | S | `ComposerCard` (`CardCollapseButton`) |
@@ -326,6 +327,8 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | ID | Feature | What it does | How in GPUI | Route | Size | Swift |
 |---|---|---|---|---|---|---|
 | `terminal.panel` | Terminal panel | Full emulator, per-thread shell, ⌘J, New Shell | `alacritty_terminal` drawn as our own GPUI element, as Ghostex does with libghostty-vt. | build | L | `TerminalPanel` |
+| `cards.run` | Run on the card | An ask with a command shows it whole with Run, which runs once on the thread's machine and tells the agent | Drawn on the card, pressed through the button RPC. | build | S | `RowRenderer` (`appendRun`), `AppModel+ThreadActions` (`pressRunButton`) |
+| `terminal.putcommand` | Put a command in the Terminal | Play icon on a shell block types it at the prompt, never presses Return, replaces its own unrun command, copies instead if the shell is busy | Icons on the code block, then the terminal's own paste. | build | S | `ShellBlockIcons`, `ShellBlock`, `TerminalPanel` (`Terminals.put`) |
 | `terminal.lifecycle` | Shell lifecycle | Starts on request, stops on archive or quit | Unix pty on macOS and Linux, ConPTY on Windows. | shim | M | `TerminalPanel` (`Terminals`) |
 
 ## 14. Projects, Librarian, Schedules, Usage, Runners, Connectors, Updates
@@ -335,6 +338,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `projects.home` | Projects home | Cards, New project, search | Drawn cards with `Input`. | build | M | `ProjectsHome`, `ProjectCards` |
 | `projects.list` | Projects list | Sidebar view, Archive, Merge, Delete, copy id | gpui-kit list and menus. | kit | M | `ProjectsList`, `ProjectSections` |
 | `projects.page` | Project page | Title, goals, state, notes editing, folders, threads | Drawn page using `Input` and `Textarea`. | build | L | `ProjectPage`, `Projects` |
+| `projects.decisions` | Decisions on the Projects page | Experiment `projectDecisions`: "N decisions" on a project's card and sidebar heading, and at the top of its page a card per thread waiting on a card of asks (title, a line on what it's doing, the asks as the composer draws them, Open thread), answered with the thread's own `threads.send` and showing "Sending to" until the thread takes it | Drawn cards reusing the composer card's asks rendering. | build | M | `ProjectDecisionsView`, `ProjectDecisions` |
 | `projects.icon` | Project icon | Choose or librarian's | GPUI path prompt, with Reveal going through the open gate. | kit | S | `ProjectPage`, `ProjectIconView` |
 | `projects.tasks` | Tasks board page | Status columns from Notion | Drawn columns. | build | M | `ProjectPage` (`TasksSection`) |
 | `projects.newthread` | New thread in project | "In" chip | Drawn chip. | build | S | `DetailView` (`NewThreadProjectChip`) |
@@ -394,6 +398,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `menu.thread` | Thread menu | Archive, Hibernate submenu, Stop, Copy Transcript, Show Inbox, Scheduled, Projects, Librarian, Hibernating, Archived | `set_menus`, as `menu.app`. | kit | S | `ThreadbearApp` |
 | `menu.help` | Help menu | Take the Tour, Finish Setting Up | `set_menus`, as `menu.app`. | kit | S | `ThreadbearApp` |
 | `nav.copytranscript` | Copy transcript | Markdown | Port `MarkdownExport`, with GPUI's clipboard. | build | S | `ThreadSession`, `MarkdownExport` |
+| `nav.shortcuts` | Keyboard shortcuts | The 22 defaults, kept in `shortcuts.json` and watched live | `threadbear-core`'s `shortcuts` for the rules; GPUI key bindings rebound when the file changes. | build | S | `AppShortcuts`, `Shortcuts` |
 
 **The 22 default bindings:** New Thread ⌘N, Archive ⌘E, Hibernate (none), Stop ⌘., Copy Transcript ⇧⌘C, Back ⌘[, Forward ⌘], Next Inbox ⌥⌘↓, Inbox ⌘1, Scheduled ⌘2, Projects ⌘3, Librarian ⌘4, Hibernating and Archived (none), Settings ⌘,, Zoom ⌘= ⌘- ⌘0, Threads ⌃⌘S, Panels ⌥⌘P, Terminal ⌘J, Reset Layout (none). `shortcuts.json` is watched live.
 
@@ -450,8 +455,8 @@ Size is `none` throughout: the planning docs don't size these, and work the app 
 | `planned.acp.gaps` | ACP gaps | Usage readings, sandbox, rewind and CLI updates are missing for some providers | Hide those controls per provider, from `ProviderInfo`. | build | none | none |
 | `planned.connectors.google` | Google in connectors | A guided step for Google in the connectors flow | A step in `connectors.panel` (status of this work not checked). | build | none | none |
 | `planned.sync.remotebodies` | Other machines' tool output | Tool output, diffs and pictures stay on that Mac for now | `transcript.heldback` fetches them today, and `sync.full` lifts the limit. | build | none | none |
-| `planned.exp.labreview` | Lab review (`labReview`) | Another provider reviews code changes | No new UI: the thread hibernates and a note row links the review. | build | none | none |
-| `planned.exp.richblocks` | Rich blocks (`richBlocks`) | Agents are told about mermaid and html blocks | Needs `rich.mermaid` and `rich.html` in the web runtime and their sandbox. | web | none | none |
+| `planned.exp.labreview` | Lab review (`labReview` setting) | Another provider reviews code changes; standard since 10 Nov, with a switch in Settings > General | The thread hibernates and a note row links the review; the settings window needs the Code review switch. | build | none | none |
+| `planned.exp.richblocks` | Rich blocks | Agents are told about mermaid and html blocks (standard since 10 Nov) | Needs `rich.mermaid` and `rich.html` in the web runtime and their sandbox. | web | none | none |
 | `planned.exp.schedulechecks` | Schedule checks (`scheduleChecks`) | A shell check gates a schedule run | Agents write the `check` field, and `schedule.editor` must keep it on save (unverified how saves treat a missing field). | build | none | none |
 | `planned.exp.looseends` | Loose ends (`looseEnds`) | "Still open" and "Coming back" on the done card | Added sections in `card.done`. | build | none | none |
 | `planned.exp.replybuttons` | Reply buttons (`replyButtons`) | Pills in replies that agents create and update | `rich.replybuttons`, gated on the experiment. | build | none | none |

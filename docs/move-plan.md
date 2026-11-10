@@ -19,7 +19,8 @@ over"), and step 6's Later list has this as `move_thread` with a runner.
   both filled in, and says why. **Move** starts it.
 - The row stays where it is and shows "Moving to cloud" with a spinner. A
   thread mid-turn shows "Moves to cloud when this turn ends". Messages sent
-  meanwhile wait in its queue and go with it.
+  from the phone meanwhile wait in its queue and go with it; in the Mac app
+  the message box and any open card lock until it lands or is cancelled.
 - When it lands, the row shows the new machine, the transcript has one line
   ("Moved from M5 to cloud, in ~/dev/me/threadbear-threads/slot-1") and the
   next message carries on in the same Claude session there, with the same

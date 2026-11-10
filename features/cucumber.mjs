@@ -8,8 +8,13 @@ const app = process.env.TB_APP ?? 'gpui';
 const pending = process.env.TB_INCLUDE_PENDING ? '' : ` and not @${app}-pending`;
 const os = { darwin: 'mac', win32: 'windows', linux: 'linux' }[process.platform] ?? process.platform;
 
+// Feature files named on the command line (`cucumber-js window.feature:30`) are
+// the run: with `paths` set as well, cucumber-js ran every file anyway, and a
+// one-scenario check took a whole suite's twenty minutes (10 Nov).
+const named = process.argv.slice(2).some((a) => /\.feature(:\d+)*$/.test(a));
+
 export default {
-  paths: ['./*.feature'],
+  paths: named ? [] : ['./*.feature'],
   import: ['./support/*.ts', './steps/*.ts'],
   tags: `not @manual${pending}${process.env.TB_TAGS ? ` and (${process.env.TB_TAGS})` : ''}`,
   format: ['progress', `json:./reports/${app}-${os}.json`],

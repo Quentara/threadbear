@@ -14,6 +14,8 @@ import { providerName } from './providers.ts';
 import { pushFailingText } from './push-failing.ts';
 import type { RestartResult, RunnerStatus } from './restart.ts';
 import type { UpstreamStatus } from './upstream.ts';
+import { forTerminal } from './terminal-text.ts';
+import { localOnly } from './convex-admin.ts';
 
 export const DEV_HELP = `Working on Threadbear itself:
   tb status [--json]              the runner: version, live CLIs, busy threads, a pending restart
@@ -76,7 +78,7 @@ export async function runDev(client: RunnerClient, cmd: string, args: string[], 
         const lines = [`Runner ${hello.runnerVersion}`, busy.length ? `Busy threads: ${busy.length}` : 'Busy threads: none'];
         for (const id of busy) lines.push(`  ${threadLine(id, threads, env.THREADBEAR_THREAD_ID)}`);
         lines.push("This runner predates runner.status and picks it up on its next restart. Don't restart it yourself.");
-        process.stdout.write(lines.join('\n') + '\n');
+        process.stdout.write(forTerminal(lines.join('\n') + '\n'));
         return 0;
       }
       if (f.json) return printJson(s);
@@ -451,7 +453,8 @@ export function formatStatus(s: RunnerStatus, threads: ThreadSummary[], now: num
   if (u) lines.push(formatUpdate(u, now));
   // Said on its own line: it's the thing that sat unnoticed for three days.
   if (u?.followProblem) lines.push(`Not following GitHub's main properly: ${u.followProblem}`);
-  for (const r of s.behindRunners ?? []) lines.push(`${r.name} isn't following GitHub's main properly: ${r.problem}`);
+  // One line each: another runner's heartbeat can't add lines that read as this runner's.
+  for (const r of s.behindRunners ?? []) lines.push(`${oneLineOf(r.name)} isn't following GitHub's main properly: ${oneLineOf(r.problem)}`);
   if (s.upstream && (s.upstream.state !== 'off' || s.upstream.published)) lines.push(formatUpstream(s.upstream, now).split('\n')[0]);
   // A held release is the one thing here that wants doing something about.
   if (s.upstream?.held) lines.push(heldLine(s.upstream.held));
@@ -462,8 +465,13 @@ export function formatStatus(s: RunnerStatus, threads: ThreadSummary[], now: num
   if (u?.launcherChanged) lines.push(`${u.launcherReason ?? 'launch.mjs on main differs from the installed one.'} The user runs ${u.checkout ? `${u.checkout}/runner/` : 'runner/'}scripts/install-runner.sh once nothing is busy.`);
   if (s.macScreen?.fullDiskAccess === false) lines.push('Threadbear Runner has no Full Disk Access here, so macOS can stop and wait for someone to answer a prompt. System Settings > Privacy & Security > Full Disk Access turns it on.');
   if (s.macScreen?.dialogs) lines.push(`${plural(s.macScreen.dialogs, 'dialog', 'dialogs')} waiting on this Mac's screen${s.macScreen.dialogsSince ? `, for ${duration(now - Date.parse(s.macScreen.dialogsSince))}` : ''}. A privacy prompt can hold up other apps until someone answers it.`);
-  return lines.join('\n') + '\n';
+  // Other runners' names and problems (their own heartbeats), thread titles
+  // and reasons are written by others: none of it reaches the terminal as
+  // escape sequences (Daybreak, 10 Nov).
+  return forTerminal(lines.join('\n') + '\n');
 }
+
+const oneLineOf = (text: string): string => text.replace(/\s+/g, ' ').trim();
 
 // The Convex mirror (src/sync.ts), one line.
 function formatSync(y: NonNullable<RunnerStatus['sync']>, now: number): string {
@@ -476,6 +484,8 @@ function formatSync(y: NonNullable<RunnerStatus['sync']>, now: number): string {
   const held = y.schedulesHeld ? `; ${y.schedulesHeld} schedule${y.schedulesHeld === 1 ? '' : 's'} too big (or taken) for this runner's key, so its schedules stay in schedules.json on this Mac (tb logs says which)` : '';
   const rotating = y.ownerKeyRotating ? '; RUNNER_KEY_NEXT is still set, so two main keys work: finish with tb runner rotate-owner --finish' : '';
   // A self-hosted backend can't send phone notifications (docs/self-hosting.md).
+  // A backend on 127.0.0.1 (setup --self-hosted --local): what that leaves out.
+  const local = localOnly(y.url) ? "\nOn this Mac only: the backend listens on 127.0.0.1, so no phone or other Mac can reach it, and the website and share links only open on this Mac (docs/self-hosting.md)." : '';
   const push = y.pushOff ? "\nPhone notifications: off, as this backend can't send them (a self-hosted backend can't use the push relay)." : y.pushFailing ? `\n${pushFailingText(y.pushFailing)}` : '';
   const f = y.full;
   const full = f
@@ -483,7 +493,7 @@ function formatSync(y: NonNullable<RunnerStatus['sync']>, now: number): string {
       ? '\nFull sync: on, but the backend is too old to take tool output yet.'
       : `\nFull sync: on: ${plural(f.bodies, 'tool', 'tools')} (${Math.round(f.bytes / 1024)} KB) sent since this runner started, ${f.withheld} held back as they can hold secrets${f.unsent ? `, ${f.unsent} not sent` : ''}${f.pending ? `, ${f.pending} waiting` : ''}.`
     : '';
-  return `Convex mirror: on${where} as ${y.name ?? y.runnerId ?? 'this runner'}${last}${pending}${behind}${held}${rotating}${push}${full}`;
+  return `Convex mirror: on${where} as ${y.name ?? y.runnerId ?? 'this runner'}${last}${pending}${behind}${held}${rotating}${local}${push}${full}`;
 }
 
 // What stands between this runner's threads and the Convex deployment

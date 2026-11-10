@@ -1,3 +1,5 @@
+import path from 'node:path';
+import fs from 'node:fs';
 // One thread, read three ways, to check they agree (scenarios.test.ts):
 //
 //   here    this runner's own events and summary, as the Mac app reads them
@@ -18,6 +20,7 @@ import { ConvexSync } from '../../src/sync.ts';
 import { Relay } from '../../src/relay.ts';
 import { nullLogger } from '../../src/log.ts';
 import type { ImageRef } from '../../src/protocol.ts';
+import type { Post } from '../../src/sync.ts';
 
 const OWNER = 'owner-key';
 const TOKEN = 'phone-token';
@@ -25,11 +28,12 @@ const RUNNER = 'bruce0000001';
 const END_TURN = 'mcp__threadbear__end_turn';
 
 // What a person sees of a thread, on any of the three: its card and its messages.
-export type Ask = { action: string; options?: string[]; optionNotes?: string[]; suggested?: number; links?: { title: string; url: string }[] };
+export type Ask = { action: string; options?: string[]; optionNotes?: string[]; suggested?: number; links?: { title: string; url: string }[]; run?: { command: string; buttonId?: string; cwd?: string } };
 export type View = {
   needs?: string;
   asks: Ask[];
   next: string[];
+  recap?: string;
   messages: { role: 'user' | 'assistant'; text: string; pictures: number }[];
 };
 
@@ -40,6 +44,10 @@ export type Play = {
   endTurn(input: Record<string, unknown>): void;
   /** Mike sends a message, with pictures (paths of real files) if any. */
   send(text: string, images?: ImageRef[]): void;
+  /** The librarian writes its note on the thread (with the recap box on). */
+  librarianWrites(text: string, purpose: string): void;
+  /** Turns on Run on the card, for the next end_turn. */
+  runAsks(): void;
 };
 
 export async function threeWays(play: (p: Play) => void | Promise<void>) {
@@ -61,28 +69,8 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
       throw e;
     }
   };
-  const h = makeHarness();
-  const sync = new ConvexSync({ config: { enabled: true, url: 'https://x.convex.cloud', name: 'bruce', runnerId: RUNNER }, key: OWNER, home: h.cfg.home, runner: h.runner, version: '0.1.0+test', release: 'rel1', startedAt: '2026-10-27T00:00:00.000Z', clock: h.clock, log: nullLogger, post, upload: async () => 'st' } as never);
-  const { thread } = h.runner.create({ text: 'Start', accountId: 'claude-3' });
-  const s = h.adapter.last;
-  s.init();
-  let n = 0;
-  await play({
-    say: (text) => s.text(`m${++n}`, text),
-    endTurn: (input) => {
-      const id = `e${++n}`;
-      s.out({ kind: 'event', event: { type: 'tool.call', itemId: id, name: END_TURN, kind: 'mcp', title: 'end_turn', input } });
-      s.out({ kind: 'event', event: { type: 'tool.result', itemId: id, ok: true, text: 'ok', truncated: false, images: [] } });
-      s.result('completed');
-    },
-    send: (text, images = []) => {
-      h.runner.send(thread.id, text, images, {});
-      h.adapter.last.init();
-    },
-  });
-  sync.start();
-  await sync.flushNow();
-  await sync.flushNow();
+  const { h, sync, ids } = await playInto(post as never, { key: OWNER, runnerId: RUNNER, name: 'bruce' }, [play]);
+  const thread = { id: ids[0]! };
 
   const id = thread.id;
   const at = new Date(h.clock.now()).toISOString();
@@ -100,7 +88,7 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
   const here = (): View => {
     const t = h.runner.get(id);
     const events = h.runner.events(id, {}).events as Record<string, any>[];
-    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), messages: messagesOf(events) };
+    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), recap: t.recap, messages: messagesOf(events) };
   };
   const viaRelay = async (): Promise<View> => {
     // A turn's end is held back until that runner's row has said so for 4 s.
@@ -108,15 +96,72 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     h.clock.advance(5000);
     const { events } = (await relay.call(id, 'threads.events', { threadId: id })) as { events: Record<string, any>[] };
     const end = events.filter((e) => e.type === 'turn.completed').at(-1);
-    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], messages: messagesOf(events) };
+    // The sidebar's row, as the Mac reads another runner's thread from it.
+    const rows = (await b.ctx.db.query('threadIndex').collect()) as unknown as { threadId: string; recap?: string }[];
+    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], recap: rows.find((r) => r.threadId === id)?.recap, messages: messagesOf(events) };
   };
   const viaPhone = async (): Promise<View> => {
     const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string }[] };
-    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0 })) };
+    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], recap: r.thread.recap, messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0 })) };
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
   return { views, refused, backend: b, threadId: id };
+}
+
+/**
+ * Plays each of `plays` as a thread on one Runner with a fake CLI, and
+ * writes them all through `post` with that runner's real ConvexSync: the
+ * in-memory backend here, or a real one (scripts/parity-seed.ts). Returns
+ * the threads' ids in order; the caller stops `sync`.
+ */
+export async function playInto(post: Post, runner: { key: string; runnerId: string; name: string }, plays: ((p: Play) => void | Promise<void>)[]) {
+  const h = makeHarness();
+  const sync = new ConvexSync({ config: { enabled: true, url: 'https://x.convex.cloud', name: runner.name, runnerId: runner.runnerId }, key: runner.key, home: h.cfg.home, runner: h.runner, version: '0.1.0+test', release: 'rel1', startedAt: '2026-10-27T00:00:00.000Z', clock: h.clock, log: nullLogger, post, upload: async () => 'st' } as never);
+  const ids: string[] = [];
+  for (const play of plays) {
+    const { thread } = h.runner.create({ text: 'Start', accountId: 'claude-3' });
+    ids.push(thread.id);
+    const s = h.adapter.last;
+    s.init();
+    let n = 0;
+    await play({
+      say: (text) => s.text(`m${++n}`, text),
+      endTurn: (input) => {
+        const id = `e${++n}`;
+        s.out({ kind: 'event', event: { type: 'tool.call', itemId: id, name: END_TURN, kind: 'mcp', title: 'threadbear: end_turn', input } });
+        s.out({ kind: 'event', event: { type: 'tool.result', itemId: id, ok: true, text: 'ok', truncated: false, images: [] } });
+        s.result('completed');
+      },
+      send: (text, images = []) => {
+        h.runner.send(thread.id, text, images, {});
+        h.adapter.last.init();
+      },
+      runAsks: () => {
+        const file = path.join(h.cfg.home, 'runner.json');
+        const json = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+        fs.writeFileSync(file, JSON.stringify({ ...json, experiments: { ...json.experiments, runAsks: true } }));
+      },
+      librarianWrites: (text, purpose) => {
+        const file = path.join(h.cfg.home, 'runner.json');
+        const json = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+        fs.writeFileSync(file, JSON.stringify({ ...json, experiments: { ...json.experiments, recapBox: true } }));
+        h.clock.advance(6000); // past the runner's short memory of the switch
+        h.runner.setBrief(thread.id, text, purpose);
+      },
+    });
+  }
+  sync.start();
+  await sync.flushNow();
+  await sync.flushNow();
+  // The sidebar's index (thread-index.ts), which another runner lists the
+  // threads from, writes on a timer of its own; the fake clock only moves
+  // when told.
+  for (let i = 0; i < 5; i++) {
+    h.clock.advance(1500);
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  return { h, sync, ids };
 }
 
 // The done card's follow-ups: the last turn's end.

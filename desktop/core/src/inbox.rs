@@ -1,7 +1,7 @@
-// The sidebar's sections: a Rust port of the website's web/src/sections.ts
-// (the Mac's ThreadSections and the phone's InboxSections follow the same
-// rules). The TypeScript apps share that file; this one can't, so the two
-// must change together.
+// The sidebar's sections: the rules of the Mac's ThreadSections
+// (app/Sources/ThreadbearCore/Threads/ThreadSections.swift), which the phone's
+// InboxSections and the website's web/src/sections.ts follow too. A summary
+// is what `threads.list` gives; what a row says about it is in `sidebar.rs`.
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -14,6 +14,15 @@ pub struct ThreadSummary {
     pub provider: String,
     pub model: Option<String>,
     pub model_in_use: Option<String>,
+    pub account_id: String,
+    /// The pool that picks its login; none when it's pinned to `account_id`.
+    pub pool_id: Option<String>,
+    pub effort: Option<String>,
+    pub effort_in_use: Option<String>,
+    pub permission_mode: String,
+    pub context_tokens: Option<i64>,
+    pub context_window: Option<i64>,
+    pub cost_usd: Option<f64>,
     pub status: String,
     pub needs_you: bool,
     pub needs: Option<String>,
@@ -23,71 +32,145 @@ pub struct ThreadSummary {
     pub last_activity_at: String,
     pub snoozed_until: Option<String>,
     pub snoozed_until_restart: Option<bool>,
+    pub snoozed_until_release: Option<bool>,
+    pub wake_when: Option<Value>,
+    pub waiting_on: Option<Vec<Value>>,
+    pub woke: Option<Value>,
     pub starred_at: Option<String>,
     pub archived_at: Option<String>,
     pub waiting_for_room: Option<Value>,
+    pub waiting_for_network: Option<Value>,
     /// Kept as it came: the reducer reads its own `BackgroundTask` from these.
     pub background: Option<Vec<Value>>,
+    pub subagents: Option<Vec<Value>>,
     pub projects: Option<Vec<Project>>,
+    pub started_by: Option<Value>,
+    pub schedule: Option<Value>,
+    pub moving: Option<Value>,
+    pub asked: Option<String>,
     pub preview: String,
     pub last_seq: u64,
     pub last_seen_seq: u64,
+    /// The rail's panel buttons (`ThreadSummary.panels`) and Patches, as they
+    /// came: the window shell draws a button for each. Kept as they came and
+    /// decoded leniently on demand (highlights.rs), as `background` and
+    /// `subagents` are.
+    pub panels: Option<Vec<Value>>,
+    pub actions: Option<Vec<Value>>,
+    pub patches: Option<Vec<Value>>,
+    pub hooks: Option<Vec<Value>>,
+    /// Moves when a pin, a removal or a brief changes what `threads.highlights`
+    /// would answer, without a new event.
+    pub highlights_at: Option<String>,
+    /// The thread's worktree, while it has one (protocol "Worktrees").
+    pub worktree: Option<Value>,
+    pub on_old_runner: Option<bool>,
+    /// Sharing (protocol "Sharing"): `{ access, slug }`.
+    pub share: Option<Value>,
+    /// Which other runner it lives on; none for this Mac's own threads.
+    /// Never on the wire: a runner's summaries are all its own (Swift
+    /// `ThreadSummary.runnerId`), and `remote::summary` sets it.
+    #[serde(skip)]
+    pub runner_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct OpenAsk {
     pub action: String,
+    #[serde(rename = "where")]
+    pub place: Option<String>,
     pub why: Option<String>,
     pub options: Option<Vec<String>>,
     pub suggested: Option<usize>,
     pub ticked: Option<bool>,
 }
 
+impl OpenAsk {
+    /// Where it's to be done, in plain words (`plainWhere`).
+    pub fn where_text(&self) -> Option<String> {
+        self.place.as_deref().filter(|w| !w.is_empty()).map(crate::sidebar::preview_plain)
+    }
+}
+
+/// One of a thread's projects (`ThreadProject`): who put it there, and the
+/// librarian's reason, behind the project's ⓘ in Highlights.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct Project {
     pub id: String,
     pub title: String,
+    /// "mike", "agent" or "librarian".
+    pub by: String,
+    pub pinned: bool,
+    pub why: Option<String>,
 }
 
 impl ThreadSummary {
+    /// Newer events than Mike has seen.
     pub fn unread(&self) -> bool {
         self.last_seq > self.last_seen_seq
     }
+    /// A turn is running or starting (ThreadStatus.isBusy).
+    /// A turn is underway or about to be (Swift `ThreadStatus.isBusy`),
+    /// waiting on a permission card included: that turn can still be stopped,
+    /// and the composer offered Send instead of Stop for one (10 Nov).
     pub fn busy(&self) -> bool {
-        self.status == "running" || self.status == "starting"
+        matches!(self.status.as_str(), "running" | "starting" | "waiting")
     }
-    /// Sub-agents or a workflow still going: not waiting on Mike yet,
-    /// whatever its last turn said (docs/protocol.md, "Needs you").
-    pub fn working(&self) -> bool {
+    /// The background list, read leniently: a malformed entry is left out.
+    pub fn background_tasks(&self) -> Vec<BackgroundTask> {
+        self.background.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+    }
+    /// Sub-agents or a workflow still at work, or just finished with their
+    /// result still to be read (Swift `agentsStillWorking`).
+    pub fn agents_still_working(&self) -> bool {
         self.background.iter().flatten().any(|b| matches!(b.get("kind").and_then(Value::as_str), Some("agent") | Some("other")))
     }
-    /// What `needs` the website's rows see: left out while sub-agents run.
-    fn needs_seen(&self) -> Option<&str> {
-        if self.working() { None } else { self.needs.as_deref() }
+    /// The first name for `agents_still_working`, kept for the thread pane.
+    pub fn working(&self) -> bool {
+        self.agents_still_working()
     }
-    fn review_waiting(&self) -> bool {
-        self.pending_reviews.unwrap_or(0) > 0 && !self.busy() && !self.working()
+    /// Background work and no turn to show for it (Swift
+    /// `isWorkingInBackground`): any kind of job counts here, a shell one too.
+    pub fn working_in_background(&self) -> bool {
+        self.background.as_ref().is_some_and(|b| !b.is_empty()) && !self.busy()
+    }
+    pub fn said_done(&self) -> bool {
+        self.needs.as_deref() == Some("nothing")
+    }
+    /// A design review waiting on Mike, once the thread has finished working
+    /// (Swift `reviewWaiting`).
+    pub fn review_waiting(&self) -> bool {
+        self.pending_reviews.unwrap_or(0) > 0 && !self.busy() && self.background.as_ref().is_none_or(|b| b.is_empty())
     }
     fn needs_answer(&self) -> bool {
         self.status == "waiting"
     }
-    fn waiting_on_mike(&self) -> bool {
-        if self.needs_seen() != Some("you") || self.busy() {
+    /// The last turn ended asking Mike for something and he hasn't done it
+    /// all yet (Swift `waitingOnMike`, whose comments say why sub-agents
+    /// still working count differently from a shell job).
+    pub fn waiting_on_mike(&self) -> bool {
+        if self.needs.as_deref() != Some("you") || self.busy() || self.agents_still_working() {
             return false;
         }
         let asks = self.asks.as_deref().unwrap_or(&[]);
         asks.is_empty() || asks.iter().any(|a| a.ticked != Some(true))
     }
+    /// Snoozed past `now_ms`. A restart snooze carries a far-off `snoozedUntil` too.
     pub fn snoozed(&self, now_ms: i64) -> bool {
-        self.snoozed_until_restart == Some(true) || self.snoozed_until.as_deref().and_then(parse_ms).is_some_and(|t| t > now_ms)
+        self.snoozed_until_restart == Some(true) || self.snoozed_until_ms().is_some_and(|t| t > now_ms)
     }
-    fn urgency(&self) -> u8 {
+    pub fn snoozed_until_ms(&self) -> Option<i64> {
+        self.snoozed_until.as_deref().and_then(parse_ms)
+    }
+    /// How much an inbox thread wants Mike, lowest first: InboxUrgency, whose
+    /// cases are shared with the phone and the website (and tested below).
+    pub fn urgency(&self) -> u8 {
         let broken = self.status == "error" || self.status == "stopped";
         if self.review_waiting() || self.needs_answer() {
             0
-        } else if self.needs_you || self.unread() {
+        } else if self.needs_you {
             if broken { 1 } else { 2 }
         } else if broken {
             3
@@ -95,17 +178,104 @@ impl ThreadSummary {
             4
         }
     }
+    /// Wants Mike (InboxUrgency.counts): what the Dock badge would count.
     pub fn wants_you(&self) -> bool {
-        self.status == "waiting" || self.needs_you || (self.needs_seen() == Some("you") && !self.busy())
+        self.urgency() <= 2
     }
+    /// The line under a row's title: its projects, or its folder (`ProjectMark.place`).
     pub fn place(&self) -> String {
         match self.projects.as_deref() {
-            Some([first, ..]) => first.title.clone(),
+            Some(projects) if !projects.is_empty() => projects.iter().map(|p| if p.title.is_empty() { "Untitled project" } else { p.title.as_str() }).collect::<Vec<_>>().join(", "),
             _ => folder_name(&self.cwd),
         }
     }
     pub fn activity_ms(&self) -> i64 {
         parse_ms(&self.last_activity_at).unwrap_or(0)
+    }
+    pub fn archived_ms(&self) -> Option<i64> {
+        self.archived_at.as_deref().and_then(parse_ms)
+    }
+    pub fn is_archived(&self) -> bool {
+        self.archived_at.is_some()
+    }
+    pub fn is_starred(&self) -> bool {
+        self.starred_at.is_some()
+    }
+    pub fn waiting_for_room_until_ms(&self) -> Option<i64> {
+        self.waiting_for_room.as_ref()?.get("until")?.as_str().and_then(parse_ms)
+    }
+    /// The thread's panels (a page, a picture or a list), read leniently.
+    pub fn panels(&self) -> Vec<crate::highlights::Panel> {
+        self.panels.iter().flatten().filter_map(crate::highlights::Panel::from_value).collect()
+    }
+    /// Its action chips, read leniently.
+    pub fn actions(&self) -> Vec<crate::highlights::Action> {
+        self.actions.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+    }
+    /// The patches that apply to it, read leniently.
+    pub fn patches(&self) -> Vec<crate::highlights::PatchInfo> {
+        self.patches.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+    }
+    pub fn hooks(&self) -> Vec<crate::highlights::HookInfo> {
+        self.hooks.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+    }
+    /// A thread on another runner, shown here (`isRemote`).
+    pub fn is_remote(&self) -> bool {
+        self.runner_id.is_some()
+    }
+}
+
+/// One item of `ThreadSummary.background` (Swift `BackgroundTask`).
+#[derive(Clone, Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct BackgroundTask {
+    /// "agent", "shell", "monitor" or "other"; anything else reads as "other".
+    pub kind: String,
+    pub description: String,
+    pub finished: bool,
+}
+
+/// How the Inbox section is ordered, from the sort menu on its heading
+/// (Swift `InboxOrder`). Newest and oldest ignore urgency.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub enum InboxOrder {
+    #[default]
+    NeedsYou,
+    Newest,
+    Oldest,
+}
+
+impl InboxOrder {
+    pub const ALL: [InboxOrder; 3] = [InboxOrder::NeedsYou, InboxOrder::Newest, InboxOrder::Oldest];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            InboxOrder::NeedsYou => "Needs you first",
+            InboxOrder::Newest => "Newest first",
+            InboxOrder::Oldest => "Oldest first",
+        }
+    }
+
+    /// The name scripts and the Swift app use for it.
+    pub fn name(self) -> &'static str {
+        match self {
+            InboxOrder::NeedsYou => "needsYou",
+            InboxOrder::Newest => "newest",
+            InboxOrder::Oldest => "oldest",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<InboxOrder> {
+        InboxOrder::ALL.into_iter().find(|o| o.name() == name)
+    }
+
+    /// Its icon in the sort menu.
+    pub fn symbol(self) -> &'static str {
+        match self {
+            InboxOrder::NeedsYou => "hand.raised",
+            InboxOrder::Newest => "arrow.down",
+            InboxOrder::Oldest => "arrow.up",
+        }
     }
 }
 
@@ -116,30 +286,48 @@ pub struct Section {
     pub rows: Vec<ThreadSummary>,
 }
 
+/// Sections in the Mac app's default order (`ThreadSections.build`).
 pub fn sections<'a>(threads: impl IntoIterator<Item = &'a ThreadSummary>, now_ms: i64) -> Vec<Section> {
+    sections_ordered(threads, now_ms, InboxOrder::NeedsYou)
+}
+
+/// `ThreadSections.build`: where each thread goes and the order within each
+/// heading. A thread with a schedule due to message it (`wakes` in the Swift
+/// app) stays in the Inbox here until this app loads schedules.
+pub fn sections_ordered<'a>(threads: impl IntoIterator<Item = &'a ThreadSummary>, now_ms: i64, order: InboxOrder) -> Vec<Section> {
     let (mut starred, mut inbox, mut running, mut hibernating, mut archived) = (vec![], vec![], vec![], vec![], vec![]);
     for t in threads {
-        if t.archived_at.is_some() {
+        if t.is_archived() {
             archived.push(t.clone());
-        } else if t.starred_at.is_some() {
+        } else if t.is_starred() {
             starred.push(t.clone());
         } else if t.snoozed(now_ms) {
             hibernating.push(t.clone());
-        } else if t.review_waiting() || t.needs_answer() || t.waiting_on_mike() || (t.needs_you && !t.working()) {
+        } else if t.review_waiting() || t.needs_answer() || t.waiting_on_mike() || (t.needs_you && !t.working_in_background()) {
             inbox.push(t.clone());
-        } else if t.busy() || t.working() {
+        } else if t.busy() || t.working_in_background() {
             running.push(t.clone());
         } else {
             inbox.push(t.clone());
         }
     }
-    let newest_first = |a: &ThreadSummary, b: &ThreadSummary| b.activity_ms().cmp(&a.activity_ms()).then_with(|| a.id.cmp(&b.id));
+    // Sorted by keys worked out once per thread: a time is text to be read,
+    // and comparing two threads by reading theirs again each time cost the
+    // app more than drawing a frame does (the activity bar's badge counts the
+    // Inbox with this on every frame).
+    use std::cmp::Reverse;
+    let newest_first = |t: &ThreadSummary| (Reverse(t.activity_ms()), t.id.clone());
     starred.sort_by(|a, b| a.starred_at.cmp(&b.starred_at).then_with(|| a.id.cmp(&b.id)));
-    inbox.sort_by(|a, b| a.urgency().cmp(&b.urgency()).then_with(|| newest_first(a, b)));
-    running.sort_by(newest_first);
-    let wakes = |t: &ThreadSummary| t.snoozed_until.as_deref().and_then(parse_ms).unwrap_or(i64::MAX);
-    hibernating.sort_by(|a, b| wakes(a).cmp(&wakes(b)).then_with(|| newest_first(a, b)));
-    archived.sort_by(|a, b| b.archived_at.cmp(&a.archived_at).then_with(|| a.id.cmp(&b.id)));
+    match order {
+        InboxOrder::NeedsYou => inbox.sort_by_cached_key(|t| (t.urgency(), newest_first(t))),
+        InboxOrder::Newest => inbox.sort_by_cached_key(newest_first),
+        InboxOrder::Oldest => inbox.sort_by_cached_key(|t| (t.activity_ms(), Reverse(t.id.clone()))),
+    }
+    running.sort_by_cached_key(newest_first);
+    // A snooze's time; back on restart has none, so it goes last.
+    let wakes = |t: &ThreadSummary| t.snoozed_until_ms().filter(|_| t.snoozed_until_restart != Some(true)).unwrap_or(i64::MAX);
+    hibernating.sort_by_cached_key(|t| (wakes(t), newest_first(t)));
+    archived.sort_by_cached_key(|t| (Reverse(t.archived_ms()), t.id.clone()));
     [("starred", "Starred", starred), ("inbox", "Inbox", inbox), ("running", "Running", running), ("hibernating", "Hibernating", hibernating), ("archived", "Archived", archived)]
         .into_iter()
         .filter(|(key, _, rows)| !rows.is_empty() || *key == "inbox")
@@ -281,6 +469,15 @@ mod tests {
         assert_eq!(ids(&s, "running"), ["t2"]);
         assert_eq!(ids(&s, "hibernating"), ["t4"]);
         assert_eq!(ids(&s, "starred"), ["t5"]);
+    }
+
+    #[test]
+    fn a_turn_waiting_on_a_permission_card_is_still_busy() {
+        // As Swift's ThreadStatus.isBusy: it can be stopped, and isn't idle.
+        assert!(thread(1, json!({ "status": "waiting" })).busy());
+        assert!(thread(1, json!({ "status": "running" })).busy());
+        assert!(!thread(1, json!({ "status": "idle" })).busy());
+        assert!(!thread(1, json!({ "status": "error" })).busy());
     }
 
     #[test]

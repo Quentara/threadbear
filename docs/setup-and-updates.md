@@ -77,7 +77,9 @@ Archive moved off Convex because of reads and writes, not storage).
 your own machine, served over Tailscale. It's a setting in setup, not a fork. The phone
 then needs Tailscale on, and it can't reach a sleeping Mac unless the backend lives on an
 always-on machine. Built 7 Nov (docs/self-hosting.md): `setup --self-hosted`, with no
-phone notifications, as the push relay only reaches Convex cloud.
+phone notifications, as the push relay only reaches Convex cloud. Since 10 Nov,
+`setup --self-hosted --local` keeps it on this Mac's loopback with no Tailscale, for
+someone whose work keeps them on its own tailnet: no phone and no second Mac then.
 
 ### 2.2 Setup: one command
 
@@ -274,7 +276,7 @@ it public is Mike's call, once he's happy for others to use it.
 8. Done 7 Nov: self-hosted backend as a setup option (`setup --self-hosted`,
    docs/self-hosting.md). Docker on the same Mac, served with `tailscale serve`,
    phone notifications off. Convex cloud stays the default and the one we
-   recommend everywhere.
+   recommend everywhere. 10 Nov: `--local`, the same on loopback only, no Tailscale.
 
 Steps 1 and 2 are useful to Mike straight away. 3 to 5 are what make it installable by
 other people. The landing page already says "Threadbear makes a Convex deployment in

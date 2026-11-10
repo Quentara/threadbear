@@ -313,6 +313,18 @@ final class ThreadSession {
         }
     }
 
+    /// Sent while a restart is under way: a drop as the old runner closes
+    /// doesn't take its bubble away before the send hears of it and holds
+    /// it for the new runner (AppModel.post). No note under it yet.
+    func keepThroughDrop(_ id: String) {
+        guard hasPending(id) else { return }
+        resending.insert(id)
+    }
+
+    /// Messages waiting to go again on a new runner: if the app quits
+    /// first, their words go in the box for next time (DraftStore).
+    var heldForResend: [PendingMessage] { pending.filter { resending.contains($0.id) } }
+
     /// The new runner is up and it's going now: the spinner again, and
     /// the note goes.
     func sendingAgain(_ id: String) {

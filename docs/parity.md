@@ -16,16 +16,17 @@ website, which read every thread through Convex.
 | Following it live | `threads.subscribe` | Yes | Yes |
 | Opening a tool's output | `threads.heldBody` | Yes | Yes |
 | Sending a message, pictures too | `threads.send` | Yes | Yes |
+| Stop | `threads.interrupt` | Yes | Yes |
 | Rename, archive, star, hibernate | `threads.update` | Yes | Yes |
 | Marking it read | `threads.markSeen` | Yes | Yes |
 | Sharing by link | `threads.share` | Yes | Yes |
 | Answering an approval or a question | `approvals.respond` | Yes | Yes |
 | Answering a secret card | `secrets.answer` | Yes | Yes |
-| Stop | `threads.interrupt` | Yes | No: The phone has no Stop yet. |
+| Pressing a reply button | `buttons.press` | Yes | Yes |
+| A message's reply buttons | `buttons.list` | Yes | Yes |
+| The slash command list | `threads.commands` | Yes | Yes |
 | Hibernate until something happens | `threads.hibernateWhen` | Yes | No: The phone hibernates until a time only. |
-| Pressing a reply button | `buttons.press` | No: Not sent through Convex from the Mac yet. | Yes |
-| A message's reply buttons | `buttons.list` | No: Not read through Convex on the Mac yet. | Yes |
-| The slash command list | `threads.commands` | No: Not asked through Convex from the Mac yet. | Yes |
+| What fills its context | `threads.contextUsage` | No: Asked of the CLI on that Mac; the ring's popover there shows the totals only. | No: Not on the phone. |
 | Ticking an ask on the card | `threads.tickAsk` | No: Ticks stay on that Mac. | No: The phone sends picks with its answer instead. |
 | Editing a message | `threads.edit` | No: It undoes file changes on that Mac, so it waits for a way to show what it undid. | No: Not on the phone. |
 | Deleting it | `threads.delete` | No: Done on that Mac. | No: Not on the phone. |

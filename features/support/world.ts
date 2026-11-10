@@ -4,12 +4,27 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { sleep, type Driver, type Dump, type Row, type Thread } from './driver.ts';
 import { GpuiDriver } from './gpui.ts';
+import { longThreadFolder } from './long-thread.ts';
 import { SwiftDriver } from './swift.ts';
+
+// Whatever a person running the specs asked for (features/README.md), kept
+// apart from the long-thread scenarios setting it for themselves.
+const startingFixtures = process.env.TB_MOCK_FIXTURES;
 
 setDefaultTimeout(90_000);
 
 export class ThreadbearWorld extends World {
   app: Driver;
+  /** What the last right-click on a sidebar row offered. */
+  menuTitles?: string[];
+  /** What the last command answered, for a step to read back. */
+  lastAnswer?: string;
+  /** A row's position a scenario wants to compare with later. */
+  notedIndex?: number;
+  /** A row and its height, a scenario wants to compare with later. */
+  notedRow?: { id: string; height: number };
+  /** What the last `share` command said. */
+  shareResult?: string;
 
   constructor(options: IWorldOptions) {
     super(options);
@@ -55,7 +70,33 @@ export function describe(d: Dump): string {
 
 setWorldConstructor(ThreadbearWorld);
 
-Before(async function (this: ThreadbearWorld) {
+// The loading rows only show while the list is on its way, so that scenario's
+// mock answers late. Before the app starts, hence above the Before below.
+Before({ tags: '@sidebar.skeleton' }, () => {
+  process.env.THREADBEAR_MOCK_LIST_DELAY_MS = '9000';
+  process.env.TB_DEV_APP_NO_READY = '1';
+});
+After({ tags: '@sidebar.skeleton' }, () => {
+  delete process.env.THREADBEAR_MOCK_LIST_DELAY_MS;
+  delete process.env.TB_DEV_APP_NO_READY;
+});
+
+Before(async function (this: ThreadbearWorld, { pickle }) {
+  // A scenario about paging needs a thread longer than one page of events.
+  const long = pickle.tags.some((t) => t.name === '@long-thread');
+  if (long) process.env.TB_MOCK_FIXTURES = longThreadFolder();
+  else if (startingFixtures === undefined) delete process.env.TB_MOCK_FIXTURES;
+  // A scenario about other machines needs the mock's bruce threads, which
+  // both drivers leave out otherwise (TB_MOCK_NO_REMOTE in gpui.ts, swift.ts).
+  if (pickle.tags.some((t) => t.name === '@remote-threads')) process.env.TB_MOCK_REMOTE = '1';
+  else delete process.env.TB_MOCK_REMOTE;
+  // The recap box needs a thread that has sat for a while.
+  if (pickle.tags.some((t) => t.name === '@quiet-thread')) process.env.TB_MOCK_QUIET = '1';
+  else delete process.env.TB_MOCK_QUIET;
+  // Decisions on the Projects page: the mock's cards of asks in Threadbear,
+  // and the projectDecisions experiment on in its hello.
+  if (pickle.tags.some((t) => t.name === '@project-decisions')) process.env.TB_MOCK_DECISIONS = '1';
+  else delete process.env.TB_MOCK_DECISIONS;
   await this.app.start();
 });
 

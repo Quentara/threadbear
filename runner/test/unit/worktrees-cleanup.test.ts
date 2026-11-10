@@ -408,6 +408,26 @@ test("a worktree's patch swapped for a fifo doesn't hold the runner up: the tear
   assert.deepEqual(lines(log), []);
 });
 
+// Daybreak, 10 Nov (finding 79): the patch committed as a link to /dev/zero
+// is a source with no end; reading it whole to look for "teardown" would
+// fill memory and hold the runner. It's skipped as not a plain file, at once.
+test("a worktree's patch swapped for a link to /dev/zero is skipped at once, without reading it", async () => {
+  const dir = fs.realpathSync(tmpDir('tb-td-'));
+  const log = path.join(dir, 'log');
+  const { main, h } = trustedTeardownRepo(log);
+  const { id, w } = await threadWithWorktree(h, main);
+  const copy = path.join(w.path, '.threadbear/patches/checks.ts');
+  fs.rmSync(copy);
+  fs.symlinkSync('/dev/zero', copy);
+  const started = process.cpuUsage();
+  h.runner.update({ threadId: id, archived: true });
+  await until(() => notes(h, id).some((n) => n.includes(' stay: ')), 'the cleanup');
+  const cpu = process.cpuUsage(started);
+  assert.ok(notes(h, id).some((n) => n.startsWith("Didn't run the worktree's teardown: ")), notes(h, id).join('\n'));
+  assert.deepEqual(lines(log), []);
+  assert.ok(cpu.user + cpu.system < 2_000_000, `cpu ${cpu.user + cpu.system}us`);
+});
+
 test('a setup or teardown that ignores SIGTERM still ends at the timeout, so neither the first turn nor the cleanup waits for ever', async () => {
   const STUCK = `trap '' TERM; while :; do sleep 0.2; done`;
   const td = makeRepo(PATCH(`{ teardown: "${STUCK}" }`));

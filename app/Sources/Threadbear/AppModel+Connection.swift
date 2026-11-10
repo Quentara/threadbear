@@ -300,6 +300,7 @@ extension AppModel {
         threads[threadId] = nil
         Terminals.shared.stop(threadId: threadId)
         drafts[threadId] = nil
+        contextUsage[threadId] = nil
         if let session = sessions.removeValue(forKey: threadId) { session.unsubscribe() }
         if selection == threadId { selection = nil }
         if subagentSelection?.threadId == threadId { subagentSelection = nil }

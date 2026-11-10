@@ -467,7 +467,7 @@ impl ReviewAnswer {
         let (review_id, response) = (review_id?, response?);
         // "Review: <title> (<id>)"
         let head = format!(" ({review_id})");
-        let mut rest = text.strip_prefix("Review: ")?;
+        let mut rest = Self::without_passed_over(text).strip_prefix("Review: ")?;
         let close = rest.find(&head)?;
         let title = rest[..close].to_owned();
         rest = &rest[close + head.len()..];
@@ -514,6 +514,19 @@ impl ReviewAnswer {
             rest = &rest[found + tail.len()..];
         }
         (rest.is_empty() && !lines.is_empty()).then_some(ReviewAnswer { lines })
+    }
+
+    /// The runner's last paragraph names the options he passed over, for the
+    /// agent writing follow-ups (`PASSED_OVER_TAIL` in runner/src/reviews.ts);
+    /// his bubble leaves it out.
+    pub const PASSED_OVER_TAIL: &'static str =
+        "Don't offer one of these later (a next step, a follow-up) as if it were new: say it's one they passed over.";
+
+    fn without_passed_over(text: &str) -> &str {
+        match text.strip_suffix(Self::PASSED_OVER_TAIL).and_then(|_| text.rfind("\n\nPassed over: ")) {
+            Some(start) => &text[..start],
+            None => text,
+        }
     }
 
     // Agents often title options "A: Summary first".

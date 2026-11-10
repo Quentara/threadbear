@@ -71,6 +71,9 @@ public protocol Backend: Sendable {
     /// Asks the thread's runner for the slash commands it can run (backend
     /// API 62). The list comes back as the command's `commands`.
     func slashCommands(threadId: String) async throws -> String
+    /// Stop (backend API 69): ends the thread's running turn, as Stop on
+    /// the Mac does, through an `interrupt` command for its runner.
+    func interrupt(threadId: String) async throws -> String
     /// Answers keyed by question text, several choices joined with ", ",
     /// as the Mac app sends them. `summary` goes in the transcript.
     func answer(threadId: String, approvalId: String, answers: [String: String], summary: String) async throws -> String
@@ -348,6 +351,10 @@ public final class ConvexBackend: Backend, @unchecked Sendable {
 
     public func slashCommands(threadId: String) async throws -> String {
         try await command("phone:slashCommands", ["threadId": .string(threadId)])
+    }
+
+    public func interrupt(threadId: String) async throws -> String {
+        try await command("phone:interrupt", ["threadId": .string(threadId)])
     }
 
     public func respond(threadId: String, approvalId: String, decision: ApprovalOption) async throws -> String {
