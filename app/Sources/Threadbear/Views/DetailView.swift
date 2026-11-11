@@ -75,14 +75,14 @@ struct DetailView: View {
                         Text("Nothing yet.").foregroundStyle(.secondary)
                     } else if let session, session.subagentId != nil, case .failed(let message) = session.state {
                         VStack(spacing: zoomed(8)) {
-                            Text("Couldn't load this sub-agent.").font(.headline)
+                            Text("Couldn't load this sub-agent.").font(.app(.headline))
                             Text(message).foregroundStyle(.secondary)
                             Button("Try again") { app.selectSubagent(threadId: session.threadId, subagentId: session.subagentId ?? "") }
                                 .tip("Load the sub-agent's transcript again")
                         }
                     } else if let session, case .failed(let message) = session.state {
                         VStack(spacing: zoomed(8)) {
-                            Text(session.failureHeadline ?? "Couldn't load this thread.").font(.headline)
+                            Text(session.failureHeadline ?? "Couldn't load this thread.").font(.app(.headline))
                             Text(message).foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                             Button("Try again") { app.select(session.threadId) }
@@ -170,7 +170,7 @@ private struct ArchivedToast: View {
                 .fontWeight(.medium)
                 .tip("Put it back in the inbox")
         }
-        .font(.system(size: TypeScale.label))
+        .font(.app(size: TypeScale.label))
         .padding(.horizontal, zoomed(14))
         .padding(.vertical, zoomed(7))
         .background {
@@ -224,7 +224,7 @@ private struct InboxEndToast: View {
         }
         .buttonStyle(.plain)
         .tip("Dismiss")
-        .font(.system(size: TypeScale.label))
+        .font(.app(size: TypeScale.label))
         .padding(.horizontal, zoomed(14))
         .padding(.vertical, zoomed(7))
         .background {
@@ -298,7 +298,7 @@ private struct MilestoneToast: View {
         }
         .buttonStyle(.plain)
         .tip("Dismiss")
-        .font(.system(size: TypeScale.label))
+        .font(.app(size: TypeScale.label))
         .padding(.leading, zoomed(11))
         .padding(.trailing, zoomed(14))
         .padding(.vertical, zoomed(7))
@@ -364,7 +364,7 @@ struct ThreadMenuButton: View {
             }
         } label: {
             Image(systemName: "ellipsis")
-                .font(.system(size: TypeScale.label, weight: .medium))
+                .font(.app(size: TypeScale.label, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: zoomed(26), height: zoomed(26))
                 .contentShape(Rectangle())
@@ -400,13 +400,13 @@ struct HeaderTitle: View {
                 } else if let place = app.runnerPlace(of: thread) {
                     // Another runner's thread: its Mac, where the folder would be.
                     Image(systemName: app.runnerIcon(of: thread))
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                         .tip("\(place), in \(thread.cwd.abbreviatingHome)")
                         .layoutPriority(1)
                 } else {
                     Image(systemName: "folder")
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                         .tip("In \(thread.cwd.abbreviatingHome)")
                         .layoutPriority(1)
@@ -442,7 +442,7 @@ struct HeaderTitle: View {
                         .layoutPriority(1)
                 }
             }
-            .font(.system(size: TypeScale.header))
+            .font(.app(size: TypeScale.header))
             .lineLimit(1)
             .padding(.leading, zoomed(6))
         } else {
@@ -530,7 +530,7 @@ struct ProjectHeaderTitle: View {
                 Text("·  Archived").foregroundStyle(Color(nsColor: Theme.faintText)).layoutPriority(1)
             }
         }
-        .font(.system(size: TypeScale.header))
+        .font(.app(size: TypeScale.header))
         .lineLimit(1)
         .padding(.leading, zoomed(6))
     }
@@ -552,7 +552,7 @@ private struct ScheduleChip: View {
                     .accessibilityHidden(true)
                 Text("Scheduled")
             }
-            .font(.system(size: TypeScale.detail))
+            .font(.app(size: TypeScale.detail))
             .foregroundStyle(hovering && current != nil ? .primary : .secondary)
             .padding(.leading, zoomed(5))
             .padding(.trailing, zoomed(7))
@@ -672,7 +672,7 @@ private struct NewThreadHeading: View {
     var body: some View {
         let typing = !(app.drafts["new"]?.text.isEmpty ?? true)
         Text("What should we work on?")
-            .font(.system(size: zoomed(24), weight: .semibold))
+            .font(.app(size: zoomed(24), weight: .semibold))
             .foregroundStyle(.primary)
             .multilineTextAlignment(.center)
             .padding(.horizontal, zoomed(24))
@@ -703,10 +703,10 @@ private struct NewThreadProjectChip: View {
         HStack(spacing: zoomed(6)) {
             ProjectIconView(project: project, size: 16)
             Text("In \(project.title)")
-                .font(.system(size: TypeScale.label, weight: .medium))
+                .font(.app(size: TypeScale.label, weight: .medium))
             Button { app.newThreadProjectId = nil } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: zoomed(9), weight: .bold))
+                    .font(.app(size: zoomed(9), weight: .bold))
                     .foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
@@ -745,16 +745,16 @@ private struct NewThreadNote: View {
             if let runner, app.newThreadLogins == nil {
                 // Its logins and folders come with its hello.
                 Text("Starts on \(runner.name)")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             } else if let runner {
                 Text("Starts in \(FolderName.short(cwd)) on \(runner.name), with \(on)")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
                     .tip("\(cwd) on \(runner.name), with " + (pool.map { "the \($0.title) pool, which picks the login" } ?? title))
             } else {
                 Text("Starts in \(FolderName.short(cwd)) on \(on)")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
                     .tip("\(cwd.abbreviatingHome) on " + (pool.map { "the \($0.title) pool, which picks the login" } ?? title))
             }
@@ -801,12 +801,12 @@ private struct AccountRoomCard: View {
                 // under it, so every card is the same height.
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                     Text(AccountName.label(account.id, accounts: accounts))
-                        .font(.system(size: zoomed(12), weight: .medium))
+                        .font(.app(size: zoomed(12), weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                         .layoutPriority(1)
                     if let note = account.note, !note.isEmpty {
-                        Text(note).font(.system(size: zoomed(11))).foregroundStyle(.tertiary).lineLimit(1)
+                        Text(note).font(.app(size: zoomed(11))).foregroundStyle(.tertiary).lineLimit(1)
                     }
                 }
                 ZStack(alignment: .leading) {
@@ -818,7 +818,7 @@ private struct AccountRoomCard: View {
                 }
                 .frame(height: zoomed(3))
                 Text(AccountUsageText.roomLine(usage) ?? "Nothing known yet")
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .monospacedDigit()
                     .foregroundStyle(usage?.blocked == true ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
                     .lineLimit(1)
@@ -879,7 +879,7 @@ struct ConnectionBanner: View {
                     .tip("Hide this until it happens again")
             }
         }
-        .font(.system(size: TypeScale.label))
+        .font(.app(size: TypeScale.label))
         .tip(banner.detail ?? "")
         .padding(.horizontal, zoomed(14))
         .padding(.vertical, zoomed(7))
@@ -939,7 +939,7 @@ struct LimitBanner: View {
                     .tip("Carry on this thread on that account, from where it is")
                 }
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(.horizontal, zoomed(14))
             .padding(.vertical, zoomed(7))
             .overlay(alignment: .bottom) { Rectangle().fill(Color(nsColor: Theme.hairline)).frame(height: 0.5) }
@@ -968,7 +968,7 @@ struct SignInBanner: View {
                 Button("Send again") { app.sendAgain(thread.id) }
                     .tip("Send your last message again, once you've signed in")
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(.horizontal, zoomed(14))
             .padding(.vertical, zoomed(7))
             .overlay(alignment: .bottom) { Rectangle().fill(Color(nsColor: Theme.hairline)).frame(height: 0.5) }
@@ -983,7 +983,7 @@ struct SignInBanner: View {
                 Button("Send again") { app.sendAgain(thread.id) }
                     .tip("Send your last message again, once you've signed in")
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(.horizontal, zoomed(14))
             .padding(.vertical, zoomed(7))
             .overlay(alignment: .bottom) { Rectangle().fill(Color(nsColor: Theme.hairline)).frame(height: 0.5) }

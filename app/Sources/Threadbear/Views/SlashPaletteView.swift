@@ -106,7 +106,7 @@ struct SlashPaletteView: View {
                         Spacer(minLength: zoomed(6))
                         Text("\(count)").monospacedDigit().foregroundStyle(.secondary)
                     }
-                    .font(.system(size: TypeScale.label + 1))
+                    .font(.app(size: TypeScale.label + 1))
                     .foregroundStyle(on ? .primary : .secondary)
                     .padding(.horizontal, zoomed(10))
                     .padding(.vertical, zoomed(6))
@@ -149,7 +149,7 @@ struct SlashPaletteView: View {
 
     private func row(_ command: SlashCommand, on: Bool) -> some View {
         Text("/\(command.name)")
-            .font(.system(size: TypeScale.label + 1))
+            .font(.app(size: TypeScale.label + 1))
             .lineLimit(1)
             .truncationMode(.middle)
             .foregroundStyle(on ? Color.white : .primary)
@@ -178,15 +178,15 @@ struct SlashPaletteView: View {
             ScrollView {
             VStack(alignment: .leading, spacing: zoomed(10)) {
                 Text("/\(command.name)")
-                    .font(.system(size: TypeScale.cardTitle + 3, weight: .semibold))
+                    .font(.app(size: TypeScale.cardTitle + 3, weight: .semibold))
                 if let text = command.description, !text.isEmpty {
                     Text(SlashPalette.description(text))
-                        .font(.system(size: TypeScale.label + 1))
+                        .font(.app(size: TypeScale.label + 1))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Text(command.usage)
-                    .font(.system(size: TypeScale.code, design: .monospaced))
+                    .font(.app(size: TypeScale.code, design: .monospaced))
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -195,11 +195,11 @@ struct SlashPaletteView: View {
                     .background(RoundedRectangle(cornerRadius: zoomed(7)).fill(Color.primary.opacity(0.06)))
                 if let now = current[command.name] {
                     Text("Now: \(now)")
-                        .font(.system(size: TypeScale.label + 1))
+                        .font(.app(size: TypeScale.label + 1))
                 }
                 if let aliases = command.aliases, !aliases.isEmpty {
                     Text("Also " + aliases.map { "/\($0)" }.joined(separator: ", "))
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                 }
                 origin(command)
@@ -242,13 +242,13 @@ struct SlashPaletteView: View {
     private func origin(_ command: SlashCommand) -> some View {
         VStack(alignment: .leading, spacing: zoomed(3)) {
             Text(SlashPalette.origin(of: command, provider: provider))
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.tertiary)
             if let path = command.path {
                 // On lines of its own, wrapped: cut short in the middle it
                 // showed only "~/.cl…ILL.md".
                 Text(SlashPalette.shortPath(path))
-                    .font(.system(size: TypeScale.label - 1, design: .monospaced))
+                    .font(.app(size: TypeScale.label - 1, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
@@ -258,7 +258,7 @@ struct SlashPaletteView: View {
 
     private func placeholder(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: TypeScale.label + 1))
+            .font(.app(size: TypeScale.label + 1))
             .foregroundStyle(.secondary)
             .padding(zoomed(16))
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -267,7 +267,7 @@ struct SlashPaletteView: View {
 
 extension SlashPaletteView {
     private static func textWidth(_ text: String) -> Double {
-        (text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: TypeScale.label + 1)]).width
+        (text as NSString).size(withAttributes: [.font: NSFont.appFont(ofSize: TypeScale.label + 1)]).width
     }
 
     /// The list's: the longest name, its row's padding and the scroller.

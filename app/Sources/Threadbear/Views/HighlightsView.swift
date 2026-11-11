@@ -72,7 +72,7 @@ struct HighlightsView: View {
                     }
                 }
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .foregroundStyle(.secondary)
             .textSelection(.enabled)
             .padding(.horizontal, SidebarMetrics.leading)
@@ -334,7 +334,7 @@ private struct ProjectWhyButton: View {
 
     var body: some View {
         Button { shown.wrappedValue.toggle() } label: {
-            Image(systemName: "info.circle").font(.system(size: zoomed(11)))
+            Image(systemName: "info.circle").font(.app(size: zoomed(11)))
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
@@ -347,11 +347,11 @@ private struct ProjectWhyButton: View {
         return VStack(alignment: .leading, spacing: zoomed(8)) {
             if let reason {
                 Text(reason)
-                    .font(.system(size: zoomed(13)))
+                    .font(.app(size: zoomed(13)))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(who)
-                .font(.system(size: zoomed(12)))
+                .font(.app(size: zoomed(12)))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: zoomed(8)) {
@@ -450,7 +450,7 @@ struct PaneRow: View {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
                 if let icon {
                     Image(systemName: icon)
-                        .font(.system(size: zoomed(12)))
+                        .font(.app(size: zoomed(12)))
                         .foregroundStyle(iconColor.map(AnyShapeStyle.init) ?? AnyShapeStyle(Color(nsColor: Theme.faintIcon)))
                         .frame(width: zoomed(16))
                 } else if reservesIcon {
@@ -460,37 +460,37 @@ struct PaneRow: View {
                     HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                         if let lead {
                             Text(lead)
-                                .font(.system(size: TypeScale.detail, design: .monospaced))
+                                .font(.app(size: TypeScale.detail, design: .monospaced))
                                 .foregroundStyle(.secondary)
                         }
                         Text(title)
-                            .font(.system(size: TypeScale.label))
+                            .font(.app(size: TypeScale.label))
                             .foregroundStyle(quiet ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                             .lineLimit(1)
                             .truncationMode(titleTruncation)
                         Spacer(minLength: zoomed(4))
                         if let trailing {
                             Text(trailing)
-                                .font(.system(size: TypeScale.small))
+                                .font(.app(size: TypeScale.small))
                                 .foregroundStyle(SidebarMetrics.faint)
                                 .fixedSize()
                         }
                         if let trailingSymbol {
                             Image(systemName: trailingSymbol)
-                                .font(.system(size: zoomed(11), weight: .medium))
+                                .font(.app(size: zoomed(11), weight: .medium))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     if let note, !note.isEmpty {
                         Text(note)
-                            .font(.system(size: TypeScale.detail))
+                            .font(.app(size: TypeScale.detail))
                             .foregroundStyle(.secondary)
                             .lineLimit(4)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if let detail, !detail.isEmpty {
                         Text(detail)
-                            .font(.system(size: TypeScale.small))
+                            .font(.app(size: TypeScale.small))
                             .foregroundStyle(SidebarMetrics.faint)
                             .lineLimit(detailLines)
                             .truncationMode(detailTruncation)
@@ -517,7 +517,7 @@ private struct AskRow: View {
         HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
             Button(action: tick) {
                 Image(systemName: ask.ticked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: zoomed(13)))
+                    .font(.app(size: zoomed(13)))
                     .foregroundStyle(ask.ticked ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(Color(nsColor: Theme.faintIcon)))
                     .frame(width: zoomed(16))
                     .contentShape(Rectangle())
@@ -526,13 +526,13 @@ private struct AskRow: View {
             .tip(ask.ticked ? "Not done" : "Done")
             VStack(alignment: .leading, spacing: zoomed(2)) {
                 Text(ask.plainAction)
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(ask.ticked ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
                     .strikethrough(ask.ticked)
                     .fixedSize(horizontal: false, vertical: true)
                 if let place = ask.plainWhere {
                     Text(place)
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(SidebarMetrics.faint)
                         .lineLimit(2)
                 }
@@ -644,7 +644,7 @@ struct PreviewBody: View {
             // Over the size cap: what came, with a word that it's cut.
             VStack(spacing: 0) {
                 Text("Only the start of this file came from \(preview.away ?? "that Mac").")
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(.secondary)
                     .padding(.vertical, zoomed(6))
                     .frame(maxWidth: .infinity)
@@ -706,7 +706,7 @@ struct LocalPagePreview: View {
             if let scan = current, scan.scripts, !scan.allowed {
                 HStack(spacing: zoomed(6)) {
                     Text("This page has scripts")
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(.secondary)
                     InfoTip(Self.explanation)
                     Spacer(minLength: 0)
@@ -791,9 +791,9 @@ struct MarkdownViewMenu: View {
             HStack(spacing: zoomed(3)) {
                 Text(showing.title)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: TypeScale.small - 2, weight: .semibold))
+                    .font(.app(size: TypeScale.small - 2, weight: .semibold))
             }
-            .font(.system(size: TypeScale.small, weight: .medium))
+            .font(.app(size: TypeScale.small, weight: .medium))
             .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
             .padding(.horizontal, zoomed(7))
             .frame(height: zoomed(26))
@@ -1067,19 +1067,19 @@ private struct ToolCard: View {
                         Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: zoomed(18), height: zoomed(18))
                     } else {
                         Image(systemName: PanelIcon.symbol(for: panel))
-                            .font(.system(size: zoomed(13)))
+                            .font(.app(size: zoomed(13)))
                             .foregroundStyle(.secondary)
                     }
                     Text(panel.title)
-                        .font(.system(size: TypeScale.label, weight: .semibold))
+                        .font(.app(size: TypeScale.label, weight: .semibold))
                     Spacer(minLength: zoomed(4))
                     Image(systemName: "chevron.right")
-                        .font(.system(size: zoomed(10), weight: .semibold))
+                        .font(.app(size: zoomed(10), weight: .semibold))
                         .foregroundStyle(.tertiary)
                 }
                 if let text = panel.summary ?? panel.note {
                     Text(text)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                         .lineSpacing(zoomed(2))
                         .fixedSize(horizontal: false, vertical: true)

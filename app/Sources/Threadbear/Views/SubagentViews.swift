@@ -61,19 +61,19 @@ struct SubagentRowView: View {
             VStack(alignment: .leading, spacing: zoomed(2)) {
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                     Text(SubagentRows.title(subagent))
-                        .font(.system(size: TypeScale.sidebarPreview))
+                        .font(.app(size: TypeScale.sidebarPreview))
                         // A finished one steps back; the running ones are
                         // what's worth reading.
                         .foregroundStyle(subagent.isRunning || isSelected ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                         .lineLimit(1)
                     Spacer(minLength: zoomed(6))
                     duration
-                        .font(.system(size: TypeScale.sidebarMeta))
+                        .font(.app(size: TypeScale.sidebarMeta))
                         .monospacedDigit()
                         .foregroundStyle(SidebarMetrics.faint)
                 }
                 Text(SubagentRows.detail(subagent))
-                    .font(.system(size: TypeScale.sidebarMeta + 1))
+                    .font(.app(size: TypeScale.sidebarMeta + 1))
                     .foregroundStyle(subagent.status == .failed ? AnyShapeStyle(Color(nsColor: Theme.failed)) : AnyShapeStyle(SidebarMetrics.faint))
                     .lineLimit(1)
             }
@@ -117,11 +117,11 @@ struct SubagentRowView: View {
             // the thread's own turn.
             SpinnerMark(color: .secondaryLabelColor)
         case .completed:
-            Image(systemName: "checkmark").font(.system(size: zoomed(9), weight: .semibold)).foregroundStyle(SidebarMetrics.faint)
+            Image(systemName: "checkmark").font(.app(size: zoomed(9), weight: .semibold)).foregroundStyle(SidebarMetrics.faint)
         case .failed:
-            Image(systemName: "xmark").font(.system(size: zoomed(9), weight: .semibold)).foregroundStyle(Color(nsColor: Theme.failed))
+            Image(systemName: "xmark").font(.app(size: zoomed(9), weight: .semibold)).foregroundStyle(Color(nsColor: Theme.failed))
         case .stopped:
-            Image(systemName: "minus").font(.system(size: zoomed(9), weight: .semibold)).foregroundStyle(SidebarMetrics.faint)
+            Image(systemName: "minus").font(.app(size: zoomed(9), weight: .semibold)).foregroundStyle(SidebarMetrics.faint)
         }
     }
 
@@ -190,10 +190,10 @@ struct SubagentHeader: View {
             .tip("Back to the thread")
             VStack(alignment: .leading, spacing: zoomed(2)) {
                 Text(subagent.map(SubagentRows.title) ?? "Sub-agent")
-                    .font(.system(size: TypeScale.sidebarTitle, weight: .semibold))
+                    .font(.app(size: TypeScale.sidebarTitle, weight: .semibold))
                     .lineLimit(1)
                 Text(meta(subagent, thread: thread))
-                    .font(.system(size: TypeScale.sidebarMeta + 1))
+                    .font(.app(size: TypeScale.sidebarMeta + 1))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }

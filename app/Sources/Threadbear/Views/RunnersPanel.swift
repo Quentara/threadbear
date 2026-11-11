@@ -42,18 +42,18 @@ struct RunnersPanel: View {
             VStack(alignment: .leading, spacing: zoomed(14)) {
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                     Text(summary(runners))
-                        .font(.system(size: zoomed(11), weight: .medium))
+                        .font(.app(size: zoomed(11), weight: .medium))
                         .foregroundStyle(.tertiary)
                     Spacer(minLength: 0)
                     Button { app.refreshRunners() } label: {
-                        Image(systemName: "arrow.clockwise").font(.system(size: zoomed(11)))
+                        Image(systemName: "arrow.clockwise").font(.app(size: zoomed(11)))
                     }
                     .buttonStyle(.borderless)
                     .busy(app.isBusy(BusyKey.refreshRunners))
                     .foregroundStyle(.secondary)
                     .tip("Check the runners again now")
                     Button { aboutShown.toggle() } label: {
-                        Image(systemName: "info.circle").font(.system(size: zoomed(11)))
+                        Image(systemName: "info.circle").font(.app(size: zoomed(11)))
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -136,14 +136,14 @@ private struct RunnerCard: View {
         HStack(alignment: .top, spacing: zoomed(10)) {
             if movable {
                 Image(systemName: "line.3.horizontal")
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(.tertiary)
                     .frame(height: zoomed(17))
                     .tip("Drag to change the order")
                     .accessibilityHidden(true)
             }
             Image(systemName: RunnerIcon.symbol(runner.icon))
-                .font(.system(size: zoomed(15)))
+                .font(.app(size: zoomed(15)))
                 .foregroundStyle(state == .offline ? .tertiary : .secondary)
                 .frame(width: zoomed(22))
                 .accessibilityHidden(true)
@@ -163,7 +163,7 @@ private struct RunnerCard: View {
                 }
                 if !paired {
                     Text("Not paired with this Mac")
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -174,7 +174,7 @@ private struct RunnerCard: View {
                         }
                         if running.count > Self.shownThreads {
                             Text("and \(running.count - Self.shownThreads) more")
-                                .font(.system(size: zoomed(11)))
+                                .font(.app(size: zoomed(11)))
                                 .foregroundStyle(.tertiary)
                                 .padding(.leading, zoomed(21))
                                 .padding(.top, zoomed(2))
@@ -193,23 +193,23 @@ private struct RunnerCard: View {
         VStack(alignment: .leading, spacing: zoomed(3)) {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(5)) {
                 Text(runner.name)
-                    .font(.system(size: zoomed(12), weight: .medium))
+                    .font(.app(size: zoomed(12), weight: .medium))
                     .lineLimit(1)
                 if isDefault {
                     Image(systemName: "star.fill")
-                        .font(.system(size: zoomed(8)))
+                        .font(.app(size: zoomed(8)))
                         .foregroundStyle(.tertiary)
                         .accessibilityLabel("Default")
                 }
                 Spacer(minLength: zoomed(6))
                 if let build = RunnersText.build(runner) {
                     Text(build)
-                        .font(.system(size: zoomed(10), design: .monospaced))
+                        .font(.app(size: zoomed(10), design: .monospaced))
                         .foregroundStyle(.tertiary)
                         .lineLimit(1)
                 }
                 Image(systemName: "chevron.right")
-                    .font(.system(size: zoomed(9), weight: .semibold))
+                    .font(.app(size: zoomed(9), weight: .semibold))
                     .foregroundStyle(hovered ? .secondary : .tertiary)
                     .rotationEffect(.degrees(open ? 90 : 0))
                     .accessibilityHidden(true)
@@ -221,7 +221,7 @@ private struct RunnerCard: View {
                     .alignmentGuide(.firstTextBaseline) { $0[.bottom] - zoomed(1) }
                     .accessibilityHidden(true)
                 Text(RunnersText.stateLine(runner, now: app.now))
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                 // No count of its running threads here: they're listed
@@ -269,14 +269,14 @@ private struct RunnerDetails: View {
                         Text(line)
                     }
                 }
-                .font(.system(size: zoomed(10.5)))
+                .font(.app(size: zoomed(10.5)))
                 .foregroundStyle(.tertiary)
                 .lineLimit(2)
                 .padding(.top, zoomed(2))
             }
         } else {
             Text(emptyLine)
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -294,7 +294,7 @@ private struct GaugeRow: View {
     var body: some View {
         HStack(spacing: zoomed(8)) {
             Text(gauge.title)
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
                 .foregroundStyle(.secondary)
                 .frame(width: zoomed(48), alignment: .leading)
             GeometryReader { geo in
@@ -308,7 +308,7 @@ private struct GaugeRow: View {
             .frame(height: zoomed(5))
             .animation(.easeOut(duration: 0.3), value: gauge.fraction)
             Text(gauge.text)
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
                 .monospacedDigit()
                 .foregroundStyle(gauge.high ? .primary : .secondary)
                 .lineLimit(1)
@@ -331,7 +331,7 @@ private struct RunningThreadRow: View {
                 SpinnerMark(color: .secondaryLabelColor)
                     .frame(width: zoomed(11), height: zoomed(11))
                 Text(thread.title.isEmpty ? "Untitled" : thread.title)
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(hovered ? .primary : .secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -359,7 +359,7 @@ private struct RunnersAbout: View {
             Text("The code on the right is the commit each one runs. Click a running thread to open it. A runner that isn't paired with this Mac lists its threads, but they open only once you run `tb pair` there.")
             Text("The star is where new threads start, which you can change in Settings > Runners. A runner is added or renamed on its own machine, so ask an agent to do it.")
         }
-        .font(.system(size: zoomed(12)))
+        .font(.app(size: zoomed(12)))
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: zoomed(280), alignment: .leading)
         .padding(zoomed(14))

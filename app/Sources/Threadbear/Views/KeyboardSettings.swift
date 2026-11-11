@@ -47,7 +47,7 @@ struct KeyboardSettings: View {
                     .tip("Every key back to how Threadbear comes")
                 }
             }
-            .font(.system(size: 12))
+            .font(.app(size: 12))
             .padding(.horizontal, 22)
             .padding(.top, 8)
             .padding(.bottom, 14)
@@ -78,7 +78,7 @@ private struct ShortcutRow: View {
                     Text(command.title)
                     if listening, recorder.outcome == .waiting {
                         Text("Esc cancels, and Delete removes it")
-                            .font(.system(size: 11))
+                            .font(.app(size: 11))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -89,7 +89,7 @@ private struct ShortcutRow: View {
                         shortcuts.change { $0.reset(command) }
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11))
+                    .font(.app(size: 11))
                     .foregroundStyle(.secondary)
                     .tip(command.defaultKey.map { "Back to \($0.display)" } ?? "Back to no key")
                 }
@@ -107,7 +107,7 @@ private struct ShortcutRow: View {
                             .buttonStyle(.borderedProminent)
                     }
                 }
-                .font(.system(size: 12))
+                .font(.app(size: 12))
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
@@ -173,7 +173,7 @@ private struct KeyCap: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: 12, weight: look == .listening ? .medium : .regular))
+            .font(.app(size: 12, weight: look == .listening ? .medium : .regular))
             .foregroundStyle(foreground)
             .lineLimit(1)
             .frame(minWidth: 62)

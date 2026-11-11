@@ -39,7 +39,7 @@ private struct InstructionsEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             TextEditor(text: $text)
-                .font(.body)
+                .font(.app(.body))
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 96, maxHeight: 200)
                 .overlay(alignment: .topLeading) {
@@ -53,7 +53,7 @@ private struct InstructionsEditor: View {
                 .onChange(of: text) { _, _ in scheduleSave() }
                 .tip("What every thread's agent should always keep in mind")
             if let status {
-                Text(status).font(.caption).foregroundStyle(.secondary)
+                Text(status).font(.app(.caption)).foregroundStyle(.secondary)
             }
         }
         .onAppear {
@@ -128,7 +128,7 @@ private struct InstructionsChangedOutside: View {
             .frame(maxHeight: 160)
             .id(reviewed)
             if let error {
-                Text(error).font(.caption).foregroundStyle(.red)
+                Text(error).font(.app(.caption)).foregroundStyle(.red)
             }
             HStack {
                 if busy { ProgressView().controlSize(.small) }

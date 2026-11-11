@@ -30,7 +30,7 @@ final class ReviewRowCell: RowCellView {
         let top = RowMetrics.rowTop
         card.frame = NSRect(x: x, y: top, width: width, height: render.height - RowMetrics.rowTop - RowMetrics.rowBottom)
         card.set(fill: Theme.cardBackground, stroke: Theme.cardBorder, radius: RowMetrics.cardRadius, accent: review.isPending ? .systemOrange : nil)
-        title.font = .systemFont(ofSize: TypeScale.work, weight: .semibold)
+        title.font = .appFont(ofSize: TypeScale.work, weight: .semibold)
         title.stringValue = review.title
         // The feature's icon, also on the answer bubble and the panel's tab.
         Symbols.set(icon, Symbols.review, size: 13, tint: .secondaryLabelColor)

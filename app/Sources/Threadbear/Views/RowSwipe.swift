@@ -283,7 +283,7 @@ private struct RowSwipeModifier: ViewModifier {
                         RoundedRectangle(cornerRadius: SidebarMetrics.corner)
                             .fill(armed ? Color.accentColor : Color.primary.opacity(0.07))
                         Image(systemName: action.icon)
-                            .font(.system(size: zoomed(14), weight: .medium))
+                            .font(.app(size: zoomed(14), weight: .medium))
                             .foregroundStyle(armed ? Color.white : Color.secondary)
                             .scaleEffect(armed && !Juice.reduceMotion ? 1.12 : 1)
                             // Hidden until there's room for it.

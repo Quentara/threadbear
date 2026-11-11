@@ -6,7 +6,7 @@ import UniformTypeIdentifiers
 /// leaves room for it in the card's text, off the main thread too) and the
 /// box itself, so the two always agree.
 enum AskBoxMetrics {
-    static var font: NSFont { .systemFont(ofSize: TypeScale.composer) }
+    static var font: NSFont { .appFont(ofSize: TypeScale.composer) }
     /// The composer's line height, so an answer types like a message.
     static var lineHeight: CGFloat { TypeScale.bodyLine }
     static var padH: CGFloat { zoomed(10) }

@@ -42,7 +42,7 @@ final class CopiedBubble: NSView {
         let config = NSImage.SymbolConfiguration(pointSize: TypeScale.detail, weight: .semibold).applying(.init(paletteColors: [.white, .systemGreen]))
         tick.image = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)?.withSymbolConfiguration(config)
         let label = NSTextField(labelWithString: "Copied to clipboard")
-        label.font = .systemFont(ofSize: TypeScale.detail, weight: .medium)
+        label.font = .appFont(ofSize: TypeScale.detail, weight: .medium)
         label.textColor = .labelColor
         let row = NSStackView(views: [tick, label])
         row.spacing = zoomed(5)

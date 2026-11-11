@@ -119,7 +119,7 @@ struct HighlightsBoard: View {
                 PlainLink(title: all ? "Show fewer" : "\(column.cards.count - limit) more", help: all ? "Show the first \(limit) cards" : "Show every card in \(column.column.name)") {
                     if all { showingAll.remove(column.id) } else { showingAll.insert(column.id) }
                 }
-                .font(.system(size: TypeScale.small))
+                .font(.app(size: TypeScale.small))
                 .foregroundStyle(Color(nsColor: Theme.faintText))
                 .padding(.horizontal, zoomed(4))
             }
@@ -134,12 +134,12 @@ struct HighlightsBoard: View {
         let header = HStack(spacing: zoomed(5)) {
             Circle().fill(TaskColors.color(column.column.color)).frame(width: zoomed(6), height: zoomed(6))
             Text(column.column.name)
-                .font(.system(size: TypeScale.small, weight: .semibold))
+                .font(.app(size: TypeScale.small, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 0)
             Text("\(column.cards.count)")
-                .font(.system(size: TypeScale.small))
+                .font(.app(size: TypeScale.small))
                 .foregroundStyle(Color(nsColor: Theme.faintText))
                 .monospacedDigit()
         }
@@ -171,14 +171,14 @@ private struct FoldedColumn: View {
                 Circle().fill(TaskColors.color(column.column.color)).frame(width: zoomed(6), height: zoomed(6))
                 Sideways {
                     Text(column.column.name)
-                        .font(.system(size: TypeScale.small, weight: .semibold))
+                        .font(.app(size: TypeScale.small, weight: .semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .fixedSize()
                         .rotationEffect(.degrees(90))
                 }
                 Text("\(column.cards.count)")
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
                     .monospacedDigit()
             }
@@ -228,7 +228,7 @@ private struct BoardCard: View {
         Button { app.mentionInComposer(task, in: thread.id) } label: {
             VStack(alignment: .leading, spacing: zoomed(3)) {
                 Text(task.title)
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(done ? .secondary : .primary)
                     .lineLimit(2)
                     .multilineTextAlignment(.leading)
@@ -270,7 +270,7 @@ private struct BoardCard: View {
     private var openButton: some View {
         Button(action: openInNotion) {
             Image(systemName: "arrow.up.forward.square")
-                .font(.system(size: TypeScale.small))
+                .font(.app(size: TypeScale.small))
                 .foregroundStyle(.secondary)
                 .padding(zoomed(2))
                 .background(Color(nsColor: Theme.hoverFill), in: RoundedRectangle(cornerRadius: zoomed(4)))
@@ -294,7 +294,7 @@ private struct BoardCard: View {
                 Image(systemName: "bubble.left").hidden()
             }
         }
-        .font(.system(size: zoomed(10.5)))
+        .font(.app(size: zoomed(10.5)))
         .foregroundStyle(Color(nsColor: Theme.faintText))
     }
 
@@ -304,7 +304,7 @@ private struct BoardCard: View {
                 if other.status.isBusy { Circle().fill(Color.accentColor).frame(width: zoomed(5), height: zoomed(5)) }
                 Image(systemName: "bubble.left")
             }
-            .font(.system(size: zoomed(10.5)))
+            .font(.app(size: zoomed(10.5)))
             .foregroundStyle(Color(nsColor: Theme.faintText))
         }
         .buttonStyle(.plain)
@@ -367,7 +367,7 @@ private struct BoardScrollBar: View {
     private func arrow(_ symbol: String, tip: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: TypeScale.small, weight: .semibold))
+                .font(.app(size: TypeScale.small, weight: .semibold))
                 .frame(width: zoomed(18), height: zoomed(18))
                 .contentShape(Rectangle())
         }

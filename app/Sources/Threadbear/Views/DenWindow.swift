@@ -75,13 +75,13 @@ private struct DenView: View {
                 }
                 .accessibilityHidden(true)
             Text("Threadbear")
-                .font(.system(size: zoomed(15), weight: .semibold))
+                .font(.app(size: zoomed(15), weight: .semibold))
                 .padding(.top, zoomed(14))
             if !lines.isEmpty {
                 VStack(spacing: 0) {
                     ForEach(lines, id: \.self) { Text($0).frame(minHeight: zoomed(22)) }
                 }
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .padding(.top, zoomed(10))
             }
@@ -89,7 +89,7 @@ private struct DenView: View {
                 if let build { Text(buildLine(build)) }
                 Text(DenLines.credit)
             }
-            .font(.system(size: zoomed(11.5)))
+            .font(.app(size: zoomed(11.5)))
             .foregroundStyle(.secondary)
             .opacity(0.75)
             .padding(.top, zoomed(16))
@@ -114,7 +114,7 @@ private struct DenView: View {
     private func buildLine(_ line: String) -> AttributedString {
         var text = AttributedString(line)
         if let short, let range = text.range(of: short) {
-            text[range].font = .system(size: zoomed(11), design: .monospaced)
+            text[range].font = .app(size: zoomed(11), design: .monospaced)
             text[range].foregroundColor = .secondary
         }
         return text

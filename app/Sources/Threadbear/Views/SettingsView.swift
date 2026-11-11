@@ -38,6 +38,7 @@ struct SettingsView: View {
                idealWidth: SettingsLayout.idealWidth,
                maxWidth: .infinity)
         .background(SettingsWindowFinder())
+        .font(.app(size: 13))
     }
 }
 
@@ -641,7 +642,7 @@ private struct PoolIconPicker: View {
             HStack(spacing: 4) {
                 PoolSymbol(symbol: symbol)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.app(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -654,7 +655,7 @@ private struct PoolIconPicker: View {
                         open = false
                     } label: {
                         Image(systemName: choice)
-                            .font(.system(size: 14))
+                            .font(.app(size: 14))
                             .frame(width: 30, height: 30)
                             .background(
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)

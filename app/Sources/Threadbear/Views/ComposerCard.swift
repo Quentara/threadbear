@@ -355,7 +355,7 @@ private struct CardCollapseButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: collapsed ? "chevron.up" : "chevron.down")
-                .font(.system(size: zoomed(11), weight: .semibold))
+                .font(.app(size: zoomed(11), weight: .semibold))
         }
         .buttonStyle(RowIconButtonStyle())
         .accessibilityLabel(collapsed ? "Expand" : "Collapse")

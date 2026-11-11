@@ -42,18 +42,18 @@ struct AnswerChips: View {
                 Text("\(index + 1)").foregroundStyle(.secondary).monospacedDigit()
             }
             if picks[index] == Decisions.ownAnswer {
-                Image(systemName: "pencil").font(.system(size: zoomed(10), weight: .medium)).foregroundStyle(.secondary)
+                Image(systemName: "pencil").font(.app(size: zoomed(10), weight: .medium)).foregroundStyle(.secondary)
             }
             Text(answer.answer).foregroundStyle(.primary).lineLimit(1)
             Button {
                 if let option = picks[index] { app.pickAnswer(thread: thread, ask: index, option: option) }
             } label: {
-                Image(systemName: "xmark").font(.system(size: zoomed(9), weight: .semibold)).foregroundStyle(.secondary)
+                Image(systemName: "xmark").font(.app(size: zoomed(9), weight: .semibold)).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .tip("Take this answer back")
         }
-        .font(.system(size: TypeScale.chip))
+        .font(.app(size: TypeScale.chip))
         .padding(.horizontal, zoomed(9))
         .padding(.vertical, zoomed(4))
         .background(Capsule().fill(Color.accentColor.opacity(0.14)))

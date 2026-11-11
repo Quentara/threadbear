@@ -18,8 +18,8 @@ final class DraftBlockCell: NSTextAttachmentCell {
 
     static var height: CGFloat { zoomed(22) }
     static let tip = "Copy the draft, with its links and formatting"
-    private static var labelFont: NSFont { .systemFont(ofSize: TypeScale.detail, weight: .medium) }
-    private static var buttonFont: NSFont { .systemFont(ofSize: TypeScale.detail) }
+    private static var labelFont: NSFont { .appFont(ofSize: TypeScale.detail, weight: .medium) }
+    private static var buttonFont: NSFont { .appFont(ofSize: TypeScale.detail) }
 
     // MARK: Copied
 

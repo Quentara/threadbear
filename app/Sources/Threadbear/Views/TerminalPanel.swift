@@ -198,7 +198,7 @@ final class TerminalSession: NSObject, LocalProcessTerminalViewDelegate {
 /// The terminal's font and colours: the app's code font, on the transcript's
 /// own background, light or dark with the app.
 enum TerminalStyle {
-    @MainActor static var font: NSFont { .monospacedSystemFont(ofSize: Theme.codeSize + 1, weight: .regular) }
+    @MainActor static var font: NSFont { .appMonoFont(ofSize: Theme.codeSize + 1, weight: .regular) }
 
     @MainActor
     static func apply(to view: TerminalView) {
@@ -219,7 +219,7 @@ struct TerminalPanel: View {
         VStack(spacing: 0) {
             if let note = target.note {
                 Text(note)
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -237,7 +237,7 @@ struct TerminalPanel: View {
                         Button("New Shell") { Terminals.shared.restart(target.key) }
                             .tip("Start a new shell in \((target.cwd as NSString).abbreviatingWithTildeInPath)")
                     }
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .padding(zoomed(8))
                     .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     .padding(zoomed(10))
@@ -248,7 +248,7 @@ struct TerminalPanel: View {
                 // or ⌘J, not just from looking.
                 Button { Terminals.shared.open(target) } label: {
                     Label("Start a shell", systemImage: WindowDock.terminalSymbol)
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .contentShape(Rectangle())

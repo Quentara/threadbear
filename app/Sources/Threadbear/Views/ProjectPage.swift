@@ -19,7 +19,7 @@ struct ProjectPage: View {
                     VStack(alignment: .leading, spacing: zoomed(6)) {
                         TitleField(project: project)
                         Text(ProjectPage.madeBy(project, threads: threads.count, app: app))
-                            .font(.system(size: TypeScale.label))
+                            .font(.app(size: TypeScale.label))
                             .foregroundStyle(Color(nsColor: Theme.faintText))
                     }
                     Spacer(minLength: zoomed(12))
@@ -113,7 +113,7 @@ private struct TitleField: View {
     var body: some View {
         TextField("Title", text: $draft)
             .textFieldStyle(.plain)
-            .font(.system(size: zoomed(24), weight: .semibold))
+            .font(.app(size: zoomed(24), weight: .semibold))
             .focused($focused)
             .onAppear { draft = project.title }
             .onChange(of: project.title) { _, title in if !focused { draft = title } }
@@ -142,11 +142,11 @@ private struct PageHeading<Trailing: View>: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
             Text(title)
-                .font(.system(size: TypeScale.label, weight: .semibold))
+                .font(.app(size: TypeScale.label, weight: .semibold))
                 .foregroundStyle(.secondary)
             if let detail {
                 Text(detail)
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             }
             Spacer(minLength: zoomed(8))
@@ -216,14 +216,14 @@ private struct TextSection: View {
                     Button("Edit") { start() }
                         .buttonStyle(.borderless)
                         .tip("Edit the \(field.title.lowercased()) (or double-click it)")
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .opacity(hovering ? 1 : 0.6)
                 }
             }
             if editing {
                 VStack(alignment: .trailing, spacing: zoomed(8)) {
                     TextEditor(text: $draft)
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .scrollContentBackground(.hidden)
                         .padding(zoomed(6))
                         .frame(minHeight: zoomed(field == .notes ? 220 : 90))
@@ -241,13 +241,13 @@ private struct TextSection: View {
                 }
             } else if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 Text(field.empty)
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
                     .onTapGesture(count: 2) { start() }
             } else {
                 Text(TextSection.markdown(text))
                     .environment(\.openURL, OpenGate.urlAction(files: .thisMac))
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .lineSpacing(zoomed(3))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
@@ -307,34 +307,34 @@ private struct TasksSection: View {
                             .buttonStyle(.borderless)
                             .tip("Open the board in Notion, where cards are moved")
                     }
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
                 } else {
                     Button("Add Notion page…") { app.linkProjectNotion(project.id) }
                         .buttonStyle(.borderless)
                         .tip("Show a task board from a Notion page here")
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                 }
             }
             if project.notion == nil {
                 Text("None yet. A Notion page with a Tasks database shows here as a board.")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             } else if let tasks = project.tasks, !tasks.columns.isEmpty {
                 if let error = tasks.error {
                     Text(error)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.orange)
                         .padding(.bottom, zoomed(8))
                 }
                 TaskBoard(tasks: tasks)
             } else if let error = project.tasks?.error {
                 Text(error)
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(.orange)
                     .textSelection(.enabled)
             } else {
                 Text(project.tasks?.loading == false ? "No cards yet." : "Reading the board from Notion…")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             }
         }
@@ -367,12 +367,12 @@ private struct TaskBoard: View {
                     HStack(spacing: zoomed(6)) {
                         Circle().fill(TaskBoard.color(column.color)).frame(width: zoomed(6), height: zoomed(6))
                         Text(column.name)
-                            .font(.system(size: TypeScale.detail, weight: .semibold))
+                            .font(.app(size: TypeScale.detail, weight: .semibold))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         Text("\(items.count)")
-                            .font(.system(size: TypeScale.detail))
+                            .font(.app(size: TypeScale.detail))
                             .foregroundStyle(Color(nsColor: Theme.faintText))
                             .monospacedDigit()
                     }
@@ -382,7 +382,7 @@ private struct TaskBoard: View {
                     ForEach(shown) { TaskCard(task: $0, done: column.kind == .done) }
                     if shown.count < items.count, let url = URL(string: tasks.url) {
                         PlainLink(title: "\(items.count - shown.count) more", help: "See them in Notion") { OpenGate.openWeb(url) }
-                            .font(.system(size: TypeScale.detail))
+                            .font(.app(size: TypeScale.detail))
                             .foregroundStyle(Color(nsColor: Theme.faintText))
                             .padding(.horizontal, zoomed(4))
                     }
@@ -431,7 +431,7 @@ struct TaskCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: zoomed(4)) {
             Text(task.title)
-                .font(.system(size: TypeScale.detail))
+                .font(.app(size: TypeScale.detail))
                 .foregroundStyle(done ? .secondary : .primary)
                 .lineLimit(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -442,7 +442,7 @@ struct TaskCard: View {
                     HStack(spacing: zoomed(6)) { meta }
                     VStack(alignment: .leading, spacing: zoomed(2)) { meta }
                 }
-                .font(.system(size: TypeScale.small))
+                .font(.app(size: TypeScale.small))
                 .foregroundStyle(Color(nsColor: Theme.faintText))
             }
         }
@@ -504,14 +504,14 @@ private struct FoldersSection: View {
                 Button("Add folder…") { app.addProjectFolder(project.id) }
                     .buttonStyle(.borderless)
                     .tip("Add a folder: the project's threads get the patches in it")
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
             }
             ForEach(project.folders, id: \.self) { folder in
                 FolderRow(project: project, folder: folder)
             }
             if project.folders.isEmpty {
                 Text("None yet. A thread in the project gets the patches in each of its folders.")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             }
         }
@@ -527,13 +527,13 @@ private struct FolderRow: View {
     var body: some View {
         HStack(spacing: zoomed(8)) {
             Image(systemName: "folder")
-                .font(.system(size: zoomed(12)))
+                .font(.app(size: zoomed(12)))
                 .foregroundStyle(.secondary)
                 .frame(width: zoomed(16))
             PlainLink(title: folder.abbreviatingHome, help: "Show in Finder") {
                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)])
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             Spacer(minLength: zoomed(8))
             Button { app.removeProjectFolder(project.id, folder) } label: { Image(systemName: "minus.circle") }
                 .buttonStyle(RowIconButtonStyle())
@@ -558,14 +558,14 @@ private struct ThreadsSection: View {
                 Button("New thread…") { app.newThread(in: project) }
                     .buttonStyle(.borderless)
                     .tip("Start a thread in this project")
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
             }
             ForEach(threads) { thread in
                 ProjectThreadRow(project: project, thread: thread)
             }
             if threads.isEmpty {
                 Text("No threads in it yet. Start one with New Thread, add one from a thread's ... menu, or the librarian puts threads here as they work in its folders.")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             }
         }
@@ -583,16 +583,16 @@ private struct ProjectThreadRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
             Text(thread.title.isEmpty ? "Untitled" : thread.title)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(thread.isArchived ? .secondary : .primary)
                 .lineLimit(1)
             Text(FolderName.short(thread.cwd))
-                .font(.system(size: TypeScale.detail))
+                .font(.app(size: TypeScale.detail))
                 .foregroundStyle(Color(nsColor: Theme.faintText))
                 .lineLimit(1)
             Spacer(minLength: zoomed(8))
             Text(meta)
-                .font(.system(size: TypeScale.detail))
+                .font(.app(size: TypeScale.detail))
                 .foregroundStyle(Color(nsColor: Theme.faintText))
                 .monospacedDigit()
                 .lineLimit(1)
@@ -648,31 +648,31 @@ private struct PatchesSection: View {
                 VStack(alignment: .leading, spacing: zoomed(3)) {
                     HStack(spacing: zoomed(6)) {
                         Image(systemName: "square.dashed")
-                            .font(.system(size: zoomed(11), weight: .medium))
+                            .font(.app(size: zoomed(11), weight: .medium))
                             .foregroundStyle(.secondary)
                         Text(item.patch.id)
-                            .font(.system(size: TypeScale.label, weight: .medium))
+                            .font(.app(size: TypeScale.label, weight: .medium))
                         Text(PatchesList.sourceName(item.patch.source))
-                            .font(.system(size: TypeScale.small))
+                            .font(.app(size: TypeScale.small))
                             .foregroundStyle(Color(nsColor: Theme.faintText))
                     }
                     if let error = item.patch.error {
                         Text(error)
-                            .font(.system(size: TypeScale.detail))
+                            .font(.app(size: TypeScale.detail))
                             .foregroundStyle(Color(nsColor: Theme.failed))
                             .textSelection(.enabled)
                     } else {
                         let gives = PatchesList.gives(item.patch.id, in: item.thread)
                         if !gives.isEmpty {
                             Text(gives)
-                                .font(.system(size: TypeScale.detail))
+                                .font(.app(size: TypeScale.detail))
                                 .foregroundStyle(.secondary)
                         }
                     }
                     if item.patch.file == nil, item.thread.isRemote, let from = item.patch.folder {
                         // Another Mac's folder: nothing here to show it in.
                         Text(from.abbreviatingHome)
-                            .font(.system(size: TypeScale.small))
+                            .font(.app(size: TypeScale.small))
                             .foregroundStyle(Color(nsColor: Theme.faintText))
                     } else if let from = item.patch.file ?? item.patch.folder {
                         PlainLink(title: from.abbreviatingHome, help: item.patch.file == nil ? "Show the folder in Finder" : "Open the file") {
@@ -683,14 +683,14 @@ private struct PatchesSection: View {
                                 NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: from)])
                             }
                         }
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                     }
                 }
             }
             if found.isEmpty {
                 Text("None from its folders yet. A patch in .threadbear/patches in one of them shows here, and on every thread in the project.")
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             }
         }

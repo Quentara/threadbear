@@ -327,6 +327,8 @@ struct RootView: View {
                     .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
             }
         }
+        // Geist for any text that doesn't set its own font (AppFonts).
+        .font(.app(size: 13))
         // The tour's frames are in this space, and its overlay covers it.
         .coordinateSpace(.named(Tour.space))
         // Back and forward's arrow while a trackpad swipe is under way.

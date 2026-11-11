@@ -400,12 +400,12 @@ private struct EditingBanner: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
             Image(systemName: "pencil")
-                .font(.system(size: TypeScale.sidebarMeta))
+                .font(.app(size: TypeScale.sidebarMeta))
                 .foregroundStyle(.secondary)
             Text(sending
                  ? "Cutting the thread back to this message…"
                  : "Editing a message. Sending cuts the thread back to it and undoes the agent's file changes since.")
-                .font(.system(size: TypeScale.sidebarMeta + 1))
+                .font(.app(size: TypeScale.sidebarMeta + 1))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: zoomed(8))
@@ -414,7 +414,7 @@ private struct EditingBanner: View {
             } else {
                 Button("Cancel", action: onCancel)
                     .buttonStyle(.link)
-                    .font(.system(size: TypeScale.sidebarMeta + 1))
+                    .font(.app(size: TypeScale.sidebarMeta + 1))
                     .tip("Stop editing and put back what was in the box (Esc)")
             }
         }
@@ -463,7 +463,7 @@ struct AttachmentThumbnail: View {
                 if hovering || Self.debugShowRemove {
                     Button(action: onRemove) {
                         Image(systemName: "xmark")
-                            .font(.system(size: zoomed(8), weight: .bold))
+                            .font(.app(size: zoomed(8), weight: .bold))
                             .foregroundStyle(.white)
                             .frame(width: zoomed(18), height: zoomed(18))
                             .background(Circle().fill(.black.opacity(0.72)))
@@ -630,7 +630,7 @@ struct ComposerTextField: NSViewRepresentable {
 
     // Computed, so they follow the zoom (`applyTypeScale` re-applies
     // them to a text view that's already up).
-    static var font: NSFont { .systemFont(ofSize: TypeScale.composer) }
+    static var font: NSFont { .appFont(ofSize: TypeScale.composer) }
     /// The transcript's fixed body line height, glyphs centred in it, so a
     /// message keeps its rhythm when it's sent (at 18 + 3 spacing the box
     /// was denser than the bubble it became).

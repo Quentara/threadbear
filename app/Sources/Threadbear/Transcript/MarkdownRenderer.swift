@@ -123,8 +123,8 @@ enum MarkdownRenderer {
     }
 
     private static let leadingSpacer: NSAttributedString = {
-        let (style, _) = Theme.lines(1, font: .systemFont(ofSize: 1))
-        return NSAttributedString(string: "\u{200B}\n", attributes: [.font: NSFont.systemFont(ofSize: 1), .paragraphStyle: style])
+        let (style, _) = Theme.lines(1, font: .appFont(ofSize: 1))
+        return NSAttributedString(string: "\u{200B}\n", attributes: [.font: NSFont.appFont(ofSize: 1), .paragraphStyle: style])
     }()
 
     /// How deep quotes and lists may nest before a block is drawn as words.
@@ -434,9 +434,9 @@ enum MarkdownRenderer {
 
         static func headingFont(_ level: Int) -> NSFont {
             switch level {
-            case 1: return .systemFont(ofSize: TypeScale.headings.0, weight: .semibold)
-            case 2: return .systemFont(ofSize: TypeScale.headings.1, weight: .semibold)
-            default: return .systemFont(ofSize: TypeScale.headings.2, weight: .semibold)
+            case 1: return .appFont(ofSize: TypeScale.headings.0, weight: .semibold)
+            case 2: return .appFont(ofSize: TypeScale.headings.1, weight: .semibold)
+            default: return .appFont(ofSize: TypeScale.headings.2, weight: .semibold)
             }
         }
 
@@ -725,7 +725,7 @@ enum MarkdownRenderer {
             }
         }
 
-        static var tableHeaderFont: NSFont { .systemFont(ofSize: TypeScale.label, weight: .semibold) }
+        static var tableHeaderFont: NSFont { .appFont(ofSize: TypeScale.label, weight: .semibold) }
 
         // MARK: Inlines
 
@@ -767,7 +767,7 @@ enum MarkdownRenderer {
             // No-break spaces, so a pill doesn't wrap apart.
             let label = ReplyButtons.label(button, look: look).replacingOccurrences(of: " ", with: "\u{00A0}")
             output.append(NSAttributedString(string: label, attributes: [
-                .font: NSFont.systemFont(ofSize: TypeScale.label, weight: .medium),
+                .font: NSFont.appFont(ofSize: TypeScale.label, weight: .medium),
                 .foregroundColor: Theme.replyButton(look).text,
                 .tbReplyButton: id, .tbReplyLook: look.rawValue,
                 .toolTip: ReplyButtons.tip(button, look: look),

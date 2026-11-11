@@ -330,8 +330,11 @@ private struct DividerHandle: View {
             // The gap itself, under the lit strip.
             .background {
                 if let gap = options.gapFill {
+                    // A point wider than the gap: a split's fractions can put
+                    // the gap half a point off the handle's centre, and the
+                    // picture showed through as a bright seam beside the line.
                     Rectangle().fill(gap)
-                        .frame(width: axis == .horizontal ? DockTheme.gap : nil, height: axis == .vertical ? DockTheme.gap : nil)
+                        .frame(width: axis == .horizontal ? DockTheme.gap + 1 : nil, height: axis == .vertical ? DockTheme.gap + 1 : nil)
                 }
             }
             .frame(width: axis == .horizontal ? 14 : nil, height: axis == .vertical ? 14 : nil)

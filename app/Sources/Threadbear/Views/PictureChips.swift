@@ -23,7 +23,7 @@ enum PictureChip {
 
         init(font: NSFont) {
             self.font = font
-            labelFont = .systemFont(ofSize: (font.pointSize * 0.87).rounded())
+            labelFont = .appFont(ofSize: (font.pointSize * 0.87).rounded())
             height = (labelFont.ascender - labelFont.descender).rounded(.up) + (font.pointSize * 0.27).rounded()
             icon = height - (font.pointSize * 0.4).rounded()
             gap = (height * 0.25).rounded()

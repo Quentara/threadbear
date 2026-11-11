@@ -40,27 +40,27 @@ struct ConnectorsPanel: View {
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                     // Where they live ("bruce"), rather than a label.
                     Text(ConnectorsText.host(status) ?? "Gateway")
-                        .font(.system(size: zoomed(11), weight: .medium))
+                        .font(.app(size: zoomed(11), weight: .medium))
                         .foregroundStyle(.tertiary)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 0)
                     if ConnectorsText.manageURL(status) != nil {
                         Button { app.openConnectorsAdmin() } label: {
-                            Image(systemName: "arrow.up.forward.square").font(.system(size: zoomed(11)))
+                            Image(systemName: "arrow.up.forward.square").font(.app(size: zoomed(11)))
                         }
                         .buttonStyle(.borderless)
                         .foregroundStyle(.secondary)
                         .tip("Manage connectors on \(ConnectorsText.host(status) ?? "the gateway")")
                     }
                     Button { app.refreshConnectors(shown: true) } label: {
-                        Image(systemName: "arrow.clockwise").font(.system(size: zoomed(11)))
+                        Image(systemName: "arrow.clockwise").font(.app(size: zoomed(11)))
                     }
                     .buttonStyle(.borderless)
                     .busy(app.isBusy(BusyKey.refreshConnectors))
                     .foregroundStyle(.secondary)
                     .tip("Check the gateway again now")
                     Button { aboutShown.toggle() } label: {
-                        Image(systemName: "info.circle").font(.system(size: zoomed(11)))
+                        Image(systemName: "info.circle").font(.app(size: zoomed(11)))
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -69,7 +69,7 @@ struct ConnectorsPanel: View {
                 }
                 if let line = ConnectorsText.emptyLine(status), status?.services.isEmpty ?? true {
                     Text(line)
-                        .font(.system(size: zoomed(12)))
+                        .font(.app(size: zoomed(12)))
                         .foregroundStyle(status?.state == "unreachable" ? .primary : .secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -101,14 +101,14 @@ private struct ConnectorRow: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: zoomed(2)) {
                 Text(service.title)
-                    .font(.system(size: zoomed(12), weight: signedOut ? .medium : .regular))
+                    .font(.app(size: zoomed(12), weight: signedOut ? .medium : .regular))
                     .lineLimit(1)
                 Text(ConnectorsText.stateLine(service))
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(.secondary)
                 if let message = service.message, service.state != "connected" {
                     Text(message)
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                         .foregroundStyle(.tertiary)
                         .lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
@@ -124,7 +124,7 @@ private struct ConnectorRow: View {
                 // want to sign it out or switch accounts: its page on the
                 // gateway has Disconnect. Quiet until the row's hovered.
                 Button { app.openConnect(service) } label: {
-                    Image(systemName: "arrow.up.forward").font(.system(size: zoomed(11)))
+                    Image(systemName: "arrow.up.forward").font(.app(size: zoomed(11)))
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -162,7 +162,7 @@ private struct ConnectorsAbout: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .font(.system(size: zoomed(12)))
+        .font(.app(size: zoomed(12)))
         .fixedSize(horizontal: false, vertical: true)
         .frame(width: zoomed(280), alignment: .leading)
         .padding(zoomed(14))

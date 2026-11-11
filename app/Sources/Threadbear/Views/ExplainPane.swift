@@ -42,14 +42,14 @@ struct ExplainPane: View {
         HStack(spacing: zoomed(6)) {
             TextField("Ask a follow-up", text: $question, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .lineLimit(1...5)
                 .focused($asking)
                 .onSubmit(send)
                 .tip("Ask more about this. It stays out of the thread.")
             Button(action: send) {
                 Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: zoomed(18)))
+                    .font(.app(size: zoomed(18)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(canSend(session) ? Color.accentColor : Color.secondary)
@@ -81,7 +81,7 @@ private struct SelectionQuote: View {
                 .fill(Color.secondary.opacity(0.4))
                 .frame(width: 2)
             Text(text)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .lineLimit(6)
                 .textSelection(.enabled)
@@ -100,7 +100,7 @@ private struct TurnView: View {
         VStack(alignment: .leading, spacing: zoomed(6)) {
             if let question = turn.question {
                 Text(question)
-                    .font(.system(size: TypeScale.label, weight: .semibold))
+                    .font(.app(size: TypeScale.label, weight: .semibold))
                     .textSelection(.enabled)
             }
             if let answer = turn.answer {
@@ -111,11 +111,11 @@ private struct TurnView: View {
             } else if let error = turn.error {
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
                     Text(error)
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                     Button("Try again", action: retry)
                         .buttonStyle(.link)
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .tip("Ask the model again")
                 }
             } else {
@@ -123,7 +123,7 @@ private struct TurnView: View {
                     SpinnerMark()
                         .frame(width: zoomed(12), height: zoomed(12))
                     Text("Thinking")
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                 }
             }

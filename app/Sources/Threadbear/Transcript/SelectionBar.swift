@@ -100,7 +100,7 @@ private struct SelectionBarButton: View {
         Button(action: action) {
             Label(title, systemImage: symbol)
                 .labelStyle(.titleAndIcon)
-                .font(.system(size: TypeScale.detail, weight: .medium))
+                .font(.app(size: TypeScale.detail, weight: .medium))
                 .padding(.horizontal, zoomed(8))
                 .padding(.vertical, zoomed(4))
                 .background(RoundedRectangle(cornerRadius: 5).fill(hovered ? Color.primary.opacity(0.08) : .clear))

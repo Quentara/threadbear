@@ -135,7 +135,7 @@ struct ShortcutKeyBadge: View {
 
     var body: some View {
         Text(key)
-            .font(.system(size: zoomed(10.5), weight: .semibold))
+            .font(.app(size: zoomed(10.5), weight: .semibold))
             .foregroundStyle(Self.onAmber)
             .lineLimit(1)
             .fixedSize()

@@ -84,7 +84,7 @@ struct PendingReviewsButton: View {
                 .tip("Compare the images the agent made side by side, and reply")
             Spacer()
         }
-        .font(.system(size: TypeScale.work)).padding(.horizontal, 20).padding(.vertical, 9)
+        .font(.app(size: TypeScale.work)).padding(.horizontal, 20).padding(.vertical, 9)
         .overlay(alignment: .bottom) { Divider() }
         .popover(isPresented: $showing) {
             VStack(alignment: .leading, spacing: 12) {
@@ -104,7 +104,7 @@ struct PendingReviewsButton: View {
                         .tip("Open this review")
                 }
                 if !loading && reviews.isEmpty && error == nil { Text("No reviews waiting.").foregroundStyle(.secondary) }
-            }.font(.system(size: TypeScale.work)).padding(16).frame(minWidth: 300)
+            }.font(.app(size: TypeScale.work)).padding(16).frame(minWidth: 300)
                 .task {
                     loading = true
                     error = nil
@@ -369,7 +369,7 @@ struct ReviewWindow: View {
         VStack(spacing: 0) {
             if let error = session.error {
                 HStack {
-                    Text(error).font(.system(size: TypeScale.detail)).textSelection(.enabled)
+                    Text(error).font(.app(size: TypeScale.detail)).textSelection(.enabled)
                     Spacer()
                     if session.conflict && session.review.isPending {
                         Button("Save my draft") { Task { await session.keepMyDraft() } }
@@ -425,13 +425,13 @@ struct ReviewWindow: View {
         let title = shown?.title
         let where_ = shots.count > 1 ? "\(index + 1) of \(shots.count)" + (title.map { " \u{00B7} \($0)" } ?? "") : title ?? ""
         return HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(option.label).font(.system(size: TypeScale.work + 2, weight: .semibold)).lineLimit(1)
-            Text(where_).font(.system(size: TypeScale.work)).foregroundStyle(.secondary).lineLimit(1)
+            Text(option.label).font(.app(size: TypeScale.work + 2, weight: .semibold)).lineLimit(1)
+            Text(where_).font(.app(size: TypeScale.work)).foregroundStyle(.secondary).lineLimit(1)
             Spacer(minLength: 8)
             if let baseline = session.baseline, session.canPeek {
                 Button { session.peeking.toggle() } label: {
                     Label(baseline.title, systemImage: "rectangle.2.swap")
-                        .font(.system(size: TypeScale.detail, weight: .medium))
+                        .font(.app(size: TypeScale.detail, weight: .medium))
                         .lineLimit(1).frame(maxWidth: 140)
                         .padding(.horizontal, 11).frame(height: 26)
                         .foregroundStyle(session.peeking ? Color.white : Color.primary)
@@ -446,7 +446,7 @@ struct ReviewWindow: View {
             if let url = LinkPolicy.web(option.url) {
                 Button { OpenGate.openWeb(url) } label: {
                     Label("Open live", systemImage: "arrow.up.right")
-                        .font(.system(size: TypeScale.detail, weight: .medium))
+                        .font(.app(size: TypeScale.detail, weight: .medium))
                         .padding(.horizontal, 11).frame(height: 26)
                         .background(Color.primary.opacity(0.08), in: Capsule())
                         .contentShape(Capsule())
@@ -513,7 +513,7 @@ struct ReviewWindow: View {
                 allMarks
                 Button { session.showAll() } label: {
                     Image(systemName: "square.grid.2x2")
-                        .font(.system(size: 13, weight: session.mode == .all ? .semibold : .regular))
+                        .font(.app(size: 13, weight: session.mode == .all ? .semibold : .regular))
                         .foregroundStyle(session.mode == .all ? Color.primary : Color.secondary)
                         .frame(width: 26, height: 26).contentShape(Rectangle())
                 }.buttonStyle(.plain).tip("See them all and choose (Esc)")
@@ -538,7 +538,7 @@ struct ReviewWindow: View {
                                 ReviewThumb(path: shot.image.path, width: 92, height: 58)
                                     .opacity(current ? 1 : 0.55)
                                     .overlay(RoundedRectangle(cornerRadius: 5).strokeBorder(current ? Color.primary : Color.clear, lineWidth: 2).padding(-3))
-                                Text(shot.title ?? "\(index + 1)").font(.system(size: TypeScale.detail - 1))
+                                Text(shot.title ?? "\(index + 1)").font(.app(size: TypeScale.detail - 1))
                                     .foregroundStyle(current ? Color.primary : Color.secondary).lineLimit(1).frame(width: 92, alignment: .leading)
                             }.contentShape(Rectangle())
                         }.buttonStyle(.plain).tip(shotTip(option, index)).id(index)
@@ -595,7 +595,7 @@ struct ReviewWindow: View {
         let picked = session.draft.pickedIds.contains(option.id)
         let here = session.mode == .single && session.focused == index
         return HStack(spacing: 0) {
-            Text(option.id).font(.system(size: TypeScale.detail - 1, weight: .semibold))
+            Text(option.id).font(.app(size: TypeScale.detail - 1, weight: .semibold))
                 .foregroundStyle(picked ? Color.accentColor : here ? Color.primary : Color.secondary)
                 .lineLimit(1).padding(.trailing, 2)
             ForEach(Array(option.allShots.indices), id: \.self) { shot in
@@ -614,7 +614,7 @@ struct ReviewWindow: View {
 
     private func stepButton(_ symbol: String, tip: String, enabled: Bool, prominent: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 15, weight: .semibold))
+            Image(systemName: symbol).font(.app(size: 15, weight: .semibold))
                 .frame(width: 50, height: 32)
                 .background(Color.primary.opacity(prominent && enabled ? 0.1 : 0.05), in: Capsule())
                 .contentShape(Capsule())
@@ -648,11 +648,11 @@ struct ReviewWindow: View {
         let fit = ReviewGalleryLayout.fit(aspect: aspect(option.image), width: room.width, height: room.height)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text(option.id).font(.system(size: TypeScale.detail, weight: .semibold))
+                Text(option.id).font(.app(size: TypeScale.detail, weight: .semibold))
                     .foregroundStyle(picked ? Color.accentColor : Color.secondary)
-                if count > 1 { Text("\(count) shots").font(.system(size: TypeScale.detail)).foregroundStyle(.tertiary) }
+                if count > 1 { Text("\(count) shots").font(.app(size: TypeScale.detail)).foregroundStyle(.tertiary) }
                 if session.review.recommended == option.id {
-                    Text("my pick").font(.system(size: TypeScale.detail)).foregroundStyle(Color.accentColor)
+                    Text("my pick").font(.app(size: TypeScale.detail)).foregroundStyle(Color.accentColor)
                 }
             }
             .lineLimit(1).frame(height: Self.captionHeight, alignment: .topLeading)
@@ -691,7 +691,7 @@ struct ReviewWindow: View {
                     // raw in grey it was one long wall where backticks showed
                     // and nothing stood out (Mike, 7 Nov).
                     if let note = session.review.note, !note.isEmpty {
-                        Text(AttributedString.inlineMarkdown(note)).font(.system(size: TypeScale.work)).lineSpacing(2)
+                        Text(AttributedString.inlineMarkdown(note)).font(.app(size: TypeScale.work)).lineSpacing(2)
                             .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                             .padding(14)
                         Divider()
@@ -745,7 +745,7 @@ struct ReviewWindow: View {
                 // Notes on one option are from before the one reply box,
                 // or a client that still sends them: shown, as they'll go.
                 if !note.isEmpty {
-                    Text(note).font(.system(size: TypeScale.work)).textSelection(.enabled)
+                    Text(note).font(.app(size: TypeScale.work)).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -764,13 +764,13 @@ struct ReviewWindow: View {
         if session.editable && !option.reference {
             Button { session.pick(option.id) } label: {
                 Image(systemName: picked ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 15))
+                    .font(.app(size: 15))
                     .foregroundStyle(picked ? Color.accentColor : Color.secondary)
                     .frame(width: 16, height: 16).padding(4).contentShape(Rectangle())
             }.buttonStyle(.plain).padding(-4)
                 .tip(picked ? "Unpick \(option.id)" : "Pick \(option.id)")
         } else if picked {
-            Image(systemName: "checkmark.square.fill").font(.system(size: 15)).foregroundStyle(Color.accentColor).frame(width: 16, height: 16)
+            Image(systemName: "checkmark.square.fill").font(.app(size: 15)).foregroundStyle(Color.accentColor).frame(width: 16, height: 16)
         } else {
             Color.clear.frame(width: 16, height: 16)
         }
@@ -780,13 +780,13 @@ struct ReviewWindow: View {
         HStack(alignment: .top, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
                 // The agent's pick, worded and coloured as on an asks card.
-                (Text(option.label).font(.system(size: TypeScale.work, weight: .semibold))
+                (Text(option.label).font(.app(size: TypeScale.work, weight: .semibold))
                     + (session.review.recommended == option.id
-                        ? Text("  my pick").font(.system(size: TypeScale.detail)).foregroundStyle(Color.accentColor)
+                        ? Text("  my pick").font(.app(size: TypeScale.detail)).foregroundStyle(Color.accentColor)
                         : Text("")))
                     .fixedSize(horizontal: false, vertical: true)
                 if let reason = option.note, !reason.isEmpty {
-                    Text(AttributedString.inlineMarkdown(reason)).font(.system(size: TypeScale.detail)).foregroundStyle(.secondary).lineSpacing(1.5)
+                    Text(AttributedString.inlineMarkdown(reason)).font(.app(size: TypeScale.detail)).foregroundStyle(.secondary).lineSpacing(1.5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -801,21 +801,21 @@ struct ReviewWindow: View {
         // Grows with what's typed: the hidden copy sets the height, and the
         // editor sits over it, as a TextEditor on its own takes all the
         // room the rail has left.
-        return Text(reply + "\n").font(.system(size: TypeScale.work)).opacity(0)
+        return Text(reply + "\n").font(.app(size: TypeScale.work)).opacity(0)
             .padding(.horizontal, 5).padding(.vertical, 1)
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .topLeading)
             .frame(maxHeight: 220)
             .fixedSize(horizontal: false, vertical: true)
             .overlay {
                 TextEditor(text: Binding(get: { session.draft.reply ?? "" }, set: { session.setReply($0) }))
-                    .font(.system(size: TypeScale.work)).scrollContentBackground(.hidden)
+                    .font(.app(size: TypeScale.work)).scrollContentBackground(.hidden)
                     .scrollIndicators(.never)
                     .focused($replying)
                     .accessibilityLabel("Reply")
             }
             .overlay(alignment: .topLeading) {
                 if reply.isEmpty {
-                    Text("Add a reply").font(.system(size: TypeScale.work)).foregroundStyle(.tertiary)
+                    Text("Add a reply").font(.app(size: TypeScale.work)).foregroundStyle(.tertiary)
                         .padding(.leading, 5).allowsHitTesting(false)
                 }
             }
@@ -855,10 +855,10 @@ struct ReviewWindow: View {
         } else {
             VStack(alignment: .leading, spacing: 10) {
                 let sent = session.review.response ?? session.draft
-                if sent.none { Text("None of them").font(.system(size: TypeScale.work, weight: .semibold)) }
+                if sent.none { Text("None of them").font(.app(size: TypeScale.work, weight: .semibold)) }
                 if let reply = sent.reply, !reply.isEmpty { sentReply(reply) }
                 HStack {
-                    Text(status).font(.system(size: TypeScale.detail)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(status).font(.app(size: TypeScale.detail)).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
                     Button("Done") { close() }.tip("Close it")
                 }
@@ -871,13 +871,13 @@ struct ReviewWindow: View {
     /// push Done off the window. The hidden copy sets the height, as in the
     /// reply box.
     private func sentReply(_ reply: String) -> some View {
-        Text(reply).font(.system(size: TypeScale.work)).opacity(0).accessibilityHidden(true)
+        Text(reply).font(.app(size: TypeScale.work)).opacity(0).accessibilityHidden(true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(maxHeight: 220)
             .fixedSize(horizontal: false, vertical: true)
             .overlay {
                 ScrollView {
-                    Text(reply).font(.system(size: TypeScale.work)).textSelection(.enabled)
+                    Text(reply).font(.app(size: TypeScale.work)).textSelection(.enabled)
                         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
                 }
             }

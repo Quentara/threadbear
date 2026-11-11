@@ -248,9 +248,9 @@ final class RichBlockCell: NSTextAttachmentCell {
     static var radius: CGFloat { zoomed(8) }
     /// The tallest a picture is drawn in the reply; Open shows all of it.
     static var maxBody: CGFloat { zoomed(560) }
-    private static var labelFont: NSFont { .monospacedSystemFont(ofSize: TypeScale.detail, weight: .regular) }
-    private static var switchFont: NSFont { .systemFont(ofSize: TypeScale.detail, weight: .medium) }
-    private static var errorFont: NSFont { .systemFont(ofSize: TypeScale.detail) }
+    private static var labelFont: NSFont { .appMonoFont(ofSize: TypeScale.detail, weight: .regular) }
+    private static var switchFont: NSFont { .appFont(ofSize: TypeScale.detail, weight: .medium) }
+    private static var errorFont: NSFont { .appFont(ofSize: TypeScale.detail) }
 
     /// Whether the body shows the picture, rather than the source.
     var showsPicture: Bool {

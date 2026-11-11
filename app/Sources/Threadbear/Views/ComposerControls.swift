@@ -58,7 +58,7 @@ struct ComposerControls: View {
                 .padding(.leading, -zoomed(7))
             if let problem = app.newThreadRunnerProblem {
                 Text("Can't reach \(app.newThreadRunner?.name ?? "it")")
-                    .font(.system(size: TypeScale.chip))
+                    .font(.app(size: TypeScale.chip))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .tip(problem)
@@ -80,10 +80,10 @@ struct ComposerControls: View {
     private func runnerChip(_ thread: ThreadSummary, place: String) -> some View {
         HStack(spacing: zoomed(4)) {
             Image(systemName: app.runnerIcon(of: thread))
-                .font(.system(size: TypeScale.chip - 1))
+                .font(.app(size: TypeScale.chip - 1))
                 .foregroundStyle(Color(nsColor: Theme.faintIcon))
             Text(app.runnerName(of: thread) ?? "")
-                .font(.system(size: TypeScale.chip))
+                .font(.app(size: TypeScale.chip))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -98,10 +98,10 @@ struct ComposerControls: View {
         HStack(spacing: zoomed(4)) {
             HStack(spacing: zoomed(4)) {
                 Image(systemName: app.runnerIcon(of: thread))
-                    .font(.system(size: TypeScale.chip - 1))
+                    .font(.app(size: TypeScale.chip - 1))
                     .foregroundStyle(Color(nsColor: Theme.faintIcon))
                 Text(app.runnerName(of: thread) ?? "")
-                    .font(.system(size: TypeScale.chip))
+                    .font(.app(size: TypeScale.chip))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
@@ -765,26 +765,26 @@ private struct ComposerChip: View {
                         ProviderMark(provider: logo, symbol: icon, side: TypeScale.chip - 1)
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: TypeScale.chip - 1))
+                            .font(.app(size: TypeScale.chip - 1))
                     }
                 }
                 .foregroundStyle(Color(nsColor: Theme.faintIcon))
                 // No title: an icon-only chip (Runs on).
                 if !title.isEmpty {
                     Text(title)
-                        .font(.system(size: TypeScale.chip))
+                        .font(.app(size: TypeScale.chip))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }
                 switch badge {
                 case .low(let percent)?:
                     Text("· " + percent)
-                        .font(.system(size: TypeScale.chip))
+                        .font(.app(size: TypeScale.chip))
                         .foregroundStyle(.orange)
                         .lineLimit(1)
                 case .blocked?:
                     Text("Limit reached")
-                        .font(.system(size: TypeScale.chip))
+                        .font(.app(size: TypeScale.chip))
                         .foregroundStyle(.red)
                         .lineLimit(1)
                 case nil:
@@ -794,7 +794,7 @@ private struct ComposerChip: View {
                 // the new-thread composer with the machine chip there too.
                 if !title.isEmpty {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: zoomed(7.5), weight: .bold))
+                        .font(.app(size: zoomed(7.5), weight: .bold))
                         .foregroundStyle(Color(nsColor: Theme.faintIcon))
                 }
             }
@@ -870,7 +870,7 @@ struct ContextPopover: View {
         let thread = app.threads[threadId]
         VStack(alignment: .leading, spacing: 6) {
             if let thread, let meter = ContextMeter(thread) {
-                Text("Context").font(.system(size: 13, weight: .semibold))
+                Text("Context").font(.app(size: 13, weight: .semibold))
                 ProgressView(value: meter.fraction)
                     .progressViewStyle(.linear)
                     .tint(meter.isNearlyFull ? .orange : .secondary)
@@ -879,9 +879,9 @@ struct ContextPopover: View {
                     Spacer()
                     Text("\(meter.percent)%").foregroundStyle(.secondary)
                 }
-                .font(.system(size: 12))
+                .font(.app(size: 12))
                 Text(ContextMeter.compactNote(provider: thread.provider))
-                    .font(.system(size: 11))
+                    .font(.app(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 Divider().padding(.vertical, 2)
@@ -901,7 +901,7 @@ struct ContextPopover: View {
             Spacer(minLength: 12)
             Text(value).lineLimit(1).truncationMode(.middle)
         }
-        .font(.system(size: 12))
+        .font(.app(size: 12))
     }
 }
 
@@ -926,7 +926,7 @@ private struct PlusButton: View {
             anchor.popUp(menu())
         } label: {
             Image(systemName: "plus")
-                .font(.system(size: zoomed(15), weight: .regular))
+                .font(.app(size: zoomed(15), weight: .regular))
                 .foregroundStyle(.secondary)
                 .frame(width: zoomed(26), height: zoomed(26))
                 .background(Circle().fill(Color.primary.opacity(hovering ? 0.08 : 0)))
@@ -978,7 +978,7 @@ private struct SendButton: View {
                 .accessibilityLabel("Stopping")
         } else if running && !canSend {
             Button(action: onStop) {
-                Image(systemName: "stop.fill").font(.system(size: zoomed(9), weight: .bold))
+                Image(systemName: "stop.fill").font(.app(size: zoomed(9), weight: .bold))
             }
             .buttonStyle(CircleButtonStyle(filled: true))
             .shortcutHint(AppShortcuts.shared.display(.stop), .before)
@@ -987,7 +987,7 @@ private struct SendButton: View {
             .shortcut(.stop)
         } else {
             Button(action: onSend) {
-                Image(systemName: "arrow.up").font(.system(size: zoomed(13), weight: .semibold))
+                Image(systemName: "arrow.up").font(.app(size: zoomed(13), weight: .semibold))
                     // Up 3 pt and back as Return lands: the first half of
                     // the message leaving (`SendLift`).
                     .keyframeAnimator(initialValue: CGFloat(0), trigger: Juice.reduceMotion ? 0 : nudges) { arrow, y in
@@ -1072,11 +1072,11 @@ struct ModelPickerView: View {
         VStack(spacing: 0) {
                 HStack(spacing: zoomed(6)) {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: zoomed(12)))
+                        .font(.app(size: zoomed(12)))
                         .foregroundStyle(.tertiary)
                     TextField("Search models", text: $query)
                         .textFieldStyle(.plain)
-                        .font(.system(size: zoomed(13)))
+                        .font(.app(size: zoomed(13)))
                         .tip("Search by name or id. Return picks the first match.")
                         .focused($searching)
                         .onSubmit {
@@ -1118,7 +1118,7 @@ struct ModelPickerView: View {
                         }
                         if sections.allSatisfy(\.rows.isEmpty) {
                             Text(query.isEmpty ? "No models listed yet" : "Nothing matches")
-                                .font(.system(size: zoomed(13)))
+                                .font(.app(size: zoomed(13)))
                                 .foregroundStyle(.secondary)
                                 .padding(zoomed(10))
                         }
@@ -1161,7 +1161,7 @@ private struct ListHeading: View {
 
     var body: some View {
         Text(title)
-            .font(.system(size: zoomed(11), weight: .medium))
+            .font(.app(size: zoomed(11), weight: .medium))
             .foregroundStyle(.tertiary)
             .padding(.horizontal, zoomed(10))
             .padding(.top, zoomed(first ? 4 : 8))
@@ -1246,14 +1246,14 @@ private struct PickerRail: View {
                     // One weight either way: a bolder chosen title
                     // ("Side projects") no longer fitted the rail.
                     Text(column.title)
-                        .font(.system(size: zoomed(12)))
+                        .font(.app(size: zoomed(12)))
                         .foregroundStyle(active ? .primary : .secondary)
                         .lineLimit(1)
                         .minimumScaleFactor(0.85)
                         .truncationMode(.tail)
                     if let subtitle = column.subtitle {
                         Text(subtitle)
-                            .font(.system(size: zoomed(10.5)))
+                            .font(.app(size: zoomed(10.5)))
                             .monospacedDigit()
                             .foregroundStyle(.tertiary)
                             .lineLimit(1)
@@ -1302,7 +1302,7 @@ private struct PoolFooter: View {
                     .foregroundStyle(.primary)
                     .tip("Let the pool pick the login again")
                 }
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
             }
         }
         .padding(.horizontal, zoomed(12))
@@ -1336,11 +1336,11 @@ private struct ModelRow: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: zoomed(1)) {
                     Text(row.title)
-                        .font(.system(size: zoomed(13), weight: .medium))
+                        .font(.app(size: zoomed(13), weight: .medium))
                         .foregroundStyle(.primary)
                     if let subtitle = row.subtitle, !subtitle.isEmpty {
                         Text(subtitle)
-                            .font(.system(size: zoomed(11)))
+                            .font(.app(size: zoomed(11)))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
@@ -1348,7 +1348,7 @@ private struct ModelRow: View {
                 Spacer(minLength: zoomed(8))
                 if row.isDefault {
                     Image(systemName: "star.fill")
-                        .font(.system(size: zoomed(9)))
+                        .font(.app(size: zoomed(9)))
                         .foregroundStyle(.tertiary)
                         .tip("The default")
                         .accessibilityLabel("Default")
@@ -1386,7 +1386,7 @@ private struct ProviderMark: View {
                 .frame(width: side, height: side)
         } else {
             Image(systemName: symbol)
-                .font(.system(size: side * 0.85, weight: .medium))
+                .font(.app(size: side * 0.85, weight: .medium))
                 .frame(width: side, height: side)
         }
     }
@@ -1427,7 +1427,7 @@ private struct EffortRow: View {
         var body: some View {
             Button(action: action) {
                 Text(title)
-                    .font(.system(size: zoomed(11), weight: active ? .semibold : .regular))
+                    .font(.app(size: zoomed(11), weight: active ? .semibold : .regular))
                     .foregroundStyle(active ? .primary : .secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
@@ -1470,7 +1470,7 @@ struct AccountPickerView: View {
                 VStack(alignment: .leading, spacing: zoomed(1)) {
                     ForEach(sections) { section in
                         Text(section.title)
-                            .font(.system(size: zoomed(11), weight: .medium))
+                            .font(.app(size: zoomed(11), weight: .medium))
                             .foregroundStyle(.tertiary)
                             .padding(.horizontal, zoomed(10))
                             .padding(.top, zoomed(section.id == sections.first?.id ? 2 : 10))
@@ -1485,7 +1485,7 @@ struct AccountPickerView: View {
                     }
                     if sections.isEmpty {
                         Text("No accounts yet")
-                            .font(.system(size: zoomed(13)))
+                            .font(.app(size: zoomed(13)))
                             .foregroundStyle(.secondary)
                             .padding(zoomed(10))
                     }
@@ -1497,7 +1497,7 @@ struct AccountPickerView: View {
             if let footer = settings.accountFooter {
                 Divider()
                 Text(footer)
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(.tertiary)
                     .padding(.horizontal, zoomed(16))
                     .padding(.vertical, zoomed(8))
@@ -1519,13 +1519,13 @@ private struct LoginRow: View {
             HStack(spacing: zoomed(8)) {
                 VStack(alignment: .leading, spacing: zoomed(1)) {
                     Text(item.title)
-                        .font(.system(size: zoomed(13), weight: .medium))
+                        .font(.app(size: zoomed(13), weight: .medium))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     if let subtitle = item.subtitle {
                         // Two lines rather than "resets t…".
                         Text(subtitle)
-                            .font(.system(size: zoomed(11)))
+                            .font(.app(size: zoomed(11)))
                             .foregroundStyle(subtitleStyle)
                             .lineLimit(2)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1533,7 +1533,7 @@ private struct LoginRow: View {
                 }
                 Spacer(minLength: zoomed(8))
                 Image(systemName: "checkmark")
-                    .font(.system(size: zoomed(11), weight: .semibold))
+                    .font(.app(size: zoomed(11), weight: .semibold))
                     .foregroundStyle(.primary)
                     .opacity(item.isSelected ? 1 : 0)
                     .accessibilityHidden(!item.isSelected)

@@ -121,7 +121,7 @@ private struct DeviceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name.isEmpty ? (device.kind == .browser ? "Browser" : "Phone") : device.name)
                 Text(DeviceText.detail(device))
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(device.expired ? .orange : .secondary)
             }
             Spacer()
@@ -163,7 +163,7 @@ struct PairPhoneSheet: View {
             VStack(spacing: 4) {
                 Text("Scan it with the Threadbear app on your iPhone.")
                 Text("Don't have the app yet? ios/README.md in the repo says how to put it on your phone.")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

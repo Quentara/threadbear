@@ -176,7 +176,7 @@ struct InboxZero: View {
             VStack(alignment: .leading, spacing: zoomed(6)) {
                 if bedtime { asleep } else { waving }
                 Text(bedtime ? "Nothing in the inbox. Off to bed." : "Nothing in the inbox.")
-                    .font(.system(size: TypeScale.sidebarPreview))
+                    .font(.app(size: TypeScale.sidebarPreview))
                     .foregroundStyle(.secondary)
             }
         }
