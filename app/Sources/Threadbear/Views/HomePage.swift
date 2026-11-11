@@ -224,6 +224,8 @@ private struct HomeStatTile: View {
 enum Art {
     @MainActor static let librarian: NSImage? = image("librarian")
     @MainActor static let scheduled: NSImage? = image("scheduled")
+    /// The painting behind "What should we work on?" (Bierstadt, public domain).
+    @MainActor static let newThreadBackdrop: NSImage? = image("new-thread-backdrop", type: "jpg")
 
     private static let bundle: Bundle? = {
         let name = "Threadbear_Threadbear.bundle"
@@ -233,8 +235,8 @@ enum Art {
             .flatMap(Bundle.init(url:))
     }()
 
-    private static func image(_ name: String) -> NSImage? {
-        guard let url = bundle?.url(forResource: name, withExtension: "png", subdirectory: "Art") else { return nil }
+    private static func image(_ name: String, type: String = "png") -> NSImage? {
+        guard let url = bundle?.url(forResource: name, withExtension: type, subdirectory: "Art") else { return nil }
         return NSImage(contentsOf: url)
     }
 }
