@@ -279,8 +279,8 @@ struct WindowBackdrop: View {
     /// mode, a light wash in light mode.
     static let panelTint = Color(nsColor: NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(white: 0.08, alpha: 0.62)
-            : NSColor(white: 0.98, alpha: 0.72)
+            ? NSColor(white: 0.07, alpha: 0.78)
+            : NSColor(white: 0.98, alpha: 0.82)
     })
 
     var body: some View {
