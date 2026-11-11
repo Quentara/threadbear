@@ -282,6 +282,12 @@ struct WindowBackdrop: View {
             ? NSColor(white: 0.07, alpha: 0.78)
             : NSColor(white: 0.98, alpha: 0.82)
     })
+    /// The seams between panels: a solid grey line, not the bright picture.
+    static let gapFill = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.17, alpha: 1)
+            : NSColor(white: 0.82, alpha: 1)
+    })
 
     var body: some View {
         if let picture = Art.windowBackdrop {
@@ -312,10 +318,13 @@ struct RootView: View {
             // Drawn over the dock: its keys hang out to the right while ⌘
             // is held (ShortcutHints).
             ActivityBar()
+                // Tinted like the panels, over the painting.
+                .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
                 .zIndex(1)
             DockView(controller: app.dock, options: Self.options, content: content)
             if let thread = app.paneThread {
                 PanelRail(thread: thread, project: app.openProject)
+                    .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
             }
         }
         // The tour's frames are in this space, and its overlay covers it.
@@ -379,7 +388,10 @@ struct RootView: View {
         o.cornerMovesWindow = true
         o.barsMoveWindow = true
         // See-through panels when the painting's there to show through.
-        if Art.windowBackdrop != nil { o.panelFill = WindowBackdrop.panelTint }
+        if Art.windowBackdrop != nil {
+            o.panelFill = WindowBackdrop.panelTint
+            o.gapFill = WindowBackdrop.gapFill
+        }
         o.tip = { view, text in AnyView(view.tip(text)) }
         // A panel dragged out into a window of its own: the same model as
         // the main window's views.

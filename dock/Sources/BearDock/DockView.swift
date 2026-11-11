@@ -79,6 +79,9 @@ public struct DockOptions {
     /// hairline fill under the panels (the picture shows in the gaps).
     /// nil keeps the solid window colour.
     public var panelFill: Color? = nil
+    /// With `panelFill`: what the 1 pt gaps between panels are filled
+    /// with, so the picture doesn't show through them as bright seams.
+    public var gapFill: Color? = nil
 
     public init() {}
 }
@@ -317,12 +320,20 @@ private struct DividerHandle: View {
     let axis: SplitAxis
     var dragging = false
     @State private var hovering = false
+    @Environment(\.dockOptions) private var options
 
     var body: some View {
         let lit = hovering || dragging
         Rectangle()
             .fill(DockTheme.accent.opacity(lit ? 0.85 : 0))
             .frame(width: axis == .horizontal ? 3 : nil, height: axis == .vertical ? 3 : nil)
+            // The gap itself, under the lit strip.
+            .background {
+                if let gap = options.gapFill {
+                    Rectangle().fill(gap)
+                        .frame(width: axis == .horizontal ? DockTheme.gap : nil, height: axis == .vertical ? DockTheme.gap : nil)
+                }
+            }
             .frame(width: axis == .horizontal ? 14 : nil, height: axis == .vertical ? 14 : nil)
             .frame(maxWidth: axis == .vertical ? .infinity : nil, maxHeight: axis == .horizontal ? .infinity : nil)
             .contentShape(Rectangle())
