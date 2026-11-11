@@ -122,10 +122,12 @@ export PATH="$(dirname "$NODE"):$PATH"
 export THREADBEAR_NODE="$NODE"
 # Inside a Threadbear thread these name the live runner and the thread.
 # Every test makes its own temp data dir; none may find the real one.
+# The thread's key too: with it, a test's tb that's told it's in a thread
+# hands the real key to the test's runner, which refuses it.
 # THREADBEAR_CHECK_BUSY_EXIT is only for sending this run to a host: the
 # check-remote tests run under it would otherwise exit with it (Codex, 9 Nov).
 unset THREADBEAR_HOME THREADBEAR_DATA_DIR THREADBEAR_PORT THREADBEAR_URL THREADBEAR_LOG \
-  THREADBEAR_THREAD_ID THREADBEAR_RUNNER_VERSION THREADBEAR_RUNNER_HOME THREADBEAR_CHECK_BUSY_EXIT
+  THREADBEAR_THREAD_ID THREADBEAR_THREAD_KEY THREADBEAR_RUNNER_VERSION THREADBEAR_RUNNER_HOME THREADBEAR_CHECK_BUSY_EXIT
 # And their old names, which the runner and tb would otherwise take for these.
 for v in $(compgen -e | grep '^THREADBARE_' || true); do unset "$v"; done
 # No runner a check starts may install or update a CLI.
