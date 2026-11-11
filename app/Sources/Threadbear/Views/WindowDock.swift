@@ -282,12 +282,9 @@ struct WindowBackdrop: View {
             ? NSColor(white: 0.07, alpha: 0.78)
             : NSColor(white: 0.98, alpha: 0.82)
     })
-    /// The seams between panels: a solid grey line, not the bright picture.
-    static let gapFill = Color(nsColor: NSColor(name: nil) { appearance in
-        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
-            ? NSColor(white: 0.17, alpha: 1)
-            : NSColor(white: 0.82, alpha: 1)
-    })
+    /// The seams between panels: the same faint line as under the panels'
+    /// bars, over the tinted panels.
+    static let gapFill = Color.primary.opacity(0.07)
 
     var body: some View {
         if let picture = Art.windowBackdrop {

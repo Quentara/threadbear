@@ -79,8 +79,9 @@ public struct DockOptions {
     /// hairline fill under the panels (the picture shows in the gaps).
     /// nil keeps the solid window colour.
     public var panelFill: Color? = nil
-    /// With `panelFill`: what the 1 pt gaps between panels are filled
-    /// with, so the picture doesn't show through them as bright seams.
+    /// With `panelFill`: the panels meet with no gap, and this 1 pt line
+    /// is drawn over each edge between them instead (as the panels' bars
+    /// draw theirs), so the picture never shows through as a bright seam.
     public var gapFill: Color? = nil
 
     public init() {}
@@ -195,10 +196,15 @@ struct SplitView: View {
     let split: DockSplit
     @Environment(DockController.self) private var controller
     @Environment(\.dockContent) private var content
+    @Environment(\.dockOptions) private var options
     /// The fractions when a divider drag started.
     @State private var startFractions: [Double]?
     /// The divider being dragged, kept lit while the pointer runs ahead of it.
     @State private var dragging: Int?
+
+    /// No gap with see-through panels: the seam is a line drawn over the
+    /// edge (DividerHandle), so the picture never shows between them.
+    private var gap: CGFloat { options.gapFill == nil ? DockTheme.gap : 0 }
 
     var body: some View {
         // Children with nothing to show right now (a thread's patch panel,
@@ -208,7 +214,7 @@ struct SplitView: View {
         // when there's something to show again.
         let shown = Self.shownIndices(split, content.available)
         let fractions = Self.normalized(shown.map { split.fractions[$0] })
-        SplitLayout(axis: split.axis, fractions: fractions, gap: DockTheme.gap) {
+        SplitLayout(axis: split.axis, fractions: fractions, gap: gap) {
             ForEach(shown, id: \.self) { i in
                 NodeView(node: split.children[i])
             }
@@ -216,10 +222,10 @@ struct SplitView: View {
         .overlay {
             GeometryReader { geo in
                 let length = split.axis == .horizontal ? geo.size.width : geo.size.height
-                let available = length - DockTheme.gap * CGFloat(shown.count - 1)
+                let available = length - gap * CGFloat(shown.count - 1)
                 ForEach(0..<max(shown.count - 1, 0), id: \.self) { i in
                     let before = fractions.prefix(i + 1).reduce(0, +)
-                    let at = CGFloat(before) * available + CGFloat(i) * DockTheme.gap + DockTheme.gap / 2
+                    let at = CGFloat(before) * available + CGFloat(i) * gap + gap / 2
                     DividerHandle(axis: split.axis, dragging: dragging == i)
                         .position(split.axis == .horizontal
                                   ? CGPoint(x: at, y: geo.size.height / 2)
@@ -330,11 +336,8 @@ private struct DividerHandle: View {
             // The gap itself, under the lit strip.
             .background {
                 if let gap = options.gapFill {
-                    // A point wider than the gap: a split's fractions can put
-                    // the gap half a point off the handle's centre, and the
-                    // picture showed through as a bright seam beside the line.
                     Rectangle().fill(gap)
-                        .frame(width: axis == .horizontal ? DockTheme.gap + 1 : nil, height: axis == .vertical ? DockTheme.gap + 1 : nil)
+                        .frame(width: axis == .horizontal ? 1 : nil, height: axis == .vertical ? 1 : nil)
                 }
             }
             .frame(width: axis == .horizontal ? 14 : nil, height: axis == .vertical ? 14 : nil)
