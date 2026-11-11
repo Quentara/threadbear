@@ -108,7 +108,7 @@ private struct ConflictBar: View {
                     .tip("Save what's here over the file.")
             }
         }
-        .font(.system(size: TypeScale.label))
+        .font(.app(size: TypeScale.label))
         .padding(.horizontal, zoomed(14))
         .padding(.vertical, zoomed(9))
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -126,7 +126,7 @@ private struct NoteBar: View {
             Text(text).foregroundStyle(.secondary).lineLimit(2)
             Spacer(minLength: 0)
         }
-        .font(.system(size: TypeScale.label))
+        .font(.app(size: TypeScale.label))
         .padding(.horizontal, zoomed(14))
         .padding(.vertical, zoomed(7))
         .overlay(alignment: .bottom) { Rectangle().fill(Color(nsColor: Theme.hairline)).frame(height: 0.5) }
@@ -184,7 +184,7 @@ final class TextFileController: NSObject, NSTextViewDelegate {
     /// Rendering Markdown bigger than this happens off the main thread,
     /// with the plain text up meanwhile.
     static let renderInline = 64_000
-    static let font = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+    static let font = NSFont.appMonoFont(ofSize: 12, weight: .regular)
     /// How long after the last keystroke the file is written.
     static let saveDelay: DispatchTimeInterval = .milliseconds(800)
 

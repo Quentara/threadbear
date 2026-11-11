@@ -85,7 +85,7 @@ private struct ScheduleRowView: View {
         VStack(alignment: .leading, spacing: zoomed(3)) {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                 Text(schedule.title.isEmpty ? "Untitled" : schedule.title)
-                    .font(.system(size: TypeScale.sidebarTitle))
+                    .font(.app(size: TypeScale.sidebarTitle))
                     // A paused or finished one is there to be found, not
                     // something coming up.
                     .foregroundStyle(schedule.isActive ? .primary : .secondary)
@@ -117,17 +117,17 @@ private struct ScheduleRowView: View {
                 Text("·").foregroundStyle(SidebarMetrics.faint)
                 TargetButton(schedule: schedule)
             }
-            .font(.system(size: TypeScale.sidebarPreview))
+            .font(.app(size: TypeScale.sidebarPreview))
             .foregroundStyle(.secondary)
             if let away, let asked = schedule.runRequestedAt {
                 Text("Waiting for \(away) to run it")
-                    .font(.system(size: TypeScale.sidebarMeta))
+                    .font(.app(size: TypeScale.sidebarMeta))
                     .foregroundStyle(SidebarMetrics.faint)
                     .lineLimit(1)
                     .tip("Asked at \(asked.formatted(date: .omitted, time: .shortened)). It runs as soon as \(away) picks it up.")
             } else if let problem {
                 Text(problem.text)
-                    .font(.system(size: TypeScale.sidebarMeta))
+                    .font(.app(size: TypeScale.sidebarMeta))
                     .foregroundStyle(problem.failed ? Color(nsColor: Theme.failed) : SidebarMetrics.faint)
                     .lineLimit(1)
                     .tip(problem.text)
@@ -177,7 +177,7 @@ private struct ScheduleRowView: View {
                     .tip(next.formatted(date: .abbreviated, time: .shortened))
             }
         }
-        .font(.system(size: TypeScale.sidebarMeta))
+        .font(.app(size: TypeScale.sidebarMeta))
     }
 
     /// The other runner it runs on, by name; nil for this one's.

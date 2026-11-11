@@ -192,7 +192,7 @@ struct ActivityButton: View {
                         // Grey, not accent: a count of what's there, not an
                         // alarm. The rows themselves say which need Mike.
                         Text(badge > 99 ? "99+" : "\(badge)")
-                            .font(.system(size: zoomed(9), weight: .semibold))
+                            .font(.app(size: zoomed(9), weight: .semibold))
                             .monospacedDigit()
                             // The number rolls when it changes.
                             .contentTransition(.numericText(value: Double(badge)))
@@ -240,7 +240,7 @@ struct ActivityButton: View {
                 .frame(width: zoomed(21), height: zoomed(21))
         } else if let symbol {
             Image(systemName: symbol)
-                .font(.system(size: zoomed(15)))
+                .font(.app(size: zoomed(15)))
         }
     }
 }

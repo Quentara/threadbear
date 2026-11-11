@@ -23,10 +23,10 @@ struct RecapBox: View {
                     }
                 }
                 Text(verbatim: Recap.lastWorkedOn(thread.lastActivityAt))
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
                     .foregroundStyle(.secondary)
             }
-            .font(.system(size: TypeScale.cardTitle))
+            .font(.app(size: TypeScale.cardTitle))
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, zoomed(11))
@@ -39,7 +39,7 @@ struct RecapBox: View {
                     app.dismissRecap(thread)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: TypeScale.detail, weight: .medium))
+                        .font(.app(size: TypeScale.detail, weight: .medium))
                         .foregroundStyle(.secondary)
                         .frame(width: zoomed(24), height: zoomed(24))
                         .contentShape(Rectangle())

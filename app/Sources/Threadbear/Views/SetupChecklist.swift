@@ -118,7 +118,7 @@ struct SetupPanel: View {
                             .foregroundStyle(.secondary)
                             .accessibilityHidden(true)
                         Text("All set.")
-                            .font(.system(size: TypeScale.cardTitle, weight: .semibold))
+                            .font(.app(size: TypeScale.cardTitle, weight: .semibold))
                     }
                 }
                 ForEach(checklist.items, id: \.item) { entry in
@@ -131,7 +131,7 @@ struct SetupPanel: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
                     .tip("Help > Finish Setting Up brings it back")
                 }
             }
@@ -155,16 +155,16 @@ private struct SetupRow: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: zoomed(10)) {
             Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .contentTransition(.symbolEffect(.replace))
             VStack(alignment: .leading, spacing: zoomed(4)) {
                 Text(title)
-                    .font(.system(size: TypeScale.label, weight: .medium))
+                    .font(.app(size: TypeScale.label, weight: .medium))
                     .foregroundStyle(done ? .secondary : .primary)
                 if !done {
                     Text(detail)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     action

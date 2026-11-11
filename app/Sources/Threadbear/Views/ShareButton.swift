@@ -20,7 +20,7 @@ struct ShareButton: View {
             app.sharePopoverThread = app.sharePopoverThread == thread.id ? nil : thread.id
         } label: {
             Image(systemName: "square.and.arrow.up")
-                .font(.system(size: TypeScale.label, weight: .medium))
+                .font(.app(size: TypeScale.label, weight: .medium))
                 // Accent only when it means something: someone else can read it.
                 .foregroundStyle(on ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.secondary))
                 .frame(width: zoomed(26), height: zoomed(26))
@@ -78,7 +78,7 @@ struct SharePopover: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                Text("Share this thread").font(.headline)
+                Text("Share this thread").font(.app(.headline))
                 InfoTip(app.localOnly ? ShareText.aboutLocalOnly : ShareText.about)
                 Spacer()
             }
@@ -99,7 +99,7 @@ struct SharePopover: View {
             if let share, share.isOn, let link = app.shareLink(share) {
                 HStack(spacing: 6) {
                     Text(link.absoluteString)
-                        .font(.callout)
+                        .font(.app(.callout))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -128,7 +128,7 @@ struct SharePopover: View {
 
             if let problem {
                 Text(problem)
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }

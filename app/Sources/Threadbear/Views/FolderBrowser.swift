@@ -162,7 +162,7 @@ final class FolderPaneView: NSView, NSOutlineViewDataSource, NSOutlineViewDelega
         buildList()
         buildGrid()
         buildPathBar()
-        note.font = .systemFont(ofSize: TypeScale.label)
+        note.font = .appFont(ofSize: TypeScale.label)
         note.textColor = .secondaryLabelColor
         note.alignment = .center
         note.maximumNumberOfLines = 0
@@ -1052,7 +1052,7 @@ final class FolderPathBar: NSView {
 
     private func style(_ button: NSButton) {
         button.isBordered = false
-        button.font = .systemFont(ofSize: TypeScale.small)
+        button.font = .appFont(ofSize: TypeScale.small)
         button.lineBreakMode = .byTruncatingMiddle
         button.alignment = .left
         button.imagePosition = .noImage
@@ -1156,7 +1156,7 @@ private final class FolderPathButton: NSButton {
     override var contentTintColor: NSColor? {
         didSet {
             attributedTitle = NSAttributedString(string: title, attributes: [
-                .font: font ?? .systemFont(ofSize: TypeScale.small),
+                .font: font ?? .appFont(ofSize: TypeScale.small),
                 .foregroundColor: contentTintColor ?? .secondaryLabelColor,
             ])
         }
@@ -1215,7 +1215,7 @@ final class FolderRowCell: NSTableCellView {
         thumbnail.cancel()
         label.stringValue = text
         label.alignment = alignment
-        label.font = .systemFont(ofSize: secondary ? TypeScale.detail : TypeScale.label)
+        label.font = .appFont(ofSize: secondary ? TypeScale.detail : TypeScale.label)
         label.textColor = secondary ? .secondaryLabelColor : .labelColor
         iconView.image = icon
         // Cells are reused: only a folder still being read shows the spinner.
@@ -1311,7 +1311,7 @@ final class FolderGridItem: NSCollectionViewItem {
         label.lineBreakMode = .byTruncatingMiddle
         label.cell?.truncatesLastVisibleLine = true
         label.isSelectable = false
-        label.font = .systemFont(ofSize: TypeScale.small)
+        label.font = .appFont(ofSize: TypeScale.small)
         for view in [selection, picture, label] {
             view.translatesAutoresizingMaskIntoConstraints = false
             root.addSubview(view)

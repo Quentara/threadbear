@@ -83,17 +83,17 @@ struct LinkPeekCard: View {
                 }
                 VStack(alignment: .leading, spacing: zoomed(3)) {
                     Text(title)
-                        .font(.system(size: TypeScale.label, weight: .semibold))
+                        .font(.app(size: TypeScale.label, weight: .semibold))
                         .lineLimit(2)
                     Text(detail)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
             }
             Text(exists ? "Click to open" : away.map { "On \($0). Click to open." } ?? "Not found on this Mac")
-                .font(.system(size: TypeScale.small))
+                .font(.app(size: TypeScale.small))
                 .foregroundStyle(.tertiary)
                 .padding(.top, zoomed(3))
         }

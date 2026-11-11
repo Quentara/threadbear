@@ -21,7 +21,7 @@ struct ProjectsHome: View {
             VStack(alignment: .leading, spacing: zoomed(22)) {
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(10)) {
                     Text("Projects")
-                        .font(.system(size: zoomed(24), weight: .semibold))
+                        .font(.app(size: zoomed(24), weight: .semibold))
                         .fixedSize()
                     // In a narrow window the summary is what gives way: one
                     // line cut short, rather than wrapping under the title
@@ -29,7 +29,7 @@ struct ProjectsHome: View {
                     // jump as the summary's length changes with each key.
                     Text(searching ? ProjectCard.matchCount(cards.count, of: all.count)
                                    : Self.summary(all, overall: ProjectCard.overall(sections, decisions: app.projectDecisionsOn)))
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                         .monospacedDigit()
                         .lineLimit(1)
@@ -50,11 +50,11 @@ struct ProjectsHome: View {
                 }
                 if all.isEmpty {
                     Text("No projects yet. The librarian makes them as threads run, or you can make one.")
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                 } else if cards.isEmpty {
                     Text("No projects match that.")
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                 } else {
                     LazyVGrid(
@@ -106,13 +106,13 @@ private struct ProjectCardView: View {
                     }
                 VStack(alignment: .leading, spacing: zoomed(5)) {
                     Text(card.project.title)
-                        .font(.system(size: zoomed(15), weight: .semibold))
+                        .font(.app(size: zoomed(15), weight: .semibold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     StatusLine(card: card, now: app.now)
                     if !card.project.state.isEmpty {
                         Text(Self.firstLines(card.project.state))
-                            .font(.system(size: TypeScale.label))
+                            .font(.app(size: TypeScale.label))
                             .foregroundStyle(.secondary)
                             .lineLimit(3)
                             .multilineTextAlignment(.leading)
@@ -183,7 +183,7 @@ private struct ThreadCount: View {
             Image(systemName: "bubble.left.and.bubble.right")
             Text("\(count)").monospacedDigit()
         }
-        .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+        .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
         .foregroundStyle(.secondary)
         .padding(.horizontal, zoomed(7))
         .padding(.vertical, zoomed(3))
@@ -217,7 +217,7 @@ private struct StatusLine: View {
                 }
             }
         }
-        .font(.system(size: TypeScale.sidebarMeta + 1, weight: .medium))
+        .font(.app(size: TypeScale.sidebarMeta + 1, weight: .medium))
         .lineLimit(1)
     }
 

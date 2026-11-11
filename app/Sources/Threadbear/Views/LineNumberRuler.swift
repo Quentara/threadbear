@@ -33,7 +33,7 @@ final class LineNumberRuler: NSRulerView {
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
         let text = textView.string as NSString
-        let font = NSFont.monospacedDigitSystemFont(ofSize: TypeScale.scaled(11), weight: .regular)
+        let font = NSFont.appDigitFont(ofSize: TypeScale.scaled(11), weight: .regular)
         let caret = text.lineRange(for: NSRange(location: min(textView.selectedRange().location, text.length), length: 0)).location
         let visible = textView.visibleRect
         let glyphs = layout.glyphRange(forBoundingRect: visible, in: container)

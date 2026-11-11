@@ -92,10 +92,10 @@ private struct ArchivedFold: View {
             HStack(spacing: zoomed(5)) {
                 Text("\(count) archived").monospacedDigit()
                 Image(systemName: open ? "chevron.down" : "chevron.right")
-                    .font(.system(size: zoomed(8), weight: .semibold))
+                    .font(.app(size: zoomed(8), weight: .semibold))
                 Spacer(minLength: 0)
             }
-            .font(.system(size: TypeScale.sidebarMeta))
+            .font(.app(size: TypeScale.sidebarMeta))
             .foregroundStyle(hovering ? AnyShapeStyle(.secondary) : AnyShapeStyle(SidebarMetrics.faint))
             .padding(.leading, SidebarMetrics.leading)
             .padding(.trailing, SidebarMetrics.trailing)
@@ -117,7 +117,7 @@ private struct ShowMoreRow: View {
     var body: some View {
         Button(action: action) {
             Text("Show \(more) more")
-                .font(.system(size: TypeScale.sidebarMeta))
+                .font(.app(size: TypeScale.sidebarMeta))
                 .foregroundStyle(hovering ? AnyShapeStyle(.secondary) : AnyShapeStyle(SidebarMetrics.faint))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.leading, SidebarMetrics.leading)
@@ -152,24 +152,24 @@ private struct ProjectHeader: View {
                 ProjectIconView(project: project, size: 15)
                 .accessibilityHidden(true)
                 Text(project.title)
-                    .font(.system(size: TypeScale.sidebarHeading, weight: .semibold))
+                    .font(.app(size: TypeScale.sidebarHeading, weight: .semibold))
                     .foregroundStyle(isOpen || hovering ? .primary : .secondary)
                     .lineLimit(1)
                 Spacer(minLength: zoomed(6))
                 if hovering {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: zoomed(10), weight: .semibold))
+                        .font(.app(size: zoomed(10), weight: .semibold))
                         .foregroundStyle(SidebarMetrics.faint)
                 } else if decisions > 0 {
                     Text(ProjectDecisions.label(decisions))
-                        .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+                        .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
                         .foregroundStyle(Color(nsColor: Theme.needsYou))
                         .monospacedDigit()
                         .lineLimit(1)
                         .fixedSize()
                 } else if count > 0 {
                     Text("\(count)")
-                        .font(.system(size: TypeScale.sidebarMeta))
+                        .font(.app(size: TypeScale.sidebarMeta))
                         .foregroundStyle(SidebarMetrics.faint)
                         .monospacedDigit()
                 }
@@ -207,11 +207,11 @@ private struct ArchivedProjects: View {
             HStack(spacing: zoomed(5)) {
                 Text("Archived projects")
                 Image(systemName: shown ? "chevron.down" : "chevron.right")
-                    .font(.system(size: zoomed(9), weight: .semibold))
+                    .font(.app(size: zoomed(9), weight: .semibold))
                 Spacer(minLength: 0)
                 Text("\(projects.count)").monospacedDigit()
             }
-            .font(.system(size: TypeScale.sidebarHeading, weight: .semibold))
+            .font(.app(size: TypeScale.sidebarHeading, weight: .semibold))
             .foregroundStyle(.secondary)
             .padding(.leading, SidebarMetrics.leading)
             .padding(.trailing, SidebarMetrics.trailing)

@@ -149,28 +149,28 @@ enum Theme {
     static var codeLine: CGFloat { TypeScale.codeLine }
     static var diffSize: CGFloat { TypeScale.diff }
     static var diffLine: CGFloat { TypeScale.diffLine }
-    static var bodyFont: NSFont { .systemFont(ofSize: bodySize) }
-    static var boldFont: NSFont { .systemFont(ofSize: bodySize, weight: .semibold) }
+    static var bodyFont: NSFont { .appFont(ofSize: bodySize) }
+    static var boldFont: NSFont { .appFont(ofSize: bodySize, weight: .semibold) }
     /// Made through the font manager, which isn't cached like the system
     /// fonts, so one per size is kept here (renders ask from any thread).
     static var italicFont: NSFont {
         let size = bodySize
         return italics.withLock { fonts in
             if let font = fonts[size] { return font }
-            let font = NSFontManager.shared.convert(NSFont.systemFont(ofSize: size), toHaveTrait: .italicFontMask)
+            let font = NSFontManager.shared.convert(NSFont.appFont(ofSize: size), toHaveTrait: .italicFontMask)
             fonts[size] = font
             return font
         }
     }
     private static let italics = Mutex<[CGFloat: NSFont]>([:])
-    static var codeFont: NSFont { .monospacedSystemFont(ofSize: codeSize, weight: .regular) }
-    static var codeBoldFont: NSFont { .monospacedSystemFont(ofSize: codeSize, weight: .semibold) }
-    static var diffFont: NSFont { .monospacedSystemFont(ofSize: diffSize, weight: .regular) }
-    static var outputFont: NSFont { .monospacedSystemFont(ofSize: TypeScale.output, weight: .regular) }
-    static var smallFont: NSFont { .systemFont(ofSize: TypeScale.small) }
-    static var labelFont: NSFont { .systemFont(ofSize: TypeScale.label) }
-    static var detailFont: NSFont { .systemFont(ofSize: TypeScale.detail) }
-    static var workFont: NSFont { .systemFont(ofSize: TypeScale.work) }
+    static var codeFont: NSFont { .appMonoFont(ofSize: codeSize, weight: .regular) }
+    static var codeBoldFont: NSFont { .appMonoFont(ofSize: codeSize, weight: .semibold) }
+    static var diffFont: NSFont { .appMonoFont(ofSize: diffSize, weight: .regular) }
+    static var outputFont: NSFont { .appMonoFont(ofSize: TypeScale.output, weight: .regular) }
+    static var smallFont: NSFont { .appFont(ofSize: TypeScale.small) }
+    static var labelFont: NSFont { .appFont(ofSize: TypeScale.label) }
+    static var detailFont: NSFont { .appFont(ofSize: TypeScale.detail) }
+    static var workFont: NSFont { .appFont(ofSize: TypeScale.work) }
     static var workLine: CGFloat { TypeScale.workLine }
     /// A one-line label's height for `workFont`, so work lines centre their
     /// text the same way whatever the scale.
@@ -178,10 +178,10 @@ enum Theme {
         let font = workFont
         return ceil(font.ascender - font.descender + font.leading)
     }
-    static var cardTitleFont: NSFont { .systemFont(ofSize: TypeScale.cardTitle, weight: .semibold) }
+    static var cardTitleFont: NSFont { .appFont(ofSize: TypeScale.cardTitle, weight: .semibold) }
     /// "Edited 3 files": quieter than a card that asks something.
-    static var changesTitleFont: NSFont { .systemFont(ofSize: TypeScale.cardTitle, weight: .medium) }
-    static var statsFont: NSFont { .monospacedDigitSystemFont(ofSize: TypeScale.detail, weight: .regular) }
+    static var changesTitleFont: NSFont { .appFont(ofSize: TypeScale.cardTitle, weight: .medium) }
+    static var statsFont: NSFont { .appDigitFont(ofSize: TypeScale.detail, weight: .regular) }
 
     /// One digit's advance in a monospaced font, for line number gutters.
     static func digitWidth(_ font: NSFont) -> CGFloat {

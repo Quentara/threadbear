@@ -29,6 +29,7 @@ struct SettingsView: View {
         }
         .settingsSizes()
         .background(SettingsWindowFinder())
+        .font(.app(size: 13))
     }
 
     @ViewBuilder private func pane(_ tab: SettingsTab) -> some View {
@@ -83,11 +84,11 @@ private struct SettingsSidebar: View {
         } label: {
             HStack(spacing: 9) {
                 Image(systemName: tab.symbol)
-                    .font(.system(size: 13))
+                    .font(.app(size: 13))
                     .foregroundStyle(on ? .primary : .secondary)
                     .frame(width: 18)
                 Text(tab.title)
-                    .font(.system(size: 13, weight: on ? .medium : .regular))
+                    .font(.app(size: 13, weight: on ? .medium : .regular))
                     .foregroundStyle(.primary)
                 Spacer(minLength: 0)
             }
@@ -767,7 +768,7 @@ private struct PoolIconPicker: View {
             HStack(spacing: 4) {
                 PoolSymbol(symbol: symbol)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 8, weight: .bold))
+                    .font(.app(size: 8, weight: .bold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -780,7 +781,7 @@ private struct PoolIconPicker: View {
                         open = false
                     } label: {
                         Image(systemName: choice)
-                            .font(.system(size: 14))
+                            .font(.app(size: 14))
                             .frame(width: 30, height: 30)
                             .background(
                                 RoundedRectangle(cornerRadius: 6, style: .continuous)

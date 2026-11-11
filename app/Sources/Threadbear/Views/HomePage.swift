@@ -116,7 +116,7 @@ private struct PokeablePicture: View {
                                 removal: .opacity.animation(.linear(duration: 0.09))))
                     }
                 }
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .fixedSize()
@@ -156,11 +156,11 @@ struct HomeTitle: View {
         VStack(alignment: .leading, spacing: zoomed(12)) {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
                 Text(title)
-                    .font(.system(size: zoomed(24), weight: .semibold))
+                    .font(.app(size: zoomed(24), weight: .semibold))
                 InfoTip(more)
             }
             Text(line)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -178,7 +178,7 @@ struct HomeStatusLine: View {
                 .fill(busy ? Color(nsColor: .controlAccentColor) : Color(nsColor: Theme.faintText))
                 .frame(width: zoomed(7), height: zoomed(7))
             Text(text)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .lineLimit(1)
         }
         .padding(.top, zoomed(4))
@@ -199,11 +199,11 @@ private struct HomeStatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: zoomed(4)) {
             Text(stat.value)
-                .font(.system(size: zoomed(22), weight: .semibold))
+                .font(.app(size: zoomed(22), weight: .semibold))
                 .monospacedDigit()
                 .lineLimit(1)
             Text(stat.label)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -224,6 +224,8 @@ private struct HomeStatTile: View {
 enum Art {
     @MainActor static let librarian: NSImage? = image("librarian")
     @MainActor static let scheduled: NSImage? = image("scheduled")
+    /// The painting behind the whole main window (Bierstadt, public domain).
+    @MainActor static let windowBackdrop: NSImage? = image("window-backdrop", type: "jpg")
 
     private static let bundle: Bundle? = {
         let name = "Threadbear_Threadbear.bundle"
@@ -233,8 +235,8 @@ enum Art {
             .flatMap(Bundle.init(url:))
     }()
 
-    private static func image(_ name: String) -> NSImage? {
-        guard let url = bundle?.url(forResource: name, withExtension: "png", subdirectory: "Art") else { return nil }
+    private static func image(_ name: String, type: String = "png") -> NSImage? {
+        guard let url = bundle?.url(forResource: name, withExtension: type, subdirectory: "Art") else { return nil }
         return NSImage(contentsOf: url)
     }
 }

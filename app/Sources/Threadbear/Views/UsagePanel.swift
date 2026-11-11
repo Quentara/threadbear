@@ -25,7 +25,7 @@ struct UsagePanel: View {
             VStack(alignment: .leading, spacing: zoomed(14)) {
                 if !app.accounts.contains(where: { $0.usage != nil }) {
                     Text("The usage numbers need a newer runner.")
-                        .font(.system(size: zoomed(12)))
+                        .font(.app(size: zoomed(12)))
                         .foregroundStyle(.secondary)
                 }
                 if let stats = app.usageStats {
@@ -39,7 +39,7 @@ struct UsagePanel: View {
                 let source = [AccountUsageText.sourceLine(app.accounts, now: app.now), notices.shared].compactMap { $0 }
                 if !source.isEmpty {
                     Text(source.joined(separator: ". "))
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                         .foregroundStyle(.tertiary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -124,7 +124,7 @@ private struct SpendSection: View {
             TokensChart(stats: stats, accounts: accounts, colours: colours, now: now)
             if !stats.ready {
                 Text("Still reading the transcripts, so these are partial.")
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(.tertiary)
             }
         }
@@ -141,10 +141,10 @@ private struct StatTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: zoomed(2)) {
             Text(title)
-                .font(.system(size: zoomed(11), weight: .medium))
+                .font(.app(size: zoomed(11), weight: .medium))
                 .foregroundStyle(.secondary)
             Text(value)
-                .font(.system(size: zoomed(22), weight: .semibold))
+                .font(.app(size: zoomed(22), weight: .semibold))
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
@@ -154,7 +154,7 @@ private struct StatTile: View {
                 Text(detail ?? " ")
                 Text(" ")
             }
-            .font(.system(size: zoomed(11)))
+            .font(.app(size: zoomed(11)))
             .foregroundStyle(.tertiary)
             .lineLimit(1)
         }
@@ -201,7 +201,7 @@ private struct TokensChart: View {
         VStack(alignment: .leading, spacing: zoomed(8)) {
             HStack {
                 Text(byDay ? "Tokens by day" : "Tokens by hour")
-                    .font(.system(size: zoomed(12.5), weight: .semibold))
+                    .font(.app(size: zoomed(12.5), weight: .semibold))
                 Spacer()
                 Picker("Range", selection: $range) {
                     Text("Today").tag("today")
@@ -256,7 +256,7 @@ private struct TokensChart: View {
             .overlay {
                 if bars.isEmpty {
                     Text(stats.ready ? "Nothing spent yet" : "Reading the transcripts…")
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                         .foregroundStyle(.tertiary)
                 }
             }
@@ -274,7 +274,7 @@ private struct TokensChart: View {
                         .fixedSize()
                     }
                 }
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
                 .foregroundStyle(.secondary)
             }
         }
@@ -304,7 +304,7 @@ private struct HoverNote: View {
         let total = bars.reduce(0) { $0.adding(saturating: $1.tokens) }
         VStack(alignment: .leading, spacing: zoomed(3)) {
             Text((byDay ? TokensChart.dayLabel(start, now: now) : AccountUsageText.clock(start)) + "  " + UsageStatsMath.tokens(total))
-                .font(.system(size: zoomed(11), weight: .semibold))
+                .font(.app(size: zoomed(11), weight: .semibold))
             ForEach(bars.sorted { $0.tokens > $1.tokens }, id: \.accountId) { bar in
                 HStack(spacing: zoomed(5)) {
                     LoginDot(colour: colours.colour(bar.accountId, dark: scheme == .dark))
@@ -312,7 +312,7 @@ private struct HoverNote: View {
                     Spacer(minLength: zoomed(8))
                     Text(UsageStatsMath.tokens(bar.tokens)).monospacedDigit()
                 }
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
                 .foregroundStyle(.secondary)
             }
         }
@@ -345,12 +345,12 @@ private struct PoolCard: View {
                 Image(systemName: group.pool.map { Pools.symbol($0, accounts: allAccounts) } ?? "tray")
                     .foregroundStyle(.secondary)
                 Text(group.title)
-                    .font(.system(size: zoomed(13), weight: .semibold))
+                    .font(.app(size: zoomed(13), weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if let today, today.total > 0 {
                     Text(UsageStatsMath.tokens(today.total) + " today")
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .tip(UsageStatsMath.breakdown(today))
@@ -361,7 +361,7 @@ private struct PoolCard: View {
             ForEach(group.providers) { section in
                 if group.providers.count > 1 {
                     Text(ModelPicker.providerTitle(section.provider))
-                        .font(.system(size: zoomed(11), weight: .medium))
+                        .font(.app(size: zoomed(11), weight: .medium))
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, zoomed(12))
                         .padding(.top, zoomed(6))
@@ -402,16 +402,16 @@ private struct LoginRow: View {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(7)) {
                 if stats != nil { LoginDot(colour: colour).alignmentGuide(.firstTextBaseline) { $0[.bottom] - zoomed(1) } }
                 Text(AccountName.title(account))
-                    .font(.system(size: zoomed(12.5), weight: .medium))
+                    .font(.app(size: zoomed(12.5), weight: .medium))
                     .lineLimit(1)
                     .truncationMode(.middle)
                 if let note = account.note, !note.isEmpty {
-                    Text(note).font(.system(size: zoomed(11))).foregroundStyle(.tertiary).lineLimit(1)
+                    Text(note).font(.app(size: zoomed(11))).foregroundStyle(.tertiary).lineLimit(1)
                 }
                 Spacer(minLength: zoomed(8))
                 if let today, today.total > 0 {
                     Text(UsageStatsMath.tokens(today.total) + " today")
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .tip(UsageStatsMath.breakdown(today))
@@ -419,9 +419,9 @@ private struct LoginRow: View {
             }
             .tip([AccountName.title(account), account.plan].compactMap { $0 }.joined(separator: ", "))
             if usage == nil {
-                Text("Nothing known yet").font(.system(size: zoomed(11))).foregroundStyle(.tertiary)
+                Text("Nothing known yet").font(.app(size: zoomed(11))).foregroundStyle(.tertiary)
             } else if usage?.blocked == true {
-                Text("Limit reached").font(.system(size: zoomed(11), weight: .medium)).foregroundStyle(.red)
+                Text("Limit reached").font(.app(size: zoomed(11), weight: .medium)).foregroundStyle(.red)
             }
             if !windows.isEmpty {
                 ViewThatFits(in: .horizontal) {
@@ -446,7 +446,7 @@ private struct LoginRow: View {
                         Text(line).fixedSize(horizontal: false, vertical: true)
                     }
                 }
-                .font(.system(size: zoomed(11)))
+                .font(.app(size: zoomed(11)))
                 .foregroundStyle(.tertiary)
             }
         }
@@ -492,11 +492,11 @@ private struct WindowMeter: View {
         VStack(alignment: .leading, spacing: zoomed(4)) {
             HStack(alignment: .firstTextBaseline) {
                 Text(window.title)
-                    .font(.system(size: zoomed(11), weight: .medium))
+                    .font(.app(size: zoomed(11), weight: .medium))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: zoomed(6))
                 Text(AccountUsageText.percent(window.remainingPercent) + " left")
-                    .font(.system(size: zoomed(12), weight: .medium))
+                    .font(.app(size: zoomed(12), weight: .medium))
                     .monospacedDigit()
                     .foregroundStyle(short ? AnyShapeStyle(fill) : AnyShapeStyle(.primary))
             }
@@ -517,7 +517,7 @@ private struct WindowMeter: View {
             }
             if let verdict = LimitPace.verdict(window, pace: pace, stale: stale, now: now) {
                 Text(verdict.text)
-                    .font(.system(size: zoomed(11), weight: verdict.tone == .short || verdict.tone == .out ? .medium : .regular))
+                    .font(.app(size: zoomed(11), weight: verdict.tone == .short || verdict.tone == .out ? .medium : .regular))
                     .foregroundStyle(Self.style(verdict.tone))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

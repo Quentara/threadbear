@@ -27,7 +27,7 @@ private struct HistoryButton: View {
             if back { app.goBack() } else { app.goForward() }
         } label: {
             Image(systemName: back ? "chevron.left" : "chevron.right")
-                .font(.system(size: TypeScale.label, weight: .medium))
+                .font(.app(size: TypeScale.label, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(width: zoomed(22), height: zoomed(26))
                 .contentShape(Rectangle())

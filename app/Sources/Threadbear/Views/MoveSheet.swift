@@ -38,10 +38,10 @@ struct MoveSheet: View {
             #endif
             VStack(alignment: .leading, spacing: 4) {
                 Text("Move \u{201C}\(title)\u{201D} to \(request.runnerName)")
-                    .font(.headline)
+                    .font(.app(.headline))
                     .lineLimit(2)
                 Text(subtitle)
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -50,7 +50,7 @@ struct MoveSheet: View {
                     Text("Folder").foregroundStyle(.secondary).gridColumnAlignment(.trailing)
                     TextField("Folder on \(request.runnerName)", text: $folder)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
+                        .font(.app(.body, design: .monospaced))
                         .disabled(!filled)
                         .onSubmit { ask() }
                         .tip(preview?.worktree == true
@@ -74,7 +74,7 @@ struct MoveSheet: View {
             HStack {
                 if asking || !connected {
                     ProgressView().controlSize(.small)
-                    Text(connected ? "Asking \(request.runnerName)…" : "Waiting for this Mac's runner…").font(.callout).foregroundStyle(.secondary)
+                    Text(connected ? "Asking \(request.runnerName)…" : "Waiting for this Mac's runner…").font(.app(.callout)).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Button("Cancel") { dismiss() }
@@ -119,18 +119,18 @@ struct MoveSheet: View {
         if let preview {
             ForEach(Array(preview.problems.enumerated()), id: \.offset) { _, line in
                 Label(line, systemImage: "xmark.octagon")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(Color(nsColor: Theme.failed))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let clone = preview.clone {
                 Text("\(request.runnerName) has no copy of its repo, so it's cloned to \(clone) first.")
-                    .font(.callout).foregroundStyle(.secondary)
+                    .font(.app(.callout)).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             ForEach(Array(preview.leftBehind.enumerated()), id: \.offset) { _, line in
                 Text("Won't come: \(line)")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }

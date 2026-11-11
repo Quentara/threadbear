@@ -54,7 +54,7 @@ private struct LibrarianState: View {
     var body: some View {
         VStack(alignment: .leading, spacing: zoomed(6)) {
             Text(LibrarianText.state(status))
-                .font(.system(size: TypeScale.sidebarTitle))
+                .font(.app(size: TypeScale.sidebarTitle))
                 .foregroundStyle(.primary)
                 .lineLimit(2)
                 // In the rows' leading gutter, as a thread's unread dot is,
@@ -67,12 +67,12 @@ private struct LibrarianState: View {
                 }
             if let current = status.current, status.state == .working {
                 Text(working(current))
-                    .font(.system(size: TypeScale.sidebarPreview))
+                    .font(.app(size: TypeScale.sidebarPreview))
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
             }
             Text(LibrarianText.today(status))
-                .font(.system(size: TypeScale.sidebarMeta))
+                .font(.app(size: TypeScale.sidebarMeta))
                 .foregroundStyle(SidebarMetrics.faint)
                 .monospacedDigit()
                 .tip("Today's looks, quiet catch-ups it skipped without asking the model, and tokens used on your Claude login")
@@ -99,9 +99,9 @@ private struct LibrarianState: View {
         case .working:
             SpinnerMark(color: .controlAccentColor)
         case .paused:
-            Image(systemName: "pause.circle").font(.system(size: zoomed(12))).foregroundStyle(.secondary)
+            Image(systemName: "pause.circle").font(.app(size: zoomed(12))).foregroundStyle(.secondary)
         case .off:
-            Image(systemName: "exclamationmark.circle").font(.system(size: zoomed(12))).foregroundStyle(.secondary)
+            Image(systemName: "exclamationmark.circle").font(.app(size: zoomed(12))).foregroundStyle(.secondary)
         case .idle:
             Circle().fill(SidebarMetrics.faint).frame(width: zoomed(6), height: zoomed(6))
         }
@@ -124,16 +124,16 @@ private struct QueueRow: View {
         VStack(alignment: .leading, spacing: zoomed(3)) {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                 ThreadLink(threadId: job.threadId, title: job.threadTitle)
-                    .font(.system(size: TypeScale.sidebarTitle))
+                    .font(.app(size: TypeScale.sidebarTitle))
                 Spacer(minLength: zoomed(6))
                 Text(LibrarianText.due(job.dueAt, now: app.now))
-                    .font(.system(size: TypeScale.sidebarMeta))
+                    .font(.app(size: TypeScale.sidebarMeta))
                     .foregroundStyle(SidebarMetrics.faint)
                     .monospacedDigit()
                     .tip(job.dueAt?.formatted(date: .abbreviated, time: .shortened) ?? "")
             }
             Text(LibrarianText.why(job))
-                .font(.system(size: TypeScale.sidebarPreview))
+                .font(.app(size: TypeScale.sidebarPreview))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
@@ -152,13 +152,13 @@ private struct EntryRow: View {
         VStack(alignment: .leading, spacing: zoomed(3)) {
             HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                 Text(entry.text.isEmpty ? EntryRow.outcomeWords(entry.outcome) : entry.text)
-                    .font(.system(size: TypeScale.sidebarTitle))
+                    .font(.app(size: TypeScale.sidebarTitle))
                     .foregroundStyle(entry.outcome == .failed ? Color(nsColor: Theme.failed) : entry.outcome == .nothing || entry.outcome == .skipped ? .secondary : .primary)
                     .lineLimit(2)
                 Spacer(minLength: zoomed(6))
                 if let at = entry.at {
                     Text(RelativeTime.short(at, now: app.now))
-                        .font(.system(size: TypeScale.sidebarMeta))
+                        .font(.app(size: TypeScale.sidebarMeta))
                         .foregroundStyle(SidebarMetrics.faint)
                         .monospacedDigit()
                         .tip(at.formatted(date: .abbreviated, time: .shortened))
@@ -178,7 +178,7 @@ private struct EntryRow: View {
                     }
                 }
             }
-            .font(.system(size: TypeScale.sidebarPreview))
+            .font(.app(size: TypeScale.sidebarPreview))
             .foregroundStyle(.secondary)
         }
         .padding(EdgeInsets(top: zoomed(7), leading: SidebarMetrics.leading, bottom: zoomed(7), trailing: SidebarMetrics.trailing))

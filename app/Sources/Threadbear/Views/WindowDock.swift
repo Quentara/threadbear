@@ -301,6 +301,39 @@ extension AppModel {
     }
 }
 
+/// The painting filling the main window, under the activity bar, every
+/// panel and the rail. Fills the window and keeps its bottom edge in view,
+/// the sky cut off first. Nothing when the picture didn't ship, and the
+/// panels then keep the plain window colour.
+struct WindowBackdrop: View {
+    /// Over the painting under each panel: dark enough for text in dark
+    /// mode, a light wash in light mode.
+    static let panelTint = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.07, alpha: 0.78)
+            : NSColor(white: 0.98, alpha: 0.82)
+    })
+    /// The seams between panels: the same faint line as under the panels'
+    /// bars, over the tinted panels.
+    static let gapFill = Color.primary.opacity(0.07)
+
+    var body: some View {
+        if let picture = Art.windowBackdrop {
+            Color(nsColor: .windowBackgroundColor)
+                .overlay(alignment: .bottom) {
+                    Image(nsImage: picture)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+                .clipped()
+                // Up under the panels' bars, where the title bar was.
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// The window's content: the dock, with the activity bar down the left and
 /// the rail of the thread's pane sections down the right.
 struct RootView: View {
@@ -313,12 +346,17 @@ struct RootView: View {
             // Drawn over the dock: its keys hang out to the right while ⌘
             // is held (ShortcutHints).
             ActivityBar()
+                // Tinted like the panels, over the painting.
+                .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
                 .zIndex(1)
             DockView(controller: app.dock, options: Self.options, content: content)
             if let thread = app.paneThread {
                 PanelRail(thread: thread, project: app.openProject)
+                    .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
             }
         }
+        // Geist for any text that doesn't set its own font (AppFonts).
+        .font(.app(size: 13))
         // The tour's frames are in this space, and its overlay covers it.
         .coordinateSpace(.named(Tour.space))
         // Back and forward's arrow while a trackpad swipe is under way.
@@ -348,6 +386,8 @@ struct RootView: View {
         .onChange(of: app.pools) { _, pools in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { Tour.shared.introducePools(pools) }
         }
+        // The painting behind everything: the panels are tinted glass over it.
+        .background { WindowBackdrop() }
         // Saves where the window is, so the next launch opens it there.
         .background(MainWindowFrameTracker())
     }
@@ -377,6 +417,11 @@ struct RootView: View {
         o.trafficLights = max(0, 78 - ActivityBar.width)
         o.cornerMovesWindow = true
         o.barsMoveWindow = true
+        // See-through panels when the painting's there to show through.
+        if Art.windowBackdrop != nil {
+            o.panelFill = WindowBackdrop.panelTint
+            o.gapFill = WindowBackdrop.gapFill
+        }
         o.tip = { view, text in AnyView(view.tip(text)) }
         // A panel dragged out into a window of its own: the same model as
         // the main window's views.

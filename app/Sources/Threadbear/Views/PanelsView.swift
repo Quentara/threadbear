@@ -134,13 +134,13 @@ struct PaneHeader<Leading: View, Trailing: View>: View {
             HStack(spacing: zoomed(6)) {
                 leading
                 Text(title)
-                    .font(.system(size: TypeScale.label, weight: .semibold))
+                    .font(.app(size: TypeScale.label, weight: .semibold))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .layoutPriority(1)
                 if let detail {
                     Text(detail)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                         .lineLimit(1)
                         .truncationMode(.tail)
@@ -180,7 +180,7 @@ struct PaneHeaderButton: View {
     var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: TypeScale.label, weight: .medium))
+                .font(.app(size: TypeScale.label, weight: .medium))
                 .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
                 .frame(width: zoomed(26), height: zoomed(26))
                 .background(hovering ? SidebarMetrics.hover : .clear, in: RoundedRectangle(cornerRadius: zoomed(6)))
@@ -320,7 +320,7 @@ struct PanelOriginBadge: View {
                 ProjectIconView(project: project, title: projectTitle, size: side * 10 / 13)
             } else if let symbol = origin.symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: zoomed(side / 2), weight: .semibold))
+                    .font(.app(size: zoomed(side / 2), weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -356,7 +356,7 @@ struct PatchesList: View {
                 Text(project == nil
                      ? "A patch is a file in .threadbear/patches (in the thread's folder, a parent folder, a folder of one of its projects, or ~) whose default export lists actions, panels and hooks. Ask the agent for one."
                      : "These come from the project's folders, and every thread in it gets them. Ask the agent for another.")
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
                     .padding(.top, zoomed(6))
             }
@@ -377,7 +377,7 @@ struct PatchesList: View {
             }
             Spacer(minLength: 0)
         }
-        .font(.system(size: TypeScale.detail, weight: .semibold))
+        .font(.app(size: TypeScale.detail, weight: .semibold))
         .padding(.top, zoomed(4))
         .padding(.bottom, zoomed(4))
         .overlay(alignment: .bottom) { Rectangle().fill(Color(nsColor: Theme.hairline)).frame(height: 0.5) }
@@ -390,13 +390,13 @@ struct PatchesList: View {
                     Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: zoomed(14), height: zoomed(14))
                 } else {
                     Image(systemName: patch.icon ?? "square.dashed")
-                        .font(.system(size: zoomed(11), weight: .medium))
+                        .font(.app(size: zoomed(11), weight: .medium))
                         .foregroundStyle(.secondary)
                 }
                 Text(patch.id)
-                    .font(.system(size: TypeScale.label, weight: .medium))
+                    .font(.app(size: TypeScale.label, weight: .medium))
                 Text(PatchesList.sourceName(patch.source))
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
             }
             if let untrusted = patch.untrusted {
@@ -404,7 +404,7 @@ struct PatchesList: View {
                 // this Mac (docs/guide.md, "Patches").
                 HStack(spacing: zoomed(8)) {
                     Text(PatchesList.waitingText(patch, untrusted: untrusted))
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(Color(nsColor: Theme.needsYou))
                     let trusting = app.isTrusting(patch)
                     Button("Trust") { app.trustPatches([patch], in: thread.id) }
@@ -423,7 +423,7 @@ struct PatchesList: View {
                 if let grants = patch.grants, !grants.isEmpty {
                     ForEach(grants, id: \.self) { grant in
                         Text(grant)
-                            .font(.system(size: TypeScale.small))
+                            .font(.app(size: TypeScale.small))
                             .foregroundStyle(.secondary)
                             .lineLimit(2)
                             .truncationMode(.middle)
@@ -431,19 +431,19 @@ struct PatchesList: View {
                 }
             } else if let error = patch.error {
                 Text(error)
-                    .font(.system(size: TypeScale.detail))
+                    .font(.app(size: TypeScale.detail))
                     .foregroundStyle(Color(nsColor: Theme.failed))
                     .textSelection(.enabled)
             } else {
                 let gives = PatchesList.gives(patch.id, in: thread)
                 if !gives.isEmpty {
                     Text(gives)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                 }
                 if let liveError = patch.liveError {
                     Text(liveError)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(Color(nsColor: Theme.failed))
                         .textSelection(.enabled)
                 }
@@ -451,7 +451,7 @@ struct PatchesList: View {
             // A tool patch: why it's here, when it came from another repo.
             if let matched = patch.matched, !matched.isEmpty {
                 Text("Here for " + matched.map { ($0 as NSString).lastPathComponent }.joined(separator: ", "))
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -461,7 +461,7 @@ struct PatchesList: View {
                     app.openFile(file, of: thread)
                 } label: {
                     Text(file.abbreviatingHome)
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -475,7 +475,7 @@ struct PatchesList: View {
                             app.openFile(helper, of: thread)
                         } label: {
                             Text((patch.source == "claude" ? "Also trusts " : "Imports ") + helper.abbreviatingHome)
-                                .font(.system(size: TypeScale.small))
+                                .font(.app(size: TypeScale.small))
                                 .foregroundStyle(Color(nsColor: Theme.faintText))
                                 .lineLimit(1)
                                 .truncationMode(.middle)
@@ -487,7 +487,7 @@ struct PatchesList: View {
             } else if let folder = patch.folder, patch.projectId != nil {
                 // A built-in from a project folder: which one.
                 Text(folder.abbreviatingHome)
-                    .font(.system(size: TypeScale.small))
+                    .font(.app(size: TypeScale.small))
                     .foregroundStyle(Color(nsColor: Theme.faintText))
                     .lineLimit(1)
                     .truncationMode(.middle)
@@ -532,7 +532,7 @@ struct PaneNote: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .foregroundStyle(.secondary)
             .multilineTextAlignment(.center)
             .padding(zoomed(24))
@@ -592,7 +592,7 @@ private struct ConvexPanel: View {
                     // A deployment's name doesn't say whose it is.
                     if let project = convex.project {
                         Text(project)
-                            .font(.system(size: TypeScale.label, weight: .semibold))
+                            .font(.app(size: TypeScale.label, weight: .semibold))
                             .lineLimit(1)
                             .tip(convex.team.map { "Convex project \(project), team \($0)" } ?? "Convex project \(project)")
                     }
@@ -611,14 +611,14 @@ private struct ConvexPanel: View {
                             .tip("Look up this project's development and production deployments again")
                     } label: {
                         Text(label)
-                            .font(.system(size: TypeScale.label, weight: .medium))
+                            .font(.app(size: TypeScale.label, weight: .medium))
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
                     .disabled(loadingChoices)
                     .tip("Choose the deployment shown in this panel")
                     Text(selected)
-                        .font(.system(size: TypeScale.small, design: .monospaced))
+                        .font(.app(size: TypeScale.small, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -629,7 +629,7 @@ private struct ConvexPanel: View {
                 }
                 if let choicesNote {
                     Text(choicesNote)
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .tip(choicesNote)
@@ -654,10 +654,10 @@ private struct ConvexPanel: View {
             VStack(spacing: zoomed(12)) {
                 ProgressView().controlSize(.small)
                 Text("Approve the sign-in in your browser.")
-                    .font(.system(size: TypeScale.label, weight: .medium))
+                    .font(.app(size: TypeScale.label, weight: .medium))
                 if let code = signIn.code {
                     Text("Convex shows the code \(code). The dashboard opens here once you've approved it.")
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)
@@ -677,21 +677,21 @@ private struct ConvexPanel: View {
             VStack(spacing: zoomed(12)) {
                 if failureCode == RPCError.convexSignedOut {
                     Text("Sign in to Convex to see this dashboard.")
-                        .font(.system(size: TypeScale.label, weight: .medium))
+                        .font(.app(size: TypeScale.label, weight: .medium))
                     Text("Your browser opens to approve it, then the dashboard loads here by itself.")
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                 } else {
                     Text(failure)
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)
                 }
                 if let signInFailure {
                     Text(signInFailure)
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
                         .textSelection(.enabled)

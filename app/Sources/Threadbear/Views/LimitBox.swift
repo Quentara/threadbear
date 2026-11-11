@@ -38,7 +38,7 @@ struct LimitBox: View {
                     }
                 }
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(.horizontal, padding)
             .padding(.top, zoomed(10))
             .padding(.bottom, zoomed(10))

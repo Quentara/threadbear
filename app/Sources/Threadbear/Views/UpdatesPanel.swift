@@ -49,7 +49,7 @@ struct AppUpdatePopover: View {
                         .frame(width: zoomed(11), height: zoomed(11))
                 }
                 Text(UpdatesText.popoverLine(side))
-                    .font(.system(size: zoomed(12)))
+                    .font(.app(size: zoomed(12)))
                     .fixedSize()
             }
             if let staged = updater.staged {
@@ -118,7 +118,7 @@ struct UpdatesPanel: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .buttonStyle(.link)
-                                .font(.system(size: zoomed(12)))
+                                .font(.app(size: zoomed(12)))
                                 .tip("Open this thread")
                             }
                         }
@@ -127,7 +127,7 @@ struct UpdatesPanel: View {
                             let command = UpdatesText.installCommand(checkout: updater.running?.checkout)
                             HStack(spacing: zoomed(6)) {
                                 Text(command)
-                                    .font(.system(size: zoomed(11), design: .monospaced))
+                                    .font(.app(size: zoomed(11), design: .monospaced))
                                     .textSelection(.enabled)
                                     .lineLimit(2)
                                 Spacer(minLength: 0)
@@ -150,12 +150,12 @@ struct UpdatesPanel: View {
                             ForEach(Array(UpdatesText.releaseLines(release).enumerated()), id: \.offset) { _, group in
                                 if let heading = group.heading {
                                     Text(heading)
-                                        .font(.system(size: zoomed(11), weight: .medium))
+                                        .font(.app(size: zoomed(11), weight: .medium))
                                         .padding(.top, zoomed(2))
                                 }
                                 ForEach(Array(group.lines.enumerated()), id: \.offset) { _, line in
                                     Text(line)
-                                        .font(.system(size: zoomed(11)))
+                                        .font(.app(size: zoomed(11)))
                                         .foregroundStyle(.secondary)
                                         .lineLimit(2)
                                 }
@@ -188,7 +188,7 @@ struct UpdatesPanel: View {
     private func section(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: zoomed(7)) {
             Text(title)
-                .font(.system(size: zoomed(11), weight: .medium))
+                .font(.app(size: zoomed(11), weight: .medium))
                 .foregroundStyle(.tertiary)
                 .accessibilityAddTraits(.isHeader)
             content()
@@ -197,7 +197,7 @@ struct UpdatesPanel: View {
 
     private func line(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: zoomed(12)))
+            .font(.app(size: zoomed(12)))
             .fixedSize(horizontal: false, vertical: true)
     }
 }
@@ -211,7 +211,7 @@ struct CliSection: View {
         VStack(alignment: .leading, spacing: zoomed(12)) {
             if app.clisSupported == false || (app.clisSupported == nil && app.clis.isEmpty) {
                 Text("The CLI versions need a newer runner.")
-                    .font(.system(size: zoomed(12)))
+                    .font(.app(size: zoomed(12)))
                     .foregroundStyle(.secondary)
             } else {
                 ForEach(app.clis) { cli in
@@ -219,14 +219,14 @@ struct CliSection: View {
                 }
                 HStack {
                     if let checked = CliText.checkedLine(app.clis, now: app.now) {
-                        Text(checked).font(.system(size: zoomed(11))).foregroundStyle(.tertiary)
+                        Text(checked).font(.app(size: zoomed(11))).foregroundStyle(.tertiary)
                     }
                     Spacer()
                     Button("Check now") { app.checkClis() }
                         .buttonStyle(.borderless)
                         .busy(app.isBusy(BusyKey.checkClis))
                         .tip("Look for new versions of the CLIs now")
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                 }
             }
         }
@@ -241,7 +241,7 @@ private struct CliRow: View {
         VStack(alignment: .leading, spacing: zoomed(6)) {
             HStack(alignment: .firstTextBaseline) {
                 Text(CliText.statusLine(cli))
-                    .font(.system(size: zoomed(12)))
+                    .font(.app(size: zoomed(12)))
                     .foregroundStyle(cli.status == "held" ? AnyShapeStyle(Color.orange) : AnyShapeStyle(.primary))
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: zoomed(6))
@@ -253,16 +253,16 @@ private struct CliRow: View {
                 }
             }
             if let text = CliText.isUpdating(cli) ? CliText.bannerText(cli) : nil {
-                Text(text).font(.system(size: zoomed(11))).foregroundStyle(.secondary)
+                Text(text).font(.app(size: zoomed(11))).foregroundStyle(.secondary)
             }
             if let missing = cli.hold?.missing, !missing.isEmpty {
                 Text("Missing: " + missing.joined(separator: ", "))
-                    .font(.system(size: zoomed(11)))
+                    .font(.app(size: zoomed(11)))
                     .foregroundStyle(.tertiary)
                     .lineLimit(2)
             }
             if let managed = CliText.managedLine(cli) {
-                Text(managed).font(.system(size: zoomed(11))).foregroundStyle(.tertiary)
+                Text(managed).font(.app(size: zoomed(11))).foregroundStyle(.tertiary)
             }
             HStack(spacing: zoomed(8)) {
                 // A menu, not a segmented control: two rows of three
@@ -296,7 +296,7 @@ private struct CliRow: View {
                         .buttonStyle(.borderless)
                         .busy(app.isBusy(BusyKey.updateCli(cli.provider)))
                         .tip("Go back to the version you had before the last update")
-                        .font(.system(size: zoomed(11)))
+                        .font(.app(size: zoomed(11)))
                 }
             }
         }

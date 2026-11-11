@@ -38,7 +38,7 @@ struct ScheduleEditor: View {
     var body: some View {
         VStack(alignment: .leading, spacing: zoomed(16)) {
             Text(state.isNew ? "Schedule a message" : "Edit schedule")
-                .font(.system(size: zoomed(15), weight: .semibold))
+                .font(.app(size: zoomed(15), weight: .semibold))
             Form {
                 message
                 TextField("Title", text: $state.title, prompt: Text(titlePrompt))
@@ -49,7 +49,7 @@ struct ScheduleEditor: View {
             .formStyle(.columns)
             if let saveError {
                 Text(saveError)
-                    .font(.system(size: TypeScale.label))
+                    .font(.app(size: TypeScale.label))
                     .foregroundStyle(Color(nsColor: Theme.failed))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -81,7 +81,7 @@ struct ScheduleEditor: View {
         LabeledContent("Message") {
             VStack(alignment: .leading, spacing: zoomed(4)) {
                 TextEditor(text: $state.text)
-                    .font(.system(size: zoomed(13)))
+                    .font(.app(size: zoomed(13)))
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, zoomed(4))
                     .padding(.vertical, zoomed(5))
@@ -90,7 +90,7 @@ struct ScheduleEditor: View {
                     .overlay(RoundedRectangle(cornerRadius: zoomed(6)).strokeBorder(.separator, lineWidth: 0.5))
                 if state.draftImages > 0 {
                     Text(state.draftImages == 1 ? "The image stays in the box: a schedule sends only text." : "The images stay in the box: a schedule sends only text.")
-                        .font(.system(size: TypeScale.sidebarMeta))
+                        .font(.app(size: TypeScale.sidebarMeta))
                         .foregroundStyle(.secondary)
                 }
             }
@@ -128,7 +128,7 @@ struct ScheduleEditor: View {
             }
             if state.repeatChoice.kind == .custom {
                 TextField("Cron", text: $state.repeatChoice.custom, prompt: Text("0 9 * * 1-5"))
-                    .font(.system(size: zoomed(13), design: .monospaced))
+                    .font(.app(size: zoomed(13), design: .monospaced))
                     .tip("Minute, hour, day of the month, month and day of the week")
             }
         }
@@ -215,7 +215,7 @@ struct ScheduleEditor: View {
                 Text(" ")
             }
         }
-        .font(.system(size: TypeScale.sidebarMeta + 1))
+        .font(.app(size: TypeScale.sidebarMeta + 1))
         .fixedSize(horizontal: false, vertical: true)
         .frame(minHeight: zoomed(32), alignment: .top)
     }

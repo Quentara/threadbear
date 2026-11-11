@@ -640,7 +640,7 @@ private struct TourCard: View {
             }
             HStack(spacing: zoomed(6)) {
                 Text(step.title)
-                    .font(.system(size: TypeScale.cardTitle + 1, weight: .semibold))
+                    .font(.app(size: TypeScale.cardTitle + 1, weight: .semibold))
                 if done {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(.secondary)
@@ -660,7 +660,7 @@ private struct TourCard: View {
                 }
             }
             Text(failed ? step.failBody ?? step.body : done ? step.doneBody ?? step.body : step.body)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .contentTransition(.opacity)
@@ -706,7 +706,7 @@ private struct TourCard: View {
                         .tip(step.task != nil && !done && !waited ? "Have a go first" : tour.isLast ? "End the tour (Return)" : "The next step (Return)")
                 }
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(.top, zoomed(4))
         }
         .padding(zoomed(16))

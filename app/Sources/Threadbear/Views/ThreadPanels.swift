@@ -102,7 +102,7 @@ struct PinnedThreadView: View {
                         ProgressView().controlSize(.small)
                     } else if case .failed(let message) = session.state {
                         VStack(spacing: zoomed(8)) {
-                            Text(session.failureHeadline ?? "Couldn't load this thread.").font(.headline)
+                            Text(session.failureHeadline ?? "Couldn't load this thread.").font(.app(.headline))
                             Text(message).foregroundStyle(.secondary)
                                 .multilineTextAlignment(.center)
                             Button("Try again") { _ = app.openPanelSession(threadId) }
@@ -129,7 +129,7 @@ struct OpenElsewhereNote: View {
     var body: some View {
         VStack(spacing: zoomed(10)) {
             Text("This thread is open in its own panel.")
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .foregroundStyle(.secondary)
             HStack(spacing: zoomed(8)) {
                 Button("Go to it") { app.dock.show(WindowDock.threadPanel(threadId)) }

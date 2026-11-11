@@ -201,7 +201,7 @@ struct ActionChipsMoreTab: View {
                 // Even digits, so every count with as many digits is as
                 // wide, which is how ActionChipsFit measures it.
                 Text("+\(count)")
-                    .font(.system(size: TypeScale.chip).monospacedDigit())
+                    .font(.app(size: TypeScale.chip).monospacedDigit())
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, zoomed(6))
                     .padding(.vertical, zoomed(4))
@@ -245,7 +245,7 @@ private struct ShelfBadge: View {
                 ProjectIconView(project: app.project(id), title: title ?? "", size: 14)
             } else if let symbol = origin.symbol {
                 Image(systemName: symbol)
-                    .font(.system(size: zoomed(10), weight: .semibold))
+                    .font(.app(size: zoomed(10), weight: .semibold))
                     .foregroundStyle(.secondary)
             }
         }
@@ -276,12 +276,12 @@ struct WaitingPatchesChip: View {
         Button(action: open) {
             HStack(spacing: zoomed(5)) {
                 Image(systemName: "lock.shield")
-                    .font(.system(size: zoomed(11), weight: .medium))
+                    .font(.app(size: zoomed(11), weight: .medium))
                     .foregroundStyle(Color(nsColor: Theme.needsYou))
                 Text(Self.label(waiting))
                     .foregroundStyle(.primary)
             }
-            .font(.system(size: TypeScale.chip))
+            .font(.app(size: TypeScale.chip))
             .padding(.horizontal, zoomed(8))
             .padding(.vertical, zoomed(4))
             .contentShape(Rectangle())
@@ -321,7 +321,7 @@ struct ActionChip: View {
                         Image(nsImage: image).resizable().aspectRatio(contentMode: .fit).frame(width: zoomed(13), height: zoomed(13))
                     } else {
                         Image(systemName: action.icon ?? Self.glyph(for: action.kind))
-                            .font(.system(size: zoomed(11), weight: .medium))
+                            .font(.app(size: zoomed(11), weight: .medium))
                             .foregroundStyle(.secondary)
                     }
                 }
@@ -330,13 +330,13 @@ struct ActionChip: View {
                 // The patch's live count: comments waiting, say.
                 if let badge = action.badge {
                     Text(badge > 99 ? "99+" : String(badge))
-                        .font(.system(size: TypeScale.small, weight: .semibold).monospacedDigit())
+                        .font(.app(size: TypeScale.small, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, zoomed(5))
                         .background(Capsule().fill(Color.primary.opacity(0.08)))
                 }
             }
-            .font(.system(size: TypeScale.chip))
+            .font(.app(size: TypeScale.chip))
             .padding(.horizontal, zoomed(8))
             .padding(.vertical, zoomed(4))
             // The shelf is the chips' frame, so each is just a fill under

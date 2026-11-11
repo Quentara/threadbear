@@ -176,7 +176,7 @@ private struct MenuPopoverView: View {
                 Divider().padding(.vertical, zoomed(4)).padding(.horizontal, zoomed(8))
             case .header:
                 Text(row.title)
-                    .font(.system(size: TypeScale.chip - 1, weight: .semibold))
+                    .font(.app(size: TypeScale.chip - 1, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, zoomed(8))
                     .padding(.top, zoomed(4))
@@ -210,7 +210,7 @@ private struct MenuPopoverItem: View {
             HStack(spacing: zoomed(7)) {
                 // A tick column, as a menu has, so titles line up.
                 Image(systemName: "checkmark")
-                    .font(.system(size: zoomed(10), weight: .semibold))
+                    .font(.app(size: zoomed(10), weight: .semibold))
                     .opacity(row.checked ? 1 : 0)
                     .frame(width: zoomed(10))
                 if let image = row.image {
@@ -220,15 +220,15 @@ private struct MenuPopoverItem: View {
                         .frame(width: zoomed(16))
                 }
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(row.title).font(.system(size: TypeScale.chip)).lineLimit(1)
+                    Text(row.title).font(.app(size: TypeScale.chip)).lineLimit(1)
                     if let subtitle = row.subtitle, !subtitle.isEmpty {
-                        Text(subtitle).font(.system(size: TypeScale.chip - 2)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(subtitle).font(.app(size: TypeScale.chip - 2)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: zoomed(12))
                 if !row.children.isEmpty {
                     Image(systemName: expanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: zoomed(9), weight: .semibold))
+                        .font(.app(size: zoomed(9), weight: .semibold))
                         .foregroundStyle(.secondary)
                 }
             }

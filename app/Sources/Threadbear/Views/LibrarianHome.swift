@@ -51,7 +51,7 @@ private struct LibrarianSettings: View {
     var body: some View {
         VStack(alignment: .leading, spacing: zoomed(12)) {
             Text("Settings")
-                .font(.system(size: zoomed(17), weight: .semibold))
+                .font(.app(size: zoomed(17), weight: .semibold))
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: zoomed(16), verticalSpacing: zoomed(12)) {
                 GridRow {
                     Text("Look at threads")
@@ -87,7 +87,7 @@ private struct LibrarianSettings: View {
                     }
                 }
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             Button("More in Settings…") { app.openModelSettings() }
                 .controlSize(.small)
                 .tip("Private folders, whose threads are never sent anywhere")

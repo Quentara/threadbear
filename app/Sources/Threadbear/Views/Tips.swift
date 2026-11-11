@@ -26,7 +26,7 @@ struct InfoTip: View {
     var body: some View {
         Button { open.toggle() } label: {
             Image(systemName: "info.circle")
-                .font(.system(size: 11))
+                .font(.app(size: 11))
                 .foregroundStyle(.secondary)
                 // A little bigger than the icon, as it's small to aim at.
                 .padding(2)
@@ -38,7 +38,7 @@ struct InfoTip: View {
         .accessibilityLabel(text)
         .popover(isPresented: $open, arrowEdge: .bottom) {
             Text(text)
-                .font(.system(size: zoomed(12)))
+                .font(.app(size: zoomed(12)))
                 .textSelection(.enabled)
                 .frame(width: zoomed(280), alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)

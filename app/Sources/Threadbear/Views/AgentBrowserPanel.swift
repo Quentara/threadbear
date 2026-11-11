@@ -262,7 +262,7 @@ struct AgentBrowserPanel: View {
                     .padding(zoomed(10))
                 }
                 if let error = model.error {
-                    Text(error).font(.system(size: TypeScale.label)).foregroundStyle(.secondary).padding(zoomed(6))
+                    Text(error).font(.app(size: TypeScale.label)).foregroundStyle(.secondary).padding(zoomed(6))
                 }
             }
         }
@@ -272,7 +272,7 @@ struct AgentBrowserPanel: View {
         HStack(spacing: zoomed(6)) {
             TextField("Open a page in \(model.browserName)", text: $address)
                 .textFieldStyle(.plain)
-                .font(.system(size: TypeScale.label))
+                .font(.app(size: TypeScale.label))
                 .focused($addressFocused)
                 .padding(.horizontal, zoomed(8))
                 .padding(.vertical, zoomed(4))
@@ -321,12 +321,12 @@ struct AgentPageRow: View {
                     HStack(alignment: .firstTextBaseline, spacing: zoomed(6)) {
                         if let colour = dot { Circle().fill(colour).frame(width: zoomed(7), height: zoomed(7)) }
                         Text(tab.title.isEmpty ? host : tab.title)
-                            .font(.system(size: TypeScale.label, weight: .medium))
+                            .font(.app(size: TypeScale.label, weight: .medium))
                             .lineLimit(2)
                     }
-                    Text(host).font(.system(size: TypeScale.label)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(host).font(.app(size: TypeScale.label)).foregroundStyle(.secondary).lineLimit(1)
                     if tab.state == "working", let action = tab.action {
-                        Text(action).font(.system(size: TypeScale.label)).foregroundStyle(.secondary).lineLimit(1)
+                        Text(action).font(.app(size: TypeScale.label)).foregroundStyle(.secondary).lineLimit(1)
                     }
                 }
                 Spacer(minLength: 0)
@@ -378,7 +378,7 @@ struct AgentPageRow: View {
                     .clipShape(RoundedRectangle(cornerRadius: zoomed(5)))
                     .tip("As the page looked \(still.at.formatted(.relative(presentation: .named)))")
             } else {
-                Image(systemName: "globe").font(.system(size: zoomed(16))).foregroundStyle(.tertiary)
+                Image(systemName: "globe").font(.app(size: zoomed(16))).foregroundStyle(.tertiary)
             }
         }
         .frame(width: zoomed(Self.stillWidth), height: zoomed(Self.stillWidth * 0.62))

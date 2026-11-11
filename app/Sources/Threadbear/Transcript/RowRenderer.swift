@@ -766,7 +766,7 @@ enum RowRenderer {
 
     /// An empty line `height` tall, for a little space between parts.
     static func gap(_ height: CGFloat) -> NSAttributedString {
-        let font = NSFont.systemFont(ofSize: 2)
+        let font = NSFont.appFont(ofSize: 2)
         let (style, _) = Theme.lines(height, font: font)
         return NSAttributedString(string: "\n", attributes: [.font: font, .paragraphStyle: style])
     }
@@ -1501,7 +1501,7 @@ enum RowRenderer {
         note.enumerateAttributes(in: whole) { attributes, range, _ in
             let current = attributes[.font] as? NSFont
             let traits = current?.fontDescriptor.symbolicTraits ?? []
-            let base = traits.contains(.monoSpace) ? NSFont.monospacedSystemFont(ofSize: font.pointSize * 0.95, weight: .regular) : font
+            let base = traits.contains(.monoSpace) ? NSFont.appMonoFont(ofSize: font.pointSize * 0.95, weight: .regular) : font
             let sized = NSFontManager.shared.convert(base, toHaveTrait: traits.contains(.bold) ? .boldFontMask : [])
             note.addAttribute(.font, value: sized, range: range)
             if attributes[.link] == nil { note.addAttribute(.foregroundColor, value: color, range: range) }
@@ -1723,7 +1723,7 @@ enum RowRenderer {
                 pickAttributes[.font] = small
                 pickAttributes[.foregroundColor] = NSColor.secondaryLabelColor
                 output.append(NSAttributedString(string: "  ", attributes: pickAttributes))
-                output.append(symbol("star.fill", label: "Recommended", font: NSFont.systemFont(ofSize: small.pointSize - 2), attributes: pickAttributes, color: Theme.recommendedStar))
+                output.append(symbol("star.fill", label: "Recommended", font: NSFont.appFont(ofSize: small.pointSize - 2), attributes: pickAttributes, color: Theme.recommendedStar))
                 output.append(NSAttributedString(string: " Recommended", attributes: pickAttributes))
             }
             if !own, n < ask.optionNotes.count, !ask.optionNotes[n].isEmpty {

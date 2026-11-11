@@ -256,7 +256,7 @@ private struct NewThreadButton: View {
         let active = app.selection == nil
         Button { app.newThread() } label: {
             Image(systemName: "square.and.pencil")
-                .font(.system(size: TypeScale.sidebarButton))
+                .font(.app(size: TypeScale.sidebarButton))
                 .foregroundStyle(hovering || active ? .primary : .secondary)
                 .frame(width: zoomed(32))
                 .frame(maxHeight: .infinity)
@@ -322,7 +322,7 @@ private struct InboxOrderMenu: View {
             .labelsHidden()
         } label: {
             Image(systemName: "arrow.up.arrow.down")
-                .font(.system(size: zoomed(10), weight: .semibold))
+                .font(.app(size: zoomed(10), weight: .semibold))
                 // Brighter once it's off the default, so a changed order
                 // isn't a surprise.
                 .foregroundStyle(hovering ? AnyShapeStyle(.primary) : app.inboxOrder == .needsYou ? AnyShapeStyle(SidebarMetrics.faint) : AnyShapeStyle(.secondary))
@@ -397,7 +397,7 @@ struct SectionHeading<Accessory: View>: View {
                 ProjectIconView(project: project, size: 14)
             } else if let icon {
                 Image(systemName: icon)
-                    .font(.system(size: zoomed(11), weight: .medium))
+                    .font(.app(size: zoomed(11), weight: .medium))
                     // The Archived heading's box: where an archived
                     // thread's panel lands, bouncing as it does
                     // (`ArchiveFlight`).
@@ -416,7 +416,7 @@ struct SectionHeading<Accessory: View>: View {
                     .frame(width: zoomed(14))
             }
             Text(title)
-                .font(.system(size: TypeScale.sidebarHeading, weight: .semibold))
+                .font(.app(size: TypeScale.sidebarHeading, weight: .semibold))
                 .foregroundStyle(hovering ? .primary : .secondary)
                 .animation(Juice.hover, value: hovering)
                 .fixedSize()
@@ -432,7 +432,7 @@ struct SectionHeading<Accessory: View>: View {
                     // Rolls to the new number when a thread comes or goes
                     // while the section's folded.
                     Text("\(fold.count)")
-                        .font(.system(size: TypeScale.sidebarMeta))
+                        .font(.app(size: TypeScale.sidebarMeta))
                         .foregroundStyle(SidebarMetrics.faint)
                         .monospacedDigit()
                         .contentTransition(.numericText(value: Double(fold.count)))
@@ -440,7 +440,7 @@ struct SectionHeading<Accessory: View>: View {
                         .transition(Juice.popIn)
                 }
                 Image(systemName: "chevron.down")
-                    .font(.system(size: zoomed(9), weight: .semibold))
+                    .font(.app(size: zoomed(9), weight: .semibold))
                     .foregroundStyle(SidebarMetrics.faint)
                     .rotationEffect(.degrees(fold.collapsed ? -90 : 0))
                     .opacity(fold.collapsed || hovering ? 1 : 0)
@@ -690,7 +690,7 @@ struct ThreadRowView: View {
                         // Finished with nothing needed: a tick where the
                         // unread dot would be, drawn on as it arrives.
                         Image(systemName: "checkmark")
-                            .font(.system(size: zoomed(9), weight: .bold))
+                            .font(.app(size: zoomed(9), weight: .bold))
                             .foregroundStyle(Color.accentColor)
                             .frame(width: zoomed(10), height: zoomed(10))
                             .transition(Juice.reduceMotion ? .opacity : AnyTransition(SymbolEffectTransition(effect: .drawOn, options: .default)))
@@ -714,7 +714,7 @@ struct ThreadRowView: View {
             VStack(alignment: .leading, spacing: zoomed(3)) {
                 HStack(spacing: 0) {
                     Text(thread.title.isEmpty ? "Untitled" : thread.title)
-                        .font(.system(size: TypeScale.sidebarTitle, weight: look.emphasised ? .semibold : .regular))
+                        .font(.app(size: TypeScale.sidebarTitle, weight: look.emphasised ? .semibold : .regular))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
                     Spacer(minLength: 0)
@@ -731,15 +731,15 @@ struct ThreadRowView: View {
                             // (who and why in its tip), then the place.
                             // A tool's symbol may not exist on this macOS.
                             Image(systemName: NSImage(systemSymbolName: byline.symbol, accessibilityDescription: nil) == nil ? ThreadByline.toolSymbol : byline.symbol)
-                                .font(.system(size: TypeScale.sidebarMeta))
+                                .font(.app(size: TypeScale.sidebarMeta))
                                 .tip(thread.schedule.map { StartedBySchedule.tip($0, current: app.schedule($0.id)) } ?? byline.tip)
                                 .accessibilityLabel(byline.tip)
                             Text(byline.text)
-                                .font(.system(size: TypeScale.sidebarMeta + 1))
+                                .font(.app(size: TypeScale.sidebarMeta + 1))
                                 .lineLimit(1)
                         } else {
                             Text(ProjectMark.place(thread, under: heading))
-                                .font(.system(size: TypeScale.sidebarMeta + 1))
+                                .font(.app(size: TypeScale.sidebarMeta + 1))
                                 .lineLimit(1)
                                 .tip(ProjectMark.lineTip(thread, under: heading))
                         }
@@ -749,7 +749,7 @@ struct ThreadRowView: View {
                             // as `sync.name` can be any length.
                             CappedWidth(limit: zoomed(100)) {
                                 Text("• \(runner)")
-                                    .font(.system(size: TypeScale.sidebarMeta + 1))
+                                    .font(.app(size: TypeScale.sidebarMeta + 1))
                                     .lineLimit(1)
                                     .truncationMode(.tail)
                             }
@@ -876,7 +876,7 @@ struct ThreadRowView: View {
         if let moving = thread.moving {
             if moving.ended {
                 Text(moving.state == "cancelled" ? "Move cancelled" : "Couldn't move")
-                    .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+                    .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
                     .foregroundStyle(moving.state == "cancelled" ? Color.secondary : Color(nsColor: Theme.failed))
                     .lineLimit(1)
                     .tip(moving.line)
@@ -887,21 +887,21 @@ struct ThreadRowView: View {
                         .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + zoomed(4) }
                     Text("Moving to \(moving.toName)").lineLimit(1).truncationMode(.tail)
                 }
-                .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+                .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: zoomed(140), alignment: .trailing)
                 .tip(moving.line)
             }
         } else if mode != .hibernating, let waiting = thread.waitingForRoom, !thread.isArchived {
             Text(Pools.waitingLine(waiting, now: app.now))
-                .font(.system(size: TypeScale.sidebarMeta))
+                .font(.app(size: TypeScale.sidebarMeta))
                 .foregroundStyle(SidebarMetrics.faint)
                 .lineLimit(1)
         } else if mode != .hibernating, thread.waitingForNetwork != nil, !thread.isArchived {
             // Its turn lost the internet; it carries on once it's back,
             // so it isn't Failed in the sense of needing Mike.
             Text("Waiting for connection")
-                .font(.system(size: TypeScale.sidebarMeta))
+                .font(.app(size: TypeScale.sidebarMeta))
                 .foregroundStyle(SidebarMetrics.faint)
                 .lineLimit(1)
                 .tip("The internet dropped during its turn. It carries on by itself once the connection is back.")
@@ -918,26 +918,26 @@ struct ThreadRowView: View {
                 if let words = WakeWords.row(thread, now: app.now) {
                     // A topic, or Thinking… while the runner works out when.
                     Text(words.text)
-                        .font(.system(size: TypeScale.sidebarMeta))
+                        .font(.app(size: TypeScale.sidebarMeta))
                         .foregroundStyle(SidebarMetrics.faint)
                         .lineLimit(1)
                         .truncationMode(.tail)
                         .frame(maxWidth: zoomed(110), alignment: .trailing)
                         .tip(words.tip)
                 } else if let wakeText {
-                    Text(wakeText).font(.system(size: TypeScale.sidebarMeta)).foregroundStyle(SidebarMetrics.faint)
+                    Text(wakeText).font(.app(size: TypeScale.sidebarMeta)).foregroundStyle(SidebarMetrics.faint)
                 }
             } else if look.woke, let woke = thread.woke {
                 // Back from hibernating by itself; the time comes back
                 // once it's been opened.
                 Text("Woke up")
-                    .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+                    .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
                     .foregroundStyle(Color.accentColor)
                     .tip(WokeWords.tip(woke))
             } else if section == .hibernating, let wake = app.wakes[thread.id], let next = wake.nextRunAt {
                 // When its schedule messages it next, where the time would be.
                 Text(RelativeTime.until(next, now: app.now))
-                    .font(.system(size: TypeScale.sidebarMeta))
+                    .font(.app(size: TypeScale.sidebarMeta))
                     .monospacedDigit()
                     .foregroundStyle(SidebarMetrics.faint)
                     .tip("Scheduled: \(wake.whenText)")
@@ -964,7 +964,7 @@ struct ThreadRowView: View {
                     Text(look.labelled ? "Working " + elapsed : elapsed).monospacedDigit()
                 }
             }
-            .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+            .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
             .foregroundStyle(Color.accentColor)
             .tip("Working")
         case .background:
@@ -977,17 +977,17 @@ struct ThreadRowView: View {
                     .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + zoomed(4) }
                 Text(BackgroundWork.short(thread.background))
             }
-            .font(.system(size: TypeScale.sidebarMeta, weight: .medium))
+            .font(.app(size: TypeScale.sidebarMeta, weight: .medium))
             .foregroundStyle(.secondary)
             .tip(BackgroundWork.detail(thread.background))
         case .needsYou:
             // The dot in the gutter says it.
             time.foregroundStyle(SidebarMetrics.faint)
         case .failed:
-            Text("Failed").font(.system(size: TypeScale.sidebarMeta, weight: .medium)).foregroundStyle(Color(nsColor: Theme.failed))
+            Text("Failed").font(.app(size: TypeScale.sidebarMeta, weight: .medium)).foregroundStyle(Color(nsColor: Theme.failed))
                 .tip("The last turn failed")
         case .stopped:
-            Text("Stopped").font(.system(size: TypeScale.sidebarMeta)).foregroundStyle(.secondary)
+            Text("Stopped").font(.app(size: TypeScale.sidebarMeta)).foregroundStyle(.secondary)
                 .tip("Stopped when the runner restarted")
         }
     }
@@ -995,7 +995,7 @@ struct ThreadRowView: View {
     /// When the thread was last active (archived, in the archive).
     private var time: Text {
         Text(RelativeTime.short(mode == .archive ? thread.archivedAt ?? thread.lastActivityAt : thread.lastActivityAt, now: app.now))
-            .font(.system(size: TypeScale.sidebarMeta))
+            .font(.app(size: TypeScale.sidebarMeta))
             .monospacedDigit()
     }
 }
@@ -1046,21 +1046,21 @@ private struct ProjectTiles: View {
                 Group {
                     if let symbol = icon?.symbol, ProjectIconImages.symbolExists(symbol) {
                         Image(systemName: symbol)
-                            .font(.system(size: zoomed(14)))
+                            .font(.app(size: zoomed(14)))
                             .foregroundStyle(.secondary)
                     } else if let project = projects.first {
                         Text(ProjectMark.letter(project.title))
-                            .font(.system(size: zoomed(14), weight: .semibold))
+                            .font(.app(size: zoomed(14), weight: .semibold))
                             .foregroundStyle(.secondary)
                     } else if let runnerIcon {
                         // Wider than tall (a Mac mini is a flat box), so a
                         // little larger than the folder to read at a glance.
                         Image(systemName: runnerIcon)
-                            .font(.system(size: zoomed(16)))
+                            .font(.app(size: zoomed(16)))
                             .foregroundStyle(.secondary)
                     } else {
                         Image(systemName: "folder")
-                            .font(.system(size: zoomed(12)))
+                            .font(.app(size: zoomed(12)))
                             .foregroundStyle(SidebarMetrics.faint)
                     }
                 }
@@ -1150,7 +1150,7 @@ struct RowIconButtonStyle: ButtonStyle {
 
         var body: some View {
             configuration.label
-                .font(.system(size: zoomed(13)))
+                .font(.app(size: zoomed(13)))
                 .foregroundStyle(hovering ? .primary : .secondary)
                 .frame(width: zoomed(22), height: zoomed(22))
                 .background(
@@ -1185,13 +1185,13 @@ struct SidebarButtonRow: View {
                         SpinnerMark(color: .secondaryLabelColor).frame(width: zoomed(12), height: zoomed(12))
                     } else {
                         Image(systemName: icon)
-                            .font(.system(size: TypeScale.sidebarButton))
+                            .font(.app(size: TypeScale.sidebarButton))
                             .foregroundStyle(.secondary)
                     }
                 }
                 .frame(width: zoomed(16))
                 Text(title)
-                    .font(.system(size: TypeScale.sidebarButton))
+                    .font(.app(size: TypeScale.sidebarButton))
                     .foregroundStyle(.primary)
                 Spacer(minLength: zoomed(6))
             }
@@ -1406,7 +1406,7 @@ struct EmptyNote: View {
 
     var body: some View {
         Text(text)
-            .font(.system(size: TypeScale.sidebarPreview))
+            .font(.app(size: TypeScale.sidebarPreview))
             .foregroundStyle(.secondary)
             .padding(.leading, SidebarMetrics.leading)
             .padding(.top, zoomed(10))
@@ -1423,10 +1423,10 @@ struct ModeHeader: View {
     var body: some View {
         HStack(spacing: zoomed(6)) {
             Text(title)
-                .font(.system(size: TypeScale.sidebarButton, weight: .semibold))
+                .font(.app(size: TypeScale.sidebarButton, weight: .semibold))
             Spacer()
             if let count, count > 0 {
-                Text("\(count)").font(.system(size: TypeScale.sidebarFooter)).foregroundStyle(SidebarMetrics.faint).monospacedDigit()
+                Text("\(count)").font(.app(size: TypeScale.sidebarFooter)).foregroundStyle(SidebarMetrics.faint).monospacedDigit()
             }
         }
         // On the same column as the titles below.
@@ -1450,12 +1450,12 @@ struct SearchField: View {
         // SidebarButtonRow's icon and title.
         HStack(spacing: zoomed(8)) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: zoomed(12.5)))
+                .font(.app(size: zoomed(12.5)))
                 .foregroundStyle(SidebarMetrics.faint)
                 .frame(width: zoomed(16))
             TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
-                .font(.system(size: TypeScale.sidebarButton))
+                .font(.app(size: TypeScale.sidebarButton))
                 .focused($focused)
                 .onAppear { if focusOnAppear { focused = true } }
                 .tip(prompt)

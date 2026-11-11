@@ -20,7 +20,7 @@ struct RefusalOffer: View {
                     button(target, continuing: continuing)
                 }
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(zoomed(12))
             .background(Color(nsColor: Theme.cardBackground), in: RoundedRectangle(cornerRadius: zoomed(12)))
             .overlay { RoundedRectangle(cornerRadius: zoomed(12)).stroke(Color(nsColor: Theme.hairline), lineWidth: 0.5) }

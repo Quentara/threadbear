@@ -312,24 +312,24 @@ struct SwipeNavigationArrow: View {
         let fingersLeft = back != nav.natural
         return HStack(spacing: zoomed(12)) {
             Image(systemName: back ? "chevron.left" : "chevron.right")
-                .font(.system(size: zoomed(14), weight: .semibold))
+                .font(.app(size: zoomed(14), weight: .semibold))
                 .foregroundStyle(armed ? Color.white : Color.secondary)
                 .frame(width: zoomed(34), height: zoomed(34))
                 .background(Circle().fill(armed ? accent : Color.primary.opacity(0.08)))
             VStack(alignment: .leading, spacing: zoomed(2)) {
                 if !empty {
                     Text(back ? "Back to" : "Forward to")
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                 }
                 Text(place.title)
-                    .font(.system(size: zoomed(14), weight: empty ? .regular : .semibold))
+                    .font(.app(size: zoomed(14), weight: empty ? .regular : .semibold))
                     .foregroundStyle(empty ? Color.secondary : Color.primary)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                 if let detail = place.detail {
                     Text(detail)
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                 }

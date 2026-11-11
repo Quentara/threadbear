@@ -265,7 +265,7 @@ final class ImageGridView: NSView {
             text.isHidden = true
             return
         }
-        let font = NSFont.systemFont(ofSize: TypeScale.work - 1)
+        let font = NSFont.appFont(ofSize: TypeScale.work - 1)
         text.isHidden = false
         text.string = words
         text.font = font

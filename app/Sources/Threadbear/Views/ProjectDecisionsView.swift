@@ -49,11 +49,11 @@ private struct DecisionCard: View {
                     SpinnerMark(color: .secondaryLabelColor)
                         .frame(width: zoomed(12), height: zoomed(12))
                     (Text("Sending to ") + Text(title).fontWeight(.semibold) + Text("…"))
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     Text(sent.answers.joined(separator: "; "))
-                        .font(.system(size: TypeScale.label))
+                        .font(.app(size: TypeScale.label))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                         .lineLimit(1)
                     Spacer(minLength: zoomed(8))
@@ -62,10 +62,10 @@ private struct DecisionCard: View {
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: zoomed(8)) {
                     Text(title)
-                        .font(.system(size: TypeScale.label, weight: .semibold))
+                        .font(.app(size: TypeScale.label, weight: .semibold))
                         .lineLimit(1)
                     Text(RelativeTime.short(thread.lastActivityAt, now: app.now))
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                         .monospacedDigit()
                         .fixedSize()
@@ -74,7 +74,7 @@ private struct DecisionCard: View {
                 }
                 if let line = ProjectDecisions.recapLine(thread) {
                     Text(line)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .tip(line)

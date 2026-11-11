@@ -23,11 +23,11 @@ struct ProjectIconView: View {
                     .clipShape(RoundedRectangle(cornerRadius: side * 0.22, style: .continuous))
             } else if let symbol = project?.icon?.symbol, ProjectIconImages.symbolExists(symbol) {
                 Image(systemName: symbol)
-                    .font(.system(size: side * 0.78, weight: .regular))
+                    .font(.app(size: side * 0.78, weight: .regular))
                     .foregroundStyle(.secondary)
             } else {
                 Text(letter)
-                    .font(.system(size: side * 0.62, weight: .semibold, design: .rounded))
+                    .font(.app(size: side * 0.62, weight: .semibold, design: .rounded))
                     .foregroundStyle(.secondary)
                     .frame(width: side, height: side)
                     .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: side * 0.26, style: .continuous))

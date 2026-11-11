@@ -46,7 +46,7 @@ struct DevicesSettings: View {
                                 .foregroundStyle(.secondary)
                         }
                         Text("A phone can't reach it. To use the iPhone app, install Tailscale and run ./threadbear setup --self-hosted --tailnet. Your threads stay.")
-                            .font(.callout)
+                            .font(.app(.callout))
                             .foregroundStyle(.secondary)
                     } else if app.pushOff {
                         // A self-hosted backend: the push relay only reaches Convex cloud (docs/self-hosting.md).
@@ -131,7 +131,7 @@ private struct DeviceRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(device.name.isEmpty ? (device.kind == .browser ? "Browser" : "Phone") : device.name)
                 Text(DeviceText.detail(device))
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(device.expired ? .orange : .secondary)
             }
             Spacer()
@@ -173,7 +173,7 @@ struct PairPhoneSheet: View {
             VStack(spacing: 4) {
                 Text("Scan it with the Threadbear app on your iPhone.")
                 Text("Don't have the app yet? ios/README.md in the repo says how to put it on your phone.")
-                    .font(.callout)
+                    .font(.app(.callout))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)

@@ -1491,8 +1491,8 @@ final class PillButton: NSButton {
         focusRingType = .none
     }
 
-    static var font: NSFont { .systemFont(ofSize: TypeScale.label, weight: .medium) }
-    static var shortcutFont: NSFont { .systemFont(ofSize: TypeScale.small, weight: .medium) }
+    static var font: NSFont { .appFont(ofSize: TypeScale.label, weight: .medium) }
+    static var shortcutFont: NSFont { .appFont(ofSize: TypeScale.small, weight: .medium) }
 
     var fittingWidth: CGFloat {
         ceil(label(color: .labelColor).size().width) + zoomed(30)
@@ -1851,7 +1851,7 @@ final class PlanCardCell: RowCellView {
         case .sentBack: "Sent back"
         case .approved: plan.entries.isEmpty ? "Approved" : ""
         }
-        status.font = .systemFont(ofSize: TypeScale.label)
+        status.font = .appFont(ofSize: TypeScale.label)
         let statusWidth = ceil(status.attributedStringValue.size().width) + zoomed(4)
         status.frame = NSRect(x: left + inner - statusWidth, y: y + (line - zoomed(17)) / 2, width: statusWidth, height: zoomed(17))
         y += render.textSize.height + zoomed(8)
@@ -1875,7 +1875,7 @@ final class PlanCardCell: RowCellView {
         let title: String? = !plan.entries.isEmpty ? (expanded ? "Hide plan" : "Show plan") : clipped ? (expanded ? "Show less" : "Show full plan") : nil
         toggle.isHidden = title == nil
         if let title {
-            toggle.attributedTitle = NSAttributedString(string: title, attributes: [.font: NSFont.systemFont(ofSize: TypeScale.label), .foregroundColor: NSColor.secondaryLabelColor])
+            toggle.attributedTitle = NSAttributedString(string: title, attributes: [.font: NSFont.appFont(ofSize: TypeScale.label), .foregroundColor: NSColor.secondaryLabelColor])
             let w = ceil(toggle.attributedTitle.size().width) + zoomed(8)
             toggle.frame = NSRect(x: buttonX + (waiting ? zoomed(2) : -zoomed(4)), y: y, width: w, height: RowMetrics.buttonHeight)
             toggle.setTip(expanded ? "Show less of it" : "Show the whole plan")
@@ -1958,11 +1958,11 @@ final class QuestionRowCell: RowCellView, NSTextFieldDelegate {
     /// The field's font at the current zoom: at init, and again when the
     /// card is rebuilt after a zoom change.
     private func styleOther() {
-        other.font = .systemFont(ofSize: TypeScale.work)
+        other.font = .appFont(ofSize: TypeScale.work)
         // The composer's placeholder tier, set outright: a borderless field
         // otherwise picks its own grey.
         other.placeholderAttributedString = NSAttributedString(string: "Something else", attributes: [
-            .font: NSFont.systemFont(ofSize: TypeScale.work), .foregroundColor: ComposerTextView.placeholderColor,
+            .font: NSFont.appFont(ofSize: TypeScale.work), .foregroundColor: ComposerTextView.placeholderColor,
         ])
     }
 
@@ -2093,7 +2093,7 @@ final class QuestionRowCell: RowCellView, NSTextFieldDelegate {
                 let button = group.buttons[optionIndex]
                 button.isHidden = false
                 // Here rather than at creation, so a zoom change reaches it.
-                button.font = .systemFont(ofSize: TypeScale.work)
+                button.font = .appFont(ofSize: TypeScale.work)
                 button.setButtonType(question.multiSelect ? .switch : .radio)
                 if button.title != option.label { button.title = option.label }
                 button.frame = NSRect(x: 0, y: inner, width: width, height: RowMetrics.optionHeight)
@@ -2350,11 +2350,11 @@ final class SecretRowCell: RowCellView, NSTextFieldDelegate {
 
     /// The field's font and placeholder at the current zoom.
     private func styleField(_ request: SecretRequest) {
-        field.font = .systemFont(ofSize: TypeScale.work)
+        field.font = .appFont(ofSize: TypeScale.work)
         let placeholder = request.placeholder ?? "Paste the secret"
         if field.placeholderAttributedString?.string != placeholder || field.placeholderAttributedString?.attribute(.font, at: 0, effectiveRange: nil) as? NSFont != field.font {
             field.placeholderAttributedString = NSAttributedString(string: placeholder, attributes: [
-                .font: NSFont.systemFont(ofSize: TypeScale.work), .foregroundColor: ComposerTextView.placeholderColor,
+                .font: NSFont.appFont(ofSize: TypeScale.work), .foregroundColor: ComposerTextView.placeholderColor,
             ])
         }
     }

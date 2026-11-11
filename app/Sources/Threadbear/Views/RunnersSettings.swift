@@ -111,7 +111,7 @@ private struct RunnerRow: View {
             Text(name)
             if isDefault {
                 Image(systemName: "star.fill")
-                    .font(.system(size: 9))
+                    .font(.app(size: 9))
                     .foregroundStyle(.tertiary)
                     .tip("New threads start here")
                     .accessibilityLabel("Default")
