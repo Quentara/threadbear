@@ -3354,7 +3354,10 @@ panel: rows drawn natively, with no page to serve.
   }],
 ```
 
-`items` gets `{ cwd, threadId, sh }`, where `sh(command)` runs a command
+`items` gets `{ cwd, threadId, matched, projects, sh }`, where `projects`
+is the thread's projects that aren't archived, each `{ id, title, notion? }`
+(`notion` as set on the project), so a patch can follow what's set on them
+without asking the runner, and `sh(command)` runs a command
 in `cwd` through a login shell and resolves with what it printed (it
 rejects on a non-zero exit). For a project's patch trusted by its hash,
 `sh` runs from the folder holding `.threadbear/` instead, and only what
@@ -3374,7 +3377,7 @@ project's patch it's one script in the repo and plain words (see
 ```
 
 **Live state.** An action or panel can also have `when` and `badge`,
-functions that get the same `{ cwd, threadId, matched, sh }` as `items`.
+functions that get the same `{ cwd, threadId, matched, projects, sh }` as `items`.
 `when` hides it unless it returns something true (a chip that only turns
 up when there's something to do); `badge` returns a count (a number, a
 numeric string or a list, whose length counts), sent as the item's
@@ -3382,7 +3385,24 @@ numeric string or a list, whose length counts), sent as the item's
 action can also have `label`, which returns the chip's title for now (a
 string, at most 60 characters; "Merge #707"), so the title can carry what
 the chip acts on; nothing, or a throw, keeps the title it was given, and
-its id still comes from that title. The
+its id still comes from that title. An action's `url` can be such a
+function too, returning the page for now: the chip is sent with that
+`url`, and is hidden while it returns nothing or anything but an http or
+https page. A chip for the Notion page of the thread's project:
+
+```ts
+const page = ({ projects }) => projects.find((p) => p.notion?.startsWith("https://"))
+export default {
+  actions: [{
+    title: "Notion",
+    url: (ctx) => page(ctx)?.notion,
+    label: (ctx) => page(ctx) && `Notion · ${page(ctx).title}`,
+  }],
+}
+```
+
+A thread reads its patches again when one of its projects' `notion` or
+title changes. The
 runner calls them each time it reads the patches, after every turn, and
 every 20 seconds for an inbox thread that has any. Commands that two of
 them run in the same folder run once per read, and the output is shared

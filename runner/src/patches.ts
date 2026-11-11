@@ -43,7 +43,9 @@
 //
 // Live state: an action or panel can have `when` (hide it unless this
 // says true) and `badge` (a count drawn on its chip or rail button),
-// functions given the same context as a list panel's `items`. The runner
+// functions given the same context as a list panel's `items`, the thread's
+// projects included; an action's `url` can be one too, so a chip can open
+// the Notion page set on the thread's project. The runner
 // calls them when it reads the patches (applyLive) and every little while
 // for a thread that has any, so "Your turn" turns up once Mike has left
 // comments, without a turn.
@@ -554,16 +556,18 @@ export function readPatchModule(id: string, source: 'home' | 'project', file: st
   }
   // The when, badge, label and summary functions of the file's actions and
   // panels, kept aside (see liveFunctions) once the whole file has passed.
-  // Only actions have a label and only panels a summary.
+  // Only actions have a label and only panels a summary. An action's url
+  // can be a function too (its page for now); a string url is a page, so
+  // it's only taken here when it's a function.
   const live: [string, LiveFunctions][] = [];
-  const liveOf = (kind: string, i: number, title: string, raw: { when?: unknown; badge?: unknown; label?: unknown; summary?: unknown }, itemId: string): string | undefined => {
+  const liveOf = (kind: string, i: number, title: string, raw: { when?: unknown; badge?: unknown; label?: unknown; summary?: unknown; url?: unknown }, itemId: string): string | undefined => {
     const fns: LiveFunctions = {};
-    for (const key of kind === 'panels' ? (['when', 'badge', 'summary'] as const) : (['when', 'badge', 'label'] as const)) {
-      if (raw[key] === undefined) continue;
+    for (const key of kind === 'panels' ? (['when', 'badge', 'summary'] as const) : (['when', 'badge', 'label', 'url'] as const)) {
+      if (raw[key] === undefined || (key === 'url' && typeof raw.url !== 'function')) continue;
       if (typeof raw[key] !== 'function') return `${kind}[${i}] ("${title}") has a ${key} that isn't a function.`;
       fns[key] = raw[key] as LiveFunction;
     }
-    if (fns.when || fns.badge || fns.label || fns.summary) live.push([itemId.slice(id.length), fns]);
+    if (fns.when || fns.badge || fns.label || fns.summary || fns.url) live.push([itemId.slice(id.length), fns]);
     return undefined;
   };
   let worktree: WorktreeConfig | undefined;
@@ -595,9 +599,12 @@ export function readPatchModule(id: string, source: 'home' | 'project', file: st
       if (!a || typeof a !== 'object' || typeof a.title !== 'string' || !a.title.trim()) return problem(`actions[${i}] needs a title.`);
       const run = typeof a.run === 'string' && a.run.trim() ? a.run : undefined;
       const prompt = typeof a.prompt === 'string' && a.prompt.trim() ? a.prompt : undefined;
-      const url = a.url === undefined ? undefined : webPage(a.url);
-      if (url === null) return problem(`actions[${i}] ("${a.title}") has a url that isn't an http or https page.`);
-      const given = [run, prompt, url].filter(Boolean).length;
+      // A url function gives the page when the live state is read (liveOf);
+      // until then the action has none, and applyLive hides it without one.
+      const liveUrl = typeof a.url === 'function';
+      const url = a.url === undefined || liveUrl ? undefined : webPage(a.url);
+      if (url === null) return problem(`actions[${i}] ("${a.title}") has a url that isn't an http or https page, or a function that returns one.`);
+      const given = [run, prompt, url || liveUrl].filter(Boolean).length;
       if (!given) return problem(`actions[${i}] ("${a.title}") needs run (a command), prompt (a message) or url (a page to open).`);
       if (given > 1) return problem(`actions[${i}] ("${a.title}") should have one of run, prompt or url, not more.`);
       const action: Action = { id: `${id}.${slug(a.title)}`, title: a.title.trim(), kind: run ? 'command' : prompt ? 'prompt' : 'url', patch: id };
@@ -948,13 +955,19 @@ export type PanelRender = { image?: ImageRef; items?: PanelItem[]; note?: string
 // What list panels and live state run their functions' commands with.
 // `verify` hashes a trusted-by-hash patch afresh (PatchTrust.verify): its
 // sh commands run only while it's still the version that was trusted.
+// `projects`: the thread's, as its patch functions get them (ItemsContext).
 export type LiveContext = {
   cwd: string;
   threadId: string;
+  projects?: PatchProject[];
   run: (command: string, cwd: string) => Promise<CommandOutcome>;
   verify?: (file: string, hash: string) => boolean;
   timeoutMs?: number;
 };
+
+// A copy for each call, so one patch's function changing what it was
+// handed can't change what the next one sees.
+const projectsFor = (ctx: LiveContext): PatchProject[] => (ctx.projects ?? []).map((p) => ({ ...p }));
 
 // `key`: what a command's output is shared under in one read; a bound
 // patch's checks are its own, so its refusals don't reach another's.
@@ -1018,7 +1031,10 @@ function callThenClose(call: () => unknown, shIn: LiveSh): unknown {
 // and only what trusting it covers (liveSh).
 // `matched` is what made a tool patch apply: the paths its appliesTo
 // found (two .tandem files in a folder are two), and empty otherwise.
-export type ItemsContext = { cwd: string; threadId: string; matched: string[]; sh: (command: string) => Promise<string> };
+// `projects`: the thread's projects that aren't archived, so a chip can
+// follow what's set on them (the Notion page) without asking the runner.
+export type PatchProject = { id: string; title: string; notion?: string };
+export type ItemsContext = { cwd: string; threadId: string; matched: string[]; projects: PatchProject[]; sh: (command: string) => Promise<string> };
 type ItemsFunction = (ctx: ItemsContext) => unknown;
 
 // The `items` functions of loaded patch files, by file and the panel's id
@@ -1053,7 +1069,7 @@ export async function renderListPanel(
   let timer: NodeJS.Timeout | undefined;
   try {
     const value = await Promise.race([
-      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], sh }), shIn)),
+      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], projects: projectsFor(ctx), sh }), shIn)),
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`took over ${Math.round((ctx.timeoutMs ?? LIST_TIMEOUT_MS) / 1000)} seconds`)), ctx.timeoutMs ?? LIST_TIMEOUT_MS);
       }),
@@ -1071,7 +1087,7 @@ export async function renderListPanel(
 // ------------------------------------------------------------ live state
 
 type LiveFunction = (ctx: ItemsContext) => unknown;
-type LiveFunctions = { when?: LiveFunction; badge?: LiveFunction; label?: LiveFunction; summary?: LiveFunction };
+type LiveFunctions = { when?: LiveFunction; badge?: LiveFunction; label?: LiveFunction; summary?: LiveFunction; url?: LiveFunction };
 
 // The when and badge functions of loaded patch files' actions and panels,
 // keyed like listFunctions. Kept off the items, which go over the wire.
@@ -1120,7 +1136,7 @@ export async function applyLive(set: PatchSet, ctx: LiveContext): Promise<PatchS
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
-        Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], sh }), shIn)),
+        Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], projects: projectsFor(ctx), sh }), shIn)),
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error(`took over ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs);
         }),
@@ -1133,17 +1149,20 @@ export async function applyLive(set: PatchSet, ctx: LiveContext): Promise<PatchS
       shIn.close();
     }
   };
-  const settle = async <T extends { id: string; patch: string; title: string; badge?: number; summary?: string }>(item: T): Promise<T | undefined> => {
+  const settle = async <T extends { id: string; patch: string; title: string; badge?: number; summary?: string; url?: string }>(item: T): Promise<T | undefined> => {
     const fns = liveFor(set, item);
     if (!fns) return item;
-    const [shown, badge, label, summary] = await Promise.all([
+    const [shown, badge, label, summary, url] = await Promise.all([
       fns.when ? call(item.patch, fns.when).then((v) => Boolean(v), () => false) : true,
       fns.badge ? call(item.patch, fns.badge).then(badgeCount, () => undefined) : undefined,
       fns.label ? call(item.patch, fns.label).then(labelText, () => undefined) : undefined,
       fns.summary ? call(item.patch, fns.summary).then(summaryText, () => undefined) : undefined,
+      // A chip with no page for now has nothing to open, so it's hidden.
+      fns.url ? call(item.patch, fns.url).then(webPage, () => null) : undefined,
     ]);
-    if (!shown) return undefined;
+    if (!shown || url === null) return undefined;
     const out = { ...item };
+    if (url) out.url = url;
     if (label !== undefined) out.title = label;
     delete out.badge;
     delete out.summary;

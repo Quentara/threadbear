@@ -211,7 +211,7 @@ test('readPatchModule: the shapes it refuses', () => {
   assert.equal(read({ actions: [{ title: 'Both', run: 'x', url: 'https://a.dev' }] }), 'actions[0] ("Both") should have one of run, prompt or url, not more.');
   // Only web pages: a url chip must never be a way to run something.
   for (const url of ['file:///etc/passwd', 'javascript:alert(1)', 'x-apple.systempreferences:', 'localhost:3000', 'not a url', '', 42]) {
-    assert.equal(read({ actions: [{ title: 'Bad', url }] }), 'actions[0] ("Bad") has a url that isn\'t an http or https page.', String(url));
+    assert.equal(read({ actions: [{ title: 'Bad', url }] }), 'actions[0] ("Bad") has a url that isn\'t an http or https page, or a function that returns one.', String(url));
   }
   assert.equal(read({ panels: [{ title: 'No url' }] }), 'panels[0] ("No url") needs a url, or an items function.');
   assert.equal(read({ panels: [{ title: 'Bad', url: 'localhost:3000' }] }), 'panels[0] ("Bad") needs a url, or an items function.');
@@ -493,6 +493,59 @@ test('live state: when hides, badge counts, label retitles, a shared command run
   assert.equal(hasLive(without), false);
   assert.equal(await applyLive(without, ctx), without);
   assert.equal(readPatchModule('x', 'project', '/x.ts', { actions: [{ title: 'A', run: 'x', when: true }] }).info.error, 'actions[0] ("A") has a when that isn\'t a function.');
+});
+
+test("live state: an action's url function gives its page for now from the thread's projects; no page hides it", async () => {
+  const { applyLive, hasLive } = await import('../../src/patches.ts');
+  const home = tmpDir();
+  const app = project(home, 'dev/app', { 'package.json': '{}' });
+  writePatch(path.join(app, '.threadbear/patches'), 'notion.ts', `
+    const page = ({ projects }) => projects.find((p) => p.notion?.startsWith("https://"));
+    export default {
+      actions: [
+        { title: "Notion", url: (ctx) => page(ctx)?.notion, label: (ctx) => page(ctx) && "Notion · " + page(ctx).title },
+        { title: "Data source", url: () => "collection://abc" },
+        { title: "File", url: async () => "file:///etc/passwd" },
+        { title: "Script", url: () => "javascript:alert(1)" },
+        { title: "Broken", url: () => { throw new Error("no page here") } },
+        { title: "Changes", url: (ctx) => { ctx.projects.length = 0; return "https://x.dev" } },
+        { title: "Docs", url: "https://docs.x.dev" },
+      ],
+    };
+  `);
+  const base = await loadPatchSet(app, home);
+  assert.equal(hasLive(base), true);
+  // Until the live state is read it has no page.
+  assert.deepEqual(base.actions.map((a) => [a.id, a.kind, a.url]), [
+    ['notion.notion', 'url', undefined], ['notion.data-source', 'url', undefined], ['notion.file', 'url', undefined],
+    ['notion.script', 'url', undefined], ['notion.broken', 'url', undefined],
+    ['notion.changes', 'url', undefined], ['notion.docs', 'url', 'https://docs.x.dev/'],
+  ]);
+  const run = async () => { throw new Error('nothing should run'); };
+  const projects = [{ id: 'p_1', title: 'Planung' }, { id: 'p_2', title: 'Social', notion: 'https://app.notion.com/p/abc' }];
+  const set = await applyLive(base, { cwd: app, threadId: 't1', run, projects });
+  // Only web pages, as for a url written out: a chip must never be a way
+  // to run something, so a function giving anything else hides it.
+  assert.deepEqual(set.actions.map((a) => [a.id, a.title, a.url]), [
+    ['notion.notion', 'Notion · Social', 'https://app.notion.com/p/abc'],
+    ['notion.changes', 'Changes', 'https://x.dev/'],
+    ['notion.docs', 'Docs', 'https://docs.x.dev/'],
+  ]);
+  for (const a of set.actions) assert.deepEqual(checkAction(a as never), []);
+  assert.equal(set.patches[0]?.liveError, 'no page here');
+  // One function emptying what it was handed doesn't take it from the others.
+  assert.equal(projects.length, 2);
+  // A thread in no project with a Notion page doesn't get the chip.
+  const none = await applyLive(base, { cwd: app, threadId: 't2', run, projects: [{ id: 'p_1', title: 'Planung' }] });
+  assert.deepEqual(none.actions.map((a) => a.id), ['notion.changes', 'notion.docs']);
+  assert.deepEqual((await applyLive(base, { cwd: app, threadId: 't3', run })).actions.map((a) => a.id), ['notion.changes', 'notion.docs']);
+  // A url function is still only one of run, prompt or url; a url that's
+  // neither a page nor a function is refused as before.
+  const read = (a: unknown) => readPatchModule('x', 'project', '/x.ts', { actions: [a] }).info.error;
+  assert.equal(read({ title: 'A', run: 'x', url: () => 'https://x.dev' }), 'actions[0] ("A") should have one of run, prompt or url, not more.');
+  assert.equal(read({ title: 'A', url: 3 }), 'actions[0] ("A") has a url that isn\'t an http or https page, or a function that returns one.');
+  // A panel's url is still a page, never a function.
+  assert.equal(readPatchModule('x', 'project', '/x.ts', { panels: [{ title: 'P', url: () => 'https://x.dev' }] }).panels.length, 0);
 });
 
 test('icons on chips: the patch file\'s, unless an action has its own', () => {

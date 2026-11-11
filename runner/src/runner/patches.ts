@@ -104,8 +104,9 @@ export const patchesPart = {
     const { rec, rt } = st;
     const now = this.clock.now();
     const folders = this.projects?.foldersFor(rec) ?? [];
-    // A mode change can change what the folder's Claude settings wait on.
-    const key = JSON.stringify([rec.cwd, folders, rec.provider === 'claude' && claudeOptions(rec).grants]);
+    // A mode change can change what the folder's Claude settings wait on,
+    // and a project's Notion page what its functions give (patchProjects).
+    const key = JSON.stringify([rec.cwd, folders, rec.provider === 'claude' && claudeOptions(rec).grants, this.projects?.patchProjects(rec) ?? []]);
     if (rt.patches && rt.patches.cwd === rec.cwd && rt.patches.key !== key) {
       // Same folder, different projects: keep showing what there is while
       // the new set loads, rather than flashing the panels away.
@@ -162,7 +163,7 @@ export const patchesPart = {
       // Claude threads only: a Codex thread doesn't read them.
       const claude = rec.provider === 'claude' ? this.claudePatchInfo(cwd, claudeOptions(rec)) : undefined;
       if (claude) base = { ...base, patches: [...base.patches, claude] };
-      set = await applyLive(base, { cwd, threadId: rec.id, run: (command, dir) => this.runLiveCommand(rec.id, command, dir), verify: (file, hash) => this.patchTrust.verify(file, hash) });
+      set = await applyLive(base, { cwd, threadId: rec.id, projects: this.projects?.patchProjects(rec) ?? [], run: (command, dir) => this.runLiveCommand(rec.id, command, dir), verify: (file, hash) => this.patchTrust.verify(file, hash) });
     } catch (e) {
       this.log.warn('could not read the folder for patches', { threadId: rec.id, cwd, error: String(e) });
       base = entry.base;
@@ -537,6 +538,7 @@ export const patchesPart = {
       return renderListPanel(panel, this.patchSet(st), {
         cwd: st.rec.cwd,
         threadId,
+        projects: this.projects?.patchProjects(st.rec) ?? [],
         run: (command, cwd) => this.runPatchCommand(threadId, command, cwd),
         verify: (file, hash) => this.patchTrust.verify(file, hash),
       });

@@ -19,7 +19,7 @@ import type { Notification } from './runner.ts';
 import type { Project, ProjectIcon, ProjectLink, ProjectMaker, ThreadProject, ThreadSummary } from './protocol.ts';
 import { ErrorCode, RpcError } from './protocol.ts';
 import type { ThreadRecord } from './store.ts';
-import type { ProjectFolder } from './patches.ts';
+import type { PatchProject, ProjectFolder } from './patches.ts';
 import { atomicWriteFileSync, isDirectory, readJsonSync } from './fsutil.ts';
 import { expandHome } from './config.ts';
 import { fileHash, removeIcons, storeIcon } from './project-icons.ts';
@@ -250,6 +250,19 @@ export class Projects {
     return out;
   }
 
+  // The thread's projects as its patches' functions get them
+  // (docs/protocol.md, "Patches"): the ones that aren't archived, with what
+  // a chip might follow, like the Notion page.
+  patchProjects(rec: ThreadRecord): PatchProject[] {
+    const out: PatchProject[] = [];
+    for (const m of rec.projects ?? []) {
+      const p = this.items.get(m.id);
+      if (!p || p.archived) continue;
+      out.push({ id: p.id, title: p.title, ...(p.notion ? { notion: p.notion } : {}) });
+    }
+    return out;
+  }
+
   // The folders projects.json lists, read before start(): the runner's
   // first start with patch trust trusts what they were already running.
   static savedFolders(home: string): string[] {
@@ -374,8 +387,9 @@ export class Projects {
     next.updatedAt = now;
     this.items.set(rec.id, next);
     this.save();
-    // Its threads' summaries carry its title, and their patches its folders.
-    if (next.title !== rec.title || JSON.stringify(next.folders) !== JSON.stringify(rec.folders) || next.archived !== rec.archived) {
+    // Its threads' summaries carry its title, and their patches its folders,
+    // and its title and Notion page for their functions (patchProjects).
+    if (next.title !== rec.title || JSON.stringify(next.folders) !== JSON.stringify(rec.folders) || next.archived !== rec.archived || next.notion !== rec.notion) {
       this.mustHost().touchThreads(this.threadsIn(rec.id));
     }
     if (next.notion !== rec.notion) void this.boards?.refresh(rec.id, next.notion, true).catch(() => {});

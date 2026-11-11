@@ -1410,7 +1410,10 @@ backend onto your tailnet and your threads stay. `--local` moves it back.
 A patch adds buttons and panels (beside the thread) for the threads in a
 folder. A button can run a command, like your tests, send the agent a
 message you use a lot, or open a web page in your browser (App Store
-Connect, say), without adding anything to the thread. The web page
+Connect, say), without adding anything to the thread. The page can
+follow what's set on the thread's project: ask for "a button to the Notion
+page of my project" and it opens whatever Notion page the project has,
+changes with it, and stays away from threads whose project has none. The web page
 buttons show on the iPhone too, over the message box, and open there. A panel can show a web page, such as your app
 running on localhost, or a list.
 

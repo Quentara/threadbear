@@ -11,7 +11,7 @@ import { Librarian, type LibrarianPocket, librarianMethods, saysNoFit, disclaims
 import { buildThreadbearTools } from '../../src/threadbear-mcp.ts';
 import { FakeClock } from '../../src/clock.ts';
 import { nullLogger, type Logger } from '../../src/log.ts';
-import { ErrorCode, RpcError } from '../../src/protocol.ts';
+import { ErrorCode, RpcError, type Action } from '../../src/protocol.ts';
 import { commandFolders } from '../../src/tools.ts';
 import type { GenerateParams, ModelResult } from '../../src/models/index.ts';
 
@@ -527,6 +527,38 @@ test("a thread in a project gets its folders' patches, and their actions run in 
   assert.equal(r.ok, true);
   const run = h.events(thread.id).find((e) => e.type === 'action.run');
   assert.equal(run.text.trim(), fs.realpathSync(app));
+});
+
+test("a patch's chip follows the Notion page set on the thread's project, with no restart", async () => {
+  const { h, repo, projects, create } = setup();
+  const app = repo('dev/app', {
+    '.threadbear/patches/notion.ts': `
+      const page = ({ projects }) => projects.find((p) => p.notion?.startsWith("https://"));
+      export default { actions: [{ title: "Notion", url: (ctx) => page(ctx)?.notion, label: (ctx) => page(ctx) && "Notion · " + page(ctx).title }] };
+    `,
+  });
+  const { thread } = create();
+  const p = projects.create({ title: 'Social', folders: [app], threadIds: [thread.id], by: 'mike' });
+  h.runner.get(thread.id);
+  // What the app has been sent, without asking for the summary afresh: a
+  // change to the page has to send it by itself.
+  const chips = async () => {
+    for (let i = 0; i < 3; i++) {
+      await tick(6);
+      await h.runner.patchesIdle();
+    }
+    const sent = h.notes.filter((n) => n.method === 'thread.updated' && (n as any).params.thread.id === thread.id).at(-1) as any;
+    assert.deepEqual(checkSummary(sent.params.thread), []);
+    return ((sent.params.thread.actions ?? []) as Action[]).map((a) => [a.title, a.kind, a.url]);
+  };
+  // No page set: no chip.
+  assert.deepEqual(await chips(), []);
+  projects.update(p.id, { notion: 'https://www.notion.so/Tasks-55e46757a15c8391b22b0128f786020c' });
+  assert.deepEqual(await chips(), [['Notion · Social', 'url', 'https://www.notion.so/Tasks-55e46757a15c8391b22b0128f786020c']]);
+  projects.update(p.id, { notion: 'https://app.notion.com/p/abc123', title: 'Social Media' });
+  assert.deepEqual(await chips(), [['Notion · Social Media', 'url', 'https://app.notion.com/p/abc123']]);
+  projects.update(p.id, { notion: '' });
+  assert.deepEqual(await chips(), []);
 });
 
 // ----------------------------------------------------------- the librarian
