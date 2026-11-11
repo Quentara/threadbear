@@ -74,6 +74,11 @@ public struct DockOptions {
     public var windowContent: @MainActor (AnyView) -> AnyView = { $0 }
     /// Called on a panel's window of its own as it's made, before it shows.
     public var prepareWindow: @MainActor (NSWindow) -> Void = { _ in }
+    /// Drawn under each panel in place of the window's colour, for an app
+    /// with a picture behind the whole window: a see-through tint, and no
+    /// hairline fill under the panels (the picture shows in the gaps).
+    /// nil keeps the solid window colour.
+    public var panelFill: Color? = nil
 
     public init() {}
 }
@@ -121,8 +126,8 @@ public struct DockView: View {
     public var body: some View {
         NodeView(node: controller.layout.root)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(DockTheme.hairline)
-            .background(DockTheme.panel)
+            .background(options.panelFill == nil ? DockTheme.hairline : .clear)
+            .background(options.panelFill == nil ? DockTheme.panel : .clear)
             .overlay(alignment: .topLeading) {
                 DragOverlay()
                     .allowsHitTesting(false)
@@ -389,7 +394,7 @@ struct GroupView: View {
                 .opacity(lifted ? 0.18 : 1)
                 .scaleEffect(lifted ? 0.985 : 1)
         }
-        .background(DockTheme.panel)
+        .background(options.panelFill ?? DockTheme.panel)
         .overlay(alignment: .top) {
             if !header && !corner {
                 HiddenTitleStrip(panel: group.selected)

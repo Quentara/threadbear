@@ -224,8 +224,8 @@ private struct HomeStatTile: View {
 enum Art {
     @MainActor static let librarian: NSImage? = image("librarian")
     @MainActor static let scheduled: NSImage? = image("scheduled")
-    /// The painting behind "What should we work on?" (Bierstadt, public domain).
-    @MainActor static let newThreadBackdrop: NSImage? = image("new-thread-backdrop", type: "jpg")
+    /// The painting behind the whole main window (Bierstadt, public domain).
+    @MainActor static let windowBackdrop: NSImage? = image("window-backdrop", type: "jpg")
 
     private static let bundle: Bundle? = {
         let name = "Threadbear_Threadbear.bundle"

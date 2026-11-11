@@ -107,9 +107,6 @@ struct DetailView: View {
             }
             }
             .frame(maxWidth: .infinity)
-            .background(alignment: .bottom) {
-                if isNew { NewThreadBackdrop() }
-            }
         }
         }
         .overlay(alignment: .top) {
@@ -666,45 +663,6 @@ struct ComposerPlacement: Layout {
             at: CGPoint(x: bounds.minX + composerWidth / 2, y: composerY), anchor: .top,
             proposal: ProposedViewSize(width: composerWidth, height: composerHeight)
         )
-    }
-}
-
-/// The painting under a new thread's page: pinned to the pane's bottom
-/// edge and as wide as it, fading into the window's colour towards the
-/// top so the heading and the composer sit on plain ground. Nothing when
-/// the picture didn't ship.
-private struct NewThreadBackdrop: View {
-    @Environment(\.colorScheme) private var colorScheme
-
-    var body: some View {
-        if let picture = Art.newThreadBackdrop {
-            GeometryReader { geo in
-                let aspect = picture.size.height / max(picture.size.width, 1)
-                // As wide as the pane, never shorter than its lower 55%.
-                let height = max(geo.size.width * aspect, geo.size.height * 0.55)
-                Image(nsImage: picture)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-                    .frame(width: geo.size.width, height: height, alignment: .bottom)
-                    .clipped()
-                    // Dimmed in dark mode, so it reads as dusk behind the composer.
-                    .overlay(Color.black.opacity(colorScheme == .dark ? 0.32 : 0.1))
-                    .mask(
-                        LinearGradient(
-                            stops: [
-                                .init(color: .clear, location: 0),
-                                .init(color: .black.opacity(0.35), location: 0.45),
-                                .init(color: .black, location: 1),
-                            ],
-                            startPoint: .top, endPoint: .bottom
-                        )
-                    )
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            }
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
-            .transition(.opacity)
-        }
     }
 }
 

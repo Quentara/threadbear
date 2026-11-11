@@ -270,6 +270,36 @@ extension AppModel {
     }
 }
 
+/// The painting filling the main window, under the activity bar, every
+/// panel and the rail. Fills the window and keeps its bottom edge in view,
+/// the sky cut off first. Nothing when the picture didn't ship, and the
+/// panels then keep the plain window colour.
+struct WindowBackdrop: View {
+    /// Over the painting under each panel: dark enough for text in dark
+    /// mode, a light wash in light mode.
+    static let panelTint = Color(nsColor: NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? NSColor(white: 0.08, alpha: 0.62)
+            : NSColor(white: 0.98, alpha: 0.72)
+    })
+
+    var body: some View {
+        if let picture = Art.windowBackdrop {
+            Color(nsColor: .windowBackgroundColor)
+                .overlay(alignment: .bottom) {
+                    Image(nsImage: picture)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                }
+                .clipped()
+                // Up under the panels' bars, where the title bar was.
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
 /// The window's content: the dock, with the activity bar down the left and
 /// the rail of the thread's pane sections down the right.
 struct RootView: View {
@@ -317,6 +347,8 @@ struct RootView: View {
         .onChange(of: app.pools) { _, pools in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { Tour.shared.introducePools(pools) }
         }
+        // The painting behind everything: the panels are tinted glass over it.
+        .background { WindowBackdrop() }
         // Saves where the window is, so the next launch opens it there.
         .background(MainWindowFrameTracker())
     }
@@ -346,6 +378,8 @@ struct RootView: View {
         o.trafficLights = max(0, 78 - ActivityBar.width)
         o.cornerMovesWindow = true
         o.barsMoveWindow = true
+        // See-through panels when the painting's there to show through.
+        if Art.windowBackdrop != nil { o.panelFill = WindowBackdrop.panelTint }
         o.tip = { view, text in AnyView(view.tip(text)) }
         // A panel dragged out into a window of its own: the same model as
         // the main window's views.
