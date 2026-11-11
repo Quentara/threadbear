@@ -281,6 +281,11 @@ export function makeHarness(home = tmpDir(), cfgExtra: Partial<Config> = {}, dep
     // Setup and hooks at normal priority: on a busy Mac a background shell
     // can miss a test's wait. background.test.ts covers the real path.
     backgroundJobs: false,
+    // Never the real ~/.threadbear/patches: a home patch with a `when` ran
+    // its commands against the Mac's live runner from every test, and the
+    // slow read it made saved an old runner's record over a restarted
+    // one's (reviews.test.ts, 12 Nov). The same folder across restart().
+    panelsRoot: path.join(home, 'user-home'),
     ...depsExtra,
   });
   const notes: Notification[] = [];
