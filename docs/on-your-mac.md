@@ -66,6 +66,9 @@ File references are where to look.
   runner shares, so one starts with them while the backend can't be reached,
   and `shortcuts.json`, the keyboard shortcuts you've changed in Settings >
   Keyboard, which the app reads and writes and never sends anywhere,
+  `window-backdrop.<ext>`, a copy of the picture you chose as the
+  background in Settings > General > Appearance, there only while one is
+  chosen, which the app reads and never sends anywhere,
   `schedule-runs/`, schedule runs your Convex backend hasn't been told
   of yet, a file each, kept only until it has, and
   with the standing instructions experiment on, `instructions.md`, which every

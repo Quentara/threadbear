@@ -230,13 +230,14 @@ private struct GeneralSettings: View {
     /// The settings kept on this Mac (UserDefaults), not in the runner.
     @ViewBuilder private var thisMac: some View {
         SettingsSection("Appearance",
-                        about: "Light or dark for Threadbear only. Same as the Mac follows System Settings > Appearance.",
+                        about: "Light or dark for Threadbear only. Same as the Mac follows System Settings > Appearance. The background is the picture behind the window, frosted: the painting Threadbear comes with, or one of yours.",
                         ask: "change it for you.") {
             Picker("Appearance", selection: $appearance) {
                 ForEach(AppAppearance.allCases) { Text($0.title).tag($0) }
             }
             .tip("Light or dark for Threadbear, whatever the Mac is set to")
             .onChange(of: appearance) { _, new in new.apply() }
+            BackdropRow()
         }
 
         SettingsSection("Quitting",
@@ -873,6 +874,34 @@ private struct ExperimentRow: View {
 /// agent first (Mike, 5 Nov). Taking `ask` as the end of a sentence keeps
 /// that line in every one. Sections with only a message or an error in them
 /// stay plain `Section`s (SettingsInfoTests checks).
+/// Settings > General > Appearance: the picture behind the main window,
+/// with a button to pick another and one to go back to the painting.
+private struct BackdropRow: View {
+    @State private var store = WindowBackdropStore.shared
+
+    var body: some View {
+        LabeledContent("Background") {
+            HStack(spacing: 10) {
+                if let preview = store.preview {
+                    Image(nsImage: preview)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(width: 72, height: 44)
+                        .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Color.primary.opacity(0.12)))
+                        .accessibilityLabel(store.isCustom ? "Your picture" : "The painting")
+                }
+                Button("Choose…") { store.choose() }
+                    .tip("Pick a picture from this Mac to show behind the window, frosted")
+                if store.isCustom {
+                    Button("Use the painting") { store.useDefault() }
+                        .tip("Go back to the painting Threadbear comes with")
+                }
+            }
+        }
+    }
+}
+
 struct SettingsSection<Content: View>: View {
     let title: String
     let about: String

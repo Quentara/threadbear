@@ -318,7 +318,7 @@ struct WindowBackdrop: View {
     static let gapFill = Color.primary.opacity(0.07)
 
     var body: some View {
-        if let picture = Art.windowBackdrop {
+        if let picture = WindowBackdropStore.shared.image {
             Color(nsColor: .windowBackgroundColor)
                 .overlay(alignment: .bottom) {
                     Image(nsImage: picture)
@@ -347,12 +347,12 @@ struct RootView: View {
             // is held (ShortcutHints).
             ActivityBar()
                 // Tinted like the panels, over the painting.
-                .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
+                .background { if WindowBackdropStore.shared.image != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
                 .zIndex(1)
             DockView(controller: app.dock, options: Self.options, content: content)
             if let thread = app.paneThread {
                 PanelRail(thread: thread, project: app.openProject)
-                    .background { if Art.windowBackdrop != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
+                    .background { if WindowBackdropStore.shared.image != nil { WindowBackdrop.panelTint.ignoresSafeArea() } }
             }
         }
         // Geist for any text that doesn't set its own font (AppFonts).
@@ -418,7 +418,7 @@ struct RootView: View {
         o.cornerMovesWindow = true
         o.barsMoveWindow = true
         // See-through panels when the painting's there to show through.
-        if Art.windowBackdrop != nil {
+        if WindowBackdropStore.shared.image != nil {
             o.panelFill = WindowBackdrop.panelTint
             o.gapFill = WindowBackdrop.gapFill
         }

@@ -133,6 +133,7 @@ runner, app and phone; it's usually better to hide its entry point.
 | Highlights and `pin` | `runner/src/highlights.ts`; app `Views/HighlightsView.swift`, `HighlightsBoard.swift` |
 | Slash commands and their palette | `runner/src/slash-commands.ts`, `runner/src/runner/commands.ts`, the Codex mappings in `adapters/codex/adapter.ts` (`commandOrTurn`); app `Views/SlashPaletteView.swift`, `ThreadbearCore/Threads/SlashCommands.swift`. Take the palette out by dropping its overlay in `ComposerView.swift`; typed commands still work. |
 | Folder browser in the side pane | `Views/FolderBrowser.swift`, `ThreadbearCore/Threads/FolderListing.swift`; `files.list` in `runner/src/files.ts` |
+| The window's background picture (frosted, tinted panels) and Geist | `WindowBackdropStore.swift` (the picture, a picked one copied to `window-backdrop.<ext>` in the data folder), `WindowBackdrop` and `panelFill`/`gapFill` in `Views/WindowDock.swift`, the Background row in `Views/SettingsView.swift`, the painting in `Resources/Art/window-backdrop.jpg`; the fonts in `AppFonts.swift`. Delete the painting and nothing is drawn behind the panels. |
 | First-run tour and sample threads | app `Views/Tour.swift`, `runner/src/samples.ts`, `app/Tools/tour-e2e.mjs`. It only runs once, for a new user. |
 
 ## 3. Worked example: taking Pocket out

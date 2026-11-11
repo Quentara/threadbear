@@ -1601,6 +1601,11 @@ unless you pick one for it alone: Settings (⌘,) > General > Appearance has
 Same as the Mac, Light and Dark. It changes straight away and stays picked
 the next time the app opens.
 
+Behind the window is a painting, frosted, with the panels tinted over it.
+Background in the same section shows it: Choose… picks a picture of
+yours instead (JPEG, PNG, HEIC), and Use the painting goes back. It
+changes straight away.
+
 ### A ding when a thread is done
 
 To hear when a thread finishes, turn on Play a sound when a thread

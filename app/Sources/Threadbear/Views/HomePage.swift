@@ -1,5 +1,4 @@
 import AppKit
-import CoreImage
 import SwiftUI
 import ThreadbearCore
 
@@ -225,24 +224,9 @@ private struct HomeStatTile: View {
 enum Art {
     @MainActor static let librarian: NSImage? = image("librarian")
     @MainActor static let scheduled: NSImage? = image("scheduled")
-    /// The painting behind the whole main window (Bierstadt, public domain).
-    @MainActor static let windowBackdrop: NSImage? = image("window-backdrop", type: "jpg").map { frosted($0, radius: frostRadius) }
-    /// How soft the painting goes behind the panels, as frosted glass, in
-    /// the picture's own pixels (it's 2400 wide).
-    static let frostRadius: Double = 10
-
-    /// The picture blurred once, as it loads, so drawing it costs no more
-    /// than the sharp one. Edges clamped first, so they don't fade to clear.
-    private static func frosted(_ picture: NSImage, radius: Double) -> NSImage {
-        guard radius > 0,
-              let cg = picture.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return picture }
-        let input = CIImage(cgImage: cg)
-        let blurred = input.clampedToExtent()
-            .applyingGaussianBlur(sigma: radius)
-            .cropped(to: input.extent)
-        guard let out = CIContext().createCGImage(blurred, from: input.extent) else { return picture }
-        return NSImage(cgImage: out, size: picture.size)
-    }
+    /// The painting behind the whole main window (Bierstadt, public
+    /// domain), sharp; WindowBackdropStore frosts it, or a picked picture.
+    @MainActor static let windowPainting: NSImage? = image("window-backdrop", type: "jpg")
 
     private static let bundle: Bundle? = {
         let name = "Threadbear_Threadbear.bundle"
