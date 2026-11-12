@@ -81,4 +81,12 @@ final class WindowBackdropStoreTests: XCTestCase {
         try store.use(big)
         XCTAssertEqual(store.preview?.size.width, WindowBackdropStore.maxWidth)
     }
+
+    /// Drawn as tall as the window at any width, keeping its proportions.
+    func testBackdropIsAsTallAsTheWindow() {
+        let size = CGSize(width: 2400, height: 1543)
+        XCTAssertEqual(WindowBackdrop.width(of: size, atHeight: 1543), 2400, accuracy: 0.001)
+        XCTAssertEqual(WindowBackdrop.width(of: size, atHeight: 800), 800 * 2400 / 1543, accuracy: 0.001)
+        XCTAssertEqual(WindowBackdrop.width(of: .zero, atHeight: 800), 0)
+    }
 }

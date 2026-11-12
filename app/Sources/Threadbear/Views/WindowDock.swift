@@ -302,9 +302,11 @@ extension AppModel {
 }
 
 /// The painting filling the main window, under the activity bar, every
-/// panel and the rail. Fills the window and keeps its bottom edge in view,
-/// the sky cut off first. Nothing when the picture didn't ship, and the
-/// panels then keep the plain window colour.
+/// panel and the rail. Always as tall as the window, so it grows and
+/// shrinks with its height, centred side to side. A window wider than the
+/// picture shows it mirrored either side, which meets it without a seam;
+/// a narrower one cuts its sides off. Nothing when the picture didn't
+/// ship, and the panels then keep the plain window colour.
 struct WindowBackdrop: View {
     /// Over the painting under each panel: dark enough for text in dark
     /// mode, a light wash in light mode.
@@ -320,10 +322,10 @@ struct WindowBackdrop: View {
     var body: some View {
         if let picture = WindowBackdropStore.shared.image {
             Color(nsColor: .windowBackgroundColor)
-                .overlay(alignment: .bottom) {
-                    Image(nsImage: picture)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
+                .overlay {
+                    GeometryReader { space in
+                        Self.fitted(picture, to: space.size)
+                    }
                 }
                 .clipped()
                 // Up under the panels' bars, where the title bar was.
@@ -331,6 +333,27 @@ struct WindowBackdrop: View {
                 .allowsHitTesting(false)
                 .accessibilityHidden(true)
         }
+    }
+
+    /// The picture at the window's height, centred, with a mirrored copy
+    /// either side for a window wider than it.
+    static func fitted(_ picture: NSImage, to space: CGSize) -> some View {
+        let width = Self.width(of: picture.size, atHeight: space.height)
+        let mirrored = Image(nsImage: picture).resizable()
+            .frame(width: width, height: space.height)
+            .scaleEffect(x: -1, y: 1)
+        return HStack(spacing: 0) {
+            mirrored
+            Image(nsImage: picture).resizable()
+                .frame(width: width, height: space.height)
+            mirrored
+        }
+        .frame(width: space.width, height: space.height)
+    }
+
+    /// How wide the picture is drawn at `height`, keeping its proportions.
+    static func width(of size: CGSize, atHeight height: CGFloat) -> CGFloat {
+        size.height > 0 ? height * size.width / size.height : 0
     }
 }
 
