@@ -3089,7 +3089,14 @@ export class Runner {
     const carriesOn = accountChanged && !stop && !rt.turn && !rt.editing && !rec.queue.length && this.bucket(rec) === 'inbox' && rec.limitHitTurn !== undefined
       && (params.carryOn || (rec.carryOnAtReset !== false && !params.byAgent));
     if (carriesOn) this.carryOn(st, CARRY_ON_MOVED);
-    else if (accountChanged && !stop && !rt.turn && rec.handoff) {
+    // A wait for room was for the old login: moved anywhere else without
+    // carrying on now, it ends, so its timer can't carry on later what an
+    // agent's move (or "Carry on by itself: No") said waits for Mike.
+    if (accountChanged && !carriesOn && rec.waitingForRoom) {
+      delete rec.waitingForRoom;
+      this.armRoomTimer();
+    }
+    if (!carriesOn && accountChanged && !stop && !rt.turn && rec.handoff) {
       // Idle, with a conversation to hand over: nothing runs until the
       // next message, so say so, or the picker reads as if the new model
       // had already picked up the thread.

@@ -587,6 +587,22 @@ test("the caller gate marks any agent's move, Full access's too, so it never car
   assert.equal(gate.check(full.id, 'threads.update', { threadId: ask.id, title: 'z' }).byAgent, undefined);
 });
 
+test("an agent's move ends the thread's wait for room, so the old timer can't carry it on later either", async () => {
+  const h = poolHarness();
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(0.2, 90));
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  h.adapter.last.init();
+  limit(h.adapter.last);
+  await tick();
+  assert.ok(h.runner.get(thread.id).waitingForRoom);
+  h.runner.update({ threadId: thread.id, poolId: 'codex', byAgent: true });
+  assert.equal(h.runner.get(thread.id).waitingForRoom, undefined);
+  h.clock.advance(300 * MIN);
+  await tick();
+  assert.equal(h.codex.sessions.length, 0);
+});
+
 test('after a restart an early carry-on moves to the login with room, never back to the one that ran dry', async () => {
   const pools: Pool[] = [{ id: 'claude', title: 'Claude', accountIds: ['claude-main', 'claude-3', 'claude-1'] }, { id: 'codex', title: 'Codex', accountIds: ['codex-main'] }];
   const h = poolHarness({ pools });
