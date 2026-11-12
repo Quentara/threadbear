@@ -101,17 +101,22 @@ pub fn builder_trusted(staged: &BuildInfo, update_build_hosts: &[String]) -> boo
 /// Deletes the staged bundle at `next` if its builder isn't trusted, and says
 /// why. Before every swap and every look at what's staged. A swap cut short
 /// that left the old bundle at `next` loses it here rather than to `old`,
-/// which is the same: it was going.
-pub fn drop_untrusted_staged(next: &Path, runner_json: &Path) -> Option<String> {
-    let staged = BuildInfo::read(next)?;
+/// which is the same: it was going. Err when one that isn't trusted is
+/// still there (it couldn't be deleted): then nothing may be swapped in.
+pub fn drop_untrusted_staged(next: &Path, runner_json: &Path) -> Result<Option<String>, String> {
+    let Some(staged) = BuildInfo::read(next) else { return Ok(None) };
     if builder_trusted(&staged, &update_build_hosts(runner_json)) {
-        return None;
+        return Ok(None);
     }
-    let _ = std::fs::remove_dir_all(next);
-    Some(match staged.built_on {
-        Some(host) => format!("dropped the staged build {}: {host} isn't in updateBuildHosts", staged.short),
-        None => format!("dropped the staged build {}: it doesn't say which Mac built it", staged.short),
-    })
+    let why = match &staged.built_on {
+        Some(host) => format!("the staged build {}: {host} isn't in updateBuildHosts", staged.short),
+        None => format!("the staged build {}: it doesn't say which Mac built it", staged.short),
+    };
+    match std::fs::remove_dir_all(next) {
+        _ if !next.exists() => Ok(Some(format!("dropped {why}"))),
+        Ok(()) => Err(format!("couldn't drop {why}; not swapping anything in")),
+        Err(e) => Err(format!("couldn't drop {why} ({e}); not swapping anything in")),
+    }
 }
 
 // Following main (the Swift app's `AppUpdate`): what to build, and putting a
@@ -356,21 +361,33 @@ mod tests {
         std::fs::write(&json, r#"{"checkHosts":["tinker-desk"],"checkHost":"tinker-desk"}"#).unwrap();
         for who in [Some("tinker-desk"), None] {
             staged(who);
-            assert!(drop_untrusted_staged(&next, &json).is_some(), "{who:?}");
+            assert!(drop_untrusted_staged(&next, &json).unwrap().is_some(), "{who:?}");
             assert!(!next.exists(), "{who:?}");
         }
         staged(Some(""));
-        assert_eq!(drop_untrusted_staged(&next, &json), None);
+        assert_eq!(drop_untrusted_staged(&next, &json), Ok(None));
         assert!(next.exists());
         std::fs::write(&json, r#"{"checkHosts":["tinker-desk"],"updateBuildHosts":["builder"]}"#).unwrap();
         staged(Some("builder"));
-        assert_eq!(drop_untrusted_staged(&next, &json), None);
+        assert_eq!(drop_untrusted_staged(&next, &json), Ok(None));
         staged(Some("tinker-desk"));
-        assert!(drop_untrusted_staged(&next, &json).is_some());
+        assert!(drop_untrusted_staged(&next, &json).unwrap().is_some());
         // No runner.json, or one that can't be read: only a build here.
         std::fs::remove_file(&json).unwrap();
         staged(Some("builder"));
-        assert!(drop_untrusted_staged(&next, &json).is_some());
+        assert!(drop_untrusted_staged(&next, &json).unwrap().is_some());
+        // One that can't be deleted is an error, so nothing is swapped in.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            staged(Some("builder"));
+            let locked = next.join("Contents");
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o555)).unwrap();
+            let held = drop_untrusted_staged(&next, &json);
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+            assert!(held.is_err(), "{held:?}");
+            assert!(next.exists());
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 

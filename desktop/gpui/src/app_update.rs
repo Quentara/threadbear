@@ -87,17 +87,28 @@ fn next_dir() -> PathBuf {
 /// The staged build, once one whose builder isn't trusted has gone
 /// (`drop_untrusted_staged`).
 fn staged_build() -> Option<BuildInfo> {
-    drop_untrusted_staged();
+    if !drop_untrusted_staged() {
+        return None;
+    }
     BuildInfo::read(&next_dir())
 }
 
 /// A staged bundle goes in only if it was built here or on a host in
 /// runner.json's updateBuildHosts now: never one a check host built, or one
 /// staged before bundles said where they were built (Daybreak 108).
-fn drop_untrusted_staged() {
+/// False when one that isn't trusted is still there: nothing goes in then.
+fn drop_untrusted_staged() -> bool {
     let runner_json = threadbear_client::config::RunnerConfig::from_env().home.join("runner.json");
-    if let Some(why) = rules::drop_untrusted_staged(&next_dir(), &runner_json) {
-        note(&why);
+    match rules::drop_untrusted_staged(&next_dir(), &runner_json) {
+        Ok(None) => true,
+        Ok(Some(why)) => {
+            note(&why);
+            true
+        }
+        Err(why) => {
+            note(&why);
+            false
+        }
     }
 }
 
@@ -135,7 +146,9 @@ pub(crate) fn apply_staged_at_launch() -> bool {
     if !launch.installed {
         return false;
     }
-    drop_untrusted_staged();
+    if !drop_untrusted_staged() {
+        return false;
+    }
     match rules::apply_staged(&install_dir(), &next_dir(), &old_dir(), &swapping_note(), launch.build.as_ref()) {
         Ok(Some(staged)) => {
             note(&format!("swapped in {} at launch", staged.short));
@@ -592,7 +605,9 @@ impl Threadbear {
             // SAFETY: a signal to the build we started, still ours to wait on.
             unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
         }
-        drop_untrusted_staged();
+        if !drop_untrusted_staged() {
+            return;
+        }
         match rules::apply_staged(&install_dir(), &next_dir(), &old_dir(), &swapping_note(), self.updater.running.as_ref()) {
             Ok(Some(staged)) => note(&format!("swapped in {} at quit", staged.short)),
             Ok(None) => {}

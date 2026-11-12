@@ -1206,6 +1206,9 @@ Fixes from Codex's review of the slice before:
   from before this has the older script, which takes make-bundle.sh from
   main: that refuses binaries it doesn't say the origin of unless they match
   a build made here (exit 6), so such an app needs installing again once.
+  install-app.sh deletes any staged update first, so an older app still
+  running can't swap one over the new install when it quits. A staged
+  bundle that isn't trusted and can't be deleted stops the swap.
   Only with neither (other people's copies) does it build here, at background priority, as the Swift
   app's update does. One build at a time; a lock left by a run that died is
   taken over.

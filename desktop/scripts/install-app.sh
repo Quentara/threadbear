@@ -73,6 +73,12 @@ THREADBEAR_BUILT_ON="$build_on" "$root/desktop/scripts/make-bundle.sh" "$work" "
 
 mkdir -p "$HOME/Applications"
 target="$HOME/Applications/Threadbear GPUI.app"
+# An update staged by the app that's there now goes too: an older app,
+# still running, would swap it over this one when it quits, and one from
+# before 12 Nov 2026 may have had it built by a check host (Daybreak 108).
+# Stopped if it can't go, rather than installed under it.
+rm -rf "$HOME/Applications/.Threadbear GPUI.app.next" "$HOME/Applications/.Threadbear GPUI.app.next.making" "$HOME/Applications/.Threadbear GPUI.app.swapping"
+[ ! -e "$HOME/Applications/.Threadbear GPUI.app.next" ] || { echo "Couldn't remove the staged update at $HOME/Applications/.Threadbear GPUI.app.next; remove it and run this again." >&2; exit 1; }
 rm -rf "$target"
 ditto "$bundle" "$target"
 echo "Installed $target"
