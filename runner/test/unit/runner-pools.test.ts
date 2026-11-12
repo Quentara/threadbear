@@ -13,6 +13,7 @@ import { checkSummary } from '../helpers/protocol-check.ts';
 import { readRunnerJson, writeRunnerJson } from '../../src/config.ts';
 import type { Account, Pool } from '../../src/protocol.ts';
 import { RpcError } from '../../src/protocol.ts';
+import { CallerGate } from '../../src/rpc-gate.ts';
 import type { UsageReading } from '../../src/usage.ts';
 import { CARRY_ON_BACK, CARRY_ON_MOVED, type UsageSink } from '../../src/runner.ts';
 
@@ -538,6 +539,52 @@ test('a turn the CLI starts after a limit stop ends it: a move later starts noth
   h.runner.update({ threadId: thread.id, poolId: 'codex' });
   await tick();
   assert.equal(h.codex.sessions.length, 0);
+});
+
+test("a mixed pool that already has the thread's Claude login: a Codex pick still moves it to Codex", async () => {
+  const pools: Pool[] = [{ id: 'mixed', title: 'Mixed', accountIds: ['claude-3', 'codex-main'] }];
+  const h = poolHarness({ pools });
+  h.setUsage('claude-3', room(80, 200));
+  const { thread } = h.runner.create({ text: 'x', model: 'claude-opus-5-5' });
+  h.adapter.last.init();
+  h.adapter.last.result();
+  await tick();
+  // GPUI's default row: no model, the column's provider.
+  h.runner.update({ threadId: thread.id, poolId: 'mixed', model: null, provider: 'codex' });
+  assert.equal(h.runner.get(thread.id).accountId, 'codex-main');
+  assert.equal(h.runner.get(thread.id).provider, 'codex');
+});
+
+test('a turn the CLI starts after a limit stop also ends the wait for room: its timer starts nothing later', async () => {
+  const h = poolHarness();
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(0.2, 90));
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  const s = h.adapter.last;
+  s.init();
+  limit(s);
+  await tick();
+  assert.ok(h.runner.get(thread.id).waitingForRoom);
+  s.out({ kind: 'cliTurn', note: 'Background command "sleep 5" completed (exit code 0)' });
+  assert.equal(h.runner.get(thread.id).waitingForRoom, undefined);
+  s.result('completed', 0, undefined, { own: true });
+  await tick();
+  const sent = s.sent.length;
+  h.setUsage('claude-3', room(100, 400));
+  h.clock.advance(300 * MIN);
+  await tick();
+  assert.equal(h.adapter.sessions.length, 1);
+  assert.equal(s.sent.length, sent, 'no carry-on from the old wait');
+});
+
+test("the caller gate marks any agent's move, Full access's too, so it never carries on by itself", () => {
+  const h = poolHarness();
+  const full = h.runner.create({ text: 'x', permissionMode: 'full' }).thread;
+  const ask = h.runner.create({ text: 'y', permissionMode: 'ask' }).thread;
+  const gate = new CallerGate({ runner: h.runner });
+  assert.equal(gate.check(full.id, 'threads.update', { threadId: ask.id, poolId: 'codex' }).byAgent, true);
+  assert.equal(gate.check(ask.id, 'threads.update', { threadId: ask.id, poolId: 'codex' }).byAgent, true);
+  assert.equal(gate.check(full.id, 'threads.update', { threadId: ask.id, title: 'z' }).byAgent, undefined);
 });
 
 test('after a restart an early carry-on moves to the login with room, never back to the one that ran dry', async () => {

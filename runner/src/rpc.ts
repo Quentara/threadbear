@@ -670,6 +670,10 @@ export class RpcServer {
         if (p.poolId !== undefined) upd.poolId = p.poolId === null ? null : reqString(p, 'poolId');
         // Passed on from a thread's key (rpc-gate) or a draining runner.
         if (p.byAgent === true) upd.byAgent = true;
+        if (p.provider !== undefined && p.poolId !== undefined) {
+          if (!isProvider(p.provider)) throw bad(`provider must be one of ${PROVIDERS.join(', ')}`);
+          upd.provider = p.provider as Provider;
+        }
         if (p.model !== undefined) upd.model = p.model === null ? null : reqString(p, 'model');
         if (p.effort !== undefined) upd.effort = p.effort === null ? null : optEffort(p);
         if (p.permissionMode !== undefined) upd.permissionMode = optMode(p);

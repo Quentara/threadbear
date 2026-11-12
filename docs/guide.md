@@ -1097,8 +1097,8 @@ Switch to another login now; set its Carry on by itself to No and the
 thread waits for your next message instead.
 Picking a model on another login from the model menu after a limit stop
 (a Codex one when Claude is out, say) carries on straight away too, on
-the model you picked. At any other time the thread says the new model
-takes over from your next message, as nothing runs until then.
+the model you picked. When the thread is idle otherwise, it says the new
+model takes over from your next message, as nothing runs until then.
 The first time a pool has a second login, a card by the composer says
 what pools do.
 

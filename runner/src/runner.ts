@@ -2301,9 +2301,13 @@ export class Runner {
     rt.finished = [];
     // Working again, so not finished for threads waiting on it.
     delete rec.finished;
-    // Nor stopped at a limit any more: a move later mustn't carry on a turn
-    // this one has moved past.
+    // Nor stopped at a limit any more: a move later, or the wait's timer,
+    // mustn't carry on a turn this one has moved past (startTurn's same).
     delete rec.limitHitTurn;
+    if (rec.waitingForRoom) {
+      delete rec.waitingForRoom;
+      this.armRoomTimer();
+    }
     const turnId = crypto.randomUUID();
     this.emit(st, wokeBy.length ? { type: 'turn.started', turnId, wokeBy } : { type: 'turn.started', turnId }, turnId);
     rt.idleTimer?.cancel();
@@ -2810,6 +2814,9 @@ export class Runner {
     // move it makes never starts a turn by itself, as the thread may have
     // more access than the agent (send_message asks for that).
     byAgent?: boolean;
+    // With poolId: the provider picked in the menu (its column), for a
+    // pool with logins of both. Else the model's, else the thread's own.
+    provider?: Provider;
   }): { thread: ThreadSummary } {
     const st = this.mustGet(params.threadId);
     const { rec, rt } = st;
@@ -2832,11 +2839,14 @@ export class Runner {
     // The login to move to: the one named (which pins), or one of the new
     // pool's when the current one isn't in it.
     let toAccountId = params.accountId;
-    if (pool && !pool.accountIds.includes(rec.accountId)) {
+    // The provider the call asks for, when it says (or its model does): in
+    // a pool with both, a Codex model picked from the menu goes to a Codex
+    // login, even when the thread's Claude login is in that pool too.
+    const wanted = params.provider ?? (params.model ? this.modelProvider(params.model) : undefined);
+    const otherProvider = wanted !== undefined && wanted !== rec.provider && pool?.accountIds.some((id) => this.accounts.get(id)?.provider === wanted);
+    if (pool && (!pool.accountIds.includes(rec.accountId) || otherProvider)) {
       const accounts = this.usableAccounts();
-      // The named model's provider, when the call names one: in a pool
-      // with both, a Codex model picked from the menu goes to a Codex login.
-      const provider = (params.model && this.modelProvider(params.model)) || rec.provider;
+      const provider = otherProvider ? wanted : rec.provider;
       let id = pickInPool(pool, accounts, { provider });
       if (!id) {
         const next = nextLogin(pool, accounts, rec, this.clock.now());
@@ -3076,7 +3086,7 @@ export class Runner {
     // the Swift limit box's Switch to promises it carries on now). Unless
     // Mike turned carrying on off for this thread, which the menu doesn't
     // ask about (Continue now on does), or an agent made the move.
-    const carriesOn = accountChanged && !stop && !rt.turn && !rec.queue.length && this.bucket(rec) === 'inbox' && rec.limitHitTurn !== undefined
+    const carriesOn = accountChanged && !stop && !rt.turn && !rt.editing && !rec.queue.length && this.bucket(rec) === 'inbox' && rec.limitHitTurn !== undefined
       && (params.carryOn || (rec.carryOnAtReset !== false && !params.byAgent));
     if (carriesOn) this.carryOn(st, CARRY_ON_MOVED);
     else if (accountChanged && !stop && !rt.turn && rec.handoff) {

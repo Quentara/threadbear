@@ -118,6 +118,9 @@ export class CallerGate {
   // mode filled in, what only a client with the token may say taken out).
   check(threadId: string, method: string, p: Params): Params {
     const caller = this.authority(threadId);
+    // Any agent's move, Full's too: it never starts a turn by itself
+    // (Runner.update's carry-on after a limit is Mike's pick from the menu).
+    if (method === 'threads.update' && (p.cwd !== undefined || p.accountId !== undefined || p.poolId !== undefined)) p = { ...p, byAgent: true };
     if (caller.mode === 'full' && !caller.confined) return p;
     if (GATED_READS.has(method)) return p;
     const who = caller.confined ? 'This thread runs in a sandbox' : `This thread is on ${MODE_NAMES[caller.mode]}`;
@@ -180,7 +183,7 @@ export class CallerGate {
     if (!id) return out;
     const self = id === threadId;
     for (const k of Object.keys(p)) {
-      if (!['threadId', 'title', 'titleBy', 'cwd', 'accountId', 'poolId', 'model', 'effort', 'permissionMode', 'snoozedUntil', 'archived', 'archivedBy', 'starred'].includes(k)) {
+      if (!['threadId', 'title', 'titleBy', 'cwd', 'accountId', 'poolId', 'model', 'effort', 'permissionMode', 'snoozedUntil', 'archived', 'archivedBy', 'starred', 'byAgent'].includes(k)) {
         throw needs(`setting ${k} on a thread`);
       }
     }

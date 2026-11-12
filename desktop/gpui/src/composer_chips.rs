@@ -159,14 +159,17 @@ impl Composer {
                 let provider = data.logins.pool(column).and_then(|p| p.account_ids.iter().find_map(|id| data.logins.account(id))).map(|a| a.provider_id().to_owned());
                 return self.change_thread(|_| {}, json!({ "poolId": column, "provider": provider, "model": model }), cx);
             }
-            // Picks the pool, and in it the model.
+            // Picks the pool, and in it the model, on the provider the column
+            // shows: a pool with both providers' logins would otherwise keep
+            // the thread's own, and model null (the default row) names none.
+            let provider = data.logins.pool(column).and_then(|p| p.account_ids.iter().find_map(|id| data.logins.account(id))).map(|a| a.provider_id().to_owned());
             let (pool, guess_pool, guess_model) = (column.to_owned(), column.to_owned(), model.clone());
             self.change_thread(
                 move |t| {
                     t.pool_id = Some(guess_pool);
                     t.model = guess_model;
                 },
-                json!({ "poolId": pool, "model": model }),
+                json!({ "poolId": pool, "provider": provider, "model": model }),
                 cx,
             );
             return;
