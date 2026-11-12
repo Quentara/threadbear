@@ -1865,7 +1865,7 @@ export function buildThreadbearTools(
           const confined = Boolean(caller?.confined && !there && cwd && control.sandboxed?.(cwd));
           const target: Authority = { mode: permissionMode ?? 'full', confined };
           if (caller && above(target, caller)) {
-            await confirm('create_thread', [`Start a thread with ${accessName(target, caller)}${cwd ? ` in ${cwd}` : ''}${there ? ` on ${runner!.trim()}` : ''}`], { from: head.trim(), text, folder: cwd, permissionMode: target.mode, ...(there ? { runner } : {}) }, extra?.signal);
+            await confirm('create_thread', [`Start a thread with ${accessName(target, caller)}${cwd ? ` in ${cwd}` : ''}${there ? ` on ${runner!.trim()}` : ''}`], { from: head.trim(), text, ...(title?.trim() ? { title: title.trim() } : {}), folder: cwd, permissionMode: target.mode, ...(there ? { runner } : {}) }, extra?.signal);
             if (!there) await sameFolder(f ?? '.', cwd!);
           }
           return { cwd, confined };
@@ -2008,7 +2008,9 @@ export function buildThreadbearTools(
         }
         if (permissionMode !== undefined && by) {
           const t = await modeOf(id);
-          if (raises(permissionMode, t.mode)) await confirm('update_thread', [`Switch ${threadName(id, t.title)} to ${MODE_NAMES[permissionMode]}`], { threadId: id, permissionMode }, extra?.signal);
+          // The card shows a title set in the same call: allowed, it lands
+          // under the raised mode (Codex's second review, finding 111).
+          if (raises(permissionMode, t.mode)) await confirm('update_thread', [`Switch ${threadName(id, t.title)} to ${MODE_NAMES[permissionMode]}`], { threadId: id, permissionMode, ...(title !== undefined ? { title } : {}) }, extra?.signal);
           // The mode it has already is left out, so this write landing after
           // someone else lowers it (a handover's round trip) can't raise it back.
           else if (permissionMode === t.mode) delete upd.permissionMode;
