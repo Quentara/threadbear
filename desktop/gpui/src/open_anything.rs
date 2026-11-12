@@ -268,7 +268,9 @@ impl Threadbear {
         // The list scrolls past what fits above the window's bottom edge.
         let list_max = (window_h - top - 48. - 56. - 40.).max(ROW_HEIGHT * 3.);
         let hairline = style::hairline(cx);
-        let dim = if cx.theme().is_dark() { gpui_kit::black().opacity(0.45) } else { gpui_kit::black().opacity(0.18) };
+        // Spelled out, as the picture viewer's backdrop is: `black().opacity()`
+        // came out clear here.
+        let dim = gpui_kit::hsla(0., 0., 0., if cx.theme().is_dark() { 0.45 } else { 0.18 });
         let fill = if cx.theme().is_dark() { style::over_background(style::primary_opacity(cx, 0.06), cx) } else { cx.theme().background };
 
         let query_row = div()
@@ -326,17 +328,21 @@ impl Threadbear {
             .child(list)
             .child(footer);
         Some(
+            // Anchored at the window's corner, as the picture viewer's
+            // backdrop is: a bare absolute layer in a deferred element has
+            // nothing to sit in, and its dim never showed.
             deferred(
-                div()
-                    .id("open-anything-dim")
-                    .absolute()
-                    .top_0()
-                    .left_0()
-                    .size_full()
-                    .bg(dim)
-                    .occlude()
-                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close_open_anything(true, window, cx)))
-                    .child(div().absolute().top(px(top)).left_0().right_0().flex().justify_center().child(panel)),
+                anchored().position(point(gpui_kit::px(0.), gpui_kit::px(0.))).child(
+                    div()
+                        .id("open-anything-dim")
+                        .relative()
+                        .w(viewport.width)
+                        .h(viewport.height)
+                        .bg(dim)
+                        .occlude()
+                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close_open_anything(true, window, cx)))
+                        .child(div().absolute().top(px(top)).left_0().right_0().flex().justify_center().child(panel)),
+                ),
             )
             .with_priority(3)
             .into_any_element(),
