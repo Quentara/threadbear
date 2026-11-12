@@ -16,6 +16,15 @@ export type Scenario = { name: string; play: (p: Play) => void; shows: string[] 
 
 export const SCENARIOS: Scenario[] = [
   {
+    // bruce's Claude login was signed out (canary, 13 Nov): its turns
+    // failed there, and this Mac showed each as an empty reply.
+    name: 'a turn that failed',
+    shows: ['The last turn failed'],
+    play: (p) => {
+      p.fail('Failed to authenticate: OAuth session expired and could not be refreshed');
+    },
+  },
+  {
     name: 'a decision card, with what each answer does and a pick',
     shows: ['Same thread or new?', 'One thread that moves', 'The old one is archived'],
     play: (p) => {

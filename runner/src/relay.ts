@@ -318,7 +318,10 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
         env(base + 7, r, {
           type: 'turn.completed',
           turnId: r.turn,
-          outcome: 'completed',
+          // The row says only that the last turn failed, not why: the error
+          // stays on that runner. Without this a signed-out login on bruce
+          // read on this Mac as an empty reply (canary, 13 Nov).
+          ...(last && row?.status === 'error' ? { outcome: 'failed', error: `The last turn failed on ${runnerName}. Open it there to see why, or send a message to try again.` } : { outcome: 'completed' }),
           durationMs: Math.max(0, Date.parse(r.at) - (Number.isFinite(started) ? started : Date.parse(r.at))),
           ...(last && row?.needs ? { needs: row.needs } : {}),
           ...(asks ? { asks } : {}),

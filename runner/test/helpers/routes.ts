@@ -40,6 +40,10 @@ export type View = {
   // Plan first plans drawn as plan cards, "<first line> (waiting|go|revise)".
   plans: string[];
   messages: { role: 'user' | 'assistant'; text: string; pictures: number }[];
+  // Whether the last turn failed (the Mac's failed card, the website's
+  // "The last turn failed"): a signed-out login on bruce read as an empty
+  // reply on this Mac (canary, 13 Nov).
+  failed: boolean;
 };
 
 export type Play = {
@@ -60,6 +64,8 @@ export type Play = {
   /** A review by another lab has given this ledger's findings to the
    * agent (runner/lab-review.ts), so the next end_turn answers them. */
   reviewed(ledger: LabReviewLedger): void;
+  /** The turn fails with this error (a signed-out login, an overloaded API). */
+  fail(error: string): void;
 };
 
 export async function threeWays(play: (p: Play) => void | Promise<void>) {
@@ -101,7 +107,7 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
   const here = (): View => {
     const t = h.runner.get(id);
     const events = h.runner.events(id, {}).events as Record<string, any>[];
-    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events) };
+    return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), failed: lastFailed(events) };
   };
   const viaRelay = async (): Promise<View> => {
     // A turn's end is held back until that runner's row has said so for 4 s.
@@ -113,11 +119,11 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     // sidebar's list, for the done card's own seq.
     const listed = relay.overlay(remote()).threads.find((t) => t.threadId === id) as { looseEnds?: { seq: number; ends: { text: string }[] } } | undefined;
     const ends = listed?.looseEnds && end && listed.looseEnds.seq === end.seq ? listed.looseEnds.ends.map((e) => e.text) : [];
-    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events) };
+    return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), failed: lastFailed(events) };
   };
   const viaPhone = async (): Promise<View> => {
     const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string }[] };
-    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: [], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0 })) };
+    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: [], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0 })), failed: r.thread.status === 'error' };
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
@@ -164,6 +170,7 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
         s.out({ kind: 'event', event: { type: 'tool.result', itemId: id, ok: true, text: 'ok', truncated: false, images: [] } });
         s.result('completed');
       },
+      fail: (error) => s.result('failed', undefined, error),
       send: (text, images = []) => {
         h.runner.send(thread.id, text, images, {});
         h.adapter.last.init();
@@ -213,6 +220,10 @@ function plansOf(events: Record<string, any>[]): string[] {
       const r = events.find((e) => e.type === 'plan.resolved' && e.itemId === p.itemId);
       return `${String(p.text).split('\n')[0]} (${r ? r.decision : 'waiting'})`;
     });
+}
+
+function lastFailed(events: Record<string, any>[]): boolean {
+  return events.filter((e) => e.type === 'turn.completed').at(-1)?.outcome === 'failed';
 }
 
 // The done card's follow-ups: the last turn's end.
