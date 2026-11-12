@@ -16,6 +16,7 @@ const m = (await import(planModule)) as {
   isLoopbackUrl: (u: string) => boolean;
   servedOn: (status: unknown, tailnetPort: number) => { Proxy?: string }[] | undefined;
   mustSeeTailnetOff: (a: { from?: string; pending?: boolean }) => boolean;
+  tailnetPendingFiles: (defaultHome: string, home: string, path: unknown) => string[];
   offTailnetStep: (a: { cli: boolean; handlers?: { Proxy?: string }[]; tailnetPort: number; localPort: number; moving: boolean }) => { do: string; message?: string };
 };
 
@@ -158,7 +159,43 @@ test('setup leaves the tailnet note before serving and clears it only after ever
   const write = src.indexOf('fs.writeFileSync(pendingFile');
   const serveLoop = src.indexOf('serve(tailnet.ts, tailnetPort, localPort)');
   const unserveLoop = src.indexOf('unserve(ts, tailnetPort, localPort, moving)');
-  const remove = src.indexOf('fs.rmSync(pendingFile');
+  const remove = src.indexOf('for (const f of pendingFiles) fs.rmSync(f');
   assert.ok(write > 0 && write < serveLoop, 'written before serving');
   assert.ok(unserveLoop > 0 && unserveLoop < remove, 'removed after the ports');
+});
+
+// Daybreak 12 Nov (finding 110): setup before 4d8cdb23 left the note in the
+// --home folder. An interrupted --tailnet run there, then a --local run on
+// the same folder with Tailscale unable to say what it serves, found no note
+// in the default folder and only noted it, leaving the ports served.
+test('a note an older setup left in a custom --home still makes a local run see the ports off', async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-pending-'));
+  try {
+    const def = path.join(root, 'Threadbear');
+    const custom = path.join(root, 'custom-home');
+    fs.mkdirSync(def, { recursive: true });
+    fs.mkdirSync(custom, { recursive: true });
+    const files = m.tailnetPendingFiles(def, custom, path);
+    assert.deepEqual(files, [path.join(def, 'self-hosted-on-tailnet'), path.join(custom, 'self-hosted-on-tailnet')]);
+    // The legacy note only, as the old setup left it.
+    fs.writeFileSync(files[1]!, 'served\n');
+    const moving = m.mustSeeTailnetOff({ from: undefined, pending: files.some((f) => fs.existsSync(f)) });
+    assert.equal(moving, true);
+    assert.equal(m.offTailnetStep({ cli: true, handlers: undefined, tailnetPort: 3210, localPort: 13210, moving }).do, 'fail');
+    assert.equal(m.offTailnetStep({ cli: false, tailnetPort: 3210, localPort: 13210, moving }).do, 'fail');
+    // The default folder as --home is looked at once.
+    assert.deepEqual(m.tailnetPendingFiles(def, def + '/', path), [path.join(def, 'self-hosted-on-tailnet')]);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('setup reads and clears the note in both folders', async () => {
+  const fs = await import('node:fs');
+  const src = fs.readFileSync(new URL('../../../scripts/setup.mjs', import.meta.url), 'utf8');
+  assert.match(src, /tailnetPendingFiles\(DEFAULT_HOME, home, path\)/);
+  assert.match(src, /pending: pendingFiles\.some\(\(f\) => fs\.existsSync\(f\)\)/);
 });

@@ -58,7 +58,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { isJoining, joinSteps, runnerKeyPlan } from './runner-key-plan.mjs';
-import { ADMIN_URL, backendContainer, DATA_VOLUME, mustSeeTailnetOff, offTailnetStep, origins, PORTS, selfHostedPlan, servedOn, TAILNET_PENDING_FILE } from './self-hosted-plan.mjs';
+import { ADMIN_URL, backendContainer, DATA_VOLUME, mustSeeTailnetOff, offTailnetStep, origins, PORTS, selfHostedPlan, servedOn, tailnetPendingFiles } from './self-hosted-plan.mjs';
 import { ConvexAdminError, convexEnv, readConvexAdmin, SELF_HOSTED_ENV_FILE } from '../runner/src/convex-admin.ts';
 
 const repo = path.resolve(import.meta.dirname, '..');
@@ -683,7 +683,9 @@ async function selfHostedBackend() {
   // volume and the ports served are this Mac's, one set for every data
   // folder, so a run for one has to see what a run for another served
   // (cross-lab review, 11 Nov 2026).
-  const pendingFile = path.join(DEFAULT_HOME, TAILNET_PENDING_FILE);
+  // A note an older setup left in the --home folder counts too
+  // (tailnetPendingFiles), so a local run there still checks every port.
+  const [pendingFile, ...legacyPending] = tailnetPendingFiles(DEFAULT_HOME, home, path);
   if (tailnet) {
     // Said before anything is served, so a run that stops after serving
     // but before saving its URL still has a local run check every port.
@@ -694,10 +696,11 @@ async function selfHostedBackend() {
     for (const [tailnetPort, localPort] of Object.values(PORTS)) serve(tailnet.ts, tailnetPort, localPort);
   } else {
     const ts = tailscaleCli();
-    const moving = mustSeeTailnetOff({ from: plan.from, pending: fs.existsSync(pendingFile) });
+    const pendingFiles = [pendingFile, ...legacyPending];
+    const moving = mustSeeTailnetOff({ from: plan.from, pending: pendingFiles.some((f) => fs.existsSync(f)) });
     for (const [tailnetPort, localPort] of Object.values(PORTS)) unserve(ts, tailnetPort, localPort, moving);
     // Each port was seen off, or setup stopped above.
-    if (!dry && moving) fs.rmSync(pendingFile, { force: true });
+    if (!dry && moving) for (const f of pendingFiles) fs.rmSync(f, { force: true });
   }
   if (dry) {
     if (!fs.existsSync(selfHostedFile)) todo(`the backend's admin key, in ${selfHostedFile}`);

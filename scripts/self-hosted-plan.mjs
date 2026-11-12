@@ -183,3 +183,14 @@ export const TAILNET_PENDING_FILE = 'self-hosted-on-tailnet';
 export function mustSeeTailnetOff({ from, pending }) {
   return from === 'tailnet' || Boolean(pending);
 }
+
+// Where to look for that note. Setup before 11 Nov (4d8cdb23) left it in the
+// --home data folder, so a run on that same folder still finds a note an
+// interrupted --tailnet run left there, rather than reading no note as never
+// served (Daybreak, 12 Nov 2026). Both are cleared once every port is off.
+export function tailnetPendingFiles(defaultHome, home, path) {
+  const files = [path.join(defaultHome, TAILNET_PENDING_FILE)];
+  const legacy = path.join(home, TAILNET_PENDING_FILE);
+  if (path.resolve(legacy) !== path.resolve(files[0])) files.push(legacy);
+  return files;
+}
