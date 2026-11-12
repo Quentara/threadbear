@@ -55,6 +55,15 @@ const UNTIL_RESTART = '9999-12-31T00:00:00.000Z';
 // shown put away, and satisfied by any snoozed row.
 const PUT_AWAY = 'put-away';
 const PAGE = 50;
+// The most rows held for one thread. Past it the oldest go, and scrolling
+// back reads them again. Another runner writes its thread's rows, and can
+// write tens of thousands of tiny ones within its backend budget; without a
+// cap a refresh held them all and rebuilt every event on each read
+// (Daybreak, 12 Nov 2026).
+export const MAX_HELD = 5000;
+// Trimmed once it's this far past, so a long read sorts the held rows every
+// twenty pages rather than every page.
+const TRIM_SLACK = 1000;
 // A watch nobody has subscribed for this long stops; its rows stay a while,
 // so opening the thread again reads only what's new.
 const IDLE_MS = 60_000;
@@ -214,10 +223,9 @@ const TOOL_NAMES: Record<string, string> = { command: 'Bash', read: 'Read', edit
  * sending it back (Codex's review, 12 Nov), and a guess given to the app
  * can't be taken back.
  */
-export function planOutcome(sorted: RelayRow[], i: number): 'go' | 'revise' | undefined {
-  const plan = sorted[i]!;
+export function planOutcome(plan: RelayRow, newerPlan: boolean): 'go' | 'revise' | undefined {
   if (plan.planDecision) return plan.planDecision;
-  return sorted.slice(i + 1).some((r) => r.plan) ? 'revise' : undefined;
+  return newerPlan ? 'revise' : undefined;
 }
 
 /** A thread's held rows and row as transcript events, oldest first, in relay seqs. Pure, so a page and the live stream agree. */
@@ -228,6 +236,10 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
   const running = row ? RUNNING.has(row.status) || !settled : true;
   const env = (seq: number, r: RelayRow, body: Record<string, unknown>): RelayEvent => ({ seq, ts: r.at, threadId, ...(r.turn ? { turnId: r.turn } : {}), ...body }) as RelayEvent;
   const turnStart = new Map<string, string>();
+  // The newest plan, found once: asking each plan whether one comes after it
+  // copied the rest of the rows per plan, so a run of plans took quadratic
+  // time on this runner (Daybreak, 12 Nov 2026).
+  const lastPlanSeq = sorted.findLast((r) => r.plan)?.seq;
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]!;
     const prev = sorted[i - 1];
@@ -244,7 +256,7 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
       // reply it folded into the turn's work and nothing showed (12 Nov).
       const itemId = `relay-${r.seq}`;
       out.push(env(base + 1, r, { type: 'plan.proposed', itemId, text: r.text }));
-      const went = planOutcome(sorted, i);
+      const went = planOutcome(r, lastPlanSeq !== undefined && r.seq < lastPlanSeq);
       if (went) out.push(env(base + 2, r, { type: 'plan.resolved', itemId, decision: went }));
     } else if (r.role === 'assistant') {
       out.push(env(base + 1, r, { type: 'assistant.text', itemId: `relay-${r.seq}`, text: r.text, ...(r.summary ? { summary: true } : {}) }));
@@ -339,6 +351,33 @@ export function mergeTail(rows: Map<number, RelayRow>, tail: Page): { gapAfter?:
   const gap = tail.hasMore && first !== undefined && newest !== undefined && first > newest && !rows.has(first);
   for (const m of tail.messages) rows.set(m.seq, m);
   return gap ? { gapAfter: newest } : {};
+}
+
+/**
+ * Holds at most MAX_HELD rows (and TRIM_SLACK while reading), dropping the oldest. What's dropped is read
+ * again if the app scrolls back to it (olderMore), and seqs given for it
+ * stop counting, so emit's oldest seq moves up with it. A card's seqs stay.
+ */
+export function trimHeld(w: { rows: Map<number, RelayRow>; olderMore: boolean; given: Set<number>; bodies: Map<number, unknown>; cards: Map<string, Card> }): void {
+  if (w.rows.size <= MAX_HELD + TRIM_SLACK) return;
+  const seqs = [...w.rows.keys()].sort((a, b) => a - b);
+  const drop = seqs.length - MAX_HELD;
+  for (let n = 0; n < drop; n++) {
+    w.rows.delete(seqs[n]!);
+    w.bodies.delete(seqs[n]!);
+  }
+  w.olderMore = true;
+  const from = seqs[drop]! * SCALE;
+  const cardSeqs = new Set<number>();
+  for (const c of w.cards.values()) cardSeqs.add(c.slot).add(c.slot + 1);
+  for (const seq of w.given) if (seq < from && !cardSeqs.has(seq)) w.given.delete(seq);
+}
+
+// A loop, not Math.min(...given): a spread of that many arguments can throw.
+function oldestGiven(given: Set<number>): number {
+  let from = Infinity;
+  for (const seq of given) if (seq < from) from = seq;
+  return from;
 }
 
 // Said before anything was queued for the other runner, so nothing can
@@ -628,6 +667,7 @@ export class Relay {
         for (;;) {
           const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE })) as Page;
           for (const m of page.messages) w.rows.set(m.seq, m);
+          trimHeld(w);
           const last = page.messages[page.messages.length - 1]?.seq;
           if (last === undefined || !page.hasMore) break;
           after = last;
@@ -727,6 +767,7 @@ export class Relay {
     this.reads++;
     this.bytes += JSON.stringify(tail).length;
     const { gapAfter } = mergeTail(w.rows, tail);
+    trimHeld(w);
     if (gapAfter !== undefined) {
       // More arrived than the tail covers (the Mac slept, the watch was
       // off): what's between is read once, so the transcript has no hole.
@@ -787,6 +828,7 @@ export class Relay {
         const { after } = w.hole;
         const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE })) as Page;
         for (const m of page.messages) w.rows.set(m.seq, m);
+        trimHeld(w);
         const last = page.messages[page.messages.length - 1]?.seq;
         // Against the hole as it is now: a tail meanwhile may have made it longer.
         const until = w.hole?.until ?? 0;
@@ -802,7 +844,7 @@ export class Relay {
   // and what's late (a tool's result once the next row comes, a card's answer).
   private emit(w: Watch): void {
     if (!w.loaded || !w.given.size) return;
-    const from = Math.min(...w.given);
+    const from = oldestGiven(w.given);
     for (const e of this.events(w)) {
       if (e.seq < from || w.given.has(e.seq)) continue;
       w.given.add(e.seq);
@@ -1024,7 +1066,7 @@ export class Relay {
         // (a tool's result, a card's answer, a turn's end) from what it was
         // given before: it may have arrived while the app was away, and the
         // app takes a seq it already has as nothing.
-        const from = w.given.size ? Math.min(...w.given) : after;
+        const from = w.given.size ? oldestGiven(w.given) : after;
         const late = (seq: number) => seq % SCALE !== 0 && seq % SCALE !== 1;
         const events = this.events(w).filter((e) => e.seq > after || (e.seq >= from && late(e.seq)));
         for (const e of events) w.given.add(e.seq);

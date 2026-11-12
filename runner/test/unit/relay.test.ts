@@ -4,7 +4,7 @@
 // runner's own listeners (sync would mirror them as this runner's).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Relay, SCALE, mergeTail, relayEvents, type RelayRow, type RelayThreadRow } from '../../src/relay.ts';
+import { MAX_HELD, Relay, SCALE, mergeTail, relayEvents, type RelayRow, type RelayThreadRow } from '../../src/relay.ts';
 import { FakeClock } from '../../src/clock.ts';
 import { nullLogger } from '../../src/log.ts';
 import type { RemoteThreads } from '../../src/thread-index.ts';
@@ -83,7 +83,7 @@ test('a tail past what is held asks for the gap; one that overlaps just merges',
 });
 
 type Call = { kind: string; fn: string; args: Record<string, unknown> };
-type HarnessOpts = { online?: boolean; row?: () => RelayThreadRow & { share?: unknown }; apiVersion?: number; queueFails?: boolean; uploadMs?: number; rows?: RelayRow[] };
+type HarnessOpts = { paged?: boolean; online?: boolean; row?: () => RelayThreadRow & { share?: unknown }; apiVersion?: number; queueFails?: boolean; uploadMs?: number; rows?: RelayRow[] };
 function harness(opts: HarnessOpts = {}) {
   const calls: Call[] = [];
   const subs = new Map<string, { args: Record<string, unknown>; onUpdate: (v: unknown) => void; closed: boolean }[]>();
@@ -110,6 +110,18 @@ function harness(opts: HarnessOpts = {}) {
       post: async (kind, fn, args) => {
         calls.push({ kind, fn, args });
         if (fn === 'relay:remoteThread') return opts.row?.() ?? idle;
+        if (fn === 'relay:remoteMessages' && opts.paged) {
+          // As convex/relay.ts pages: ascending after afterSeq, else the newest page.
+          const all = opts.rows ?? rows;
+          const limit = Number(args.limit ?? 50);
+          if (typeof args.afterSeq === 'number') {
+            const from = all.findIndex((r) => r.seq > (args.afterSeq as number));
+            const page = from < 0 ? [] : all.slice(from, from + limit);
+            return { messages: page, hasMore: from >= 0 && from + limit < all.length };
+          }
+          const before = typeof args.beforeSeq === 'number' ? all.filter((r) => r.seq < (args.beforeSeq as number)) : all;
+          return { messages: before.slice(-limit), hasMore: before.length > limit };
+        }
         if (fn === 'relay:remoteMessages') return { messages: opts.rows ?? rows, hasMore: false };
         if (fn === 'relay:queueCommand') {
           if (opts.queueFails) throw new Error('Convex is away');
@@ -731,4 +743,32 @@ test("a waiting plan older than the tail is read again, and its decision reaches
   await new Promise((r) => setTimeout(r, 10));
   const sent = (h.published as { method: string; params: { event?: { type: string; decision?: string } } }[]).map((n) => n.params.event).filter(Boolean);
   assert.ok(sent.some((e) => e!.type === 'plan.resolved' && e!.decision === 'go'), JSON.stringify(sent.map((e) => e!.type)));
+});
+
+// Daybreak 12 Nov (finding 105): another runner can write tens of thousands
+// of tiny plan rows to its own thread. Once this Mac had the thread open, a
+// refresh read them all, held them all, and rebuilt every event (each plan
+// copying every row after it) on each read, taking this runner's event loop
+// for seconds per call. Now a watch holds MAX_HELD rows at most, the newest,
+// and a read of a page is quick however many came.
+test("a flood of another runner's rows is held to the newest few thousand, and reading stays quick", async () => {
+  const backend: RelayRow[] = [{ seq: 1, role: 'user', text: 'Plan it', turn: 'aaaa1111', at: at(0) }];
+  const h = harness({ paged: true, rows: backend });
+  await h.relay.call(T, 'threads.events', { threadId: T, limit: 1 });
+  for (let i = 0; i < 40_000; i++) backend.push({ seq: 2 + i, role: 'assistant', text: 'p', plan: true, turn: 'aaaa1111', at: at(1) });
+  // Not subscribed and read over two seconds ago: the next read refreshes.
+  h.clock.advance(3000);
+  const first = (await h.relay.call(T, 'threads.events', { threadId: T, limit: 1 })) as { events: { seq: number; type: string }[] };
+  assert.ok(h.relay.status().held <= MAX_HELD + 1000, `held ${h.relay.status().held}`);
+  // The newest row's is what's shown (its turn's end, as the thread is idle).
+  assert.ok(first.events[0]!.seq >= 40_001 * SCALE, `seq ${first.events[0]!.seq}`);
+  // A read of what's held, as each one after it is.
+  const before = process.cpuUsage();
+  await h.relay.call(T, 'threads.events', { threadId: T, limit: 1 });
+  const d = process.cpuUsage(before);
+  const ms = (d.user + d.system) / 1000;
+  assert.ok(ms < 100, `a read took ${ms.toFixed(1)} ms of CPU`);
+  // Scrolling back reads what was dropped again.
+  const older = (await h.relay.call(T, 'threads.events', { threadId: T, beforeSeq: first.events[0]!.seq, limit: 200 })) as { events: unknown[] };
+  assert.ok(older.events.length > 0);
 });
