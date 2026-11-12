@@ -619,7 +619,9 @@ works, or words like "until the phone arrives", read the same way as Wake
 when…. It won't put itself away while it's waiting on you. A thread
 whose next step waits on other threads hibernates by itself until they
 finish, then wakes with what they said and carries on; its row says
-Waiting on and which. It can also say what it's waiting for a thread to
+Waiting on and which. If it was given more access while it slept, and
+one of them has less, it wakes for you instead, with a note, and what
+they said isn't passed on until you send a message. It can also say what it's waiting for a thread to
 do ("until it reports the I/O saving"), and then the librarian reads
 that thread after each of its turns and wakes it once it has. On the
 iPhone and the website a hibernating row starts "Until …" when it waits

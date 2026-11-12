@@ -98,7 +98,12 @@ export function normaliseRecord(rec: Record<string, unknown>): boolean {
   if (isObject(rec.labReview) && !(typeof rec.labReview.rounds === 'number' && Array.isArray(rec.labReview.findings))) delete rec.labReview;
   if (isObject(rec.highlights) && !(Array.isArray(rec.highlights.items) && Array.isArray(rec.highlights.edited))) delete rec.highlights;
   // A wait is on a thread, by its id.
-  if (Array.isArray(rec.waitingOn)) rec.waitingOn = rec.waitingOn.filter((w) => typeof w.threadId === 'string' && typeof (w.title ?? '') === 'string' && (w.done === undefined || (isObject(w.done) && typeof (w.done.reply ?? '') === 'string' && typeof (w.done.why ?? '') === 'string')));
+  if (Array.isArray(rec.waitingOn)) {
+    const waits = rec.waitingOn.filter((w) => typeof w.threadId === 'string' && typeof (w.title ?? '') === 'string' && (w.done === undefined || (isObject(w.done) && typeof (w.done.reply ?? '') === 'string' && typeof (w.done.why ?? '') === 'string')));
+    rec.waitingOn = waits;
+    // A `by` that isn't one is dropped, and the wait counts as from the least (hibernation.ts, mayHear).
+    for (const w of waits) if (w.by !== undefined && !(isObject(w.by) && ['ask', 'plan', 'auto', 'full'].includes(w.by.mode) && typeof w.by.confined === 'boolean')) delete w.by;
+  }
   // What it said last, which a wait on it carries.
   if (isObject(rec.finished) && rec.finished.reply !== undefined && typeof rec.finished.reply !== 'string') delete rec.finished.reply;
   if (isObject(rec.reviewVerdict) && !Array.isArray(rec.reviewVerdict.findings)) delete rec.reviewVerdict;
@@ -179,7 +184,9 @@ export type ThreadRecord = {
   // `until`: waits for something in particular, which the librarian
   // judges from its looks at that thread (met), not for any finish.
   // `review`: the thread is a review of this one's change (runner/lab-review.ts).
-  waitingOn?: { threadId: string; title: string; until?: string; review?: true; quiet?: true; done?: { at: string; how: 'finished' | 'met' | 'archived' | 'deleted'; reply?: string; why?: string } }[];
+  // `by`: the waiting thread's access when it said to wait (hibernation.ts,
+  // mayHear): what it asked to hear isn't passed on once it has more.
+  waitingOn?: { threadId: string; title: string; until?: string; review?: true; quiet?: true; by?: { mode: PermissionMode; confined: boolean }; done?: { at: string; how: 'finished' | 'met' | 'archived' | 'deleted'; reply?: string; why?: string } }[];
   // Its last finished turn (nothing needed, nothing left running) and that
   // turn's reply, for threads waiting on it, including on a runner it
   // moves to (runner/hibernation.ts, reconcileWaits). Cleared by any new

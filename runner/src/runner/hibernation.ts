@@ -15,6 +15,11 @@ import path from 'node:path';
 import { providerName } from '../providers.ts';
 import { LAB_REVIEW_REPLY_CHARS, addVerdict, findingLine } from './lab-review.ts';
 import { cutSafely, safeEnd } from '../safe-cut.ts';
+import { above, type Authority } from '../threadbear-mcp.ts';
+
+// A thread that isn't here (on another runner of this Mac's) counts as the
+// least access, so what it said is never passed up on a guess.
+const LEAST: Authority = { mode: 'ask', confined: true };
 
 // How long a thread waiting on others sleeps at most when end_turn gave no
 // snooze, so one that never hears still comes back.
@@ -141,7 +146,8 @@ export const hibernationPart = {
     }
     if (!until || Date.parse(until) <= now) until = new Date(now + WAIT_FOR_DEFAULT_MS).toISOString();
     this.update({ threadId: rec.id, snoozedUntil: until });
-    rec.waitingOn = list;
+    const by = this.authorityNow(rec.id);
+    rec.waitingOn = list.map((x) => ({ ...x, by }));
     this.markDirty(st);
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const also = skipped.length ? ` (${skipped.join(', ')} isn't a thread here that's still going, so it isn't waited on.)` : '';
@@ -235,8 +241,38 @@ export const hibernationPart = {
     }
   },
 
+  // What a thread's agent can do now (threadbear-mcp.ts, Authority).
+  authorityNow(this: Runner, threadId: string): Authority {
+    if (!this.threads.has(threadId)) return LEAST;
+    return { mode: this.accessOf(threadId), confined: this.confinedOf(threadId) };
+  },
+
+  // Whether what a waited-on thread said may go to the waiting thread's
+  // agent as a message, as send_message would let it without a card: the
+  // waited-on thread has no less access than the waiting one has now, or the
+  // waiting one's agent asked for it itself (end_turn's waitFor) and hasn't
+  // been raised since. A wait the quiet inbox made was never asked for, so
+  // it counts only the first (Daybreak, 12 Nov 2026: an Ask helper's closing
+  // reply started a turn in its Full-access starter).
+  mayHear(this: Runner, me: Authority, w: NonNullable<ThreadState['rec']['waitingOn']>[number]): boolean {
+    if (!above(me, this.authorityNow(w.threadId))) return true;
+    return !w.quiet && w.by !== undefined && !above(me, w.by);
+  },
+
   deliverWaits(this: Runner, st: ThreadState, waits: NonNullable<ThreadState['rec']['waitingOn']>): void {
     if (waits.length === 1 && waits[0].review) return this.deliverReview(st, waits[0]);
+    const me = this.authorityNow(st.rec.id);
+    const held = waits.filter((x) => (x.done?.reply || x.done?.why) && !this.mayHear(me, x));
+    if (held.length) {
+      // Woken for Mike instead, with no turn: he reads them and says what next.
+      const names = held.map((x) => `"${x.title}"`).join(', ');
+      const one = held.length === 1;
+      this.wake(st, { why: one ? `${names} finished` : 'the threads it was waiting on finished' });
+      this.armSnoozeTimer();
+      this.emit(st, { type: 'system.note', text: `${names} ${one ? 'has' : 'have'} less access than this thread, so what ${one ? 'it' : 'they'} said wasn't passed to this thread's agent without you. Read ${one ? 'it' : 'them'}, and send a message here to carry on.` });
+      this.log.info('woke without passing on a reply from a thread with less access', { threadId: st.rec.id, held: held.map((x) => x.threadId) });
+      return;
+    }
     const parts = waits.map((x) => {
       const head = `"${x.title}" (thread ${x.threadId.slice(0, 8)})`;
       const said = x.done?.how === 'deleted' ? 'was deleted' : x.done?.how === 'archived' ? 'was archived'
