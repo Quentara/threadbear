@@ -273,11 +273,6 @@ export function makeHarness(home = tmpDir(), cfgExtra: Partial<Config> = {}, dep
     defer: (fn) => fn(),
     // Patch trust has its own tests; the rest load every patch file.
     patchTrust: TRUST_ALL,
-    // Never the real ~/.threadbear/patches: trusted as above, a home patch
-    // would run its live commands (gh and the like) in every test's runner.
-    // Tyler Lusk's fork found it: a Mac with a few home patches took over 40
-    // minutes on the quick check and failed its timing tests (9 Nov 2026).
-    panelsRoot: tmpDir(),
     // Never touch a real Claude config dir from a test.
     copyTranscript: () => false,
     subagentTranscript: () => null,
@@ -286,7 +281,11 @@ export function makeHarness(home = tmpDir(), cfgExtra: Partial<Config> = {}, dep
     // Setup and hooks at normal priority: on a busy Mac a background shell
     // can miss a test's wait. background.test.ts covers the real path.
     backgroundJobs: false,
-    // Never the real ~/.threadbear/patches: a home patch with a `when` ran
+    // Never the real ~/.threadbear/patches: trusted as above, a home patch
+    // would run its live commands (gh and the like) in every test's runner.
+    // Tyler Lusk's fork found it: a Mac with a few home patches took over 40
+    // minutes on the quick check and failed its timing tests (9 Nov 2026).
+    // And a home patch with a `when` ran
     // its commands against the Mac's live runner from every test, and the
     // slow read it made saved an old runner's record over a restarted
     // one's (reviews.test.ts, 12 Nov). The same folder across restart().
