@@ -125,6 +125,11 @@ pub struct Threadbear {
     pub(crate) renaming: Option<String>,
     pub(crate) rename_field: Option<(Entity<InputState>, Subscription)>,
     pub(crate) share_popover: Option<String>,
+    /// ⌘K's box while it's up (open_anything.rs), what it calls Recent,
+    /// and the patch panels showing last time the layout changed.
+    pub(crate) anything: Option<crate::open_anything::OpenAnything>,
+    pub(crate) anything_recent: Vec<String>,
+    pub(crate) anything_panels_shown: std::collections::HashSet<String>,
     pub(crate) share_busy: bool,
     /// Threads whose login, pool ("moving/<id>") or folder
     /// ("movingFolder/<id>") change hasn't landed: those can't be guessed,
@@ -254,6 +259,7 @@ pub struct Threadbear {
 
 impl Threadbear {
     pub(crate) fn new(settings: Settings, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let anything_recent = settings.saved.open_anything_recent.clone().unwrap_or_default();
         // gpui-kit starts in its light theme whatever the system says; follow
         // the system's light or dark, and keep following it when it changes,
         // in the system's own window colours (style.rs). Scroll bars show only
@@ -440,6 +446,9 @@ impl Threadbear {
             renaming: None,
             rename_field: None,
             share_popover: None,
+            anything: None,
+            anything_recent,
+            anything_panels_shown: Default::default(),
             share_busy: false,
             chip_busy: Default::default(),
             continuing_refusal: None,
@@ -1403,6 +1412,8 @@ impl Threadbear {
         dump["flight"] = self.flight.dump();
         // Whether motion is reduced (automation.rs): no flights or glides then.
         dump["reduceMotion"] = json!(cx.reduce_motion());
+        // ⌘K's box, while it's up (open_anything.rs).
+        dump["anything"] = self.open_anything_dump(cx);
         // The last time the panels moved (a panel opened or closed): where
         // each panel was and went, and whether they're still on their way.
         dump["panelMotion"] = self.dock_view.read(cx).last_motion().map_or(Value::Null, |(from, to, moving)| {
@@ -1576,16 +1587,18 @@ impl Render for Threadbear {
         let open_menu = open_menu.into_iter().map(IntoElement::into_any_element).chain(self.frame_rate.clone().map(|f| f.into_any_element()));
         // The web panels' pages are native views: shown and placed once the
         // window's laid out, where their panels were drawn (web_panels.rs).
-        let pages = crate::web_panels::sweeper(self.open_menu_at(), self.share_popover.is_some());
+        // ⌘K's box covers them as the share popover does (open_anything.rs).
+        let pages = crate::web_panels::sweeper(self.open_menu_at(), self.share_popover.is_some() || self.anything.is_some());
         // Videos and PDFs in the system's views the same way (media_view.rs),
         // hidden under the picture viewer and the pane's own menus too.
         let media = {
             let side = self.side.read(cx);
-            let everything = self.share_popover.is_some() || side.viewer.is_open();
+            let everything = self.share_popover.is_some() || self.anything.is_some() || side.viewer.is_open();
             let menus = self.open_menu_at().into_iter().chain(side.menu.as_ref().map(|m| m.position)).collect();
             crate::media_view::sweeper(window, crate::media_view::Cover { everything, menus })
         };
         // Last: every press in the window, for the activity log (tips.rs).
-        self.render_shell(window, cx).children(open_menu).child(pages).child(media).child(crate::tips::window_presses())
+        let anything = self.render_open_anything(window, cx);
+        self.render_shell(window, cx).children(open_menu).children(anything).child(pages).child(media).child(crate::tips::window_presses())
     }
 }

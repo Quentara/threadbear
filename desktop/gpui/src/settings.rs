@@ -90,6 +90,10 @@ pub struct Saved {
     /// `threadsCollapsed`: ⌘/ folded the Threads panel away (thread_panels.rs).
     /// None is no.
     pub threads_collapsed: Option<bool>,
+    /// ⌘K's Recent (open_anything.rs): what was opened lately, newest first,
+    /// as the box's keys ("thread:<id>", "panel:<place>|<id>"). The GPUI
+    /// app's own; the Swift app hasn't got the box.
+    pub open_anything_recent: Option<Vec<String>>,
 }
 
 /// The settings file: where it is and what's in it. Reading is at launch only;

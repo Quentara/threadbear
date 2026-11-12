@@ -534,6 +534,7 @@ impl Threadbear {
             || crate::tips::any_menu_up()
             || gpui_kit::base::GlobalState::is_in_deferred_context(cx)
             || self.share_popover.is_some()
+            || self.anything.is_some()
             || self.move_sheet.is_some()
     }
 

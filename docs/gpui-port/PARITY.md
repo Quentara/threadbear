@@ -237,6 +237,27 @@ built parsers and gates with no launch of the app, which is the trap.)
 - The Swift app is frozen with Pin to, so the scenario is `@swift-pending`.
 - Both the dump's `limit.button` ("Continue now on mike (78% left)") and
   `limit.logins` (the menu's rows) say what it offers.
+### 2026-11-12 Open Anything, ⌘K (`nav.openanything`, GPUI-only)
+
+- New in the GPUI app, not a port: the Swift app is frozen without it, so
+  its scenarios are `@swift-pending`. Mike picked "A, the palette" from
+  three designs in thread 5d33618f (a sidebar search that did this and a
+  step-into-places browser were passed over).
+- ⌘K (`openAnything` in shortcuts.json, also Go > Open Anything…) puts a
+  box over the window, the rest dimmed. Nothing typed: Recent (threads,
+  project pages and patch panels opened lately, through the box or not,
+  kept in desktop-settings.json) and Go to (the pages with their keys).
+  Typing: Panels, Threads, Projects, App, each ranked by the start of the
+  name, a word's start, anywhere, then letters in order. Threads match as
+  the sidebar's search does, archived and hibernating ones saying so. A
+  panel from a place the open thread doesn't reach opens on its project's
+  page, else on the newest thread that has it, from the summaries the app
+  already holds (no new runner call). ↵ opens, ⌘↵ opens beside (a thread in
+  its own panel, a panel next to the main one), Esc or a click outside
+  closes. The web panels' pages go out of sight while it's up.
+- Files: `desktop/core/src/open_anything.rs`, `desktop/gpui/src/open_anything.rs`,
+  `features/open-anything.feature`.
+- Verification: `cargo test -p threadbear-core --lib -- open_anything shortcuts keyboard`, 32 of 32; the `@nav.openanything`, `@settings.keyboard` and `@nav.shortcuts` specs against the GPUI app on the cloud box, 17 of 17; shots of the box empty and typed on Tinker Desk beside the mockups.
 
 ### 2026-11-12 The model picker's Login line: pin a thread to one of a pool's logins (`composer.modelpicker`)
 

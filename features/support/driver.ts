@@ -82,6 +82,9 @@ export type Dump = {
     detail?: { title: string; usage: string; description?: string | null; now?: string | null; also?: string | null; origin: string; path?: string | null; buttons: string[] } | null;
     note?: string | null;
   } | null;
+  /** ⌘K's box while it's up: what's typed, each group's entries as their
+   *  lines read ("Inbox | ⌘1"), and the pick's title. */
+  anything?: { query: string; groups: { title: string; items: string[] }[]; picked?: string | null; recent: string[] } | null;
   /** The Move sheet while it's up. */
   moveSheet?: { title: string; subtitle: string; folder: string; login: string; problems: string[]; leftBehind: string[]; clone?: string | null; asking: boolean; canMove: boolean } | null;
   decisions?: string[] | null;

@@ -1215,6 +1215,31 @@ change it for you, so ask one to draft some and paste them in yourself. On
 Full access an agent that goes after the runner's own key could still get
 past this, as it could with anything on your Mac.
 
+## Open Anything
+<!-- slug: open-anything -->
+
+In the new desktop app (the `gpuiApp` experiment), ⌘K from anywhere in the
+main window puts a box over it, with the rest dimmed. Type part of a name and
+it finds threads, panels, projects and the app's own pages, in that order of
+groups: Panels, Threads, Projects and App. Letters in order are enough
+("ytcm" finds yt-channel-manager).
+
+- Threads are found the way the sidebar's search finds them (the title, the
+  last reply, the librarian's search words), archived and hibernating ones
+  too, and it says so on the right.
+- A panel shows its count and the folder or project it comes from. If the
+  open thread hasn't got it, it opens on the project's page when its folder
+  is in a project, otherwise on the newest thread in that folder.
+- App has Inbox, Scheduled, Projects, Librarian, Usage, Updates, Connectors,
+  Runners and each section of Settings ("keyboard" finds Settings ›
+  Keyboard).
+
+With nothing typed it shows Recent (what you've opened lately, through the
+box or not) and Go to (the pages, with their keys). ↑ and ↓ move, Return
+opens, and ⌘Return opens beside: a thread in a panel of its own, or a panel
+next to the main one. Esc or a click outside puts it away, and ⌘K again does
+too. The Mac app hasn't got it.
+
 ## Keyboard shortcuts
 <!-- slug: keyboard -->
 
@@ -1251,6 +1276,7 @@ key:
 - Back: `back`, ⌘[
 - Forward: `forward`, ⌘]
 - Next Inbox Thread: `nextInboxThread`, ⌥⌘↓
+- Open Anything (the new desktop app only): `openAnything`, ⌘K
 - Show Inbox: `showInbox`, ⌘1
 - Show Scheduled: `showScheduled`, ⌘2
 - Show Projects: `showProjects`, ⌘3

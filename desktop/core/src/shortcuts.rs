@@ -150,6 +150,10 @@ pub enum ShortcutCommand {
     Back,
     Forward,
     NextInboxThread,
+    /// ⌘K: the box for opening any thread, panel, project or page by name
+    /// (open_anything.rs). The GPUI app's own; the Swift app keeps the line
+    /// in the file without knowing it.
+    OpenAnything,
     ShowInbox,
     ShowScheduled,
     ShowProjects,
@@ -169,7 +173,7 @@ pub enum ShortcutCommand {
 }
 
 impl ShortcutCommand {
-    pub const ALL: [ShortcutCommand; 23] = [
+    pub const ALL: [ShortcutCommand; 24] = [
         Self::NewThread,
         Self::Archive,
         Self::Hibernate,
@@ -178,6 +182,7 @@ impl ShortcutCommand {
         Self::Back,
         Self::Forward,
         Self::NextInboxThread,
+        Self::OpenAnything,
         Self::ShowInbox,
         Self::ShowScheduled,
         Self::ShowProjects,
@@ -205,6 +210,7 @@ impl ShortcutCommand {
             Self::Back => "back",
             Self::Forward => "forward",
             Self::NextInboxThread => "nextInboxThread",
+            Self::OpenAnything => "openAnything",
             Self::ShowInbox => "showInbox",
             Self::ShowScheduled => "showScheduled",
             Self::ShowProjects => "showProjects",
@@ -237,6 +243,7 @@ impl ShortcutCommand {
             Self::Back => "Back",
             Self::Forward => "Forward",
             Self::NextInboxThread => "Next Inbox Thread",
+            Self::OpenAnything => "Open Anything",
             Self::ShowInbox => "Show Inbox",
             Self::ShowScheduled => "Show Scheduled",
             Self::ShowProjects => "Show Projects",
@@ -265,6 +272,7 @@ impl ShortcutCommand {
             Self::Back => Some(ShortcutKey::new("[")),
             Self::Forward => Some(ShortcutKey::new("]")),
             Self::NextInboxThread => Some(ShortcutKey::with("down", true, false, false)),
+            Self::OpenAnything => Some(ShortcutKey::new("k")),
             Self::ShowInbox => Some(ShortcutKey::new("1")),
             Self::ShowScheduled => Some(ShortcutKey::new("2")),
             Self::ShowProjects => Some(ShortcutKey::new("3")),
@@ -426,11 +434,12 @@ mod tests {
     }
 
     #[test]
-    fn the_defaults_are_the_twenty_three_in_the_menus() {
+    fn the_defaults_are_the_twenty_four_in_the_menus() {
         let keys: Vec<ShortcutKey> = ShortcutCommand::ALL.iter().filter_map(|c| c.default_key()).collect();
         let unique: std::collections::HashSet<&ShortcutKey> = keys.iter().collect();
         assert_eq!(keys.len(), unique.len(), "two commands can't start on one key");
-        assert_eq!(ShortcutCommand::ALL.len(), 23);
+        assert_eq!(ShortcutCommand::ALL.len(), 24);
+        assert_eq!(ShortcutCommand::OpenAnything.default_key(), Some(key("cmd+k")));
         assert_eq!(ShortcutCommand::CollapseThreads.default_key(), Some(key("cmd+/")));
     }
 

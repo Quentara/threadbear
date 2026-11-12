@@ -251,6 +251,7 @@ actions!(
         GoBack,
         GoForward,
         NextInboxThread,
+        OpenAnything,
         ShowInbox,
         ShowScheduled,
         ShowProjects,
@@ -334,6 +335,7 @@ commands!(
     (Back, GoBack, Some(ShortcutCommand::Back)),
     (Forward, GoForward, Some(ShortcutCommand::Forward)),
     (NextInboxThread, NextInboxThread, Some(ShortcutCommand::NextInboxThread)),
+    (OpenAnything, OpenAnything, Some(ShortcutCommand::OpenAnything)),
     (ShowInbox, ShowInbox, Some(ShortcutCommand::ShowInbox)),
     (ShowScheduled, ShowScheduled, Some(ShortcutCommand::ShowScheduled)),
     (ShowProjects, ShowProjects, Some(ShortcutCommand::ShowProjects)),
@@ -554,6 +556,8 @@ impl Threadbear {
         self.save_settings_soon(cx);
         // Threads' own panels and the main panel's tabs (thread_panels.rs).
         self.thread_panels_layout_changed(&layout, cx);
+        // A patch panel come into sight goes in ⌘K's Recent.
+        self.note_panels_shown(&layout, cx);
         cx.notify();
     }
 
@@ -658,6 +662,7 @@ impl Threadbear {
             Command::Back => self.go_back(window, cx),
             Command::Forward => self.go_forward(window, cx),
             Command::NextInboxThread => self.next_inbox_thread(window, cx),
+            Command::OpenAnything => self.toggle_open_anything(window, cx),
             // Each brings the Threads panel back if ⌘/ folded it away.
             Command::ShowInbox | Command::ShowScheduled | Command::ShowProjects | Command::ShowLibrarian | Command::ShowHibernating | Command::ShowArchived => {
                 self.unfold_threads(cx);
@@ -798,6 +803,16 @@ impl Threadbear {
         // The page in place of a thread, as the activity log names it.
         let page = (place.home && place.mode != SidebarMode::Inbox).then(|| place.mode.name());
         crate::activity::view(place.mode.name(), place.thread.as_deref(), self.subagent.as_ref().map(|(_, id)| id.as_str()), place.project.as_deref(), page);
+        // ⌘K's Recent: the thread or project page now in the main panel.
+        let recent = match (&place.project, &place.thread) {
+            (Some(project), _) => Some(threadbear_core::open_anything::project_key(project)),
+            (None, Some(thread)) if !place.home => Some(threadbear_core::open_anything::thread_key(thread)),
+            _ => None,
+        };
+        if let Some(key) = recent.filter(|k| self.anything_recent.first() != Some(k)) {
+            self.anything_recent = threadbear_core::open_anything::used(&key, &self.anything_recent);
+            self.settings.saved.open_anything_recent = Some(self.anything_recent.clone());
+        }
         self.history.record(place);
     }
 
@@ -1163,6 +1178,8 @@ impl Threadbear {
                     item("Forward", Command::Forward).enabled(self.can_go_forward()),
                     Separator,
                     item("Next Inbox Thread", Command::NextInboxThread),
+                    Separator,
+                    item("Open Anything…", Command::OpenAnything),
                 ],
             ),
             TopMenu::new(
