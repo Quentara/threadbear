@@ -58,6 +58,33 @@ export async function worktreeLooseEnds(w: WorktreeRecord): Promise<LooseEnd[]> 
 export type EditedOptions = { pushed?: string[]; dirs?: string[]; prs?: PrLookup };
 
 
+/**
+ * How many of `shas`, on no remote branch themselves, landed on the remote's
+ * main as other commits: tb land rebases a thread's work onto main, which
+ * gives each commit a new id (and a conflict sorted on the way, new
+ * contents), but keeps its author time and its words. One on main with the
+ * same pair is that commit, landed.
+ */
+async function landedByRebase(top: string, shas: string[]): Promise<number> {
+  const head = await readGit(top, ['rev-parse', '--abbrev-ref', 'refs/remotes/origin/HEAD']);
+  const main = head.ok && head.stdout.trim() ? head.stdout.trim() : (await readGit(top, ['rev-parse', '--verify', '-q', 'refs/remotes/origin/main'])).ok ? 'origin/main' : undefined;
+  if (!main) return 0;
+  const keys: string[] = [];
+  for (const sha of shas) {
+    // rev-list, not show or log: safe-git runs only what's been looked at.
+    const r = await readGit(top, ['rev-list', '--no-commit-header', '--format=%at%x09%s', '-1', sha]);
+    if (r.ok) keys.push(r.stdout.trim());
+  }
+  const oldest = Math.min(...keys.map((k) => Number(k.split('\t')[0])).filter(Number.isFinite));
+  if (!Number.isFinite(oldest)) return 0;
+  // Landed after it was written: --since reads the commit time, which a
+  // rebase sets to when it landed.
+  const log = await readGit(top, ['rev-list', '--no-commit-header', '--format=%at%x09%s', `--since=@${oldest}`, main]);
+  if (!log.ok) return 0;
+  const onMain = new Set(log.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
+  return keys.filter((k) => onMain.has(k)).length;
+}
+
 export async function editedLooseEnds(edited: string[], commits: string[], skip?: string, opts: EditedOptions = {}): Promise<LooseEnd[]> {
   const { pushed = [], dirs = [], prs = githubPr } = opts;
   const repos = new Map<string, string[]>();
@@ -89,6 +116,10 @@ export async function editedLooseEnds(edited: string[], commits: string[], skip?
   }
   const out: LooseEnd[] = [];
   const budget = { lookups: 0 };
+  // Each commit once, in the first checkout that knows it: worktrees of one
+  // repo share its commits, and a thread's borrowed slots each named the
+  // same ten (Mike, 13 Nov 2026).
+  const seen = new Set<string>();
   for (const [top, files] of repos) {
     const name = path.basename(top);
     const status = files.length ? await readGit(top, ['status', '--porcelain', '--untracked-files=all', '--', ...files]) : undefined;
@@ -97,12 +128,14 @@ export async function editedLooseEnds(edited: string[], commits: string[], skip?
     // A commit the thread made is in this repo if git knows it here.
     const remotes = await readGit(top, ['remote']);
     if (!remotes.ok || !remotes.stdout.trim()) continue;
-    let unpushed = 0;
+    const off: string[] = [];
     for (const sha of commits) {
-      if (!(await readGit(top, ['cat-file', '-e', `${sha}^{commit}`])).ok) continue;
+      if (seen.has(sha) || !(await readGit(top, ['cat-file', '-e', `${sha}^{commit}`])).ok) continue;
+      seen.add(sha);
       const on = await readGit(top, ['branch', '-r', '--contains', sha]);
-      if (on.ok && !on.stdout.trim()) unpushed++;
+      if (on.ok && !on.stdout.trim()) off.push(sha);
     }
+    const unpushed = off.length ? off.length - (await landedByRebase(top, off)) : 0;
     if (unpushed > 0) out.push({ kind: 'unpushed', text: `${unpushed === 1 ? '1 commit' : `${unpushed} commits`} it made in ${name} ${unpushed === 1 ? "isn't" : "aren't"} pushed` });
     out.push(...(await unmergedLooseEnds(top, pushed, prs, budget)));
   }

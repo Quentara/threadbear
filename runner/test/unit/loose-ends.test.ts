@@ -203,6 +203,37 @@ test('looseEnds: files a thread changed in a shared checkout count, not the rest
   assert.deepEqual(await editedLooseEnds([path.join(local, 'x.txt')], [sh(local, 'git rev-parse HEAD')]), []);
 });
 
+// Mike, 13 Nov 2026: a done card listed "10 commits it made in slot-13
+// aren't pushed", and the same for three more slots, for work that had all
+// landed. tb land rebases a thread's commits onto main, so their own ids are
+// never on a remote; and the slots are worktrees of one repo, so the same
+// commits were counted once for each.
+test('looseEnds: commits landed by a rebase are pushed, and worktrees of one repo count them once', async () => {
+  const root = fs.realpathSync(tmpDir('tb-loose-landed-'));
+  const remote = path.join(root, 'remote.git');
+  sh(root, `git init -q --bare -b main ${remote}`);
+  const repo = path.join(root, 'threadbear');
+  fs.mkdirSync(repo);
+  sh(repo, `git init -q -b main && git remote add origin ${remote} && echo one > a.txt && git add -A && git commit -qm init && git push -q -u origin main && git remote set-head origin main`);
+  // The thread's work on its own branch, in a worktree as tb land's are.
+  const wt = path.join(root, 'slot-1');
+  sh(repo, `git worktree add -q -b thread/x ${wt}`);
+  sh(wt, 'echo mine > a.txt && git commit -qam "Fix the thing"');
+  const mine = sh(wt, 'git rev-parse HEAD');
+  sh(wt, 'echo more > b.txt && git add b.txt && git commit -qm "And the other thing"');
+  const more = sh(wt, 'git rev-parse HEAD');
+  // Not landed yet: open, and named once though two checkouts know them.
+  assert.deepEqual(await editedLooseEnds([], [mine, more], undefined, { dirs: [repo, wt] }), [{ kind: 'unpushed', text: "2 commits it made in threadbear aren't pushed" }]);
+  // Main moves on, then tb land rebases the work onto it and pushes: new ids,
+  // same author time and words. One of them had a conflict sorted on the way.
+  sh(repo, 'echo theirs > c.txt && git add c.txt && git commit -qm "Someone else" && git push -q');
+  sh(wt, 'git rebase -q main');
+  sh(wt, 'git commit -q --amend --no-edit --allow-empty');
+  sh(repo, 'git merge -q --ff-only thread/x && git push -q');
+  assert.notEqual(sh(repo, 'git rev-parse HEAD'), more, 'new ids');
+  assert.deepEqual(await editedLooseEnds([], [mine, more], undefined, { dirs: [repo, wt] }), []);
+});
+
 // Security review, 11 Nov 2026 (finding 85): a folder from a zip carries its
 // own .git/config, and a `filter.<name>.clean` there, picked by its
 // .gitattributes, ran from the done card's `git status` as the owner, in
