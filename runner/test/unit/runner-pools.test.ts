@@ -490,6 +490,56 @@ test('a move with nothing to carry on, or carrying on turned off, says the new m
   assert.match(notes(h, other.id).at(-1)!, /takes over from your next message\.$/);
 });
 
+test("an agent's move after a limit never starts a turn by itself: the thread may have more access than the agent", async () => {
+  const h = poolHarness();
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(0.2, 90));
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  h.adapter.last.init();
+  limit(h.adapter.last);
+  await tick();
+  h.runner.update({ threadId: thread.id, poolId: 'codex', byAgent: true });
+  await tick();
+  assert.equal(h.codex.sessions.length, 0);
+  assert.match(notes(h, thread.id).at(-1)!, /takes over from your next message\.$/);
+});
+
+test('a pool with both providers: a Codex model picked from the menu goes to its Codex login and carries on there', async () => {
+  const pools: Pool[] = [{ id: 'claude', title: 'Claude', accountIds: ['claude-main'] }, { id: 'mixed', title: 'Mixed', accountIds: ['codex-main', 'claude-3'] }];
+  const h = poolHarness({ pools });
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(80, 200));
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  h.adapter.last.init();
+  limit(h.adapter.last);
+  await tick();
+  // GPUI's one call: the pool and the model.
+  h.runner.update({ threadId: thread.id, poolId: 'mixed', model: 'gpt-6-luna' });
+  await tick();
+  const t = h.runner.get(thread.id);
+  assert.equal(t.accountId, 'codex-main');
+  assert.equal(t.model, 'gpt-6-luna');
+  assert.equal(h.codex.sessions.length, 1);
+});
+
+test('a turn the CLI starts after a limit stop ends it: a move later starts nothing', async () => {
+  const h = poolHarness();
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(0.2, 90));
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  const s = h.adapter.last;
+  s.init();
+  limit(s);
+  await tick();
+  // A background job finishes and the CLI answers it by itself.
+  s.out({ kind: 'cliTurn', note: 'Background command "sleep 5" completed (exit code 0)' });
+  s.result('completed', 0, undefined, { own: true });
+  await tick();
+  h.runner.update({ threadId: thread.id, poolId: 'codex' });
+  await tick();
+  assert.equal(h.codex.sessions.length, 0);
+});
+
 test('after a restart an early carry-on moves to the login with room, never back to the one that ran dry', async () => {
   const pools: Pool[] = [{ id: 'claude', title: 'Claude', accountIds: ['claude-main', 'claude-3', 'claude-1'] }, { id: 'codex', title: 'Codex', accountIds: ['codex-main'] }];
   const h = poolHarness({ pools });

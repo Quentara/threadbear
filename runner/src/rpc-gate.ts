@@ -204,6 +204,8 @@ export class CallerGate {
       if (this.deps.schedules?.list(id).some((sc) => sc.threadId === id && sc.check?.trim())) throw needs(`moving ${self ? 'this thread' : this.title(id)}, whose folder a schedule's check runs in`, 'move_thread');
       // Never out of a sandbox from here.
       out.unconfine = false;
+      // Nor starting a turn by itself (Runner.update's carry-on).
+      out.byAgent = true;
     }
     return out;
   }

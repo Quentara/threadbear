@@ -2301,6 +2301,9 @@ export class Runner {
     rt.finished = [];
     // Working again, so not finished for threads waiting on it.
     delete rec.finished;
+    // Nor stopped at a limit any more: a move later mustn't carry on a turn
+    // this one has moved past.
+    delete rec.limitHitTurn;
     const turnId = crypto.randomUUID();
     this.emit(st, wokeBy.length ? { type: 'turn.started', turnId, wokeBy } : { type: 'turn.started', turnId }, turnId);
     rt.idleTimer?.cancel();
@@ -2803,6 +2806,10 @@ export class Runner {
     // a sandbox may leave it. Without it, a move or login change that would
     // take it out is refused (ThreadRecord.confined).
     unconfine?: boolean;
+    // An agent's call (update_thread, move_thread, tb from a thread): a
+    // move it makes never starts a turn by itself, as the thread may have
+    // more access than the agent (send_message asks for that).
+    byAgent?: boolean;
   }): { thread: ThreadSummary } {
     const st = this.mustGet(params.threadId);
     const { rec, rt } = st;
@@ -2827,7 +2834,10 @@ export class Runner {
     let toAccountId = params.accountId;
     if (pool && !pool.accountIds.includes(rec.accountId)) {
       const accounts = this.usableAccounts();
-      let id = pickInPool(pool, accounts, { provider: rec.provider });
+      // The named model's provider, when the call names one: in a pool
+      // with both, a Codex model picked from the menu goes to a Codex login.
+      const provider = (params.model && this.modelProvider(params.model)) || rec.provider;
+      let id = pickInPool(pool, accounts, { provider });
       if (!id) {
         const next = nextLogin(pool, accounts, rec, this.clock.now());
         if (!('waitUntil' in next)) id = next.accountId;
@@ -3065,9 +3075,9 @@ export class Runner {
     // tell whether it was on the new model yet or waiting for him, and
     // the Swift limit box's Switch to promises it carries on now). Unless
     // Mike turned carrying on off for this thread, which the menu doesn't
-    // ask about; Continue now on does.
+    // ask about (Continue now on does), or an agent made the move.
     const carriesOn = accountChanged && !stop && !rt.turn && !rec.queue.length && this.bucket(rec) === 'inbox' && rec.limitHitTurn !== undefined
-      && (params.carryOn || rec.carryOnAtReset !== false);
+      && (params.carryOn || (rec.carryOnAtReset !== false && !params.byAgent));
     if (carriesOn) this.carryOn(st, CARRY_ON_MOVED);
     else if (accountChanged && !stop && !rt.turn && rec.handoff) {
       // Idle, with a conversation to hand over: nothing runs until the

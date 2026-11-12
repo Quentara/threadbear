@@ -1976,7 +1976,7 @@ export function buildThreadbearTools(
         const id = await resolve(asked);
         const stops = (snooze !== undefined && snooze.trim().toLowerCase() !== 'off') || archived === true;
         if (id === selfId && stops) throw new Error("Can't snooze or archive this thread from inside its own turn. Do it once the turn is over by calling end_turn with needs \"nothing\" and archive: true, or snooze: and when to wake (the times this takes, or words like \"when the phone arrives\"), again if you already have.");
-        const upd: Parameters<ThreadControl['update']>[0] = { threadId: id };
+        const upd: Parameters<ThreadControl['update']>[0] = { threadId: id, byAgent: true };
         if (title !== undefined) {
           upd.title = title;
           upd.titleBy = mikeAsked ? 'mike' : 'agent';
@@ -2075,7 +2075,7 @@ export function buildThreadbearTools(
           if (reasons.length) await sameFolder(f, cwd);
         }
         // Allowed (or never shut in): it may leave the sandbox now.
-        const t = (await control.update({ threadId: id, cwd, accountId, ...(leaves ? { unconfine: true } : {}) })).thread;
+        const t = (await control.update({ threadId: id, cwd, accountId, byAgent: true, ...(leaves ? { unconfine: true } : {}) })).thread;
         const self = id === selfId;
         if (then?.trim()) {
           await control.send(id, `${MOVE_MESSAGE_PREFIX}${t.cwd}]\n\n${then.trim()}`);

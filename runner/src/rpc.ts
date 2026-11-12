@@ -668,6 +668,8 @@ export class RpcServer {
         // draining runner passing on an agent's move: unconfine false).
         if (p.cwd !== undefined || p.accountId !== undefined || p.poolId !== undefined) upd.unconfine = p.unconfine !== false;
         if (p.poolId !== undefined) upd.poolId = p.poolId === null ? null : reqString(p, 'poolId');
+        // Passed on from a thread's key (rpc-gate) or a draining runner.
+        if (p.byAgent === true) upd.byAgent = true;
         if (p.model !== undefined) upd.model = p.model === null ? null : reqString(p, 'model');
         if (p.effort !== undefined) upd.effort = p.effort === null ? null : optEffort(p);
         if (p.permissionMode !== undefined) upd.permissionMode = optMode(p);
