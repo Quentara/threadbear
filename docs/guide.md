@@ -1729,11 +1729,15 @@ see it pick back up rather than go quiet.
 
 The new desktop app (the `gpuiApp` experiment) follows `main` too, from the
 checkout you installed it from. Its build takes every core of a Mac for
-minutes, so it builds on one of your check hosts (`checkHosts` in
-`runner.json`) and only the finished app comes back. With none set it
-builds on this Mac in the background, and with them set but none
-answering, its Updates panel says it's waiting for a Mac and it tries again
-later. The new version goes in when you quit it, when you choose Restart to
+minutes, so it builds on another Mac you name for it (`updateBuildHosts`
+in `runner.json`, a list of ssh hosts) and only the finished app comes
+back. That Mac's build is what yours runs next, so name one you trust as
+much as this one: a check host (`checkHosts`) only runs tests and never
+builds the app by being one. With neither set it builds on this Mac in the
+background. With check hosts set but no update build host it builds
+nothing, and its Updates panel says to name one. With update build hosts
+set but none answering, the panel says it's waiting for a Mac and it tries
+again later. The new version goes in when you quit it, when you choose Restart to
 Update in its app menu or Updates panel, or by itself once nothing's typed
 and nothing's open that a restart would close (a menu, a dialog, a drag, a
 field you're typing in another of its windows, a Terminal shell running

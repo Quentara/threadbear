@@ -69,7 +69,7 @@ fi
 bundle="$work/Threadbear GPUI.app"
 # The bundle, its icon, signature and build.json (make-bundle.sh), from this
 # checkout, which the installed app then follows.
-"$root/desktop/scripts/make-bundle.sh" "$work" "$bundle" "$root"
+THREADBEAR_BUILT_ON="$build_on" "$root/desktop/scripts/make-bundle.sh" "$work" "$bundle" "$root"
 
 mkdir -p "$HOME/Applications"
 target="$HOME/Applications/Threadbear GPUI.app"

@@ -38,6 +38,7 @@ The agents themselves have whatever access you give them. New threads start with
 
 - Your Mac account is yours. Other processes running as you are trusted.
 - Commits on the `main` your runner follows are yours. The runner builds, deploys and restarts from it.
+- A check host (`checkHosts`) is trusted to run tests, not to build what your Mac runs. The new desktop app's update is built on another Mac only if you name it in `updateBuildHosts`, as what it sends back runs here unchecked; with check hosts but no such host it isn't built at all.
 - Your Convex deploy keys, CLI login and the main runner key stay on your main Mac.
 - Remote runners are reached over Tailscale or a similar private network.
 - Anyone with a share link can read that thread while sharing is on.

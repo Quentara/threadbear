@@ -32,6 +32,10 @@ When("the app's next version is waiting for a Mac to build it on", async functio
   await this.app.do({ cmd: 'updates', preview: 'waiting' });
 });
 
+When('no Mac is trusted to build the app\'s next version', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'updates', preview: 'no-builder' });
+});
+
 // The app menu is the first one, whatever it's called. SwiftUI rebuilds its
 // menus a moment after what they show changes, so this looks a few times.
 Then('the app menu has {string}', async function (this: ThreadbearWorld, title: string) {

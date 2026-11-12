@@ -1190,16 +1190,17 @@ Fixes from Codex's review of the slice before:
   bundle under `taskpolicy -b`. `followMain: false` stops it.
 - Where it builds, chosen for Mike's M5: the release build takes every core
   for 6 to 10 minutes, so `desktop/scripts/stage-update.sh` builds on the
-  first of runner.json's `checkHosts` that's a Mac and answers (Tinker Desk
-  for Mike), through `remote.sh` as `install-app.sh --build-on` does, from a
+  first of runner.json's `updateBuildHosts` that's a Mac and answers (never
+  a check host by being one: its binaries run here unchecked, Daybreak 108), through `remote.sh` as `install-app.sh --build-on` does, from a
   clone of main under `~/Library/Caches/Threadbear/update-desktop` (only
   what's committed on main, never a checkout's work in progress), copies the
   two binaries back and makes the bundle here with `make-bundle.sh`, signed
   with this Mac's identity, into `~/Applications/.Threadbear GPUI.app.next`.
-  With check hosts set and none answering (or the one building it going away
+  With update build hosts set and none answering (or the one building it going away
   or short of disk) it builds nothing: the Updates panel says "waiting for a
-  Mac" and the next look tries again. Only with no check hosts at all (other
-  people's copies) does it build here, at background priority, as the Swift
+  Mac" and the next look tries again. With check hosts but no update build
+  hosts it builds nothing either, and the panel says to name one (exit 5).
+  Only with neither (other people's copies) does it build here, at background priority, as the Swift
   app's update does. One build at a time; a lock left by a run that died is
   taken over.
 - Swapping in, as the Swift app: quitting puts the staged bundle in place in

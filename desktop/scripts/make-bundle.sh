@@ -82,15 +82,20 @@ commit="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
 short="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || true)"
 tree="$(git -C "$root" rev-parse HEAD:desktop 2>/dev/null || true)"
 origin="$(git -C "$checkout" remote get-url origin 2>/dev/null || true)"
-/usr/bin/python3 -I - "$bundle/Contents/Resources/build.json" "$commit" "$short" "$tree" "$checkout" "$origin" <<'PY'
+# builtOn: the host the binaries came from ("" for this Mac), when the caller
+# says (stage-update.sh does), so the log can tell which Mac made what runs.
+/usr/bin/python3 -I - "$bundle/Contents/Resources/build.json" "$commit" "$short" "$tree" "$checkout" "$origin" "${THREADBEAR_BUILT_ON-}" "${THREADBEAR_BUILT_ON+set}" <<'PY'
 import datetime, json, sys
-path, commit, short, tree, checkout, origin = sys.argv[1:]
+path, commit, short, tree, checkout, origin, built_on, said = sys.argv[1:]
+info = {
+    "commit": commit, "short": short, "appTree": tree, "checkout": checkout,
+    "configuration": "release", "origin": origin,
+    "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+}
+if said:
+    info["builtOn"] = built_on
 with open(path, "w") as f:
-    json.dump({
-        "commit": commit, "short": short, "appTree": tree, "checkout": checkout,
-        "configuration": "release", "origin": origin,
-        "builtAt": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-    }, f, indent=2)
+    json.dump(info, f, indent=2)
 PY
 
 # The update script, so the app runs the copy it was built with

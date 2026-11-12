@@ -657,8 +657,8 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
         return Ok(json!("ok"));
     }
     if let Some(state) = cmd["preview"].as_str() {
-        if !["staged", "building", "failed", "waiting", "none"].contains(&state) {
-            return Err("preview is staged, building, failed, waiting or none".into());
+        if !["staged", "building", "failed", "waiting", "no-builder", "none"].contains(&state) {
+            return Err("preview is staged, building, failed, waiting, no-builder or none".into());
         }
         app.update(cx, |t, cx| t.preview_update(state, cx));
     }

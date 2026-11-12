@@ -1227,3 +1227,23 @@ test("Bruce's key can't make a thread or a sidebar row under an id with shell or
   assert.deepEqual(s.rows('threads').map((r) => r.threadId).sort(), [UUID(7), 'demo_upload']);
   assert.deepEqual(s.rows('threadIndex').map((r) => r.threadId), [UUID(7)]);
 });
+
+// ------------------------------------------------------------ Daybreak 109 (12 Nov 2026)
+
+// A lab review's counts are numbers a client turns into an Int, and 1e20
+// there stopped the iPhone app on its thread list. A runner key's row
+// carries only small whole ones; the owner's own rows are trusted as before.
+test("Bruce's key can't store a lab review whose numbers would stop a phone", async () => {
+  const s = await setup();
+  const finding = (id: unknown, round: unknown = 1) => ({ id, round, severity: 'high', claim: `c${String(id)}` });
+  for (const bad of [1e20, -1e20, 1.5, -3, Number.MAX_VALUE, 2 ** 63]) {
+    const review = { reviewer: 'Codex', independent: true, rounds: bad, threadId: 'r', passed: false, findings: [finding(bad), finding(2, bad)] };
+    await s.bruce.upsert(thread(UUID(9), BRUCE, { review, cardTurn: 'aaaa1111' }));
+    const r = s.rows('threads').find((t) => t.threadId === UUID(9))!.review;
+    assert.equal(r.rounds, 1, String(bad));
+    assert.deepEqual(r.findings.map((f: any) => [f.id, f.round]), [[2, 1]], String(bad));
+  }
+  const fine = { reviewer: 'Codex', independent: true, rounds: 3, threadId: 'r', passed: false, findings: [finding(1, 2)] };
+  await s.bruce.upsert(thread(UUID(9), BRUCE, { review: fine }));
+  assert.deepEqual(s.rows('threads').find((t) => t.threadId === UUID(9))!.review, fine);
+});

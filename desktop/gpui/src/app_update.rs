@@ -5,8 +5,11 @@
 // running it builds that commit into ~/Applications/.Threadbear GPUI.app.next
 // (desktop/scripts/stage-update.sh, from the bundle). The Rust release build
 // takes every core for minutes, so the script builds on a Mac among
-// runner.json's checkHosts and only the binaries come back: nothing's built on
-// this Mac unless no check hosts are set (someone else's copy).
+// runner.json's updateBuildHosts and only the binaries come back. Check hosts
+// never build it: what comes back is what runs here, and they're trusted only
+// with tests (Daybreak 108). With check hosts but no update build hosts it
+// builds nowhere and the Updates panel says so; with neither (someone else's
+// copy) it builds here.
 //
 // Quitting swaps the staged bundle in, so the next launch is the new app; a
 // launch that finds one staged (the app was killed rather than quit) swaps it
@@ -28,6 +31,9 @@ use serde_json::json;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::OnceLock;
+
+/// The Updates panel's reason, after "The app isn't following main: ".
+const NO_BUILDER: &str = "no Mac is trusted to build it. Check hosts only run tests, so add one you trust with what this Mac runs to updateBuildHosts in runner.json";
 use std::time::Duration;
 use threadbear_core::app_update::{self as rules, Action, BuildInfo};
 
@@ -49,6 +55,10 @@ pub(crate) struct AppUpdater {
     pub(crate) failed: Option<String>,
     /// The last build found no Mac to build on; the next look tries again.
     pub(crate) waiting_for_host: bool,
+    /// The last build found no Mac trusted to build it (stage-update.sh's 5:
+    /// check hosts but no updateBuildHosts), so Mike has to name one; the
+    /// next look tries again, so naming one is picked up without a restart.
+    pub(crate) no_builder: bool,
     /// Why it isn't following main: for the log, and the Updates panel when
     /// it's the installed app.
     pub(crate) disabled: Option<String>,
@@ -435,6 +445,11 @@ impl Threadbear {
     fn update_build_finished(&mut self, tree: String, status: Option<i32>, cx: &mut Context<Self>) {
         self.updater.building = None;
         self.updater.build_pid = None;
+        let no_builder = status == Some(5);
+        if no_builder && !self.updater.no_builder {
+            note("no Mac is trusted to build the update: add one to updateBuildHosts in runner.json (check hosts only run tests)");
+        }
+        self.updater.no_builder = no_builder;
         match status {
             Some(0) => match BuildInfo::read(&next_dir()) {
                 Some(info) => {
@@ -449,6 +464,8 @@ impl Threadbear {
             },
             // No Mac answered to build on: the next look tries again.
             Some(4) => self.updater.waiting_for_host = true,
+            // None is trusted to: also tried again, once Mike names one.
+            Some(5) => {}
             // Another build holds the lock: the next look sees how it went.
             Some(3) => {}
             _ => {
@@ -595,12 +612,14 @@ impl Threadbear {
             building: u.building.is_some(),
             failed: u.failed.is_some() && u.staged.is_none(),
             waiting: u.waiting_for_host && u.staged.is_none() && u.building.is_none(),
-            // Only the installed app's reasons: every other launch is meant not to.
-            not_following: u.disabled.clone().filter(|_| installed::launch().installed),
+            // Only the installed app's reasons: every other launch is meant
+            // not to. No builder is only ever set by an installed app's build
+            // (or a scripted app's made-up update).
+            not_following: u.disabled.clone().filter(|_| installed::launch().installed).or_else(|| u.no_builder.then(|| NO_BUILDER.to_owned())),
         }
     }
 
-    /// A made-up update that's "staged", "building", "failed" or "waiting"
+    /// A made-up update that's "staged", "building", "failed", "waiting" or "no-builder"
     /// (or none, on abc1234), for a scripted app's pictures and specs, as
     /// the Swift app's `previewUpdate`. Only scripts reach it, through the
     /// Updates panel's `updates` command.
@@ -613,6 +632,7 @@ impl Threadbear {
         u.building = (state == "building").then(|| "def5678".to_owned());
         u.failed = (state == "failed").then(|| "def5678".to_owned());
         u.waiting_for_host = state == "waiting";
+        u.no_builder = state == "no-builder";
         self.menus_stale = true;
         cx.notify();
     }

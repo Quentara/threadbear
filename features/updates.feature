@@ -54,6 +54,15 @@ Feature: The Updates panel
     And I open the Updates panel
     Then the Updates panel lists "The app has a new version on main, waiting for a Mac to build it on."
 
+  # Check hosts only run tests: what an update's build host sends back runs
+  # here, so it's only one named in updateBuildHosts (Daybreak 108). With
+  # check hosts and none of those it builds nowhere and asks for one.
+  @system.selfupdate @swift-pending
+  Scenario: With check hosts but no update build host it asks for one
+    When no Mac is trusted to build the app's next version
+    And I open the Updates panel
+    Then the Updates panel lists "The app isn't following main: no Mac is trusted to build it. Check hosts only run tests, so add one you trust with what this Mac runs to updateBuildHosts in runner.json."
+
   # Going in by itself: straight away with another app in front, and in front
   # once it's had five seconds with no input (core's should_auto_restart, with
   # its tests), but never over words typed or a menu that's open. The GPUI app

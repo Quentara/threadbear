@@ -189,9 +189,16 @@ export type RunnerJson = {
   // The ssh host that ./check.sh sends the repo's checks to, so suites and
   // the app's test windows stay off this Mac (scripts/check-remote.sh), or
   // checkHosts, several tried in order, which wins (a check.sh from before
-  // the list reads only checkHost). Only check.sh reads them.
+  // the list reads only checkHost). Trusted to run tests only: never to build
+  // anything this Mac then runs (updateBuildHosts).
   checkHost?: string;
   checkHosts?: string[];
+  // The ssh hosts the installed GPUI app's update is built on, tried in order
+  // (desktop/scripts/stage-update.sh): what one sends back is what this Mac
+  // runs next, so a host goes here only by the owner's choice, never because
+  // it's a check host (Daybreak 108, 12 Nov 2026). With check hosts but none
+  // of these the app builds nothing; with neither it builds on this Mac.
+  updateBuildHosts?: string[];
   // How far below normal the builds and tests Threadbear starts itself run:
   // 'background', 'low' (the default) or 'normal' (background.ts). check.sh
   // reads it too, for its fallback when no check host answers.
