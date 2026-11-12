@@ -92,13 +92,13 @@ private struct UsageSettings: View {
             HStack(spacing: zoomed(7)) {
                 Image(systemName: "gearshape").foregroundStyle(.secondary)
                 Text("Settings")
-                    .font(.system(size: zoomed(13), weight: .semibold))
+                    .font(.app(size: zoomed(13), weight: .semibold))
                     .accessibilityAddTraits(.isHeader)
             }
             // The switch at the right edge, in line with the numbers above.
             HStack {
                 Text("Show " + modelWeeks.joined(separator: ", "))
-                    .font(.system(size: zoomed(12)))
+                    .font(.app(size: zoomed(12)))
                 Spacer()
                 Toggle("Show " + modelWeeks.joined(separator: ", "), isOn: $showModelWeeks)
                     .labelsHidden()
@@ -682,7 +682,7 @@ private struct WeekChart: View {
                 AxisValueLabel(collisionResolution: .greedy) {
                     if let date = value.as(Date.self) { Text(Self.day(date)) }
                 }
-                .font(.system(size: zoomed(9.5)))
+                .font(.app(size: zoomed(9.5)))
                 .foregroundStyle(Color.secondary)
             }
         }

@@ -32,13 +32,13 @@ struct DecisionsSection: View {
                     .buttonStyle(.link)
                     .tip("Its goals, state, notes and threads")
             }
-            .font(.system(size: TypeScale.label))
+            .font(.app(size: TypeScale.label))
             .padding(.top, zoomed(4))
         } else if !threads.isEmpty {
             VStack(alignment: .leading, spacing: zoomed(12)) {
                 if tabbed {
                     Text(ProjectDecisions.heading(decisions: ProjectDecisions.count(threads), threads: threads.count))
-                        .font(.system(size: TypeScale.small))
+                        .font(.app(size: TypeScale.small))
                         .foregroundStyle(Color(nsColor: Theme.faintText))
                 } else {
                     PageHeading(title: "Decisions", detail: ProjectDecisions.heading(decisions: ProjectDecisions.count(threads), threads: threads.count))

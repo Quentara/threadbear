@@ -121,7 +121,7 @@ private struct ProjectCardView: View {
                     // them with their state.
                     if !card.parts.isEmpty {
                         Label(card.parts.map(\.title).joined(separator: " · "), systemImage: "square.stack")
-                            .font(.system(size: TypeScale.sidebarMeta + 1))
+                            .font(.app(size: TypeScale.sidebarMeta + 1))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                             .labelStyle(.titleAndIcon)

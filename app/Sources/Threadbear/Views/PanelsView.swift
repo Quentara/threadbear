@@ -460,7 +460,7 @@ struct PatchesList: View {
                 // Why threads in Ask and Auto ask before every edit.
                 if let editsAsk = patch.editsAsk {
                     Text(editsAsk)
-                        .font(.system(size: TypeScale.detail))
+                        .font(.app(size: TypeScale.detail))
                         .foregroundStyle(Color(nsColor: Theme.needsYou))
                         .textSelection(.enabled)
                 }
