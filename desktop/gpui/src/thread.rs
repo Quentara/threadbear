@@ -1478,10 +1478,10 @@ impl ThreadPane {
                 }
                 #[cfg(feature = "automation")]
                 if let RowContent::Assistant(item) = &row.content {
-                    if let Some(labels) = crate::reply_buttons::dump_labels(&item.text) {
+                    if let Some(labels) = crate::reply_buttons::dump_labels(&item.text, &self.summary.id) {
                         out["buttons"] = json!(labels);
                     }
-                    if let Some(drafts) = crate::draft_boxes::dump(&item.text) {
+                    if let Some(drafts) = crate::draft_boxes::dump(&item.text, &self.summary.id) {
                         out["drafts"] = drafts;
                     }
                     // Its ```mermaid and ```html boxes (rich_boxes.rs).

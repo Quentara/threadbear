@@ -360,8 +360,10 @@ impl Asset for LocalPicture {
     }
 }
 
-pub(crate) fn prepare(text: &str) -> String {
-    link_code_paths(&escape_work_links(&crate::reply_buttons::unknown_as_words(text)))
+/// A reply's text in `thread`'s transcript, ready to parse: its buttons
+/// that aren't `thread`'s own as words (`unknown_as_words`).
+pub(crate) fn prepare(text: &str, thread: &str) -> String {
+    link_code_paths(&escape_work_links(&crate::reply_buttons::unknown_as_words(text, thread)))
 }
 
 fn escape_work_links(text: &str) -> String {
@@ -760,12 +762,12 @@ mod tests {
 
     #[test]
     fn code_paths_become_links_outside_fences_and_links() {
-        assert_eq!(prepare("see `src/a.rs` here"), "see [`src/a.rs`](tbpath:?p=src/a.rs) here");
-        assert_eq!(prepare("`npm test` stays"), "`npm test` stays");
+        assert_eq!(prepare("see `src/a.rs` here", "t"), "see [`src/a.rs`](tbpath:?p=src/a.rs) here");
+        assert_eq!(prepare("`npm test` stays", "t"), "`npm test` stays");
         // Already a link's words, or in a code block: left as they are.
-        assert_eq!(prepare("[`src/a.rs`](https://x.y)"), "[`src/a.rs`](https://x.y)");
-        assert_eq!(prepare("```\n`src/a.rs`\n```"), "```\n`src/a.rs`\n```");
+        assert_eq!(prepare("[`src/a.rs`](https://x.y)", "t"), "[`src/a.rs`](https://x.y)");
+        assert_eq!(prepare("```\n`src/a.rs`\n```", "t"), "```\n`src/a.rs`\n```");
         // Work links keep their words, gain the arrow and escape their spaces.
-        assert_eq!(prepare("[tests](work:npm test)"), "[tests\u{2009}↑](work:npm%20test)");
+        assert_eq!(prepare("[tests](work:npm test)", "t"), "[tests\u{2009}↑](work:npm%20test)");
     }
 }

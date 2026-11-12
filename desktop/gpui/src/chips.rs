@@ -783,7 +783,7 @@ impl ThreadPane {
         match &row.content {
             RowContent::Assistant(item) => {
                 use crate::rows::markdown::{pictures, prepare};
-                link_thread_ids(&prepare(&pictures(&item.text, self.summary.runner_id.is_none())), &resolve).1
+                link_thread_ids(&prepare(&pictures(&item.text, self.summary.runner_id.is_none()), &self.summary.id), &resolve).1
             }
             RowContent::User(message) => match message.agent_header() {
                 Some(header) => {

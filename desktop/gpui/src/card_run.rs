@@ -30,10 +30,10 @@ pub(crate) struct RunTarget {
     pub(crate) app: WeakEntity<Threadbear>,
 }
 
-/// The run's state as this app last heard of its button.
-fn state(run: &AskRun) -> (RunState, Option<String>) {
-    let button = run.button_id.as_deref().and_then(reply_buttons::known).map(|(_, b)| b);
-    let pressing = run.button_id.as_deref().is_some_and(reply_buttons::is_pressing);
+/// The run's state as this app last heard of its button, one of `thread`'s.
+fn state(run: &AskRun, thread: Option<&str>) -> (RunState, Option<String>) {
+    let button = run.button_id.as_deref().zip(thread).and_then(|(id, thread)| reply_buttons::known(thread, id));
+    let pressing = run.button_id.as_deref().zip(thread).is_some_and(|(id, thread)| reply_buttons::is_pressing(thread, id));
     run_state(run, button.as_ref(), pressing)
 }
 
@@ -41,7 +41,7 @@ fn state(run: &AskRun) -> (RunState, Option<String>) {
 /// spinning while it's going. With nowhere to press it (`target` None) the
 /// command shows without Run.
 pub(crate) fn render_run<H: AskHost>(index: usize, run: &AskRun, indent: Pixels, target: Option<RunTarget>, cx: &mut Context<H>) -> AnyElement {
-    let (state, failed) = state(run);
+    let (state, failed) = state(run, target.as_ref().map(|t| t.thread.as_str()));
     let mono = cx.theme().mono_font_family.clone();
     // 8 under the words, the box 12 round the command (codePad), the command
     // whole however long, as the Swift box keeps it.
@@ -97,7 +97,7 @@ pub(crate) fn render_run<H: AskHost>(index: usize, run: &AskRun, indent: Pixels,
 /// as it goes.
 fn press<H: 'static>(run: &AskRun, button_id: &str, target: &RunTarget, host: WeakEntity<H>, cx: &mut App) {
     let Some(client) = target.client.clone().or_else(|| target.app.upgrade().map(|app| app.read(cx).client.clone())) else { return };
-    if !state(run).0.can_press() || !reply_buttons::set_pressing(button_id, true) {
+    if !state(run, Some(&target.thread)).0.can_press() || !reply_buttons::set_pressing(&target.thread, button_id, true) {
         return;
     }
     // Running… at once; after this update, as the host may be in one (the
@@ -119,7 +119,7 @@ fn press<H: 'static>(run: &AskRun, button_id: &str, target: &RunTarget, host: We
                 app.update(cx, |app, cx| app.show_error(e.message, cx)).ok();
             }
         }
-        reply_buttons::set_pressing(&id, false);
+        reply_buttons::set_pressing(&thread, &id, false);
         host.update(cx, |_, cx| cx.notify()).ok();
     })
     .detach();
@@ -141,6 +141,7 @@ pub(crate) fn press_ask<H: AskHost>(host: &mut H, run: &AskRun, cx: &mut Context
 #[cfg(feature = "automation")]
 pub(crate) fn composer_lines(composer: &crate::composer::Composer, cx: &App) -> Option<Vec<String>> {
     let card = composer.open_card(cx).filter(|c| !c.is_done())?;
-    let lines: Vec<String> = card.asks.iter().filter_map(|a| a.run.as_ref()).filter(|r| r.button_id.is_some()).map(|r| format!("{}: {}", state(r).0.title(), r.command)).collect();
+    let thread = composer.thread_id.as_deref();
+    let lines: Vec<String> = card.asks.iter().filter_map(|a| a.run.as_ref()).filter(|r| r.button_id.is_some()).map(|r| format!("{}: {}", state(r, thread).0.title(), r.command)).collect();
     (!lines.is_empty()).then_some(lines)
 }

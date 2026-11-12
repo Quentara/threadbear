@@ -548,12 +548,12 @@ fn ease_out_cubic(t: f32) -> f32 {
 /// label, its lines as drawn, its formatted pieces, and what Copy says. Found
 /// with the same parser and the same check the box is drawn by.
 #[cfg(feature = "automation")]
-pub(crate) fn dump(text: &str) -> Option<serde_json::Value> {
+pub(crate) fn dump(text: &str, thread: &str) -> Option<serde_json::Value> {
     use serde_json::json;
     if !DraftBlock::may_hold(text) {
         return None;
     }
-    let source = crate::rows::markdown::prepare(text);
+    let source = crate::rows::markdown::prepare(text, thread);
     let root = markdown::to_mdast(&source, &markdown::ParseOptions::gfm()).ok()?;
     let mut drafts = Vec::new();
     collect(&root, &source, &mut drafts);
@@ -599,10 +599,10 @@ pub(crate) fn automation(app: &Entity<crate::app::Threadbear>, cmd: &serde_json:
         .pane
         .as_ref()
         .and_then(|p| {
-            let rows = p.read(cx).feed.model().rows();
+            let (rows, thread) = (p.read(cx).feed.model().rows(), &p.read(cx).summary.id);
             match &prefix {
                 Some(prefix) => rows.iter().find(|r| r.id.starts_with(prefix)),
-                None => rows.iter().rev().find(|r| matches!(&r.content, RowContent::Assistant(item) if dump(&item.text).is_some())),
+                None => rows.iter().rev().find(|r| matches!(&r.content, RowContent::Assistant(item) if dump(&item.text, thread).is_some())),
             }
             .map(|r| r.id.clone())
         })

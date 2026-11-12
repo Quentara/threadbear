@@ -708,15 +708,15 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         // {"cmd":"press-button","id":"b7k2abcd"} (or "title":"Fill in the
         // form") clicks a reply button in the open thread as its pill would.
         "press-button" => {
-            let ids = app.read(cx).pane.as_ref().map(|p| p.read(cx).linked_buttons()).unwrap_or_default();
+            let (thread, ids) = app.read(cx).pane.as_ref().map(|p| (p.read(cx).summary.id.clone(), p.read(cx).linked_buttons())).unwrap_or_default();
             let id = cmd["id"].as_str().and_then(|want| ids.iter().rev().find(|id| *id == want).cloned()).or_else(|| {
-                cmd["title"].as_str().and_then(|want| ids.iter().rev().find(|id| crate::reply_buttons::known(id).is_some_and(|(_, b)| b.title == want)).cloned())
+                cmd["title"].as_str().and_then(|want| ids.iter().rev().find(|id| crate::reply_buttons::known(&thread, id).is_some_and(|b| b.title == want)).cloned())
             });
             let Some(id) = id else { return Err("no reply button like that in the open thread".into()) };
-            if crate::reply_buttons::known(&id).is_none() {
+            if crate::reply_buttons::known(&thread, &id).is_none() {
                 return Err(format!("button {id} isn't known"));
             }
-            app.update(cx, |t, cx| t.press_reply_button(id, window, cx));
+            app.update(cx, |t, cx| t.press_reply_button(thread, id, window, cx));
             Ok(json!("ok"))
         }
         "clipboard" => {

@@ -308,8 +308,8 @@ impl Threadbear {
         // A reply button's pill presses through here (reply_buttons.rs): the
         // kit draws it inside the reply's text, where there's no app to hand.
         let press_app = app.clone();
-        cx.set_global(crate::reply_buttons::PressHook(Rc::new(move |id: String, window: &mut Window, cx: &mut App| {
-            press_app.update(cx, |this, cx| this.press_reply_button(id, window, cx)).ok();
+        cx.set_global(crate::reply_buttons::PressHook(Rc::new(move |thread: String, id: String, window: &mut Window, cx: &mut App| {
+            press_app.update(cx, |this, cx| this.press_reply_button(thread, id, window, cx)).ok();
         })));
         let dock = cx.new(|_| {
             let mut model = DockModel::new(layout);
@@ -511,16 +511,24 @@ impl Threadbear {
     /// pressed yet: presses it, "…" until the runner answers, and a second
     /// click meanwhile does nothing. Pressed: opens the thread it started or
     /// messaged rather than pressing again.
-    pub(crate) fn press_reply_button(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        let Some((thread_id, button)) = crate::reply_buttons::known(&id) else { return };
-        // Only from the transcript of the thread that made it: ids are the
-        // runner's per thread, and a link copied into another thread's reply
-        // mustn't press this one. A thread in a panel of its own has its
-        // transcript there (thread_panels.rs).
-        if self.selected.as_deref() != Some(thread_id.as_str()) && self.thread_panel_pane(&thread_id).is_none() {
+    pub(crate) fn press_reply_button(&mut self, from: String, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        // `from` is the thread whose transcript the pill was drawn in, not a
+        // guess from the id: a button presses only from its own thread's
+        // transcript, so `[Go](button:<id>)` copied into another thread's
+        // reply presses nothing, even while the thread that made it is open
+        // beside it in a panel (Daybreak 107, 12 Nov 2026). `known` looks the
+        // id up among `from`'s own buttons only.
+        let Some(button) = crate::reply_buttons::known(&from, &id) else {
             self.show_error("That button belongs to another thread, so it can't be pressed from here.".into(), cx);
             return;
+        };
+        // And that transcript is one on show: the main panel's thread, or one
+        // in a panel of its own (thread_panels.rs).
+        if self.selected.as_deref() != Some(from.as_str()) && self.thread_panel_pane(&from).is_none() {
+            self.show_error("That button's thread isn't open, so it can't be pressed from here.".into(), cx);
+            return;
         }
+        let thread_id = from;
         if let Some(pressed) = &button.pressed {
             if self.threads.contains_key(&pressed.thread_id) {
                 self.open(pressed.thread_id.clone(), window, cx);
@@ -530,7 +538,7 @@ impl Threadbear {
             }
             return;
         }
-        if !crate::reply_buttons::set_pressing(&id, true) {
+        if !crate::reply_buttons::set_pressing(&thread_id, &id, true) {
             return;
         }
         self.redraw_pane(cx);
@@ -546,7 +554,7 @@ impl Threadbear {
                     }
                     Err(e) => this.show_error(e.message, cx),
                 }
-                crate::reply_buttons::set_pressing(&id, false);
+                crate::reply_buttons::set_pressing(&thread_id, &id, false);
                 this.redraw_pane(cx);
             })
             .ok();

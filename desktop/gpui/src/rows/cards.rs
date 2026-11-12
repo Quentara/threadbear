@@ -699,7 +699,7 @@ impl ThreadPane {
         // The plan (its start, until it's opened), or once approved its
         // checklist with the plan under it when opened.
         let plan_markdown = if expanded { body_text.clone() } else { preview };
-        let doc = (!plan_markdown.is_empty() && (plan.entries.is_empty() || expanded)).then(|| self.markdown_state(&format!("plan-{}", plan.item_id), &markdown_source(&plan_markdown), cx));
+        let doc = (!plan_markdown.is_empty() && (plan.entries.is_empty() || expanded)).then(|| self.markdown_state(&format!("plan-{}", plan.item_id), &markdown_source(&plan_markdown, &self.summary.id), cx));
         let text_style = self.reading_style(cx);
         let mut content = v_flex().child(heading);
         let mut body = v_flex().mt(px(8.));
@@ -797,8 +797,8 @@ impl ThreadPane {
 }
 
 /// Plan text goes through the same preparation as a reply's.
-fn markdown_source(text: &str) -> String {
-    super::markdown::prepare(text)
+fn markdown_source(text: &str, thread: &str) -> String {
+    super::markdown::prepare(text, thread)
 }
 
 fn question_option(

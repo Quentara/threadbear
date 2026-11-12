@@ -337,7 +337,8 @@ impl ThreadPane {
                 let _ = weak.update(cx, |this, cx| this.follow_link(&url, &row_id, command, window, cx));
             })
             // `[title](button:<id>)` as a pill that presses it.
-            .plugin(crate::reply_buttons::Pills)
+            // Only this thread's own buttons, pressed as this thread.
+            .plugin(crate::reply_buttons::Pills { thread: self.summary.id.clone() })
             // Pictures from files on this Mac, in this Mac's threads only
             // (`markdown::picture_source`).
             .image_source(move |uri| markdown::picture_source(uri, local))
@@ -353,7 +354,7 @@ impl ThreadPane {
     /// go. `row.rs`'s `TextItem::text` is the whole reply so far; `prepare`
     /// escapes work links and `set_text` appends what's new.
     fn assistant_row(&mut self, ix: usize, row: &Row, item: &TextItem, cx: &mut Context<Self>) -> AnyElement {
-        let source = markdown::prepare(&markdown::pictures(&item.text, self.summary.runner_id.is_none()));
+        let source = markdown::prepare(&markdown::pictures(&item.text, self.summary.runner_id.is_none()), &self.summary.id);
         // Thread ids as chips (chips.rs).
         let source = self.with_thread_chips(source, cx);
         let doc = self.markdown_state(&item.item_id, &source, cx);

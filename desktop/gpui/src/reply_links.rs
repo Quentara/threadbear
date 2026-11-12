@@ -821,7 +821,7 @@ impl ThreadPane {
     fn link_words(&self, row: &str, url: &str) -> Option<String> {
         let row = self.feed.model().rows().iter().find(|r| r.id == row)?;
         let source = match &row.content {
-            RowContent::Assistant(item) => crate::rows::markdown::prepare(&item.text),
+            RowContent::Assistant(item) => crate::rows::markdown::prepare(&item.text, &self.summary.id),
             RowContent::User(message) => message.agent_header()?.body,
             _ => return None,
         };
@@ -937,7 +937,7 @@ pub(crate) fn peek_command(app: &Entity<crate::app::Threadbear>, cmd: &serde_jso
         hide_peek(cx);
         return Some(Ok(json!("ok")));
     }
-    let links = reply_links_in(&crate::rows::markdown::prepare(&item.text));
+    let links = reply_links_in(&crate::rows::markdown::prepare(&item.text, &pane.read(cx).summary.id));
     let named = |url: &str| -> Option<String> {
         match pane.read(cx).link_target(url)? {
             LinkTarget::Web(web) => Some(web),
