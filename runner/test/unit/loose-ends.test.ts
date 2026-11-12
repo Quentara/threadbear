@@ -234,6 +234,26 @@ test('looseEnds: commits landed by a rebase are pushed, and worktrees of one rep
   assert.deepEqual(await editedLooseEnds([], [mine, more], undefined, { dirs: [repo, wt] }), []);
 });
 
+// Codex's review, 13 Nov 2026: what makes a rebased commit look landed
+// mustn't hide real work here.
+test('looseEnds: an amend of a pushed commit, still on its branch, is unpushed; a master repo is read too', async () => {
+  const root = fs.realpathSync(tmpDir('tb-loose-amend-'));
+  const remote = path.join(root, 'remote.git');
+  sh(root, `git init -q --bare -b master ${remote}`);
+  const repo = path.join(root, 'app');
+  fs.mkdirSync(repo);
+  sh(repo, `git init -q -b master && git remote add origin ${remote} && echo one > a.txt && git add -A && git commit -qm init && git push -q -u origin master`);
+  sh(repo, 'echo mine > a.txt && git commit -qam "Fix the thing" && git push -q');
+  const pushed = sh(repo, 'git rev-parse HEAD');
+  // Changed and amended, not pushed: same author time and words as the one on master.
+  sh(repo, 'echo better > a.txt && git commit -q -a --amend --no-edit');
+  const amended = sh(repo, 'git rev-parse HEAD');
+  assert.deepEqual(await editedLooseEnds([], [pushed, amended], undefined, { dirs: [repo] }), [{ kind: 'unpushed', text: "1 commit it made in app isn't pushed" }]);
+  // No origin/HEAD here: master is found as main is, and a rebased landing on it counts.
+  sh(repo, 'git push -q -f');
+  assert.deepEqual(await editedLooseEnds([], [pushed, amended], undefined, { dirs: [repo] }), []);
+});
+
 // Security review, 11 Nov 2026 (finding 85): a folder from a zip carries its
 // own .git/config, and a `filter.<name>.clean` there, picked by its
 // .gitattributes, ran from the done card's `git status` as the owner, in

@@ -58,28 +58,45 @@ export async function worktreeLooseEnds(w: WorktreeRecord): Promise<LooseEnd[]> 
 export type EditedOptions = { pushed?: string[]; dirs?: string[]; prs?: PrLookup };
 
 
+/** The remote's main branch ("origin/main"), as origin/HEAD names it, else main or master. */
+async function remoteMain(top: string): Promise<string | undefined> {
+  const head = await readGit(top, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  let main = head.ok ? head.stdout.trim() : '';
+  for (const guess of ['origin/main', 'origin/master']) {
+    if (main) break;
+    if ((await readGit(top, ['rev-parse', '--verify', '--quiet', `refs/remotes/${guess}`])).ok) main = guess;
+  }
+  return main.startsWith('origin/') ? main : undefined;
+}
+
+// How far back main is read for a landed commit: a day or two of a busy
+// repo's commits, read once per check.
+const LANDED_LOOKBACK = 3000;
+
 /**
  * How many of `shas`, on no remote branch themselves, landed on the remote's
  * main as other commits: tb land rebases a thread's work onto main, which
  * gives each commit a new id (and a conflict sorted on the way, new
- * contents), but keeps its author time and its words. One on main with the
- * same pair is that commit, landed.
+ * contents), but keeps its author, author time and words, and leaves the
+ * old commit on no branch at all. One still on a local branch is work here
+ * that hasn't gone (an amend of a pushed commit keeps its time and words
+ * too, Codex's review, 13 Nov 2026), so only one on no branch can match.
  */
 async function landedByRebase(top: string, shas: string[]): Promise<number> {
-  const head = await readGit(top, ['rev-parse', '--abbrev-ref', 'refs/remotes/origin/HEAD']);
-  const main = head.ok && head.stdout.trim() ? head.stdout.trim() : (await readGit(top, ['rev-parse', '--verify', '-q', 'refs/remotes/origin/main'])).ok ? 'origin/main' : undefined;
+  const main = await remoteMain(top);
   if (!main) return 0;
   const keys: string[] = [];
   for (const sha of shas) {
+    const local = await readGit(top, ['branch', '--contains', sha]);
+    if (!local.ok || local.stdout.trim()) continue;
     // rev-list, not show or log: safe-git runs only what's been looked at.
-    const r = await readGit(top, ['rev-list', '--no-commit-header', '--format=%at%x09%s', '-1', sha]);
-    if (r.ok) keys.push(r.stdout.trim());
+    const r = await readGit(top, ['rev-list', '--no-commit-header', '--format=%at%x09%ae%x09%s', '-1', sha]);
+    if (r.ok && r.stdout.trim()) keys.push(r.stdout.trim());
   }
-  const oldest = Math.min(...keys.map((k) => Number(k.split('\t')[0])).filter(Number.isFinite));
-  if (!Number.isFinite(oldest)) return 0;
-  // Landed after it was written: --since reads the commit time, which a
-  // rebase sets to when it landed.
-  const log = await readGit(top, ['rev-list', '--no-commit-header', '--format=%at%x09%s', `--since=@${oldest}`, main]);
+  if (!keys.length) return 0;
+  // A count, not --since: that goes by commit time and stops early on a
+  // clock that was off (Codex's review).
+  const log = await readGit(top, ['rev-list', '--no-commit-header', '--format=%at%x09%ae%x09%s', `--max-count=${LANDED_LOOKBACK}`, `refs/remotes/${main}`]);
   if (!log.ok) return 0;
   const onMain = new Set(log.stdout.split('\n').map((l) => l.trim()).filter(Boolean));
   return keys.filter((k) => onMain.has(k)).length;
@@ -116,9 +133,10 @@ export async function editedLooseEnds(edited: string[], commits: string[], skip?
   }
   const out: LooseEnd[] = [];
   const budget = { lookups: 0 };
-  // Each commit once, in the first checkout that knows it: worktrees of one
-  // repo share its commits, and a thread's borrowed slots each named the
-  // same ten (Mike, 13 Nov 2026).
+  // Each commit once per repo: worktrees of one repo share its commits, and
+  // a thread's borrowed slots each named the same ten (Mike, 13 Nov 2026).
+  // Per repo (its common .git), not overall: two clones with different
+  // remotes are two places it could still need pushing (Codex's review).
   const seen = new Set<string>();
   for (const [top, files] of repos) {
     const name = path.basename(top);
@@ -128,10 +146,12 @@ export async function editedLooseEnds(edited: string[], commits: string[], skip?
     // A commit the thread made is in this repo if git knows it here.
     const remotes = await readGit(top, ['remote']);
     if (!remotes.ok || !remotes.stdout.trim()) continue;
+    const common = await readGit(top, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+    const repo = common.ok ? common.stdout.trim() : top;
     const off: string[] = [];
     for (const sha of commits) {
-      if (seen.has(sha) || !(await readGit(top, ['cat-file', '-e', `${sha}^{commit}`])).ok) continue;
-      seen.add(sha);
+      if (seen.has(`${repo} ${sha}`) || !(await readGit(top, ['cat-file', '-e', `${sha}^{commit}`])).ok) continue;
+      seen.add(`${repo} ${sha}`);
       const on = await readGit(top, ['branch', '-r', '--contains', sha]);
       if (on.ok && !on.stdout.trim()) off.push(sha);
     }
@@ -162,13 +182,8 @@ const MAX_UNMERGED = 3;
 const MAX_LOOKUPS = 6;
 async function unmergedLooseEnds(top: string, pushed: string[], prs: PrLookup, budget: { lookups: number }): Promise<LooseEnd[]> {
   if (!pushed.length) return [];
-  const head = await readGit(top, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
-  let main = head.ok ? head.stdout.trim() : '';
-  for (const guess of ['origin/main', 'origin/master']) {
-    if (main) break;
-    if ((await readGit(top, ['rev-parse', '--verify', '--quiet', `refs/remotes/${guess}`])).ok) main = guess;
-  }
-  if (!main.startsWith('origin/')) return [];
+  const main = await remoteMain(top);
+  if (!main) return [];
   const branches = new Set<string>();
   for (const sha of pushed) {
     if (!/^[0-9a-f]{7,64}$/i.test(sha)) continue;
