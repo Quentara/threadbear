@@ -3058,7 +3058,23 @@ export class Runner {
       if (!rt.turn) this.scheduleIdle(st);
     }
     // Its first turn on the new login releases the old CLI (deliver).
-    if (params.carryOn && accountChanged && !stop && !rt.turn && !rec.queue.length && this.bucket(rec) === 'inbox' && rec.limitHitTurn !== undefined) this.carryOn(st, CARRY_ON_MOVED);
+    // A thread whose last turn stopped at a usage limit carries on by
+    // itself when it's moved to another login, from the model menu too,
+    // not only Continue now on: picking a login with room is asking for
+    // that (Ian, 13 Nov: after switching to Codex at the limit he couldn't
+    // tell whether it was on the new model yet or waiting for him, and
+    // the Swift limit box's Switch to promises it carries on now). Unless
+    // Mike turned carrying on off for this thread, which the menu doesn't
+    // ask about; Continue now on does.
+    const carriesOn = accountChanged && !stop && !rt.turn && !rec.queue.length && this.bucket(rec) === 'inbox' && rec.limitHitTurn !== undefined
+      && (params.carryOn || rec.carryOnAtReset !== false);
+    if (carriesOn) this.carryOn(st, CARRY_ON_MOVED);
+    else if (accountChanged && !stop && !rt.turn && rec.handoff) {
+      // Idle, with a conversation to hand over: nothing runs until the
+      // next message, so say so, or the picker reads as if the new model
+      // had already picked up the thread.
+      this.emit(st, { type: 'system.note', text: `${this.modelLabel(rec)} takes over from your next message.` });
+    }
     // Archived here, archived in the CLI's own app too (Codex Desktop's
     // list), once the session has let go of it: a turn is interrupted
     // first, then released, so that can take a moment. Resuming unarchives.

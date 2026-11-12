@@ -442,6 +442,54 @@ test("the limit box's Continue now on: a login named with carryOn pins the threa
   assert.equal(h.adapter.sessions.length, sessions);
 });
 
+test('the model menu after a limit: moving to Codex carries on at once, on the model picked (Ian, 13 Nov)', async () => {
+  const h = poolHarness();
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(0.2, 90));
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  h.adapter.last.init();
+  h.adapter.last.text('m1:0', 'Half done.');
+  limit(h.adapter.last);
+  await tick();
+  assert.ok(h.runner.get(thread.id).waitingForRoom, 'the whole Claude pool is out');
+  // The Swift picker's two calls: pinned with the model, then into the pool.
+  h.runner.update({ threadId: thread.id, accountId: 'codex-main', model: 'gpt-6-luna' });
+  h.runner.update({ threadId: thread.id, poolId: 'codex' });
+  await tick();
+  const t = h.runner.get(thread.id);
+  assert.equal(t.poolId, 'codex');
+  assert.equal(t.waitingForRoom, undefined);
+  assert.equal(h.codex.sessions.length, 1);
+  assert.equal(h.codex.last.opts.model, 'gpt-6-luna');
+  assert.match(h.codex.last.sent[0].text, /^\[Threadbear handoff\][\s\S]*Half done\.[\s\S]*Carry on from where you left off\.$/);
+  assert.ok(!notes(h, thread.id).some((n) => /takes over from your next message/.test(n)), 'no "next message" note when it carries on now');
+});
+
+test('a move with nothing to carry on, or carrying on turned off, says the new model starts with the next message', async () => {
+  const h = poolHarness();
+  const { thread } = h.runner.create({ text: 'x', poolId: 'claude' });
+  h.adapter.last.init();
+  h.adapter.last.result();
+  await tick();
+  h.runner.update({ threadId: thread.id, poolId: 'codex' });
+  await tick();
+  assert.equal(h.codex.sessions.length, 0, 'nothing runs till Mike writes');
+  assert.match(notes(h, thread.id).at(-1)!, /takes over from your next message\.$/);
+
+  // At a limit with "Carry on by itself: No", the menu doesn't override it.
+  h.setUsage('claude-main', room(0.2, 200));
+  h.setUsage('claude-3', room(0.2, 90));
+  const other = h.runner.create({ text: 'y', poolId: 'claude' }).thread;
+  h.adapter.last.init();
+  limit(h.adapter.last);
+  await tick();
+  h.runner.update({ threadId: other.id, carryOnAtReset: false });
+  h.runner.update({ threadId: other.id, poolId: 'codex' });
+  await tick();
+  assert.equal(h.codex.sessions.length, 0);
+  assert.match(notes(h, other.id).at(-1)!, /takes over from your next message\.$/);
+});
+
 test('after a restart an early carry-on moves to the login with room, never back to the one that ran dry', async () => {
   const pools: Pool[] = [{ id: 'claude', title: 'Claude', accountIds: ['claude-main', 'claude-3', 'claude-1'] }, { id: 'codex', title: 'Codex', accountIds: ['codex-main'] }];
   const h = poolHarness({ pools });
