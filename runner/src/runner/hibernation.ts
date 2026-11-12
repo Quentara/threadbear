@@ -259,7 +259,17 @@ export const hibernationPart = {
   // without a card: the other has no less access (mode or sandbox), as
   // send_message goes by. One not here counts as the least.
   mayTellOf(this: Runner, me: Authority, threadId: string): boolean {
-    return !above(me, this.authorityNow(threadId));
+    return !above(me, this.authoritySaved(threadId));
+  },
+
+  // What a thread's agent is held to as a sender: its saved mode, as
+  // send_message goes by (threadbear-mcp.ts, restricted), not the more a
+  // running turn may still have after it was lowered (Codex's review of
+  // Daybreak finding 111). One not here counts as the least.
+  authoritySaved(this: Runner, threadId: string): Authority {
+    const st = this.threads.get(threadId);
+    if (!st) return LEAST;
+    return { mode: st.rec.permissionMode ?? 'ask', confined: Boolean(st.rec.confined) };
   },
 
   // Whether what a waited-on thread said may go to the waiting thread's

@@ -1997,6 +1997,11 @@ export function buildThreadbearTools(
         // moving a thread outside its sandbox onto another login (its pool)
         // is reaching outside (as update_schedule's login, above).
         const by = await restricted();
+        // A title is the renaming agent's own words, and a thread's title
+        // reaches its agent and others' (list_threads, a new thread's
+        // same-work note), so renaming a thread with more access is a
+        // message to it (Codex's review of Daybreak finding 111, 13 Nov 2026).
+        if (title !== undefined) await confirm('update_thread', await sendReason(id, by, 'Rename'), { threadId: id, title }, extra?.signal);
         if (by?.confined && p !== undefined && id !== selfId) {
           const t = await accessOf(id);
           if (above(t, by)) await confirm('update_thread', [`Change the logins of "${t.title}", which has ${accessName(t, by)}`], { threadId: id, pool: p }, extra?.signal);

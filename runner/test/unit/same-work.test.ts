@@ -230,3 +230,17 @@ test("sameWork: checked again as it's told, so a thread lowered since, or a note
   rec.sameWorkIds = ['00000000-0000-0000-0000-000000000000'];
   assert.doesNotMatch(raw.briefFor(rec, false).instructions ?? '', /same thing/);
 });
+
+// Codex's review: a thread lowered while its turn runs is held to its saved
+// mode as a sender, as send_message holds it, not the Full its turn began with.
+test('sameWork: a thread lowered to Auto mid-turn is not named to a Full thread', async () => {
+  const { h } = setup(true);
+  const src = h.runner.create({ text: 'Selecting text in the transcript only works with a quick drag', cwd: tmpDir(), accountId: 'claude-3', permissionMode: 'full' }).thread.id;
+  h.adapter.last.init();
+  await tick();
+  h.runner.update({ threadId: src, permissionMode: 'auto' });
+  assert.equal((h.runner as unknown as { accessOf(id: string): string }).accessOf(src), 'full', 'its turn still has Full');
+  h.runner.create({ text: "I can't select text in the transcript at all", cwd: tmpDir(), accountId: 'claude-3', permissionMode: 'full' });
+  await tick();
+  assert.doesNotMatch(h.adapter.last.opts.instructions ?? '', new RegExp(src.slice(0, 8)));
+});

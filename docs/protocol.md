@@ -6744,8 +6744,10 @@ would do) and waits for it, whatever the CLI's rules or Auto's classifier
 said about the tool: `update_thread` or `update_schedule` setting a mode
 above the target's (`ask` < `auto` < `full`), `create_thread` or a
 `new_thread` `schedule_message` with a mode above the caller's,
-`send_message`, `move_thread` or `schedule_message` to a thread with more
-access than the caller, `join_project` putting such a thread in a project,
+`send_message`, `move_thread`, `schedule_message` or `update_thread`'s
+`title` to a thread with more access than the caller (a title reaches its
+agent and others', as in a new thread's same-work note; `tb` refuses the
+same rename), `join_project` putting such a thread in a project,
 `update_project` changing the title, goals, state, notes or folders of a
 project such a thread is in (by the project's list or the thread's own), `move_thread` of a thread a schedule's check runs for
 (the check runs in its folder), `update_schedule` changing the text, title, time,

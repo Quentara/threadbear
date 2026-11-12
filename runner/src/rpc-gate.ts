@@ -190,7 +190,12 @@ export class CallerGate {
     if (self && (p.archived === true || (p.snoozedUntil !== undefined && p.snoozedUntil !== null))) {
       throw new RpcError(ErrorCode.notAllowed, "Can't snooze or archive the thread this runs in from inside its own turn. Call end_turn with archive: true or a snooze instead.");
     }
-    if (p.title !== undefined) out.titleBy = 'agent';
+    if (p.title !== undefined) {
+      // Its words reach that thread's agent and others' (update_thread asks
+      // the same; Daybreak finding 111).
+      if (!self && above(this.targetAccess(id), caller)) throw needs(`renaming ${this.title(id)}`, 'update_thread');
+      out.titleBy = 'agent';
+    }
     if (p.archived === true) out.archivedBy = 'agent';
     else delete out.archivedBy;
     if (p.permissionMode !== undefined) {

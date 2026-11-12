@@ -548,3 +548,25 @@ test("ask: schedules.update can't raise a schedule that inherits an Ask default"
     await server.close();
   }
 });
+
+// Codex's review of the Daybreak fix for finding 111: a title reaches the
+// renamed thread's agent, so tb renaming one above the caller is refused.
+for (const mode of MODES) {
+  test(`${mode}: renaming a thread with more access through tb is refused, its own or one no higher is not`, async () => {
+    const { h, server, token, url } = await serve();
+    const me = thread(h, mode);
+    const full = thread(h, 'full', 'full one');
+    const peer = thread(h, mode, 'peer');
+    const c = await as(url, token, me.id);
+    try {
+      await assert.rejects(c.call('threads.update', { threadId: full.id, title: 'SECURITY_POC' }), refused);
+      assert.equal(h.runner.get(full.id).title, 'full one');
+      await c.call('threads.update', { threadId: me.id, title: 'mine' });
+      await c.call('threads.update', { threadId: peer.id, title: 'renamed' });
+      assert.equal(h.runner.get(peer.id).title, 'renamed');
+    } finally {
+      c.close();
+      await server.close();
+    }
+  });
+}

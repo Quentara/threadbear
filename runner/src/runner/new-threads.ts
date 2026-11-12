@@ -201,7 +201,7 @@ export const newThreadsPart = {
       rec.sameWorkIds = matches.map((m) => m.candidate.id);
       this.markDirty(st);
       this.log.info('found threads that may be the same work', { threadId: rec.id, ids: matches.map((m) => m.candidate.id) });
-      const titles = matches.map((m) => `"${m.candidate.title}"`);
+      const titles = matches.map((m) => `"${m.candidate.title.replace(/\s+/g, ' ').trim()}"`);
       return `${titles.length === 1 ? 'An open thread' : `${titles.length} open threads`} may already be on this, so its agent will look first: ${titles.join(', ')}.`;
     } catch (e) {
       this.log.warn("couldn't look for threads doing the same work", { threadId: rec.id, error: String(e) });
