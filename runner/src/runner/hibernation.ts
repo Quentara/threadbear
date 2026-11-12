@@ -15,11 +15,17 @@ import path from 'node:path';
 import { providerName } from '../providers.ts';
 import { LAB_REVIEW_REPLY_CHARS, addVerdict, findingLine } from './lab-review.ts';
 import { cutSafely, safeEnd } from '../safe-cut.ts';
-import { above, type Authority } from '../threadbear-mcp.ts';
+import { above, raises, type Authority } from '../threadbear-mcp.ts';
 
 // A thread that isn't here (on another runner of this Mac's) counts as the
 // least access, so what it said is never passed up on a guess.
 const LEAST: Authority = { mode: 'ask', confined: true };
+
+// The less of two: the lower mode, and in a sandbox if either is.
+export function leastAuthority(a: Authority | undefined, b: Authority): Authority {
+  if (!a) return b;
+  return { mode: raises(a.mode, b.mode) ? b.mode : a.mode, confined: a.confined || b.confined };
+}
 
 // How long a thread waiting on others sleeps at most when end_turn gave no
 // snooze, so one that never hears still comes back.
@@ -111,7 +117,9 @@ export const hibernationPart = {
   // deleted), then wakes with what they said. A thread that never hears
   // wakes at the snooze time, or after a day. Before 5 Nov 2026 a thread
   // waiting on another's report could only end as done, in the inbox.
-  waitOn(this: Runner, st: ThreadState, waits: WaitFor[], when: string | undefined): void {
+  // `askedBy`: its access when its agent asked to wait (end_turn), if it
+  // has more now, as `by` is the less of the two.
+  waitOn(this: Runner, st: ThreadState, waits: WaitFor[], when: string | undefined, askedBy?: Authority): void {
     const { rec } = st;
     const list: { threadId: string; title: string; until?: string }[] = [];
     const skipped: string[] = [];
@@ -146,7 +154,7 @@ export const hibernationPart = {
     }
     if (!until || Date.parse(until) <= now) until = new Date(now + WAIT_FOR_DEFAULT_MS).toISOString();
     this.update({ threadId: rec.id, snoozedUntil: until });
-    const by = this.authorityNow(rec.id);
+    const by = leastAuthority(askedBy, this.authorityNow(rec.id));
     rec.waitingOn = list.map((x) => ({ ...x, by }));
     this.markDirty(st);
     const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;

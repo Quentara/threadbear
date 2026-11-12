@@ -401,11 +401,21 @@ export function trimHeld(w: { rows: Map<number, RelayRow>; olderMore: boolean; g
   w.given.add(from - 1);
 }
 
-/** Holds at most MAX_CARDS cards, dropping the oldest answered ones. */
-export function trimCards(cards: Map<string, Card>): void {
+/**
+ * Holds at most MAX_CARDS cards, dropping the oldest answered ones, and
+ * their seqs from what was given, which grew with every card otherwise
+ * (Codex's second review). The oldest seq given stays, as emit's floor.
+ */
+export function trimCards(cards: Map<string, Card>, given: Set<number>): void {
   if (cards.size <= MAX_CARDS) return;
+  const floor = given.size ? oldestGiven(given) : undefined;
   const answered = [...cards].filter(([, c]) => c.resolved).sort((a, b) => a[1].slot - b[1].slot);
-  for (const [id] of answered.slice(0, cards.size - MAX_CARDS)) cards.delete(id);
+  for (const [id, c] of answered.slice(0, cards.size - MAX_CARDS)) {
+    cards.delete(id);
+    given.delete(c.slot);
+    given.delete(c.slot + 1);
+  }
+  if (floor !== undefined) given.add(floor);
 }
 
 // A loop, not Math.min(...given): a spread of that many arguments can throw.
@@ -691,7 +701,7 @@ export class Relay {
       if (c.resolved || open?.approvalId === id) continue;
       c.resolved = w.decided.get(id) ?? { decision: c.pending.kind === 'approval' ? 'allow' : 'answered', message: `Answered on ${this.runnerName(w.runnerId)} or the phone.` };
     }
-    trimCards(w.cards);
+    trimCards(w.cards, w.given);
   }
 
   private async refresh(w: Watch): Promise<void> {

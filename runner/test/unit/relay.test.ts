@@ -813,8 +813,17 @@ test("cards another runner keeps putting on its row are held to the newest few h
   await h.relay.call(T, 'threads.subscribe', { threadId: T, afterSeq: 0 });
   const row = h.subs.get('relay:remoteThread')![0]!;
   for (n = 0; n < 1_000; n++) row.onUpdate({ runnerId: 'bruce', status: 'waiting', pendingApproval: { approvalId: `ap${n}`, kind: 'approval', seq: 14, name: 'Bash', title: 'Run', options: ['allow', 'deny'] } });
+  // With rising seqs too, so each goes out to the app (Codex's second
+  // review): what's been given stays as small as the cards held.
+  for (; n < 2_000; n++) {
+    row.onUpdate({ runnerId: 'bruce', status: 'waiting', pendingApproval: { approvalId: `ap${n}`, kind: 'approval', seq: 100 + n, name: 'Bash', title: 'Run', options: ['allow', 'deny'] } });
+    await new Promise((r) => setImmediate(r));
+  }
+  n = 1_999;
+  const given = (h.relay as unknown as { watches: Map<string, { given: Set<number> }> }).watches.get(T)!.given;
+  assert.ok(given.size <= 2 * MAX_CARDS + 50, `${given.size} seqs given held`);
   const page = (await h.relay.call(T, 'threads.events', { threadId: T, limit: 2000 })) as { events: { type: string; approvalId?: string }[] };
   const cards = page.events.filter((e) => e.type === 'approval.requested');
   assert.ok(cards.length <= MAX_CARDS, `${cards.length} cards`);
-  assert.ok(cards.some((e) => e.approvalId === 'ap999'), 'the open one stays');
+  assert.ok(cards.some((e) => e.approvalId === 'ap1999'), 'the open one stays');
 });

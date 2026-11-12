@@ -154,7 +154,7 @@ import { titlesPart, type TitlesPart } from './runner/titles.ts';
 import { commandsPart, type CommandsPart } from './runner/commands.ts';
 import { contextUsagePart, type ContextUsageAnswer, type ContextUsagePart } from './runner/context-usage.ts';
 import type { SlashCommand } from './slash-commands.ts';
-import { hibernationPart, type HibernationPart } from './runner/hibernation.ts';
+import { hibernationPart, leastAuthority, type HibernationPart } from './runner/hibernation.ts';
 import { newThreadsPart, type NewThreadsPart } from './runner/new-threads.ts';
 import { LAB_REVIEW_ROUNDS, applyAnswers, fixedSinceLastRound, labReviewPart, ledgerCard, openFindings, parseVerdict, type LabReviewPart } from './runner/lab-review.ts';
 import { looseEndsPart, type LooseEndsPart } from './runner/loose-ends.ts';
@@ -313,6 +313,11 @@ export type Turn = {
   // The agent's own end_turn input and last text, for what the turn needs
   // from Mike (needs.ts). Never a sub-agent's.
   endTurn?: Record<string, unknown>;
+  // The least access the thread had at any end_turn call this turn, for a
+  // waitFor's `by` (hibernation.ts, mayHear): raised between the call and
+  // the turn's end, it still asked with what it had (Codex's review of the
+  // Daybreak fix, 12 Nov 2026).
+  endTurnBy?: { mode: PermissionMode; confined: boolean };
   // What endTurn was before the latest call, until that call's result says
   // whether it replaced it (a repeat doesn't).
   endTurnBefore?: Record<string, unknown>;
@@ -2025,6 +2030,7 @@ export class Runner {
           if (ev.type === 'tool.call' && own && ev.name === `mcp__${SERVER_NAME}__${END_TURN_TOOL}`) {
             rt.turn.endTurnBefore = rt.turn.endTurn;
             rt.turn.endTurn = ev.input;
+            rt.turn.endTurnBy = leastAuthority(rt.turn.endTurnBy, this.authorityNow(rec.id));
             rt.turn.endTurnCall = ev.itemId;
           }
           // A refused repeat changes nothing: its archive once took effect
@@ -2483,7 +2489,7 @@ export class Runner {
       this.emit(st, { type: 'system.note', text: 'Archived, as the agent was asked to once it had finished.' });
       this.update({ threadId: rec.id, archived: true, archivedBy: 'agent' });
     }
-    if (waitFor && !rt.turn && !rec.archivedAt && !this.stopping) this.waitOn(st, waitFor, snooze);
+    if (waitFor && !rt.turn && !rec.archivedAt && !this.stopping) this.waitOn(st, waitFor, snooze, turn.endTurnBy);
     else if (snooze && !rt.turn && !rec.archivedAt && !this.stopping) this.snoozeAfterTurn(st, snooze);
   }
 

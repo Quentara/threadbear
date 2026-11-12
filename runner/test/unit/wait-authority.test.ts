@@ -203,3 +203,23 @@ test("a lab review of a thread that wasn't raised still comes through", async ()
   await until(() => !h.runner.get(waiter).snoozedUntil, 'the wake');
   assert.equal(heard(waiter), true);
 });
+
+// Codex's second review: `by` was stamped when the turn ended, so a thread
+// raised between its end_turn call and the turn's end counted as asking
+// with the access it had been raised to.
+test('waitFor: raised between its end_turn call and the end of the turn, it still asked from Ask', async () => {
+  const { h, make, finish, heard } = setup(false);
+  const waiter = make('Write the plan', 'ask');
+  const target = make('Measure it', 'ask');
+  const s = h.adapter.sessions.filter((x) => x.opts.threadId === waiter).at(-1)!;
+  s.init();
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'e1', name: END_TURN, kind: 'mcp', title: 'end_turn', input: { needs: 'nothing', waitFor: [target] } } });
+  h.runner.update({ threadId: waiter, permissionMode: 'full' });
+  s.text('m1', 'Waiting on it.');
+  s.result('completed');
+  assert.ok(h.runner.get(waiter).waitingOn?.length);
+  finish(target, { needs: 'nothing' }, PAYLOAD);
+  await until(() => !h.runner.get(waiter).snoozedUntil, 'the wake');
+  await settle();
+  assert.equal(heard(waiter), false);
+});
