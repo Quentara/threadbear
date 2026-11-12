@@ -3590,6 +3590,9 @@ export class Runner {
     }
     // Where its worktree is and how its work gets to main.
     if (rec.worktree && !rec.worktree.removedAt) parts.push(worktreeInstructions(rec.worktree));
+    // Threads that may already be on it, for its first turn only.
+    if (rec.sameWork && rec.lastTurnCompletedSeq === 0) parts.push(rec.sameWork);
+    else delete rec.sameWork;
     return parts.length ? { instructions: parts.join('\n\n') } : {};
   }
 

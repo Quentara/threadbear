@@ -311,6 +311,10 @@ export type ThreadRecord = {
   // its title doesn't say ("dentist" for a wisdom tooth appointment).
   // "" once a look or the keyword sweep found none, so the sweep moves on.
   keywords?: string;
+  // Open threads that may be doing the same work, found as it was made
+  // (same-work.ts), for its first session's instructions. Gone once a
+  // turn has completed.
+  sameWork?: string;
   // show_panel's request, until the app shows it or Mike sends a message.
   panelRequest?: PanelRequest;
   // The seq ranges edits of earlier messages cut out of the conversation
