@@ -255,6 +255,13 @@ export const hibernationPart = {
     return { mode: this.accessOf(threadId), confined: this.confinedOf(threadId) };
   },
 
+  // Whether a thread with access `me` may be handed another thread's words
+  // without a card: the other has no less access (mode or sandbox), as
+  // send_message goes by. One not here counts as the least.
+  mayTellOf(this: Runner, me: Authority, threadId: string): boolean {
+    return !above(me, this.authorityNow(threadId));
+  },
+
   // Whether what a waited-on thread said may go to the waiting thread's
   // agent as a message, as send_message would let it without a card: the
   // waited-on thread has no less access than the waiting one has now, or the
@@ -263,7 +270,7 @@ export const hibernationPart = {
   // it counts only the first (Daybreak, 12 Nov 2026: an Ask helper's closing
   // reply started a turn in its Full-access starter).
   mayHear(this: Runner, me: Authority, w: NonNullable<ThreadState['rec']['waitingOn']>[number]): boolean {
-    if (!above(me, this.authorityNow(w.threadId))) return true;
+    if (this.mayTellOf(me, w.threadId)) return true;
     return !w.quiet && w.by !== undefined && !above(me, w.by);
   },
 

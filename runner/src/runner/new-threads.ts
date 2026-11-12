@@ -170,12 +170,18 @@ export const newThreadsPart = {
     const { rec } = st;
     try {
       const candidates: SameWorkCandidate[] = [];
+      const me = this.authorityNow(rec.id);
       for (const other of this.threads.values()) {
         const o = other.rec;
         // Not itself, the thread that started it (its starter knows what
         // it's doing), another run of the same schedule, or a sample.
         if (o.id === rec.id || o.archivedAt || o.sample || o.id === rec.startedBy?.threadId) continue;
         if (rec.schedule && o.schedule?.id === rec.schedule.id) continue;
+        // Nor one with less access (mode or sandbox) than this one: its
+        // title and words are its agent's own (update_thread), and handing
+        // them to this agent is a message upward that send_message would
+        // ask Mike about first (Daybreak, 12 Nov 2026, finding 111).
+        if (!this.mayTellOf(me, o.id)) continue;
         candidates.push({
           id: o.id,
           title: o.title,
@@ -192,6 +198,7 @@ export const newThreadsPart = {
       const note = sameWorkNote(matches, this.clock.now());
       if (!note) return undefined;
       rec.sameWork = note;
+      rec.sameWorkIds = matches.map((m) => m.candidate.id);
       this.markDirty(st);
       this.log.info('found threads that may be the same work', { threadId: rec.id, ids: matches.map((m) => m.candidate.id) });
       const titles = matches.map((m) => `"${m.candidate.title}"`);

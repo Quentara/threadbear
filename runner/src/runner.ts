@@ -3634,8 +3634,16 @@ export class Runner {
     // Where its worktree is and how its work gets to main.
     if (rec.worktree && !rec.worktree.removedAt) parts.push(worktreeInstructions(rec.worktree));
     // Threads that may already be on it, for its first turn only.
-    if (rec.sameWork && rec.lastTurnCompletedSeq === 0) parts.push(rec.sameWork);
-    else delete rec.sameWork;
+    // Checked again here, as either side's access may have changed since it
+    // was found: if any it names now has less access than this one, or is
+    // gone, or the note doesn't say which it names (from before 13 Nov),
+    // none of it is told (Daybreak, 12 Nov 2026, finding 111).
+    const me = this.authorityNow(rec.id);
+    if (rec.sameWork && rec.lastTurnCompletedSeq === 0 && rec.sameWorkIds?.length && rec.sameWorkIds.every((id) => this.mayTellOf(me, id))) parts.push(rec.sameWork);
+    else {
+      delete rec.sameWork;
+      delete rec.sameWorkIds;
+    }
     return parts.length ? { instructions: parts.join('\n\n') } : {};
   }
 

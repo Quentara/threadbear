@@ -315,6 +315,8 @@ export type ThreadRecord = {
   // (same-work.ts), for its first session's instructions. Gone once a
   // turn has completed.
   sameWork?: string;
+  // The threads that note names, checked again as it's told.
+  sameWorkIds?: string[];
   // show_panel's request, until the app shows it or Mike sends a message.
   panelRequest?: PanelRequest;
   // The seq ranges edits of earlier messages cut out of the conversation
