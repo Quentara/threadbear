@@ -12,7 +12,7 @@ import { actAs, checkRunnerId, forbidden, hasLiveKey, pageLimit, readRunnerOrder
 import { scrubDoc, scrubEveryString, SCRUB_RULES_VERSION, HELD_BACK } from './redaction';
 import { dropHead, seedHeads, syncHead, syncHeads } from './projectHeads';
 import { dropNotes, putNotes, syncNotes } from './projectNotes';
-import { badRunnerStats, cutBytes, docBytes, fitUsage, holdThreadTimes, impossibleUsage, isIsoTime, LOGIN_EMAIL, LOGIN_PROVIDER, loginKey, isThreadId, mayClaim, NAME_CHARS, mayFinish, mayTake, mayTouch, mayUseStorage, mayWrite, nameSkeleton, normalName, ownsCard, SCHEDULE_ID, utf8Bytes, wholeIn, type Caller, type UsageDoc } from './runnerAccess';
+import { badRunnerStats, cutBytes, docBytes, fitUsage, holdReviewNumbers, holdThreadTimes, impossibleUsage, isIsoTime, LOGIN_EMAIL, LOGIN_PROVIDER, loginKey, isThreadId, mayClaim, NAME_CHARS, mayFinish, mayTake, mayTouch, mayUseStorage, mayWrite, nameSkeleton, normalName, ownsCard, SCHEDULE_ID, utf8Bytes, wholeIn, type Caller, type UsageDoc } from './runnerAccess';
 import { dropWake, seedWakes, syncWake } from './wakes';
 import { pushFailing, pushOff } from './pushHealth';
 import { issueToken as makeToken, listTokens as allTokens, revokeToken as revokeOne, tokenInfo, tokenKind, MAX_DAYS } from './tokens';
@@ -466,17 +466,13 @@ function fitThread<T extends Record<string, any>>(t: T): T | undefined {
   if (Array.isArray(out.looseEnds)) out.looseEnds = out.looseEnds.slice(0, 10).map((e: any) => ({ ...e, text: cutBytes(String(e.text ?? ''), 300) }));
   if (out.review && Array.isArray(out.review.findings)) {
     const cut = (s: unknown, n: number) => (typeof s === 'string' ? cutBytes(s, n) : undefined);
-    // Counts a client turns into an Int: 1e20 there stops an iPhone app
-    // that converts it unchecked (Daybreak 109, 12 Nov 2026), and phones
-    // already out there do. Held to small whole numbers here, so no
-    // client meets one; a finding with no real id is left out.
-    const count = (n: unknown): number | undefined => (Number.isSafeInteger(n) && (n as number) >= 0 && (n as number) <= 1_000_000 ? (n as number) : undefined);
+    // Its counts held to small whole numbers (holdReviewNumbers, Daybreak 109).
+    holdReviewNumbers(out);
     out.review = {
       ...out.review,
       reviewer: cutBytes(String(out.review.reviewer ?? ''), 100),
-      rounds: count(out.review.rounds) ?? 1,
-      findings: out.review.findings.slice(0, 20).filter((f: any) => count(f?.id) !== undefined).map((f: any) => {
-        const o: Record<string, unknown> = { ...f, round: count(f.round) ?? 1, claim: cutBytes(String(f.claim ?? ''), 300) };
+      findings: out.review.findings.slice(0, 20).map((f: any) => {
+        const o: Record<string, unknown> = { ...f, claim: cutBytes(String(f.claim ?? ''), 300) };
         for (const [k, n] of [['where', 200], ['case', 300], ['note', 300]] as const) {
           if (o[k] === undefined) continue;
           o[k] = cut(o[k], n);

@@ -23,6 +23,9 @@ pub struct BuildInfo {
     pub configuration: String,
     /// The checkout's origin remote when it was built.
     pub origin: Option<String>,
+    /// Where its binaries were built: an ssh host, or "" for this Mac. None
+    /// from a make-bundle.sh before 12 Nov 2026, or one not told.
+    pub built_on: Option<String>,
 }
 
 impl BuildInfo {
@@ -68,6 +71,47 @@ pub fn bundle_of(exe: &Path) -> Option<PathBuf> {
         return None;
     }
     contents.parent().map(Path::to_path_buf)
+}
+
+/// runner.json's `updateBuildHosts`: the only Macs trusted to build what this
+/// one runs (desktop/scripts/stage-update.sh). Check hosts never are.
+pub fn update_build_hosts(runner_json: &Path) -> Vec<String> {
+    let Ok(data) = std::fs::read(runner_json) else { return Vec::new() };
+    let Ok(json) = serde_json::from_slice::<serde_json::Value>(&data) else { return Vec::new() };
+    match &json["updateBuildHosts"] {
+        serde_json::Value::String(h) => vec![h.clone()],
+        serde_json::Value::Array(a) => a.iter().filter_map(|h| h.as_str().map(str::to_owned)).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// Whether a staged build may go in: built on this Mac, or on a host that's
+/// in `updateBuildHosts` now. One that doesn't say where it was built was
+/// staged before that was asked, when a check host could have built it
+/// (Daybreak 108), and one from a host taken off the list since is no longer
+/// trusted either.
+pub fn builder_trusted(staged: &BuildInfo, update_build_hosts: &[String]) -> bool {
+    match staged.built_on.as_deref() {
+        Some("") => true,
+        Some(host) => update_build_hosts.iter().any(|h| h == host),
+        None => false,
+    }
+}
+
+/// Deletes the staged bundle at `next` if its builder isn't trusted, and says
+/// why. Before every swap and every look at what's staged. A swap cut short
+/// that left the old bundle at `next` loses it here rather than to `old`,
+/// which is the same: it was going.
+pub fn drop_untrusted_staged(next: &Path, runner_json: &Path) -> Option<String> {
+    let staged = BuildInfo::read(next)?;
+    if builder_trusted(&staged, &update_build_hosts(runner_json)) {
+        return None;
+    }
+    let _ = std::fs::remove_dir_all(next);
+    Some(match staged.built_on {
+        Some(host) => format!("dropped the staged build {}: {host} isn't in updateBuildHosts", staged.short),
+        None => format!("dropped the staged build {}: it doesn't say which Mac built it", staged.short),
+    })
 }
 
 // Following main (the Swift app's `AppUpdate`): what to build, and putting a
@@ -297,6 +341,37 @@ mod tests {
         std::fs::write(BuildInfo::path_in(&url), serde_json::to_vec(info).unwrap()).unwrap();
         std::fs::write(url.join("Contents/marker"), &info.short).unwrap();
         url
+    }
+
+    #[test]
+    fn only_a_build_from_here_or_an_update_build_host_goes_in() {
+        let dir = temp("trusted");
+        let json = dir.join("runner.json");
+        let next = dir.join("next.app");
+        let staged = |built_on: Option<&str>| {
+            let _ = std::fs::remove_dir_all(&next);
+            bundle(&dir, "next.app", &BuildInfo { built_on: built_on.map(str::to_owned), ..build("new", "t2") });
+        };
+        // Check hosts never count, and a bundle that doesn't say goes.
+        std::fs::write(&json, r#"{"checkHosts":["tinker-desk"],"checkHost":"tinker-desk"}"#).unwrap();
+        for who in [Some("tinker-desk"), None] {
+            staged(who);
+            assert!(drop_untrusted_staged(&next, &json).is_some(), "{who:?}");
+            assert!(!next.exists(), "{who:?}");
+        }
+        staged(Some(""));
+        assert_eq!(drop_untrusted_staged(&next, &json), None);
+        assert!(next.exists());
+        std::fs::write(&json, r#"{"checkHosts":["tinker-desk"],"updateBuildHosts":["builder"]}"#).unwrap();
+        staged(Some("builder"));
+        assert_eq!(drop_untrusted_staged(&next, &json), None);
+        staged(Some("tinker-desk"));
+        assert!(drop_untrusted_staged(&next, &json).is_some());
+        // No runner.json, or one that can't be read: only a build here.
+        std::fs::remove_file(&json).unwrap();
+        staged(Some("builder"));
+        assert!(drop_untrusted_staged(&next, &json).is_some());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     fn marker(url: &Path) -> Option<String> {

@@ -88,11 +88,14 @@ hosts_in() {
   /usr/bin/python3 -I -c 'import json,sys
 try: hosts = json.load(open(sys.argv[1])).get(sys.argv[2]) or []
 except Exception: hosts = []
+if isinstance(hosts, str): hosts = [hosts]
 if not isinstance(hosts, list): hosts = []
 print("\n".join(h for h in hosts if isinstance(h, str) and h and not h.startswith("-") and h.strip() == h and " " not in h))' "$CONFIG" "$1" 2>/dev/null || true
 }
 HOSTS="$(hosts_in updateBuildHosts)"
+# checkHost, the one a runner.json from before the list has, counts too.
 CHECK_HOSTS="$(hosts_in checkHosts)"
+[[ -n "$CHECK_HOSTS" ]] || CHECK_HOSTS="$(hosts_in checkHost)"
 
 BINS="$CACHE/bins"
 rm -rf "$BINS"

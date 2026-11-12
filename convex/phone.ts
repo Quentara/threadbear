@@ -12,7 +12,7 @@ import { API_VERSION } from './version';
 import { pushOff } from './pushHealth';
 import { imagesFrom, phoneImage, replyImagesFrom } from './share';
 import { deleteIfUnused, endCommandFiles, eventBodyAnswer, finishedArgs, readEventBody, runnerName } from './sync';
-import { docBytes, holdThreadTimes, isReadableTime } from './runnerAccess';
+import { docBytes, holdReviewNumbers, holdThreadTimes, isReadableTime } from './runnerAccess';
 import { HEADS_MARK } from './projectHeads';
 import { notesOf } from './projectNotes';
 
@@ -73,6 +73,8 @@ function stripThread(doc: Doc<'threads'>): PhoneThread {
   if (doc.view === 'overflow') out.view = doc.wantView ?? 'inbox';
   // Times a phone can read, whoever wrote them and whenever.
   holdThreadTimes(out, isReadableTime);
+  // Counts a phone turns into an Int, however old the row (Daybreak 109).
+  holdReviewNumbers(out);
   return out as PhoneThread;
 }
 

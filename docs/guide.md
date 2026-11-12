@@ -1737,7 +1737,11 @@ builds the app by being one. With neither set it builds on this Mac in the
 background. With check hosts set but no update build host it builds
 nothing, and its Updates panel says to name one. With update build hosts
 set but none answering, the panel says it's waiting for a Mac and it tries
-again later. The new version goes in when you quit it, when you choose Restart to
+again later. A new version waiting to go in that a Mac off that list built
+is thrown away. An app installed before 12 Nov 2026 built its updates on a
+check host, so it can't update itself past then: install it again once
+(`desktop/scripts/install-app.sh`, with `--build-on <host>` to build on a
+Mac you choose). The new version goes in when you quit it, when you choose Restart to
 Update in its app menu or Updates panel, or by itself once nothing's typed
 and nothing's open that a restart would close (a menu, a dialog, a drag, a
 field you're typing in another of its windows, a Terminal shell running

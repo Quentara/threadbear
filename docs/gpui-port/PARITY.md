@@ -1200,6 +1200,12 @@ Fixes from Codex's review of the slice before:
   or short of disk) it builds nothing: the Updates panel says "waiting for a
   Mac" and the next look tries again. With check hosts but no update build
   hosts it builds nothing either, and the panel says to name one (exit 5).
+  build.json says where the binaries came from (`builtOn`: a host, or ""
+  for here), and a staged bundle goes in (or shows) only if that's here or
+  a host in `updateBuildHosts` now; one that doesn't say is dropped. An app
+  from before this has the older script, which takes make-bundle.sh from
+  main: that refuses binaries it doesn't say the origin of unless they match
+  a build made here (exit 6), so such an app needs installing again once.
   Only with neither (other people's copies) does it build here, at background priority, as the Swift
   app's update does. One build at a time; a lock left by a run that died is
   taken over.

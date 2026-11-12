@@ -66,6 +66,13 @@ test('check hosts alone never build the update, and this Mac does not build it e
   assert.ok(!fs.existsSync(path.join(r.root, 'next.app')));
 });
 
+test('the single checkHost of a runner.json from before the list keeps this Mac from building too', () => {
+  const r = setup({ checkHost: 'checker.invalid' })();
+  assert.equal(r.status, 5, r.out);
+  assert.equal(r.marked('cargo'), '');
+  assert.equal(r.marked('remote'), '');
+});
+
 test('only the update build hosts are tried, never the check hosts beside them', () => {
   const r = setup({ checkHosts: ['checker.invalid'], updateBuildHosts: ['builder.invalid'] })();
   // builder.invalid doesn't answer: wait and try again later, no build here.
@@ -91,4 +98,38 @@ test("someone else's copy with neither builds here, and the bundle says so", () 
     assert.equal(r.marked('remote'), '');
     assert.match(r.marked('bundle'), /^builtOn=$/m, 'built on this Mac, said as ""');
   }
+});
+
+// An installed app's older stage-update.sh runs from its own bundle but takes
+// make-bundle.sh from main, and it built on a check host. It says nothing
+// about where it built, so main's make-bundle.sh takes its binaries only if
+// they're the build it made on this Mac, which it keeps beside them.
+const MAKE_BUNDLE = path.join(import.meta.dirname, '..', '..', '..', 'desktop', 'scripts', 'make-bundle.sh');
+
+test("an older updater's binaries from a check host are never made into a bundle", () => {
+  const cache = tmpDir();
+  const bins = path.join(cache, 'bins');
+  for (const bin of ['threadbear-gpui', 'threadbear-web-helper']) write(path.join(bins, bin), 'from the check host', 0o755);
+  const make = (env: Record<string, string | undefined>) => {
+    const e: Record<string, string | undefined> = { ...process.env, ...env };
+    for (const [k, v] of Object.entries(env)) if (v === undefined) delete e[k];
+    return spawnSync('bash', [MAKE_BUNDLE, bins, path.join(cache, 'next.app')], { encoding: 'utf8', env: e as NodeJS.ProcessEnv });
+  };
+  // Nothing built here beside them: refused, and no bundle.
+  let r = make({ THREADBEAR_BUILT_ON: undefined });
+  assert.equal(r.status, 6, r.stderr);
+  assert.ok(!fs.existsSync(path.join(cache, 'next.app')));
+  // A different build here: still refused.
+  for (const bin of ['threadbear-gpui', 'threadbear-web-helper']) write(path.join(cache, 'target', 'release', bin), 'built here', 0o755);
+  r = make({ THREADBEAR_BUILT_ON: undefined });
+  assert.equal(r.status, 6, r.stderr);
+  // The same bytes as the build here (an older updater building on this Mac,
+  // as anyone else's copy does) get past this check, as does a caller that
+  // says where it built.
+  for (const bin of ['threadbear-gpui', 'threadbear-web-helper']) write(path.join(bins, bin), 'built here', 0o755);
+  r = make({ THREADBEAR_BUILT_ON: undefined });
+  assert.notEqual(r.status, 6, r.stderr);
+  for (const bin of ['threadbear-gpui', 'threadbear-web-helper']) write(path.join(bins, bin), 'from somewhere named', 0o755);
+  r = make({ THREADBEAR_BUILT_ON: 'builder' });
+  assert.notEqual(r.status, 6, r.stderr);
 });

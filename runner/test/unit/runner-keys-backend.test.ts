@@ -1247,3 +1247,22 @@ test("Bruce's key can't store a lab review whose numbers would stop a phone", as
   await s.bruce.upsert(thread(UUID(9), BRUCE, { review: fine }));
   assert.deepEqual(s.rows('threads').find((t) => t.threadId === UUID(9))!.review, fine);
 });
+
+// A row stored before the write was checked (or by any other way in) still
+// reaches the phone with small whole counts: phones already out there
+// convert them unchecked.
+test('a lab review already stored with numbers that would stop a phone reaches it held in range', async () => {
+  const s = await setup();
+  const token = 'phone-token';
+  const now = Date.now();
+  await s.ctx.db.insert('tokens', { hash: await sha256(token), name: 'phone', expiresAt: now + 100_000, createdAt: now });
+  const review = { reviewer: 'Codex', independent: true, rounds: 1e20, threadId: 'r', passed: false, findings: [{ id: 1e20, round: 1, severity: 'high', claim: 'bad' }, { id: 2, round: -5, severity: 'low', claim: 'ok' }] };
+  await s.ctx.db.insert('threads', { ...thread(UUID(11), BRUCE), review, cardTurn: 'aaaa1111' });
+  for (const rows of [((await call(s.ctx, phone.threadsAt, { token, view: 'inbox' })) as any).rows, [await call(s.ctx, phone.threadRow, { token, threadId: UUID(11) })]]) {
+    const r = rows.find((t: any) => t.threadId === UUID(11)).review;
+    assert.equal(r.rounds, 1);
+    assert.deepEqual(r.findings.map((f: any) => [f.id, f.round, f.claim]), [[2, 1, 'ok']]);
+  }
+  // What's stored is left alone; only what the phone gets is held.
+  assert.equal(s.rows('threads').find((t) => t.threadId === UUID(11))!.review.rounds, 1e20);
+});

@@ -24,6 +24,24 @@ export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
 [ -x "$bins/threadbear-gpui" ] && [ -x "$bins/threadbear-web-helper" ] || { echo "No threadbear-gpui and threadbear-web-helper in $bins." >&2; exit 2; }
 
+# Every caller says where the binaries were built (THREADBEAR_BUILT_ON: a host,
+# or "" for this Mac) except an installed app's older stage-update.sh, which
+# runs from that app's bundle but takes this script from main, and built on
+# the first of runner.json's checkHosts: a Mac trusted only to run tests
+# (Daybreak 108). Its binaries go in only if they're the build it made here
+# (stage-update.sh's cache keeps that beside them, in target/release); ones
+# from a check host are refused, and the app stays as it is until it's
+# installed again (install-app.sh), which says where it builds.
+if [ -z "${THREADBEAR_BUILT_ON+set}" ]; then
+  built_here="$(dirname "$bins")/target/release"
+  for bin in threadbear-gpui threadbear-web-helper; do
+    cmp -s "$bins/$bin" "$built_here/$bin" || {
+      echo "Not making a bundle of binaries that weren't built on this Mac by an updater that doesn't say where it built them: check hosts aren't trusted with what this Mac runs. Install the app again (desktop/scripts/install-app.sh) to get the updater that asks for updateBuildHosts." >&2
+      exit 6
+    }
+  done
+fi
+
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$bins/threadbear-gpui" "$bundle/Contents/MacOS/threadbear-gpui"

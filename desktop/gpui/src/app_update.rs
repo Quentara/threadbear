@@ -84,6 +84,23 @@ fn next_dir() -> PathBuf {
     beside(".Threadbear GPUI.app.next")
 }
 
+/// The staged build, once one whose builder isn't trusted has gone
+/// (`drop_untrusted_staged`).
+fn staged_build() -> Option<BuildInfo> {
+    drop_untrusted_staged();
+    BuildInfo::read(&next_dir())
+}
+
+/// A staged bundle goes in only if it was built here or on a host in
+/// runner.json's updateBuildHosts now: never one a check host built, or one
+/// staged before bundles said where they were built (Daybreak 108).
+fn drop_untrusted_staged() {
+    let runner_json = threadbear_client::config::RunnerConfig::from_env().home.join("runner.json");
+    if let Some(why) = rules::drop_untrusted_staged(&next_dir(), &runner_json) {
+        note(&why);
+    }
+}
+
 fn old_dir() -> PathBuf {
     beside(".Threadbear GPUI.app.old")
 }
@@ -118,6 +135,7 @@ pub(crate) fn apply_staged_at_launch() -> bool {
     if !launch.installed {
         return false;
     }
+    drop_untrusted_staged();
     match rules::apply_staged(&install_dir(), &next_dir(), &old_dir(), &swapping_note(), launch.build.as_ref()) {
         Ok(Some(staged)) => {
             note(&format!("swapped in {} at launch", staged.short));
@@ -332,7 +350,7 @@ impl Threadbear {
                 return;
             }
         };
-        self.updater.staged = BuildInfo::read(&next_dir());
+        self.updater.staged = staged_build();
         note(&format!("running {} from {}; following main", info.short, info.checkout));
         let checkout = info.checkout.clone();
         self.updater.running = Some(info);
@@ -395,7 +413,7 @@ impl Threadbear {
             this.update(cx, |t, cx| {
                 let Some(tree) = tree else { return };
                 // What's staged may have been swapped in or dropped by hand.
-                t.updater.staged = BuildInfo::read(&next_dir());
+                t.updater.staged = staged_build();
                 match rules::decide(&tree, &running, t.updater.staged.as_ref(), t.updater.building.as_deref(), t.updater.failed.as_deref()) {
                     Action::Nothing => {}
                     Action::DropStaged => {
@@ -451,7 +469,7 @@ impl Threadbear {
         }
         self.updater.no_builder = no_builder;
         match status {
-            Some(0) => match BuildInfo::read(&next_dir()) {
+            Some(0) => match staged_build() {
                 Some(info) => {
                     note(&format!("{} is staged; it goes in when the app quits or is opened again", info.short));
                     self.updater.staged = Some(info);
@@ -574,6 +592,7 @@ impl Threadbear {
             // SAFETY: a signal to the build we started, still ours to wait on.
             unsafe { libc::kill(pid as libc::pid_t, libc::SIGTERM) };
         }
+        drop_untrusted_staged();
         match rules::apply_staged(&install_dir(), &next_dir(), &old_dir(), &swapping_note(), self.updater.running.as_ref()) {
             Ok(Some(staged)) => note(&format!("swapped in {} at quit", staged.short)),
             Ok(None) => {}
