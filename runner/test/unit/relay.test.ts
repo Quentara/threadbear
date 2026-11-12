@@ -4,7 +4,7 @@
 // runner's own listeners (sync would mirror them as this runner's).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_HELD, Relay, SCALE, mergeTail, relayEvents, type RelayRow, type RelayThreadRow } from '../../src/relay.ts';
+import { MAX_CARDS, MAX_HELD, Relay, SCALE, mergeTail, relayEvents, type RelayRow, type RelayThreadRow } from '../../src/relay.ts';
 import { FakeClock } from '../../src/clock.ts';
 import { nullLogger } from '../../src/log.ts';
 import type { RemoteThreads } from '../../src/thread-index.ts';
@@ -771,4 +771,50 @@ test("a flood of another runner's rows is held to the newest few thousand, and r
   // Scrolling back reads what was dropped again.
   const older = (await h.relay.call(T, 'threads.events', { threadId: T, beforeSeq: first.events[0]!.seq, limit: 200 })) as { events: unknown[] };
   assert.ok(older.events.length > 0);
+});
+
+// Codex's review of that fix: trimming dropped every seq the app had been
+// given, and emit, seeing none, sent nothing more; scrolling back held rows
+// past the cap; and each new card another runner put on its row stayed,
+// each costing a copy of the rows on every read.
+test('after a gap bigger than the cap is filled, new rows still reach the app', async () => {
+  const backend: RelayRow[] = [{ seq: 1, role: 'user', text: 'Go', turn: 'aaaa1111', at: at(0) }];
+  const h = harness({ paged: true, rows: backend, row: () => ({ runnerId: 'bruce', status: 'running' }) });
+  h.subscribed.add(T);
+  await h.relay.call(T, 'threads.subscribe', { threadId: T, afterSeq: 0 });
+  for (let i = 0; i < 8_000; i++) backend.push({ seq: 2 + i, role: 'assistant', text: 'p', turn: 'aaaa1111', at: at(1) });
+  const tail = h.subs.get('relay:remoteTail')![0]!;
+  tail.onUpdate({ messages: backend.slice(-15), hasMore: true });
+  await new Promise((r) => setTimeout(r, 50));
+  assert.ok(h.relay.status().held <= MAX_HELD + 1000, `held ${h.relay.status().held}`);
+  const count = h.published.length;
+  assert.ok(count > 0, 'the filled rows went out');
+  backend.push({ seq: 9_000, role: 'user', text: 'Still here', turn: 'bbbb2222', at: at(5) });
+  tail.onUpdate({ messages: backend.slice(-15), hasMore: true });
+  await new Promise((r) => setTimeout(r, 20));
+  const sent = h.published.slice(count).map((n) => (n as { params: { event: { type: string; text?: string } } }).params.event);
+  assert.ok(sent.some((e) => e.type === 'user.message' && e.text === 'Still here'), 'the next row still reaches the app');
+});
+
+test('scrolling back stops holding more once twice the cap is held', async () => {
+  const backend: RelayRow[] = Array.from({ length: 30_000 }, (_, i) => ({ seq: 1 + i, role: 'assistant' as const, text: 'p', turn: 'aaaa1111', at: at(1) }));
+  const h = harness({ paged: true, rows: backend });
+  let page = (await h.relay.call(T, 'threads.events', { threadId: T, limit: 200 })) as { events: { seq: number }[] };
+  for (let n = 0; n < 200 && page.events.length; n++) {
+    page = (await h.relay.call(T, 'threads.events', { threadId: T, beforeSeq: page.events[0]!.seq, limit: 2000 })) as { events: { seq: number }[] };
+  }
+  assert.ok(h.relay.status().held <= 2 * MAX_HELD + 1000, `held ${h.relay.status().held}`);
+});
+
+test("cards another runner keeps putting on its row are held to the newest few hundred", async () => {
+  let n = 0;
+  const h = harness({ row: () => ({ runnerId: 'bruce', status: 'waiting', pendingApproval: { approvalId: `ap${n}`, kind: 'approval', name: 'Bash', title: 'Run', options: ['allow', 'deny'] } }) });
+  h.subscribed.add(T);
+  await h.relay.call(T, 'threads.subscribe', { threadId: T, afterSeq: 0 });
+  const row = h.subs.get('relay:remoteThread')![0]!;
+  for (n = 0; n < 1_000; n++) row.onUpdate({ runnerId: 'bruce', status: 'waiting', pendingApproval: { approvalId: `ap${n}`, kind: 'approval', seq: 14, name: 'Bash', title: 'Run', options: ['allow', 'deny'] } });
+  const page = (await h.relay.call(T, 'threads.events', { threadId: T, limit: 2000 })) as { events: { type: string; approvalId?: string }[] };
+  const cards = page.events.filter((e) => e.type === 'approval.requested');
+  assert.ok(cards.length <= MAX_CARDS, `${cards.length} cards`);
+  assert.ok(cards.some((e) => e.approvalId === 'ap999'), 'the open one stays');
 });

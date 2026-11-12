@@ -160,3 +160,46 @@ test("a wait's `by` that isn't an access is dropped as the record loads", async 
   assert.equal(waits[0]!.by, undefined);
   assert.deepEqual(waits[1]!.by, { mode: 'full', confined: false });
 });
+
+// Codex's review and verify-fix: a helper's title is its own words too, and
+// one archived or finished with no reply carried only that, unchecked.
+test('quietInbox: raised while it waits, a helper that puts words in its title and archives itself is held back too', async () => {
+  const { h, make, finish, notes } = setup();
+  const parent = make('Plan the port', 'auto');
+  const child = make('Fix the panel reload', 'auto', parent);
+  finish(parent);
+  await until(() => Boolean(h.runner.get(parent).waitingOn?.length), 'the wait');
+  h.runner.update({ threadId: parent, permissionMode: 'full' });
+  h.runner.update({ threadId: child, title: PAYLOAD });
+  h.runner.update({ threadId: child, archived: true });
+  await until(() => !h.runner.get(parent).snoozedUntil, 'the wake');
+  await settle();
+  assert.equal(h.events(parent).some((e) => e.type === 'user.message' && String(e.text).includes('SECURITY_POC')), false);
+  assert.ok(notes(parent).some((n) => /less access than this thread/.test(n)));
+});
+
+test("a lab review's findings are held back from a thread raised since the review started", async () => {
+  const { h, make, finish, heard, notes } = setup(false);
+  const waiter = make('Change it', 'ask');
+  const reviewer = make('Review it', 'ask');
+  finish(waiter);
+  h.runner.waitOnReview(h.runner.threads.get(waiter)!, reviewer);
+  assert.ok(h.runner.get(waiter).waitingOn?.length);
+  h.runner.update({ threadId: waiter, permissionMode: 'full' });
+  finish(reviewer, { needs: 'nothing' }, PAYLOAD);
+  await until(() => !h.runner.get(waiter).snoozedUntil, 'the wake');
+  await settle();
+  assert.equal(heard(waiter), false);
+  assert.ok(notes(waiter).some((n) => /less access than this thread/.test(n)));
+});
+
+test("a lab review of a thread that wasn't raised still comes through", async () => {
+  const { h, make, finish, heard } = setup(false);
+  const waiter = make('Change it', 'full');
+  const reviewer = make('Review it', 'ask');
+  finish(waiter);
+  h.runner.waitOnReview(h.runner.threads.get(waiter)!, reviewer);
+  finish(reviewer, { needs: 'nothing' }, PAYLOAD);
+  await until(() => !h.runner.get(waiter).snoozedUntil, 'the wake');
+  assert.equal(heard(waiter), true);
+});

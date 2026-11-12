@@ -64,6 +64,13 @@ export const MAX_HELD = 5000;
 // Trimmed once it's this far past, so a long read sorts the held rows every
 // twenty pages rather than every page.
 const TRIM_SLACK = 1000;
+// Scrolling back reads older rows only while fewer than this are held, so
+// paging can't hold a whole flood either.
+const MAX_SCROLLED = 2 * MAX_HELD;
+// Cards held for one thread: another runner can put a new card on its row
+// as often as it likes, and each answered one stayed (Codex's review of
+// the Daybreak fix, 12 Nov 2026). The oldest answered ones go first.
+export const MAX_CARDS = 200;
 // A watch nobody has subscribed for this long stops; its rows stay a while,
 // so opening the thread again reads only what's new.
 const IDLE_MS = 60_000;
@@ -322,16 +329,31 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
       );
     }
   }
-  // Cards go where their event was: in the turn of the row before them.
+  // Cards go where their event was: in the turn of the row before them,
+  // found by halving, not a copy of the rows per card.
+  const planSeqs = new Set(sorted.filter((r) => r.plan).map((r) => r.seq));
+  const rowBefore = (slot: number): RelayRow | undefined => {
+    let lo = 0;
+    let hi = sorted.length - 1;
+    let found: RelayRow | undefined;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (sorted[mid]!.seq * SCALE <= slot) {
+        found = sorted[mid];
+        lo = mid + 1;
+      } else hi = mid - 1;
+    }
+    return found;
+  };
   for (const c of cards) {
-    const before = [...sorted].reverse().find((r) => r.seq * SCALE <= c.slot);
+    const before = rowBefore(c.slot);
     const at = before?.at ?? row?.lastActivityAt ?? new Date(0).toISOString();
     const turn = before?.turn ? { turnId: before.turn } : {};
     const p = c.pending;
     // Claude's ExitPlanMode card goes with its plan's card, as on that
     // runner's own Mac (its itemId), once that plan's row is here as a plan:
     // without one, a card that names it would draw nothing at all.
-    const plan = p.kind === 'approval' && p.planSeq !== undefined && sorted.some((r) => r.seq === p.planSeq && r.plan) ? { itemId: `relay-${p.planSeq}` } : {};
+    const plan = p.kind === 'approval' && p.planSeq !== undefined && planSeqs.has(p.planSeq) ? { itemId: `relay-${p.planSeq}` } : {};
     const body =
       p.kind === 'approval'
         ? { type: 'approval.requested', approvalId: p.approvalId, ...plan, name: p.name, title: p.title, input: p.inputSummary ? { [inputKey(p.name, p.inputSummary)]: p.inputSummary } : {}, options: p.options }
@@ -368,9 +390,22 @@ export function trimHeld(w: { rows: Map<number, RelayRow>; olderMore: boolean; g
   }
   w.olderMore = true;
   const from = seqs[drop]! * SCALE;
+  // Answered cards from before what's held go with their rows.
+  for (const [id, c] of w.cards) if (c.resolved && c.slot < from) w.cards.delete(id);
   const cardSeqs = new Set<number>();
   for (const c of w.cards.values()) cardSeqs.add(c.slot).add(c.slot + 1);
   for (const seq of w.given) if (seq < from && !cardSeqs.has(seq)) w.given.delete(seq);
+  // A seq no held row's events use, just below them, so emit still knows
+  // the app has been given this thread and goes on from there: with every
+  // seq it had been given dropped, it sent nothing more (Codex's review).
+  w.given.add(from - 1);
+}
+
+/** Holds at most MAX_CARDS cards, dropping the oldest answered ones. */
+export function trimCards(cards: Map<string, Card>): void {
+  if (cards.size <= MAX_CARDS) return;
+  const answered = [...cards].filter(([, c]) => c.resolved).sort((a, b) => a[1].slot - b[1].slot);
+  for (const [id] of answered.slice(0, cards.size - MAX_CARDS)) cards.delete(id);
 }
 
 // A loop, not Math.min(...given): a spread of that many arguments can throw.
@@ -656,6 +691,7 @@ export class Relay {
       if (c.resolved || open?.approvalId === id) continue;
       c.resolved = w.decided.get(id) ?? { decision: c.pending.kind === 'approval' ? 'allow' : 'answered', message: `Answered on ${this.runnerName(w.runnerId)} or the phone.` };
     }
+    trimCards(w.cards);
   }
 
   private async refresh(w: Watch): Promise<void> {
@@ -714,7 +750,7 @@ export class Relay {
       // Older rows, read once each, until there are enough or none are left.
       const realBefore = Math.ceil(p.beforeSeq / SCALE);
       let have = [...w.rows.keys()].filter((s) => s < realBefore).length;
-      while (have < Math.ceil(limit / 2) && w.olderMore) {
+      while (have < Math.ceil(limit / 2) && w.olderMore && w.rows.size < MAX_SCROLLED) {
         const oldest = Math.min(...w.rows.keys());
         const older = (await this.read('relay:remoteMessages', { threadId: w.threadId, beforeSeq: oldest, limit: PAGE })) as Page;
         for (const m of older.messages) w.rows.set(m.seq, m);

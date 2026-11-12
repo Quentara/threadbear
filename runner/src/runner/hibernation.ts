@@ -260,9 +260,12 @@ export const hibernationPart = {
   },
 
   deliverWaits(this: Runner, st: ThreadState, waits: NonNullable<ThreadState['rec']['waitingOn']>): void {
-    if (waits.length === 1 && waits[0].review) return this.deliverReview(st, waits[0]);
+    // Every wait, whatever it carries: a title is the waited-on thread's
+    // own words too (update_thread), and a review's findings the reviewer's
+    // (Codex's review of the Daybreak fix, 12 Nov 2026).
     const me = this.authorityNow(st.rec.id);
-    const held = waits.filter((x) => (x.done?.reply || x.done?.why) && !this.mayHear(me, x));
+    const held = waits.filter((x) => !this.mayHear(me, x));
+    if (!held.length && waits.length === 1 && waits[0].review) return this.deliverReview(st, waits[0]);
     if (held.length) {
       // Woken for Mike instead, with no turn: he reads them and says what next.
       const names = held.map((x) => `"${x.title}"`).join(', ');

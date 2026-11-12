@@ -3188,16 +3188,17 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   same, and checked when either comes across. Once
   every one is done the thread wakes (a "Woke up … finished." note) and
   gets a `user.message` with `origin: "runner"` naming each with up to
-  2,000 characters of the reply it finished with. That reply (or the
-  librarian's reason) goes only where `send_message` would go without a
-  card: each waited-on thread has no less access (mode, or sandbox) than
+  2,000 characters of the reply it finished with. That message (the
+  replies, the librarian's reasons and the titles, all the waited-on
+  threads' words, and a lab review's findings too) goes only where
+  `send_message` would go without a card: each waited-on thread has no less access (mode, or sandbox) than
   the waiting thread has now, or the waiting thread's agent asked for the
   wait itself and hasn't been raised since (each entry keeps `by`, the
   waiting thread's access when it said to wait; one with none counts as
   from Ask in a sandbox). Otherwise it wakes with a `system.note` saying
   which had less access and that what they said wasn't passed on, and no
   turn starts: Mike reads them and says what next (Daybreak, 12 Nov
-  2026). A lab review's wait is its own (above). A message, a wake or
+  2026). A message, a wake or
   another snooze first clears `waitingOn`, so a thread that sends its
   report wakes it as before and its finishing later does nothing. An
   entry can be `{ thread, until }` instead of an id: `until` (up to 200
