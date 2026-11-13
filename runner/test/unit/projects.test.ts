@@ -531,6 +531,30 @@ test("a thread in a project gets its folders' patches, and their actions run in 
   assert.equal(run.text.trim(), fs.realpathSync(app));
 });
 
+test("a patch's when sees the thread's projects and title: joining a project with no folders, or a rename, reads it again", async () => {
+  const { h, misc, projects, create } = setup();
+  fs.mkdirSync(path.join(misc, '.threadbear/patches'), { recursive: true });
+  fs.writeFileSync(path.join(misc, '.threadbear/patches/at.ts'), `export default { panels: [
+    { title: "AT runs", url: "http://127.0.0.1:1/", when: ({ thread }) => thread.projects.some((p) => p.title === "Acceptance testing") },
+    { title: "Draft", url: "http://127.0.0.1:2/", when: ({ thread }) => thread.title.startsWith("Draft") },
+  ] };`);
+  const { thread } = create();
+  await tick();
+  await h.runner.patchesIdle();
+  const panels = () => (h.runner.get(thread.id).panels ?? []).map((p) => p.title).filter((t) => t === 'AT runs' || t === 'Draft');
+  assert.deepEqual(panels(), []);
+  projects.create({ title: 'Acceptance testing', threadIds: [thread.id], by: 'mike' });
+  h.runner.get(thread.id);
+  await tick(6);
+  await h.runner.patchesIdle();
+  assert.deepEqual(panels(), ['AT runs']);
+  h.runner.update({ threadId: thread.id, title: 'Draft notes' });
+  h.runner.get(thread.id);
+  await tick(6);
+  await h.runner.patchesIdle();
+  assert.deepEqual(panels(), ['AT runs', 'Draft']);
+});
+
 // ----------------------------------------------------------- the librarian
 
 test('the librarian looks after the first turn: makes a project and files the thread', async () => {

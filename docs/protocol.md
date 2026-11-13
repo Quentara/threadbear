@@ -3630,7 +3630,7 @@ and video while it's out of sight.
   }],
 ```
 
-`items` gets `{ cwd, threadId, sh }`, where `sh(command)` runs a command
+`items` gets `{ cwd, threadId, thread, sh }`, where `sh(command)` runs a command
 in `cwd` through a login shell and resolves with what it printed (it
 rejects on a non-zero exit, and on output over 16 MB rather than hand
 back part of it). For a project's patch trusted by its hash,
@@ -3651,7 +3651,12 @@ project's patch it's one script in the repo and plain words (see
 ```
 
 **Live state.** An action or panel can also have `when` and `badge`,
-functions that get the same `{ cwd, threadId, matched, sh }` as `items`.
+functions that get the same `{ cwd, threadId, thread, matched, sh }` as `items`.
+`thread` is `{ title, projects }`, each project `{ id, title }` with a
+`parent: { id, title }` when it's a part, so a patch in a folder many
+threads share can turn up in only some of them:
+`when: ({ thread }) => thread.projects.some((p) => p.title === "Acceptance testing")`.
+A rename or a change to its projects reads them again.
 `when` hides it unless it returns something true (a chip that only turns
 up when there's something to do); `badge` returns a count (a number, a
 numeric string or a list, whose length counts), sent as the item's

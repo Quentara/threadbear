@@ -965,6 +965,7 @@ export type PanelRender = { image?: ImageRef; items?: PanelItem[]; note?: string
 export type LiveContext = {
   cwd: string;
   threadId: string;
+  thread?: PatchThread;
   run: (command: string, cwd: string) => Promise<CommandOutcome>;
   verify?: (file: string, hash: string) => boolean;
   timeoutMs?: number;
@@ -1048,7 +1049,12 @@ function callThenClose(call: () => unknown, shIn: LiveSh): unknown {
 // and only what trusting it covers (liveSh).
 // `matched` is what made a tool patch apply: the paths its appliesTo
 // found (two .tandem files in a folder are two), and empty otherwise.
-export type ItemsContext = { cwd: string; threadId: string; matched: string[]; sh: (command: string) => Promise<string> };
+// `thread` is the thread it's for: its title and its projects (a part
+// carries its parent), so a patch in a folder many threads share can show
+// in only some of them (`when: ({ thread }) => thread.projects.some(...)`).
+export type PatchThread = { title: string; projects: { id: string; title: string; parent?: { id: string; title: string } }[] };
+export type ItemsContext = { cwd: string; threadId: string; thread: PatchThread; matched: string[]; sh: (command: string) => Promise<string> };
+const NO_THREAD: PatchThread = { title: '', projects: [] };
 type ItemsFunction = (ctx: ItemsContext) => unknown;
 
 // The `items` functions of loaded patch files, by file and the panel's id
@@ -1079,7 +1085,7 @@ export async function renderListPanel(
   let timer: NodeJS.Timeout | undefined;
   try {
     const value = await Promise.race([
-      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], sh }), shIn)),
+      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, thread: ctx.thread ?? NO_THREAD, matched: info?.matched ?? [], sh }), shIn)),
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`took over ${Math.round((ctx.timeoutMs ?? LIST_TIMEOUT_MS) / 1000)} seconds`)), ctx.timeoutMs ?? LIST_TIMEOUT_MS);
       }),
@@ -1143,7 +1149,7 @@ export async function applyLive(set: PatchSet, ctx: LiveContext): Promise<PatchS
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
-        Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], sh }), shIn)),
+        Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, thread: ctx.thread ?? NO_THREAD, matched: info?.matched ?? [], sh }), shIn)),
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error(`took over ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs);
         }),

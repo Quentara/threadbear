@@ -17,7 +17,7 @@ import { CLAUDE_PATCH_ID, claudeCommands, claudeOptions, settingsCommands, setti
 import { canonicalPath, runsAsCodeByName, type CodeWrite } from '../code-writes.ts';
 import { patchCommands, sayValue } from '../patch-commands.ts';
 import type { PatchInfo } from '../protocol.ts';
-import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type ProjectFolder, projectPatchFiles } from '../patches.ts';
+import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type PatchThread, type ProjectFolder, projectPatchFiles } from '../patches.ts';
 import { liveCommandEnv } from '../shell-allowlist.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -260,6 +260,11 @@ export function commandShown(command: string): string {
 const EDITS_ASK_FIX = "Write the command as plain text, or build it only from constants in the file (like `node ${join(import.meta.dirname, 'x.mjs')}`), so Threadbear can see what it runs.";
 
 export const patchesPart = {
+  // The thread as a patch's functions see it (PatchThread).
+  patchThread(this: Runner, rec: ThreadRecord): PatchThread {
+    return this.projects?.patchThread(rec) ?? { title: rec.title, projects: [] };
+  },
+
   // What the thread's folder gives it (see Runtime.patches): the last set
   // read, with a fresh read started when it's stale.
   patchSet(this: Runner, st: ThreadState): PatchSet {
@@ -267,7 +272,9 @@ export const patchesPart = {
     const now = this.clock.now();
     const folders = this.projects?.foldersFor(rec) ?? [];
     // A mode change can change what the folder's Claude settings wait on.
-    const key = JSON.stringify([rec.cwd, folders, rec.provider === 'claude' && claudeOptions(rec).grants]);
+    // The title and projects too, which a patch's `when` can look at
+    // (PatchThread): a rename or joining a project reads them again.
+    const key = JSON.stringify([rec.cwd, folders, rec.provider === 'claude' && claudeOptions(rec).grants, this.patchThread(rec)]);
     if (rt.patches && rt.patches.cwd === rec.cwd && rt.patches.key !== key) {
       // Same folder, different projects: keep showing what there is while
       // the new set loads, rather than flashing the panels away.
@@ -325,7 +332,7 @@ export const patchesPart = {
       const claude = rec.provider === 'claude' ? this.claudePatchInfo(cwd, claudeOptions(rec)) : undefined;
       if (claude) base = { ...base, patches: [...base.patches, claude] };
       base = this.withEditsAsk(base, cwd);
-      set = await applyLive(base, { cwd, threadId: rec.id, run: (command, dir) => this.runLiveCommand(rec.id, command, dir), verify: (file, hash) => this.patchTrust.verify(file, hash) });
+      set = await applyLive(base, { cwd, threadId: rec.id, thread: this.patchThread(rec), run: (command, dir) => this.runLiveCommand(rec.id, command, dir), verify: (file, hash) => this.patchTrust.verify(file, hash) });
     } catch (e) {
       this.log.warn('could not read the folder for patches', { threadId: rec.id, cwd, error: String(e) });
       base = entry.base;
@@ -745,6 +752,7 @@ export const patchesPart = {
       return renderListPanel(panel, this.patchSet(st), {
         cwd: st.rec.cwd,
         threadId,
+        thread: this.patchThread(st.rec),
         run: (command, cwd) => this.runPatchCommand(threadId, command, cwd),
         verify: (file, hash) => this.patchTrust.verify(file, hash),
       });
