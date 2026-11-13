@@ -30,8 +30,8 @@
 # CARGO_TARGET_DIR as the run sees it stays the checkout's own folder
 # (target-<key>), and before the lock goes, the programs and libraries cargo
 # built at the top of each profile (debug/threadbear-gpui,
-# release/threadbear-web-helper), or found fresh for these same files, are
-# copied there: spec.sh, dev-app.ts,
+# release/threadbear-web-helper), or that its .d file says are up to date
+# with these files, are copied there: spec.sh, dev-app.ts,
 # stage-update.sh and install-app.sh read them from there after cargo
 # returns, when another checkout's build may already be replacing the slot's.
 # Each is copied beside the old one and moved over it, so a dev app or spec
@@ -129,15 +129,12 @@ touch "$dir/.in-use" "$dir/target" 2>/dev/null || true
 
 # The checkout's copy, by content. The same leave-outs as remote.sh's copy,
 # and node_modules, which cargo never reads and is most of a copy's size.
-# Anything it changed (-i lists each) starts a new generation of the slot's
-# source, which says below which of its programs were built from what this
-# checkout has.
-changes="$(rsync -rlpDci --delete --exclude node_modules --exclude .build --exclude target --exclude reports \
+if ! rsync -rlpDc --delete --exclude node_modules --exclude .build --exclude target --exclude reports \
   --exclude .fixtures --exclude .swiftpm --exclude dist --exclude DerivedData --exclude .DS_Store \
-  "$copy/" "$dir/src/")" || {
+  "$copy/" "$dir/src/"; then
   echo "shared-cargo: couldn't copy $copy into $dir/src" >&2
   exit 1
-}
+fi
 # The copy's node_modules, linked where they are there: the client's tests
 # start the mock runner (app/Tools/mock-runner) from the slot's copy, and it
 # needs its packages (Codex's review). rsync leaves what it excludes alone, so
@@ -146,17 +143,6 @@ find "$dir/src" -name node_modules -prune -type l -exec rm -f {} + 2>/dev/null |
 while IFS= read -r nm; do
   ln -sfn "$nm" "$dir/src/${nm#"$copy"/}" 2>/dev/null || true
 done < <(find "$copy" -name node_modules -prune -type d 2>/dev/null)
-gen="$(cat "$dir/.generation" 2>/dev/null)"
-case "$gen" in ""|*[!0123456789]*) gen=0 ;; esac
-# Only lines for something written, made or deleted: macOS's openrsync also
-# lists a file whose time differs (".f..T...."), without changing it.
-if grep -q '^[^.]' <<<"$changes" || [ ! -e "$dir/.generation" ]; then
-  gen=$((gen + 1))
-  # Written before cargo starts: a build cut short past here is of this
-  # generation, or of nothing.
-  printf '%s\n' "$gen" >"$dir/.generation" || { echo "shared-cargo: couldn't write $dir/.generation" >&2; exit 1; }
-fi
-
 # The programs and libraries at the top of each profile folder (the ones with
 # a deps folder: debug, release, a custom profile, <triple>/debug), each with
 # its inode, time and size: one that's different after cargo was built by it.
@@ -197,19 +183,34 @@ rc=0
 ) || rc=$?
 
 # What goes back to the checkout's own target: a program this cargo built,
-# or one built from this same generation of the source (a fresh build for
-# another checkout with the same files). Not one built from other files:
-# `cargo test -p threadbear-core` here mustn't hand this checkout the app
-# another checkout built last. Each program's generation is kept in made/.
+# or one cargo's own list of its sources (the .d file beside it) says is up
+# to date with these files: none of them newer than it, as the copy above
+# gives every file that differs the time of now. Not one built from other
+# files: `cargo test -p threadbear-core` here mustn't hand this checkout the
+# app another checkout built last (Codex's review). And not by whether the
+# whole source matches: a change to the app alone leaves the web helper
+# fresh, and spec.sh needs both (Codex's second look).
+up_to_date() {
+  # Times to the nanosecond where the filesystem keeps them, as cargo's are:
+  # an edit in the same second as the build is still newer.
+  perl -e 'use Time::HiRes qw(stat);
+    my $bin = shift; my $d = $bin; $d =~ s/\.(dylib|so|dll|exe)$//; $d .= ".d";
+    open(my $f, "<", $d) or exit 1; local $/; my $text = <$f>;
+    my @m = stat $bin or exit 1;
+    $text =~ s/\\\n/ /g;
+    my ($line) = split /\n/, $text;
+    $line =~ s/^.*?(?<!\\):\s// or exit 1;
+    for my $p (split /(?<!\\)\s+/, $line) {
+      next unless length $p; $p =~ s/\\(.)/$1/g;
+      my @s = stat $p or exit 1;
+      exit 1 if $s[9] > $m[9];
+    }
+    exit 0' "$1"
+}
 while IFS= read -r line; do
   f="${line#* * * }"
   rel="${f#"$dir/target/"}"
-  made="$dir/made/$rel"
-  if ! grep -qxF "$line" <<<"$before"; then
-    mkdir -p "${made%/*}" && printf '%s\n' "$gen" >"$made" || true
-  elif [ "$(cat "$made" 2>/dev/null)" != "$gen" ]; then
-    continue
-  fi
+  grep -qxF "$line" <<<"$before" && ! up_to_date "$f" && continue
   to="$out/$rel"
   # cp -p keeps the time, so the same time and size is the same build.
   if [ -f "$to" ] && [ ! "$f" -nt "$to" ] && [ ! "$f" -ot "$to" ] \

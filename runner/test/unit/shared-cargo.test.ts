@@ -27,7 +27,7 @@ echo compiling >&2
 sleep 1.1 # file times on some filesystems are to the second
 { echo '#!/bin/sh'; echo "echo $(cat src/main.txt)"; } >"$d/app.tmp"
 chmod +x "$d/app.tmp"; mv "$d/app.tmp" "$d/app"
-echo rlib >"$d/libapp.rlib"; echo dep >"$d/app.d"
+echo rlib >"$d/libapp.rlib"; echo "$d/app: $(pwd -P)/src/main.txt" >"$d/app.d"
 exit "\${FAKE_EXIT:-0}"
 `;
 
@@ -269,4 +269,18 @@ test("the copy's node_modules are there in the slot, for the mock runner the cli
   assert.equal(h.cargo('bbb', ['test'], { THREADBEAR_REMOTE_SLOTS: '1' }).status, 0);
   assert.equal(fs.realpathSync(path.join(slot, 'desktop', 'node_modules')), fs.realpathSync(path.join(other, 'desktop', 'node_modules')));
   assert.equal(fs.existsSync(path.join(slot, 'app', 'Tools', 'mock-runner', 'node_modules')), false);
+});
+
+test("a program cargo's own list says is up to date comes back, though other files changed", (t) => {
+  const h = host(t);
+  const a = h.checkout('aaa', 'same app', 60);
+  const b = h.checkout('bbb', 'same app', 60);
+  // b differs only in a file the app isn't built from (another program's, a README).
+  fs.writeFileSync(path.join(b, 'desktop', 'README.md'), 'b');
+  fs.writeFileSync(path.join(a, 'desktop', 'README.md'), 'a');
+  const env = { THREADBEAR_REMOTE_SLOTS: '1' };
+  assert.equal(h.cargo('aaa', ['build'], env).status, 0);
+  const r = h.cargo('bbb', ['build'], env);
+  assert.match(r.stderr, /fresh/);
+  assert.equal(h.built('bbb'), 'same app');
 });
