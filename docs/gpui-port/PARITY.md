@@ -433,7 +433,7 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   with a page still Mike's turn; closing it leaves it closed until the next
   handoff. `show_panel` for `browser` shows it, and the app's hello now
   says `browserPanel` on a Mac, so the runner counts it for BrowserBear's
-  request (with the gpuiApp experiment on).
+  request.
 - A web link from a reply, a pin or a panel first asks BrowserBear to hand
   over an agent's tab already on that page (4 s at most, off the main
   thread), and opens in the browser only if none is.

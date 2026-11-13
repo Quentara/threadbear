@@ -4888,7 +4888,7 @@ connection before forwarding to a draining runner. An unavailable app leaves
 no request. An accepted request can be pending without changing the selected
 thread, and its `shown` field says whether the app already acknowledged it.
 The Mac app advertises `browserPanel: true` in `hello`, as does the GPUI app
-on a Mac (which counts while its `gpuiApp` experiment is on); a Browser request
+on a Mac; a Browser request
 returns unavailable for older apps that cannot promise this handoff path.
 
 BrowserBear uses this only for `handoff` of a page in the agents' browser, which
