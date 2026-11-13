@@ -460,7 +460,6 @@ export class KnownValues {
   mask(text: string): string {
     const re = this.compiled();
     if (!re) return text;
-    const whole = [...text.matchAll(re)].map((m) => [m.index, m.index + m[0].length] as const);
     const replaced = text.replace(re, '[REDACTED]');
     const after = this.cutOff(replaced);
     // A cut-off value is looked for in the text as it came too, not only
@@ -470,6 +469,8 @@ export class KnownValues {
     // 2026). Both are masked, so this never masks less than before.
     const before = this.cutOff(text);
     if (!before) return after ? `${replaced.slice(0, after[0])}[REDACTED]${replaced.slice(after[1])}` : replaced;
+    // Only then the places of the whole values, to put the two together.
+    const whole = [...text.matchAll(re)].map((m) => [m.index, m.index + m[0].length] as const);
     const spans: (readonly [number, number])[] = [...whole, before];
     if (after) spans.push([toOriginal(after[0], whole, false), toOriginal(after[1], whole, true)]);
     spans.sort((a, b) => a[0] - b[0]);
