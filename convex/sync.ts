@@ -8,7 +8,7 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internal } from './_generated/api';
 import { messageButton, threadFields, views } from './schema';
 import { API_VERSION } from './version';
-import { actAs, checkRunnerId, forbidden, hasLiveKey, pageLimit, readRunnerOrder, runnerAuth, runnerStatsRows, saveRunnerOrder, sha256, watchRunnersFor } from './lib';
+import { actAs, checkRunnerId, forbidden, hasLiveKey, pageLimit, PRESENCE_FRESH_MS, readRunnerOrder, runnerAuth, runnerStatsRows, saveRunnerOrder, sha256, watchRunnersFor } from './lib';
 import { scrubDoc, scrubEveryString, SCRUB_RULES_VERSION, HELD_BACK } from './redaction';
 import { dropHead, seedHeads, syncHead, syncHeads } from './projectHeads';
 import { dropNotes, putNotes, syncNotes } from './projectNotes';
@@ -831,15 +831,40 @@ export const setPresence = mutation({
       .unique();
     if (runner) await ctx.db.patch(runner._id, { atMac, atMacAt: Date.now() });
     if (atMac) return null;
-    // Only rows with a held push: reading all of them grew with every
-    // thread kept (docs/convex-backend.md, "Usage and the free plan").
-    const held = await ctx.db
-      .query('threads')
-      .withIndex('by_runner_pushHeld', (q) => q.eq('runnerId', runnerId).gt('pushHeldAt', 0))
-      .collect();
-    for (const t of held) {
-      await ctx.db.patch(t._id, { pushHeldAt: undefined });
-      if (t.needsYou) await ctx.scheduler.runAfter(0, internal.push.notify, { threadId: t.threadId, held: true });
+    await sendHeldPushes(ctx, runnerId);
+    return null;
+  },
+});
+
+// Sends a runner's held pushes, for threads that still need him.
+async function sendHeldPushes(ctx: MutationCtx, runnerId: string): Promise<void> {
+  // Only rows with a held push: reading all of them grew with every
+  // thread kept (docs/convex-backend.md, "Usage and the free plan").
+  const held = await ctx.db
+    .query('threads')
+    .withIndex('by_runner_pushHeld', (q) => q.eq('runnerId', runnerId).gt('pushHeldAt', 0))
+    .collect();
+  for (const t of held) {
+    await ctx.db.patch(t._id, { pushHeldAt: undefined });
+    if (t.needsYou) await ctx.scheduler.runAfter(0, internal.push.notify, { threadId: t.threadId, held: true });
+  }
+}
+
+// A Mac whose lid closed while Mike was at it never says he left: its
+// runner sleeps with it. Its held pushes waited for a setPresence that
+// didn't come, so the phone never buzzed for a thread that needed him (13
+// Nov 2026, the implicit state machines scan). A runner that's said he's
+// there but stopped checking in counts as away (devices.ts threadForPush
+// already reads it so for new pushes), and what it held goes now. Its
+// atMac stays: when the Mac wakes and checks in, he's there again.
+export const sendStaleHeldPushes = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    const now = Date.now();
+    for (const r of await ctx.db.query('runners').collect()) {
+      if (!r.atMac || now - (r.lastSeenAt ?? 0) < PRESENCE_FRESH_MS) continue;
+      await sendHeldPushes(ctx, r.runnerId);
     }
     return null;
   },
