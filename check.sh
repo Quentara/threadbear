@@ -371,10 +371,10 @@ fi
 # (cargo check of the GPUI app, the dock and every test), a few minutes from
 # cold. On a check host cargo's target folder is kept between runs
 # (scripts/check-remote.sh), so --quick stays about a minute.
-DESKTOP_NEEDS='^desktop/|^app/Sources/Threadbear/Views/Tour\.swift$|^features/support/sample\.png$|^site/app-doc-slugs\.json$|^app/Tools/mock-runner/|^runner/src/|^app/Tests/Fixtures/|^app/Sources/Threadbear/Resources/Art/|^app/Sources/Threadbear/Resources/Rich/'
+DESKTOP_NEEDS='^desktop/|^features/support/sample\.png$|^site/app-doc-slugs\.json$|^app/Tools/mock-runner/|^runner/src/|^app/Tests/Fixtures/|^app/Sources/Threadbear/Resources/Art/|^app/Sources/Threadbear/Resources/Rich/'
 # What cargo builds from outside desktop/ (include_bytes!, include_str!), folders
 # or files, for the hashing below.
-DESKTOP_BUILT_IN=(app/Sources/Threadbear/Resources/Art app/Sources/Threadbear/Resources/Rich site/app-doc-slugs.json features/support/sample.png app/Sources/Threadbear/Views/Tour.swift)
+DESKTOP_BUILT_IN=(app/Sources/Threadbear/Resources/Art app/Sources/Threadbear/Resources/Rich site/app-doc-slugs.json features/support/sample.png)
 #
 # That kept target is shared by every checkout that sends a run, and cargo
 # calls a crate fresh when none of its files is newer than its last build: a
