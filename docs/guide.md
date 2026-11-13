@@ -117,6 +117,9 @@ At the right of the row:
   says so, with a button to switch to the login with the most room, and
   Carry on by itself (Yes or No) to have it wait for you instead.
 
+Your messages from the phone app have a small phone beside the words or
+pictures. Hover or click it to see where the message came from.
+
 ### Reading a reply
 
 When an agent finishes a piece of work, its reply is the message it

@@ -14,7 +14,7 @@ import { threeWays, type View } from '../helpers/routes.ts';
 import { SCENARIOS } from '../helpers/scenario-list.ts';
 
 type Route = 'relay' | 'phone';
-type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'messages' | 'notes' | 'pictures' | 'failed';
+type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'messages' | 'notes' | 'pictures' | 'failed' | 'origins';
 
 // Differences that are meant, each with why. A test below fails once one
 // of these stops being a difference, so the list can't outlive its reason.
@@ -32,11 +32,13 @@ function pick(v: View, field: Field): unknown {
       return v.messages.map(({ role, text }) => ({ role, text }));
     case 'pictures':
       return v.messages.map((m) => m.pictures);
+    case 'origins':
+      return v.messages.map((m) => m.origin ?? null);
     default:
       return field === 'needs' || field === 'review' ? (v[field] ?? null) : v[field];
   }
 }
-const FIELDS: Field[] = ['needs', 'asks', 'next', 'looseEnds', 'review', 'plans', 'messages', 'notes', 'pictures', 'failed'];
+const FIELDS: Field[] = ['needs', 'asks', 'next', 'looseEnds', 'review', 'plans', 'messages', 'notes', 'pictures', 'failed', 'origins'];
 const known = (route: Route, field: Field) => KNOWN.find((k) => k.route === route && k.field === field);
 
 for (const s of SCENARIOS) {

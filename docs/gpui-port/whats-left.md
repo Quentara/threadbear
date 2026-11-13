@@ -124,6 +124,10 @@ you go.
   in the Swift app was taken out on 13 Nov)
 
 ### Smaller things
+- [x] Messages sent from the phone have their phone mark beside the words or
+  pictures, with its note on hover and click (`transcript.user`). Row menus
+  have their copy icons, and copying a transcript disables its menu item
+  until the older pages arrive (`transcript.rowmenu`).
 - [ ] The offer to continue a refused turn sits at the top, not just above the
   composer (`banner.refusal`)
 - [x] The milestone capsule shows at 100 threads and each thousand, once,

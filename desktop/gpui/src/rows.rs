@@ -11,6 +11,7 @@ pub(crate) mod list;
 pub(crate) mod markdown;
 pub(crate) use markdown::reading_style;
 pub(crate) mod metrics;
+mod phone;
 mod work;
 
 use self::metrics::*;
@@ -153,7 +154,7 @@ impl ThreadPane {
             .context_menu(move |menu, _, cx| {
                 // An open tool or thinking row says Collapse, as a group does.
                 let open = weak.upgrade().is_some_and(|pane| pane.read(cx).row_open(&menu_row));
-                Self::row_context_menu(menu_row.clone(), menu, weak.clone(), open)
+                Self::row_context_menu(menu_row.clone(), menu, weak.clone(), open, cx)
             })
             .into_any_element()
     }
@@ -175,7 +176,7 @@ impl ThreadPane {
         let faded = pending.is_some();
         let mut col = v_flex().items_end().pt(px(USER_TOP)).pb(px(USER_BOTTOM));
         if !message.images.is_empty() {
-            col = col.child(self.user_images(&message.images, cx));
+            col = col.child(self.user_images(&message.images, ix, message.text.is_empty() && message.origin.as_deref() == Some("phone"), cx));
         }
         let show_text = !message.text.is_empty() || message.images.is_empty();
         if show_text {
@@ -247,6 +248,9 @@ impl ThreadPane {
                     .child(work::icon("pencil", 12., quiet)),
                 );
                 col = col.group(group);
+            }
+            if message.origin.as_deref() == Some("phone") {
+                line = line.child(div().mb(px(4.)).mr(px(-4.)).child(phone::mark(ix, cx)));
             }
             col = col.child(line.child(bubble));
         }

@@ -39,7 +39,7 @@ export type View = {
   review?: unknown;
   // Plan first plans drawn as plan cards, "<first line> (waiting|go|revise)".
   plans: string[];
-  messages: { role: 'user' | 'assistant'; text: string; pictures: number }[];
+  messages: { role: 'user' | 'assistant'; text: string; pictures: number; origin?: string }[];
   // The lines saying the thread's login ran out and what it did about it
   // ("Moved to ...", "... Carrying on at ..."), which the Mac keeps on show.
   notes: string[];
@@ -56,6 +56,8 @@ export type Play = {
   endTurn(input: Record<string, unknown>): void;
   /** Mike sends a message, with pictures (paths of real files) if any. */
   send(text: string, images?: ImageRef[]): void;
+  /** Mike sends from his phone, so every surface can mark where it came from. */
+  sendFromPhone(text: string): void;
   /** Turns on Run on the card, for the next end_turn. */
   runAsks(): void;
   /** Mike presses Go ahead on the last plan (plans.approve). */
@@ -129,8 +131,8 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     return { needs: end?.needs, asks: (end?.asks ?? []) as Ask[], next: (end?.next ?? []) as string[], looseEnds: ends, review: end?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events) };
   };
   const viaPhone = async (): Promise<View> => {
-    const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string }[] };
-    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: [], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0 })), notes: [], failed: r.thread.status === 'error' };
+    const r = (await call(b.ctx, mods.phone.thread!, { token: TOKEN, threadId: id })) as { thread: Record<string, any>; messages: { role: 'user' | 'assistant'; text: string; origin?: string }[] };
+    return { needs: r.thread.needs, asks: (r.thread.asks ?? []) as Ask[], next: (r.thread.next ?? []) as string[], looseEnds: ((r.thread.looseEnds ?? []) as { text: string }[]).map((e) => e.text), review: r.thread.review, plans: [], messages: r.messages.map((m) => ({ role: m.role, text: m.text, pictures: 0, ...(m.origin ? { origin: m.origin } : {}) })), notes: [], failed: r.thread.status === 'error' };
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
@@ -184,6 +186,10 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
       },
       send: (text, images = []) => {
         h.runner.send(thread.id, text, images, {});
+        h.adapter.last.init();
+      },
+      sendFromPhone: (text) => {
+        h.runner.send(thread.id, text, [], { origin: 'phone' });
         h.adapter.last.init();
       },
       reviewed: (ledger) => {
@@ -253,5 +259,5 @@ function lastNext(events: Record<string, any>[]): string[] {
 function messagesOf(events: Record<string, any>[]): View['messages'] {
   return events
     .filter((e) => e.type === 'user.message' || e.type === 'assistant.text' || e.type === 'plan.proposed')
-    .map((e) => ({ role: e.type === 'user.message' ? ('user' as const) : ('assistant' as const), text: String(e.text ?? ''), pictures: Array.isArray(e.images) ? e.images.length : 0 }));
+    .map((e) => ({ role: e.type === 'user.message' ? ('user' as const) : ('assistant' as const), text: String(e.text ?? ''), pictures: Array.isArray(e.images) ? e.images.length : 0, ...(e.origin ? { origin: String(e.origin) } : {}) }));
 }

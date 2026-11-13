@@ -4620,3 +4620,20 @@ Fixes from Codex's review of the slice before:
   moves between other Macs and back here, and overlapping relay reads/tails.
   Five move flows passed on Tinker (47 steps), 35 Terminal core tests passed,
   58 relay/parity tests and 14 real-backend route scenarios passed locally.
+
+
+### 2026-11-13 Phone messages and row copy menus
+
+- A message sent from the phone shows its small phone beside the bubble,
+  or beside its pictures when it has no words. Hover and click say
+  "Sent from the phone app". The note replaces the hover tooltip while open.
+- The row menu uses Swift's icons for Copy message, Expand/Collapse,
+  Copy transcript as Markdown and Copy debug info. While older pages are
+  being fetched, reopening it shows a disabled "Copying transcript…".
+  The existing spinner banner stays until the copy succeeds or fails.
+- The phone origin is compared across all routes in the real-backend
+  scenarios. Scripted Mac checks covered text, pictures without words,
+  ordinary Mac messages and the click note. A 200-turn transcript with slow
+  page reads showed the busy menu and copied both its first and last turns.
+- The old manual Terminal-link gap in reading-a-thread.feature was removed;
+  terminal.feature now checks printed and labelled links through the gate.

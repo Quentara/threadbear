@@ -1587,6 +1587,14 @@ async function dispatch(client, method, p) {
       t.subagentEvents?.delete(p.subagentId);
       return { ok: true };
     }
+    case 'mock.phoneOnlyPicture': {
+      const t = need(p.threadId);
+      const first = t.events.find((e) => e.type === 'user.message');
+      if (!first?.images?.length) throw rpcError(-32602, 'This demo needs a picture.');
+      first.text = '';
+      first.origin = 'phone';
+      return { ok: true };
+    }
     case 'mock.finishSubagents': {
       const t = need(p.threadId);
       for (const sub of t.summary.subagents ?? []) {

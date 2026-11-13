@@ -16,6 +16,17 @@ export type Scenario = { name: string; play: (p: Play) => void; shows: string[] 
 
 export const SCENARIOS: Scenario[] = [
   {
+    name: 'a message sent from the phone app',
+    shows: ['The photo can wait until tomorrow.'],
+    play: (p) => {
+      p.say('I will check the photo.');
+      p.endTurn({ needs: 'nothing' });
+      p.sendFromPhone('The photo can wait until tomorrow.');
+      p.say('All right, I will leave it for tomorrow.');
+      p.endTurn({ needs: 'nothing' });
+    },
+  },
+  {
     // bruce's Claude login was signed out (canary, 13 Nov): its turns
     // failed there, and this Mac showed each as an empty reply.
     name: 'a turn that failed',
