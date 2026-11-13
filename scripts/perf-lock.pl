@@ -10,6 +10,7 @@ use Errno qw(EAGAIN EWOULDBLOCK EINTR);
 use File::Path qw(make_path);
 use FindBin;
 use File::Spec;
+use File::Temp qw(tempdir);
 use IO::Select;
 use POSIX qw(WNOHANG dup2);
 use Sys::Hostname qw(hostname);
@@ -36,14 +37,74 @@ $SIG{INT} = sub { $cancelled = 130 };
 # A dropped ssh can make even a diagnostic write fail. Cleanup must finish.
 $SIG{PIPE} = 'IGNORE';
 my $input = IO::Select->new(\*STDIN);
+my $last_beat = 0;
+sub keep_copy {
+    return if time - $last_beat < 30;
+    $last_beat = time;
+    for my $name (qw(THREADBEAR_REMOTE_SOURCE THREADBEAR_REMOTE_TARGET)) {
+        my $dir = $ENV{$name} // next;
+        next unless -d $dir;
+        open(my $marker, '>>', "$dir/.in-use") or next;
+        utime(undef, undef, "$dir/.in-use", $dir);
+        close $marker;
+    }
+}
 sub channel_gone {
     return 0 unless $input->can_read(0);
     my $n = sysread(STDIN, my $byte, 1);
     return defined($n) && $n == 0;
 }
 sub stopping {
+    keep_copy();
     $cancelled ||= 129 if channel_gone();
     return $cancelled;
+}
+
+sub wait_for_lock {
+    my ($lock, @held) = @_;
+    pipe(my $ready_r, my $ready_w) or die "perf-lock: ready pipe: $!\n";
+    pipe(my $live_r, my $live_w) or die "perf-lock: owner pipe: $!\n";
+    my $locker = fork() // die "perf-lock: locker fork: $!\n";
+    if (!$locker) {
+        close $ready_r; close $live_r; close $live_w;
+        $SIG{TERM} = $SIG{INT} = $SIG{HUP} = $SIG{PIPE} = 'DEFAULT';
+        flock($lock, LOCK_EX) or die "perf-lock: blocking lock: $!\n";
+        syswrite($ready_w, '1');
+        exit 0;
+    }
+    close $ready_w;
+    my $watcher = fork() // die "perf-lock: lock watcher fork: $!\n";
+    if (!$watcher) {
+        close $live_w;
+        close $_ for ($lock, @held);
+        # No lock fds in this watcher. If even KILL takes the owner while it
+        # waits, stop its blocking locker; readiness also means it can leave.
+        my $ready = IO::Select->new($ready_r);
+        my $live = IO::Select->new($live_r);
+        for (;;) {
+            exit 0 if $ready->can_read(0);
+            if ($live->can_read(0.1)) {
+                kill 'TERM', $locker unless $ready->can_read(0);
+                exit 0;
+            }
+        }
+    }
+    close $live_r;
+    my $ready = IO::Select->new($ready_r);
+    while (!$ready->can_read(0.1)) {
+        last if stopping();
+    }
+    close $live_w if $cancelled;
+    my $count = $cancelled ? 0 : sysread($ready_r, my $byte, 1);
+    close $ready_r;
+    waitpid($locker, 0);
+    my $status = $?;
+    close $live_w unless $cancelled;
+    waitpid($watcher, 0);
+    exit $cancelled if $cancelled;
+    die "perf-lock: blocking locker failed\n" unless $count && $status == 0;
+    # flock is on the shared open description, so this parent's fd keeps it
+    # held when the locker exits. It never drops its place in the kernel queue.
 }
 
 make_path("$home/.cache/threadbear-check");
@@ -55,11 +116,13 @@ for my $spec (["$home/.cache/threadbear-perf.lock", 'another build or measuremen
     # one. A free probe followed by a build races a check starting after it.
     for (;;) {
         open(my $lock, '>>', $spec->[0]) or die "perf-lock: $spec->[0]: $!\n";
-        while (!flock($lock, LOCK_EX | LOCK_NB)) {
+        my $locked = flock($lock, LOCK_EX | LOCK_NB);
+        while (!$locked) {
             die "perf-lock: lock $spec->[0]: $!\n" unless $! == EAGAIN || $! == EWOULDBLOCK || $! == EINTR;
             exit $cancelled if stopping();
             print STDERR "Waiting for $spec->[1] on $host ($spec->[0])...\n" unless $said++;
-            select(undef, undef, undef, 0.1);
+            wait_for_lock($lock, @locks);
+            $locked = 1;
         }
         exit $cancelled if stopping();
         # Old lockf calls without -k unlink on exit. A waiter can then own a
@@ -72,6 +135,10 @@ for my $spec (["$home/.cache/threadbear-perf.lock", 'another build or measuremen
     }
 }
 $ENV{THREADBEAR_PERF_LOCK_OWNER} = "$host:$$:$home";
+my $registry = tempdir('perf-children-XXXXXXXX', DIR => "$home/.cache/threadbear-check");
+open(my $registry_state, '>', "$registry/state") or die "perf-lock: registry: $!\n";
+close $registry_state;
+$ENV{THREADBEAR_PERF_CHILDREN} = $registry;
 
 my @command = @ARGV;
 if ($desk) {
@@ -79,7 +146,9 @@ if ($desk) {
     my $quote = sub { my $s = shift; $s =~ s/'/'\\''/g; return "'$s'"; };
     my $line = join(' ', map { $quote->($_) }
         ('env', "THREADBEAR_PERF_LOCK_OWNER=$ENV{THREADBEAR_PERF_LOCK_OWNER}",
-         'perl', '-e', 'setpgrp(0, 0); exec @ARGV', '/bin/bash', '-c',
+         "THREADBEAR_PERF_CHILDREN=$registry",
+         'perl', '-e', 'setpgrp(0, 0); exec @ARGV',
+         'perl', "$FindBin::Bin/perf-children.pl", '--child', $registry, '/bin/bash', '-c',
          'echo $$ >"$1"; [ ! -e "$1.gone" ] || exit 129; shift; exec "$@"',
          'perf-desk', $pidfile, @command));
     @command = ("$home/.local/bin/desk", $line);
@@ -105,8 +174,9 @@ if (!$child) {
     close $read;
     # The guard holds the copies, its workload doesn't. A successful run can
     # leave a harmless heartbeat sleeping briefly; it mustn't keep the turn.
-    exec '/bin/bash', "$FindBin::Bin/hangup-guard.sh", $pidfile,
-        '/bin/bash', '-c', 'exec 198>&- 199>&-; exec "$@"', 'perf-command', @command;
+    exec 'perl', "$FindBin::Bin/perf-children.pl", '--reap', $registry, $pidfile,
+        '/bin/bash', '-c', 'exec 198>&- 199>&-; exec "$@"', 'perf-command',
+        'perl', "$FindBin::Bin/perf-children.pl", '--child', $registry, @command;
     die "perf-lock: guard: $!\n";
 }
 close $read;

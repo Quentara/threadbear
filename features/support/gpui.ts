@@ -47,6 +47,7 @@ export class GpuiDriver implements Driver {
   readonly name = 'gpui' as const;
   private home = '';
   private children: ChildProcess[] = [];
+  private commands = new WeakMap<ChildProcess, string>();
   private socket?: net.Socket;
   private token = '';
   private buffer = '';
@@ -60,7 +61,13 @@ export class GpuiDriver implements Driver {
     // A process group of its own: `dbus-run-session`'s bus and the portals it
     // starts are grandchildren that outlive a plain kill, and the cloud box
     // ended up with thousands of them (9 Nov, "can't spawn worker thread").
-    const c = spawn(cmd, args, { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    // Register before exec, so even KILL of the measurement worker leaves the
+    // perf reaper enough to stop an app that has been reparented.
+    const registry = process.platform === 'win32' ? undefined : process.env.THREADBEAR_PERF_CHILDREN;
+    const c = spawn(registry ? 'perl' : cmd,
+      registry ? [path.join(root, 'scripts/perf-children.pl'), '--child', registry, cmd, ...args] : args,
+      { env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+    this.commands.set(c, cmd);
     c.stdout?.on('data', (d) => (this.log += d));
     c.stderr?.on('data', (d) => (this.log += d));
     this.children.push(c);
@@ -110,7 +117,7 @@ export class GpuiDriver implements Driver {
       // A server: a virtual screen, and a session bus of its own for the
       // desktop settings and portals the app asks for.
       this.display ??= `:${100 + (process.pid % 400)}`;
-      if (!this.children.some((c) => c.spawnargs[0] === 'Xvfb')) {
+      if (!this.children.some((c) => this.commands.get(c) === 'Xvfb')) {
         this.child('Xvfb', [this.display, '-screen', '0', '1400x900x24'], {});
         await sleep(400);
       }

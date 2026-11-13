@@ -5,7 +5,7 @@
 # use, and these folders filled the cloud box on 9 Nov, which runs a runner too:
 # its saves started failing (THREADBEAR-1R).
 #
-#   trim-remote-cache.sh <this checkout's key>
+#   trim-remote-cache.sh <this checkout's key> [active target folder]
 #   trim-remote-cache.sh -
 #
 # Exit 3: too little disk left to build on. With - (scripts/check-remote.sh,
@@ -13,6 +13,7 @@
 # here: it only gives room back, and never refuses.
 set -u
 own="${1:?usage: trim-remote-cache.sh <key>|-}"
+active_target="${2:-target-$own}"
 
 # Under this, idle checkouts lose their target folders: room for a build from
 # nothing (a debug target has reached 7 GiB) with some to spare.
@@ -150,7 +151,7 @@ done
 need="$REFUSE_GIB"
 # By size, not whether it's empty: a first build that died early leaves a
 # folder with next to nothing to build on.
-kb="$(du -sk "target-$own" 2>/dev/null | awk '{print $1}')"
+kb="$(du -sk "$active_target" 2>/dev/null | awk '{print $1}')"
 [ "${kb:-0}" -ge 1048576 ] || need="$REFUSE_COLD_GIB"
 free="$(free_gib)"
 if [ "$free" -lt "$need" ]; then

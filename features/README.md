@@ -121,3 +121,19 @@ spec scenarios and must not restart their process to take a lock. Remove manual 
 hand its ownership to the helper. Shell tools can use
 `perl scripts/perf-lock.pl - <command...>` with an open stdin channel; closing
 it cancels the run. `remote.sh` handles that channel itself.
+
+
+For performance A/B builds, add `--perf` to `remote.sh` (it can go before or
+after `--desk`). That uses `~/.cache/threadbear-check/gpui/perf-target`, which
+ordinary cache eviction leaves in place. Other runs keep their target per
+checkout so an updater copying its binaries after a build still reads its own.
+Queued runs mark their source and target in use before waiting for the host
+locks and renew those markers until they finish.
+
+The performance wrapper registers the workload's process group and the GPUI
+driver's detached app and mock groups before starting them. After the worker
+ends, including a crash or KILL, it stops those registered groups before
+unlocking. The registry is temporary, under
+`~/.cache/threadbear-check/perf-children-*`; records contain group IDs and start
+times, so a reused PID is left alone. Desk workloads register in that same run,
+even if the Desk client finishes early. Keep child spawns' `process.env` intact.

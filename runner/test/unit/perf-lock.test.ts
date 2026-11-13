@@ -10,7 +10,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const helper = path.join(root, 'scripts/perf-lock.pl');
 const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function until(check: () => boolean, message: string) {
-  for (let i = 0; i < 150; i++) {
+  for (let i = 0; i < 500; i++) {
     if (check()) return;
     await pause(40);
   }
@@ -203,5 +203,85 @@ test('a whole process-group TERM leaves the guard alive to stop its workload', a
   await until(() => next.output.includes('Waiting'), 'turn released before cleanup');
   await first.done;
   assert.equal(await next.done, 0);
+  assert.throws(() => process.kill(pid, 0));
+});
+
+test('KILL of the actual measurement worker reaps its detached driver children before unlock', async (t) => {
+  const h = host(t);
+  const workerPid = path.join(h.home, 'worker.pid');
+  const appPid = path.join(h.home, 'app.pid');
+  const entry = path.join(h.home, 'worker.mjs');
+  fs.writeFileSync(entry, `import fs from 'node:fs'; import { GpuiDriver } from ${JSON.stringify(path.join(root, 'features/support/gpui.ts'))}; const driver = new GpuiDriver(); driver.child('sh', ['-c', 'trap "" TERM; echo $$ > "$1"; while :; do sleep 1; done', 'sh', ${JSON.stringify(appPid)}], {}); fs.writeFileSync(${JSON.stringify(workerPid)}, String(process.pid)); setInterval(() => {}, 1000);`);
+  const first = h.run([process.execPath, entry]);
+  await until(() => fs.existsSync(appPid), 'driver child did not start');
+  const worker = Number(fs.readFileSync(workerPid, 'utf8'));
+  const app = Number(fs.readFileSync(appPid, 'utf8'));
+  process.kill(worker, 'SIGKILL');
+  const next = h.run(['sh', '-c', 'echo next']);
+  await until(() => next.output.includes('Waiting'), 'worker death released locks before reaping apps');
+  assert.equal(await first.done, 137, first.output);
+  assert.equal(await next.done, 0, next.output);
+  assert.throws(() => process.kill(app, 0));
+  assert.ok(!fs.readdirSync(path.join(h.home, '.cache/threadbear-check')).some((n) => n.startsWith('perf-children-')));
+});
+
+test('queued remote copies and targets stay marked in use before the host locks are acquired', async (t) => {
+  const h = host(t);
+  const source = path.join(h.home, 'src-copy');
+  const target = path.join(h.home, 'target-copy');
+  for (const dir of [source, target]) { fs.mkdirSync(dir); fs.utimesSync(dir, 1, 1); }
+  const first = h.run(['sh', '-c', 'echo ready; sleep 1']);
+  await until(() => first.output.includes('ready'), 'first did not start');
+  const next = h.run(['true'], { THREADBEAR_REMOTE_SOURCE: source, THREADBEAR_REMOTE_TARGET: target });
+  await until(() => next.output.includes('Waiting'), 'next did not wait');
+  for (const dir of [source, target]) {
+    assert.ok(fs.existsSync(path.join(dir, '.in-use')));
+    assert.ok(Date.now() - fs.statSync(dir).mtimeMs < 5000);
+  }
+  assert.equal(await next.done, 0, next.output);
+});
+
+test('a measurement joins the blocking check queue ahead of later checks', async (t) => {
+  const h = host(t);
+  const base = path.join(h.home, '.cache/threadbear-check');
+  fs.mkdirSync(base, { recursive: true });
+  const lock = path.join(base, 'lock');
+  const order = path.join(h.home, 'order');
+  const first = spawn('perl', ['-MFcntl=:flock', '-e', 'open(my $f, ">>", $ARGV[0]); flock($f, LOCK_EX); $|=1; print "ready\\n"; sleep 2', lock]);
+  let output = '';
+  first.stdout!.on('data', (s) => { output += s; });
+  await until(() => output.includes('ready'), 'first check did not start');
+  const measurement = h.run(['sh', '-c', 'echo measured >> "$1"; sleep .2', 'sh', order]);
+  await until(() => measurement.output.includes('Waiting'), 'measurement did not queue');
+  await pause(150);
+  const later = spawn('perl', ['-MFcntl=:flock', '-e', 'open(my $f, ">>", $ARGV[0]); flock($f, LOCK_EX); open(my $o, ">>", $ARGV[1]); print {$o} "later\\n";', lock, order]);
+  const done = new Promise((r) => later.on('exit', r));
+  assert.equal(await measurement.done, 0, measurement.output);
+  assert.equal(await done, 0);
+  assert.equal(fs.readFileSync(order, 'utf8'), 'measured\nlater\n');
+});
+
+test('a successful shell command cannot leave background work holding the host after unlock', async (t) => {
+  const h = host(t);
+  const pidfile = path.join(h.home, 'background.pid');
+  const run = h.run(['sh', '-c', 'sleep 60 & echo $! > "$1"', 'sh', pidfile]);
+  assert.equal(await run.done, 0, run.output);
+  const pid = Number(fs.readFileSync(pidfile, 'utf8'));
+  assert.throws(() => process.kill(pid, 0));
+});
+
+test('a Desk client finishing early cannot release locks while its GUI workload lives', async (t) => {
+  const h = host(t);
+  const bin = path.join(h.home, '.local/bin');
+  const appPid = path.join(h.home, 'app.pid');
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(path.join(bin, 'desk'), '#!/bin/bash\nbash -c "$1" >"$HOME/desk.log" 2>&1 </dev/null &\nfor i in {1..100}; do [ ! -f "$HOME/app.pid" ] || exit 0; sleep .02; done\nexit 1\n', { mode: 0o755 });
+  const first = h.run(['sh', '-c', 'trap "" TERM; echo $$ > "$1"; while :; do sleep 1; done', 'sh', appPid], {}, path.join(h.home, 'desk.pid'));
+  await until(() => fs.existsSync(appPid), 'GUI workload did not start');
+  const pid = Number(fs.readFileSync(appPid, 'utf8'));
+  const next = h.run(['true']);
+  await until(() => next.output.includes('Waiting'), 'early Desk client exit released the turn');
+  assert.equal(await first.done, 0, first.output);
+  assert.equal(await next.done, 0, next.output);
   assert.throws(() => process.kill(pid, 0));
 });

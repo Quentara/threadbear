@@ -154,8 +154,12 @@ test('a run marks its target in use and its copy as used, and ssh does not wait 
   const findNode = path.join(import.meta.dirname, '..', '..', 'scripts', 'find-node.sh');
   fs.writeFileSync(path.join(h.bin, 'rsync'), `#!/bin/bash
 dest="$HOME/\${!##*:}"
-mkdir -p "$dest/runner/scripts"
+mkdir -p "$dest/runner/scripts" "$dest/scripts"
 cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
+source="\${@: -2:1}"
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh; do
+  cp "$source/scripts/$helper" "$dest/scripts/"
+done
 touch -t 202601010000 "$dest"
 # The host was too full for the first mkdir, and the trim then made room.
 rm -rf "$HOME"/.cache/threadbear-check/gpui/target-*
@@ -272,8 +276,12 @@ if [ -e ${JSON.stringify(full)} ]; then echo "fake 0 0 307200 0% /"; else echo "
   const findNode = path.join(import.meta.dirname, '..', '..', 'scripts', 'find-node.sh');
   fs.writeFileSync(path.join(h.bin, 'rsync'), `#!/bin/bash
 dest="$HOME/\${!##*:}"
-mkdir -p "$dest/runner/scripts"
+mkdir -p "$dest/runner/scripts" "$dest/scripts"
 cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
+source="\${@: -2:1}"
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh; do
+  cp "$source/scripts/$helper" "$dest/scripts/"
+done
 `, { mode: 0o755 });
   // A host each: the fake ssh runs here, so a run's in-use marker keeps the
   // last run's turn lock open, which the real ssh would have dropped.
@@ -292,4 +300,19 @@ cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
   const failed = run('host3', 'bash', '-c', `touch ${JSON.stringify(full)}; exit 7`);
   assert.equal(failed.status, 7);
   assert.match(failed.stderr, /300 MiB free/);
+});
+
+test('the shared performance target survives ordinary cache eviction', (t) => {
+  const h = host(t, 400, MANY);
+  fs.mkdirSync(path.join(h.base, 'perf-target'));
+  assert.equal(h.trim().status, 0);
+  assert.ok(fs.existsSync(path.join(h.base, 'perf-target')));
+});
+
+test('a warm shared performance target needs warm-build space rather than cold-build space', (t) => {
+  const h = host(t, 6, { 'src-aaa': 0, 'target-aaa': -1 });
+  fs.mkdirSync(path.join(h.base, 'perf-target/debug'), { recursive: true });
+  fs.writeFileSync(path.join(h.base, 'perf-target/debug/out'), 'warm');
+  const r = spawnSync('/bin/bash', [TRIM, 'aaa', 'perf-target'], { cwd: h.base, env: h.env, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
 });

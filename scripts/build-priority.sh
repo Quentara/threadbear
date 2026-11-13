@@ -8,12 +8,25 @@ for threadbear_build_tool in cargo swift swiftc xcodebuild; do
   # cargo run/bench and swift run can be measurements themselves. Only the
   # compilation commands get the lower priority; executables run normally.
   case "$threadbear_build_tool" in
-    cargo) threadbear_build_actions='build|check|clippy|rustc' ;;
-    swift) threadbear_build_actions='build' ;;
+    cargo) threadbear_build_actions='build|check|clippy|rustc|test' ;;
+    swift) threadbear_build_actions='build|test' ;;
     *) threadbear_build_actions='*' ;;
   esac
   {
-    printf '#!/bin/bash\ncase "${1:-}" in\n  %s) ' "$threadbear_build_actions"
+    cat <<'WRAPPER'
+#!/bin/bash
+action=''
+skip=0
+for arg in "$@"; do
+  if [ "$skip" = 1 ]; then skip=0; continue; fi
+  case "$arg" in
+    --config|--color|--manifest-path) skip=1 ;;
+    +*|-*) ;;
+    *) action="$arg"; break ;;
+  esac
+done
+WRAPPER
+    printf 'case "$action" in\n  %s) ' "$threadbear_build_actions"
     if [ "$(uname -s)" = Darwin ]; then
       printf 'exec /usr/sbin/taskpolicy -b %q "$@" ;;\n' "$threadbear_build_real"
     else
