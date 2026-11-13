@@ -503,6 +503,12 @@ impl SidePane {
         if let Some(section) = self.chosen.get(thread_id).cloned() {
             self.section_shown(&section, thread_id, cx);
         }
+        // Its previewed file changed while another thread showed (files.rs
+        // reread_file put the read off): read it now.
+        if let Some(open) = self.files.open.get_mut(thread_id).filter(|f| f.changed_away) {
+            open.changed_away = false;
+            self.reread_file(thread_id, cx);
+        }
     }
 
     // MARK: opening things
