@@ -40,6 +40,7 @@ mod ding;
 mod draft_boxes;
 mod drafts;
 mod explain_pane;
+mod far_rows;
 mod file_drag;
 mod file_edit;
 mod file_find;

@@ -45,6 +45,22 @@ enum Item {
     Empty,
 }
 
+impl Item {
+    /// What the line is, the same from one frame to the next however the
+    /// lines around it change, for keeping its height (far_rows.rs).
+    fn key(&self) -> String {
+        match self {
+            Item::Heading { project, .. } => format!("heading:{}", project.id),
+            Item::Fold { id, .. } => format!("fold:{id}"),
+            Item::Unfiled => "unfiled".into(),
+            Item::Row { thread, group, .. } => format!("row:{group}:{}", thread.id),
+            Item::ArchivedFold { project, .. } => format!("archived:{project}"),
+            Item::ShowMore { project, .. } => format!("more:{project}"),
+            Item::Empty => "empty".into(),
+        }
+    }
+}
+
 /// The thread as its row under `heading` shows it: that project left out of
 /// its tile and its place line, as the heading says it already.
 fn under(t: &ThreadSummary, heading: &str) -> ThreadSummary {
@@ -134,9 +150,19 @@ impl Threadbear {
             (sections.top_level().len(), self.projects_list_items(&sections, folding))
         };
         let (top_count, items) = items;
-        let mut list = v_flex().px(px(OUTER_INSET)).pb(px(32.));
+        let far = self.projects.list_far.clone();
+        far.begin(self.sidebar_view.as_ref().map(|v| v.entity_id()), &self.projects.list_scroll);
+        let mut list = v_flex().px(px(OUTER_INSET)).pb(px(32.)).child(far.marker());
         if self.sidebar.loaded {
             for (n, item) in items.into_iter().enumerate() {
+                // Far out of view it's a gap its height (far_rows.rs),
+                // unless the pointer's on it.
+                let key = item.key();
+                let hovered = matches!(&item, Item::Row { thread, .. } if self.sidebar.hovered.as_deref() == Some(thread.id.as_str()));
+                if let Some(gap) = far.far(&key).filter(|_| !hovered) {
+                    list = list.child(far.row(&key, None, gap));
+                    continue;
+                }
                 let el = match item {
                     Item::Heading { project, count, part } => self.render_project_heading(&project, count, part, &p, cx),
                     Item::Fold { id, title, project, count, decisions, part } => self.render_project_fold(&id, &title, project.as_ref(), count, decisions, part, &p, cx),
@@ -151,7 +177,7 @@ impl Threadbear {
                     Item::ShowMore { project, more, part } => self.render_archived_more(&project, more, part, &p, cx),
                     Item::Empty => div().pl(px(LEADING)).pt(px(10.)).text_size(px(style::size::SIDEBAR_PREVIEW)).line_height(px(style::natural_line(style::size::SIDEBAR_PREVIEW))).text_color(p.secondary).child("No projects yet.").into_any_element(),
                 };
-                list = list.child(el);
+                list = list.child(far.row(&key, Some(el), 0.));
             }
             let archived: Vec<Project> = self.projects.list.iter().filter(|p| p.archived).cloned().collect();
             if !archived.is_empty() {

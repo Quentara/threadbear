@@ -58,6 +58,8 @@ pub(crate) struct ProjectsState {
     /// The goals, state or notes being edited on the open page.
     pub(crate) editing: Option<Editing>,
     pub(crate) list_scroll: ScrollHandle,
+    /// The list's rows far out of view, drawn as gaps while it scrolls (far_rows.rs).
+    pub(crate) list_far: std::rc::Rc<crate::far_rows::FarRows>,
     pub(crate) home_scroll: ScrollHandle,
     pub(crate) page_scroll: ScrollHandle,
     /// Answers sent from a project's page that their threads haven't taken
