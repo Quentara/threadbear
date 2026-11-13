@@ -85,7 +85,12 @@ int main(int argc, const char **argv) {
     PictureSource *source = [[PictureSource alloc] initWithFrame:NSMakeRect(0, 0, 180, 140)];
     source.data = [NSData dataWithContentsOfFile:@(argv[1])];
     source.file = [NSURL fileURLWithPath:@(argv[1])];
-    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(30, 30, 180, 140) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    // Use the top of the usable screen area so an auto-hidden Dock appearing
+    // at the bottom cannot cover the source either. This places the title bar
+    // below the menu bar too, without guessing its height.
+    NSRect visible = NSScreen.screens.firstObject.visibleFrame;
+    NSWindow *window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 180, 140) styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
+    [window setFrameTopLeftPoint:NSMakePoint(NSMinX(visible) + 30, NSMaxY(visible) - 30)];
     window.title = @"Threadbear picture test source";
     window.contentView = source;
     [window makeKeyAndOrderFront:nil]; [NSApp activateIgnoringOtherApps:YES];
