@@ -1921,8 +1921,10 @@ Inbox's order, the appearance, the panel layout, where the window was, the
 ding, Ask before quitting, the activity log switch, what a click on a link
 does, how files and folders show, and anything typed in a message box and
 not sent. It only fills in what it hasn't got of its own, does it once, and
-a note at the top says what came across. The tour and Finish setting up
-aren't in it yet: its Help menu says so.
+a note at the top says what came across. It also brings across whether
+you finished the Mac app's tour, which of its pages have shown you their
+intro, and whether you hid Finish setting up, so you only get the tour there
+if you never finished it.
 
 If your copy has changes of your own to the old Mac app (commits to `app/`
 or `dock/` that Mike's copy doesn't have), they can't come across by
@@ -2046,12 +2048,15 @@ you turn it on, and it stays on your Mac.
 <!-- picture: /docs-img/setup.webp alt: Finish setting up, bottom left: it ticks itself off as you go -->
 
 The first time the app opens it shows you round the window, one part at a
-time, with a few made-up sample threads to try things on: you hibernate one,
-archive another, move a panel, and press an example patch's button, Roll a
-die (it lives in `~/ThreadbearThreads/Welcome`). Then it opens your first
-thread with the message written for you, asking the agent for a patch with
-a hello button of your own, and you send it. The samples are deleted when
-the tour ends. Help > Take the Tour runs it again, and that time you can
+time: the window dims, one part lights up, and a card beside it says what
+it is, with an ⓘ that opens its page of these docs. A few made-up sample
+threads give it something to point at: a sample's row with its star, moon
+and box out, your views down the left, Highlights, moving a panel, and an
+example patch's button, Roll a die (it lives in
+`~/ThreadbearThreads/Welcome`). Then it opens your first thread with the
+message written for you, asking the agent for a patch with a hello button
+of your own, and you send it with Return. The samples are deleted when the
+tour ends. Help > Take the Tour runs it again, and that time you can
 skip it. A Mac that joined a Threadbear you already use (setup's
 `--existing`) skips it.
 

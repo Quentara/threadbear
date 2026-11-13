@@ -113,6 +113,8 @@ pub(crate) struct TourState {
     pools_seen: usize,
     /// The first-run check has been made this launch.
     checked_new: bool,
+    /// When the step on show came up.
+    step_at: Option<std::time::Instant>,
 }
 
 use std::rc::Rc;
@@ -275,6 +277,7 @@ impl Threadbear {
     fn tour_go(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.tour.tour.task_done = false;
         self.tour.waited = false;
+        self.tour.step_at = Some(std::time::Instant::now());
         // Measured afresh: what the last step lit may have gone.
         FRAMES.with(|f| f.borrow_mut().clear());
         self.tour_apply_step(window, cx);
@@ -427,6 +430,14 @@ impl Threadbear {
         let bounds = Rect::new(0., 0., f32::from(size.width), f32::from(size.height));
         // A few points round it, and never past the window's edge.
         let hole = self.tour_frame(&step, cx).map(|r| r.outset(4.).intersection(&bounds)).filter(|r| r.w > 1. && r.h > 1.);
+        // A part that's on its way (a panel gliding in under the threads, a
+        // thread's composer still opening) has no frame yet, and the dock's
+        // frames don't redraw the app: look again next frame till it's there.
+        // Only for a few seconds: a part that never shows (a panel closed
+        // since) shouldn't keep the window drawing.
+        if hole.is_none() && !step.targets.is_empty() && self.tour.step_at.is_some_and(|at| at.elapsed() < Duration::from_secs(3)) {
+            window.request_animation_frame();
+        }
         let card_size = self.tour.card_size.get();
         let (origin, edge) = rules::card_placement(hole, card_size, bounds, &step.edges, 14., 12.);
         let dark = cx.theme().is_dark();
@@ -643,7 +654,7 @@ impl Threadbear {
             .border(gpui_kit::px(0.5))
             .border_color(style::hairline(cx))
             .shadow(shadow)
-            .when(step.bear, |c| c.child(Icon::default().data(BEAR_WAVE).w(px(44.)).h(px(44.)).text_color(secondary)))
+            .when(step.bear, |c| c.child(waving_bear(44., secondary)))
             .child(title_row)
             .child(div().text_size(px(style::size::LABEL)).line_height(px(style::natural_line(style::size::LABEL))).text_color(secondary).child(body))
             .child(buttons.pt(px(4.)).text_size(px(style::size::LABEL)))
@@ -721,6 +732,13 @@ impl Threadbear {
             "samples": self.tour.samples.len(),
         })
     }
+}
+
+/// The waving bear at `side` points, as the Swift app's `Bear.image(.wave,
+/// side:)`: the picture is twice as tall as the bear (room under its feet for
+/// the About window's tilt), so only its top half is shown.
+pub(crate) fn waving_bear(side: f32, color: Hsla) -> Div {
+    div().flex_none().w(px(side)).h(px(side)).overflow_hidden().child(Icon::default().data(BEAR_WAVE).w(px(side)).h(px(side * 2.)).text_color(color))
 }
 
 /// The card's default button: the accent, white words, as SwiftUI's

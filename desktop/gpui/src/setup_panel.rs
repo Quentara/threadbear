@@ -10,14 +10,13 @@ use crate::app::Threadbear;
 use crate::push_button::PushButton;
 use crate::shell;
 use crate::style::{self, px};
-use gpui_kit::component::{h_flex, v_flex, Icon, Sizable as _, StyledExt as _};
+use gpui_kit::component::{h_flex, v_flex, Sizable as _, StyledExt as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use serde_json::{json, Value};
 use threadbear_core::devices::{self as devices_rules, DeviceList};
 use threadbear_core::tour::{SetupChecklist, SetupItem};
 
-const BEAR_WAVE: &[u8] = include_bytes!("../icons/bear-wave.svg");
 
 /// What the checklist needs to know that the app doesn't keep anyway: the
 /// paired devices and whether the backend is on this Mac only, from
@@ -134,7 +133,7 @@ impl Threadbear {
                 h_flex()
                     .items_center()
                     .gap(px(10.))
-                    .child(Icon::default().data(BEAR_WAVE).w(px(36.)).h(px(36.)).text_color(secondary))
+                    .child(crate::tour::waving_bear(36., secondary))
                     .child(div().text_size(px(style::size::CARD_TITLE)).font_semibold().text_color(fg).child("All set."))
                     .into_any_element(),
             );

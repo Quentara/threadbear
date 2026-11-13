@@ -157,6 +157,11 @@ async function main() {
     const s = parseTour(tour());
     return s.title === 'Finish setting up' && s;
   }, 40);
+  // Its panel glides in under the threads first.
+  t = (await until('Finish setting up lights its panel once it has glided in', () => {
+    const s = parseTour(tour());
+    return s.lit && s;
+  })) || t;
   shot('finish-setting-up');
   check('Finish setting up lights its panel', t && t.lit !== null, t?.raw);
   check('and its panel is open', dump().setup?.shown === true, JSON.stringify(dump().setup));
