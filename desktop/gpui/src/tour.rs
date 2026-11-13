@@ -598,7 +598,7 @@ impl Threadbear {
         if let Some(url) = step.doc_url() {
             title_row = title_row.child(
                 div()
-                    .id("tour-docs")
+                    .id("tour-docs").role(Role::Button)
                     .cursor_pointer()
                     .child(crate::icons::symbol("info.circle").with_size(px(14.)).text_color(secondary))
                     .tip("More about this, in the docs")
@@ -618,7 +618,7 @@ impl Threadbear {
         if skippable && task != Some(TourTask::SendFirst) && !is_last {
             buttons = buttons.child(
                 div()
-                    .id("tour-skip")
+                    .id("tour-skip").role(Role::Button)
                     .cursor_pointer()
                     .text_color(secondary)
                     .child("Skip")

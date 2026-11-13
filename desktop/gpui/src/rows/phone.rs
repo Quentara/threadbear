@@ -17,7 +17,7 @@ pub(super) fn mark(index: usize, cx: &App) -> AnyElement {
         .trigger(PhoneMark { index, ink, open: false })
         .content(move |_, _, _| {
             div().id("phone-origin-note").px(px(4.)).py(px(2.)).text_size(px(12.)).line_height(px(15.)).text_color(text)
-                .test_support().aria_label("Phone message origin").child(WORDS)
+                .test_support().role(Role::GenericContainer).aria_label("Phone message origin").child(WORDS)
         })
         .into_any_element()
 }
@@ -35,7 +35,7 @@ impl RenderOnce for PhoneMark {
         let ink = self.ink;
         div().id(("phone-origin-button", self.index)).flex_none().size(px(22.))
             .flex().items_center().justify_center().cursor_pointer()
-            .when(!self.open, |d| d.tip(WORDS)).test_support().aria_label(WORDS)
+            .when(!self.open, |d| d.tip(WORDS)).test_support().role(Role::Button).aria_expanded(self.open).aria_label(WORDS)
             .child(crate::icons::symbol("iphone").size(px(12.)).text_color(ink))
     }
 }
