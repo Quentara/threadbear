@@ -371,6 +371,12 @@ impl SidePane {
         // app draws it again. Fetching again is only for a new thread or new
         // events, below.
         cx.notify();
+        // The thread on show's file from before a restart: the selected
+        // thread's, or the one a project page borrows its panels from, which
+        // is never selected.
+        if let Some(shown) = self.thread(cx) {
+            self.restore_preview(&shown.id, cx);
+        }
         let t = app.read(cx);
         let Some(thread) = t.selected.as_ref().and_then(|id| t.threads.get(id)) else { return };
         let key = (thread.id.clone(), thread.last_seq, thread.highlights_at.clone());
@@ -533,7 +539,7 @@ impl SidePane {
     }
 
     /// The file the thread had open when the app last quit, opened again the
-    /// first time the thread shows, the selected one or a project page's.
+    /// first time the thread shows in the pane (`app_changed`).
     /// Once in a launch: anything done in the pane since is what's
     /// remembered from then on.
     fn restore_preview(&mut self, thread_id: &str, cx: &mut Context<Self>) {
@@ -547,21 +553,17 @@ impl SidePane {
             return;
         }
         let Some(open) = self.places.get(thread_id).and_then(|p| p.open.clone()) else { return };
-        // Opened over a panel the thread no longer has: over Highlights, where
-        // the pane falls back to, or it would sit unseen behind it.
-        let from = if Self::section_ids(&thread).contains(&open.from) { open.from.clone() } else { HIGHLIGHTS.to_owned() };
-        // Mike has since picked another section to look at (a click on a
-        // project page's section before this ran): leave it be.
-        if self.section_for(&thread) != from {
+        // Opened over a panel the thread no longer has: there's nowhere for it
+        // to show (another section may not be open in the dock either), so
+        // it's left closed. A preview draws over its own section whichever
+        // one was picked last, side by side or not, so that's the only check.
+        if !Self::section_ids(&thread).contains(&open.from) {
             return;
         }
-        self.show_preview(restored_preview(&open, &from), thread_id, cx);
+        self.show_preview(restored_preview(&open, &open.from), thread_id, cx);
     }
 
     pub(crate) fn section_shown(&mut self, id: &str, thread_id: &str, cx: &mut Context<Self>) {
-        // A project page's pane shows a thread that's never selected, so its
-        // first section drawn is where its file comes back (side_sections.rs).
-        self.restore_preview(thread_id, cx);
         if id == FILES {
             self.load_folder_for_files(thread_id, cx);
         } else if id != HIGHLIGHTS && id != PATCHES {
@@ -570,7 +572,6 @@ impl SidePane {
     }
 
     fn file_shown(&mut self, thread_id: &str, cx: &mut Context<Self>) {
-        self.restore_preview(thread_id, cx);
         // The selected thread's current section may want fresh data.
         if let Some(section) = self.chosen.get(thread_id).cloned() {
             self.section_shown(&section, thread_id, cx);
