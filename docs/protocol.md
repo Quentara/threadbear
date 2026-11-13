@@ -5314,8 +5314,17 @@ kept in `schedules.json` in the data dir.
   it, `[Scheduled: "<title>", <whenText>]`, so the agent knows Mike didn't
   just type it, and its `user.message` has `origin: "schedule"` and
   `scheduleId`. A message for a thread that's busy waits for the running
-  turn to end (it doesn't go into it), then starts its own turn. A snoozed
-  or archived thread comes back to the inbox, as with any message. One it
+  turn to end (it doesn't go into it), then starts its own turn. A
+  thread kept by a draining runner receives it there through
+  `drain.sendScheduled { threadId, text, scheduleId }` → `{ turnId }`,
+  with `origin: "schedule"` and `queue: true`, once its turn ends and
+  background work is all that keeps it there. Until it can start the turn
+  immediately, the run stays due on the primary: recovery after an old
+  runner crashes discards its unsent queue. A slow draining process holds
+  only its own schedule's send, while other schedules continue.
+  A draining release that
+  doesn't know this method leaves the run due until its thread comes across.
+  An archived or snoozed thread comes back to the inbox, as with any message. One it
   brought out of the archive (`unarchivedBySchedule` on the record, with who
   had archived it) goes back, archived by them again with a `system.note`,
   when that run finishes with `needs: "nothing"` and nothing left running

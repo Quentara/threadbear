@@ -11,6 +11,7 @@ import { nullLogger } from '../../src/log.ts';
 import { readRunnerJson } from '../../src/config.ts';
 import { toOwnedScheduleDoc, SCHEDULE_POOLS_API_VERSION } from '../../src/sync.ts';
 import { keptCheckFile } from '../../src/schedule-check.ts';
+import { scheduledSendMethods, sendScheduled } from '../../src/handover.ts';
 
 const MIN = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -93,6 +94,152 @@ function idleThread(h: ReturnType<typeof makeHarness>) {
   s.result('completed');
   return { thread, s };
 }
+
+for (const backend of [false, true]) test(`a scheduled continuation reaches a draining runner held by a blocked shell (${backend ? 'backend' : 'local'})`, async () => {
+  const old = makeHarness();
+  const { thread } = old.runner.create({ text: 'Measure', accountId: 'claude-3' });
+  const session = old.adapter.last;
+  session.init();
+  session.out({ kind: 'tasks', tasks: [{ id: 'shell', type: 'local_bash', kind: 'shell', description: 'waiting for a lock' }] });
+  await old.runner.beginDrain([thread.id], { onHandedOver: () => assert.fail('blocked shell still owns the thread'), backgroundMs: 4 * 60 * MIN });
+  const h = makeHarness();
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
+    elsewhere: (id) => id === thread.id,
+    sendElsewhere: (id, text, scheduleId) => sendScheduled(h.runner, {
+      call: async (_id, method, params) => {
+        assert.equal(method, 'drain.sendScheduled');
+        return scheduledSendMethods(old.runner)['drain.sendScheduled'](params);
+      },
+    }, id, text, scheduleId),
+  });
+  sched.start();
+  if (backend) { await sched.attach(fakeBackend(h.clock, [M5]).for('primary', M5.id)); await tick(6); }
+  try {
+    const sc = await sched.create({ text: 'Inspect the job', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    h.clock.advance(MIN);
+    await tick(8);
+    assert.equal(session.sent.length, 1, 'never steers the running turn');
+    assert.equal(old.runner.mustGet(thread.id).rec.queue.length, 0, 'the old runner never acknowledges an unsent queue item');
+    session.result('completed');
+    await tick(8);
+    assert.equal(sched.find(sc.id).lastRun, undefined, 'a busy old runner leaves the slot due');
+    h.clock.advance(MIN);
+    await tick(8);
+    assert.equal(session.sent.length, 2, 'starts after the turn despite the blocked shell');
+    const msg = old.events(thread.id).filter((e) => e.type === 'user.message').at(-1)!;
+    assert.equal(msg.origin, 'schedule');
+    assert.equal(msg.scheduleId, sc.id);
+    assert.equal(sched.find(sc.id).runs, 1);
+    h.clock.advance(2 * MIN);
+    await tick(8);
+    assert.equal(session.sent.length, 2, 'sent only once');
+  } finally { sched.stop(); }
+});
+
+for (const requested of [false, true]) test(`an unresponsive draining runner holds only its own ${requested ? 'requested' : 'due'} schedule`, async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  let release!: () => void;
+  let calls = 0;
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
+    elsewhere: (id) => id === 'remote',
+    sendElsewhere: async () => { calls++; await new Promise<void>((resolve) => { release = resolve; }); throw new RpcError(ErrorCode.busy, 'still busy'); },
+  });
+  sched.start();
+  const be = fakeBackend(h.clock, [M5]).for('primary', M5.id);
+  await sched.attach(be);
+  await tick(8);
+  try {
+    const stuck = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + (requested ? 10 : 1) * MIN), threadId: 'remote' });
+    const ready = await sched.create({ text: 'Other work', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    if (requested) { await be.requestRun(stuck.id, iso(h.clock.now())); await tick(8); }
+    h.clock.advance(MIN);
+    await tick(8);
+    assert.equal(calls, 1);
+    assert.equal(sched.find(stuck.id).runs, 0);
+    assert.equal(sched.find(ready.id).runs, 1, 'another schedule proceeds before the old runner answers');
+    h.clock.advance(2 * MIN);
+    await tick(8);
+    assert.equal(calls, 1, 'the pending RPC is not sent again');
+  } finally { sched.stop(); release?.(); await tick(8); }
+});
+
+test('an old draining release leaves a run due, then it sends locally after the thread moves', async () => {
+  const h = makeHarness();
+  const { thread, s } = idleThread(h);
+  let away = true;
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger,
+    elsewhere: () => away,
+    sendElsewhere: (id, text, scheduleId) => sendScheduled(h.runner, {
+      call: async () => { throw new RpcError(ErrorCode.methodNotFound, 'old release'); },
+    }, id, text, scheduleId),
+  });
+  sched.start();
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    h.clock.advance(MIN);
+    await tick(6);
+    assert.equal(sched.find(sc.id).lastRun, undefined);
+    assert.equal(s.sent.length, 1);
+    away = false;
+    h.clock.advance(MIN);
+    await tick(6);
+    assert.equal(sched.find(sc.id).runs, 1);
+    assert.equal(s.sent.length, 2);
+  } finally { sched.stop(); }
+});
+
+test('a scheduled send racing the handover queues on the primary with its origin', async () => {
+  const h = makeHarness();
+  const { thread, s } = idleThread(h);
+  await sendScheduled(h.runner, {
+    call: async () => { throw new RpcError(ErrorCode.moved, 'handed over'); },
+  }, thread.id, 'Inspect', 'schedule-1');
+  await tick();
+  assert.equal(s.sent.length, 2);
+  const msg = h.events(thread.id).filter((e) => e.type === 'user.message').at(-1)!;
+  assert.equal(msg.origin, 'schedule');
+  assert.equal(msg.scheduleId, 'schedule-1');
+});
+
+test('an in-flight scheduled send cannot be sent again by Run now or another tick', async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  let finish!: () => void;
+  let calls = 0;
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger,
+    elsewhere: () => true,
+    sendElsewhere: async () => { calls++; await new Promise<void>((resolve) => { finish = resolve; }); return { turnId: 'queued' }; },
+  });
+  sched.start();
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    h.clock.advance(MIN);
+    await tick();
+    await assert.rejects(sched.runNow(sc.id), (e: RpcError) => e.code === ErrorCode.busy);
+    h.clock.advance(2 * MIN);
+    await tick();
+    assert.equal(calls, 1);
+    finish();
+    await tick();
+    assert.equal(sched.find(sc.id).runs, 1);
+  } finally { sched.stop(); }
+});
+
+test('concurrent Run now requests send a local message once', async () => {
+  const { h, sched } = setup();
+  const { thread, s } = idleThread(h);
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    const results = await Promise.allSettled([sched.runNow(sc.id), sched.runNow(sc.id)]);
+    assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
+    assert.equal(s.sent.length, 2);
+  } finally { sched.stop(); }
+});
 
 test('a one-off sends to its thread when due, says it was scheduled, then is done', async () => {
   const { h, sched, updates } = setup();
@@ -216,6 +363,7 @@ test('a failed run says why, and deleting the thread deletes its schedules', asy
   const job = await sched.create({ text: 'build', cron: '@hourly', cwd: dir, accountId: 'claude-3' });
   fs.rmSync(dir, { recursive: true });
   h.clock.advance(60 * MIN);
+  await tick();
   const failed = sched.find(job.id);
   assert.equal(failed.lastRun?.outcome, 'failed');
   assert.match(failed.lastRun?.note ?? '', /Folder not found/);

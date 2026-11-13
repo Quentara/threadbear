@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { makeHarness } from '../helpers/fakes.ts';
+import { makeHarness, tick } from '../helpers/fakes.ts';
 import { RpcServer } from '../../src/rpc.ts';
 import { RunnerClient } from '../../src/client.ts';
 import { RpcError } from '../../src/protocol.ts';
@@ -12,6 +12,32 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import fs from 'node:fs';
 import { authProof, isNonce, newNonce } from '../../src/rpc-auth.ts';
+import { scheduledSendMethods } from '../../src/handover.ts';
+
+test('the draining server queues scheduled messages with their origin and rejects a moved thread', async () => {
+  const h = makeHarness();
+  const server = new RpcServer({ host: '127.0.0.1', port: 0, token: TOKEN, runner: h.runner, log: nullLogger, onlyOwn: true, methods: scheduledSendMethods(h.runner) });
+  const { port } = await server.listen();
+  const client = await RunnerClient.connect(`ws://127.0.0.1:${port}/rpc`, TOKEN, { server: 'drain' });
+  try {
+    const { thread } = h.runner.create({ text: 'Measure', accountId: 'claude-3' });
+    const session = h.adapter.last;
+    session.init();
+    session.out({ kind: 'tasks', tasks: [{ id: 'shell', type: 'local_bash', kind: 'shell', description: 'blocked command' }] });
+    await h.runner.beginDrain([thread.id], { onHandedOver: () => assert.fail('shell still holds the thread') });
+    await assert.rejects(client.call('drain.sendScheduled', { threadId: thread.id, text: 'Inspect', scheduleId: 's1' }), (e: { code: number }) => e.code === -32020);
+    assert.equal(session.sent.length, 1);
+    session.result('completed');
+    await tick();
+    await client.call('drain.sendScheduled', { threadId: thread.id, text: 'Inspect', scheduleId: 's1' });
+    await patiently(() => session.sent.length === 2);
+    const msg = h.events(thread.id).filter((e) => e.type === 'user.message').at(-1)!;
+    assert.equal(msg.origin, 'schedule');
+    assert.equal(msg.scheduleId, 's1');
+    await assert.rejects(client.call('drain.sendScheduled', { threadId: 'gone', text: 'Inspect', scheduleId: 's1' }), (e: { code: number }) => e.code === -32030);
+    await assert.rejects(client.call('drain.sendScheduled', { threadId: thread.id, text: 'Inspect' }), (e: { code: number }) => e.code === -32602);
+  } finally { client.close(); await server.close(); }
+});
 
 const TOKEN = 'test-token-0123456789';
 // What the runner's main server binds its proofs to.

@@ -130,6 +130,39 @@ export function isMoved(e: unknown): boolean {
   return (e instanceof RpcError || e instanceof RpcClientError) && e.code === ErrorCode.moved;
 }
 
+// Only installed on the draining server. Older releases refuse this method,
+// so the primary keeps their run due rather than steering into a busy turn.
+export function scheduledSendMethods(runner: Pick<Runner, 'send' | 'has' | 'mustGet' | 'unqueue'>) {
+  return {
+    'drain.sendScheduled': (p: Record<string, unknown>) => {
+      if (typeof p.threadId !== 'string' || typeof p.text !== 'string' || typeof p.scheduleId !== 'string') throw new RpcError(ErrorCode.badParams, 'threadId, text and scheduleId must be strings');
+      if (!runner.has(p.threadId)) throw new RpcError(ErrorCode.moved, 'That thread has moved to the new runner.');
+      const { rt, rec } = runner.mustGet(p.threadId);
+      // A queued message on an old runner is discarded on crash recovery.
+      // Leave it due on the primary until this runner can start it now.
+      if (rt.turn || rt.editing || rt.moving || rt.cleaning || rt.preparing || rt.closing || rt.approvals.size || rec.queue.length || rec.wakeWhen || !rt.tasks.length) throw new RpcError(ErrorCode.busy, 'That thread cannot start its scheduled turn yet; try again in a moment.');
+      const sent = runner.send(p.threadId, p.text, [], { origin: 'schedule', scheduleId: p.scheduleId, queue: true });
+      if (runner.unqueue(p.threadId, sent.turnId)) throw new RpcError(ErrorCode.busy, 'That scheduled turn could not start yet; try again in a moment.');
+      return sent;
+    },
+  };
+}
+
+export async function sendScheduled(runner: Pick<Runner, 'send' | 'has'>, peers: Pick<Peers, 'call'>, threadId: string, text: string, scheduleId: string): Promise<{ turnId: string }> {
+  try {
+    return await peers.call(threadId, 'drain.sendScheduled', { threadId, text, scheduleId }) as { turnId: string };
+  } catch (e) {
+    // The handedOver notification precedes this refusal. The primary now
+    // owns it; deliver locally instead of losing this tick to the race.
+    if (isMoved(e)) {
+      if (!runner.has(threadId)) throw new RpcError(ErrorCode.busy, 'That thread is still moving to this runner; try again in a moment.');
+      return runner.send(threadId, text, [], { origin: 'schedule', scheduleId, queue: true });
+    }
+    if (e instanceof RpcError && e.code === ErrorCode.methodNotFound) throw new RpcError(ErrorCode.busy, 'The old runner cannot deliver scheduled messages yet; try again after its thread moves across.');
+    throw e;
+  }
+}
+
 // ------------------------------------------------------------------ Peers
 
 export type PeerClient = Pick<RunnerClient, 'call' | 'onNotification' | 'waitClosed' | 'close'>;

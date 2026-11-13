@@ -996,6 +996,11 @@ runs. If the run ends with nothing for you, the thread goes back into the
 archive, so a watcher you've put away only lands in your inbox when it has
 something you need to act on.
 
+If an update leaves a thread on the old runner while a command finishes,
+its scheduled messages can still start turns there. An old runner from before
+this feature was added may have to finish moving the thread before its next
+scheduled message arrives.
+
 A schedule can have a check: a shell command that runs first, in its
 folder, each time it's due. If the check prints nothing, that run is
 skipped and no agent starts, so a schedule that looks for new Sentry

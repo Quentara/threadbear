@@ -14,7 +14,7 @@ import { startHousekeeping } from './housekeeping.ts';
 import { RELEASE, markConfigStop, markGoodLater, onSupervisorGone, ownCheckout, readRelease, readState, requestHandover, supervised, takeRollbackNotice, tellLaunchListening } from './release.ts';
 import { PatchTrust } from './patch-trust.ts';
 import type { RunnerUpdates } from './runner.ts';
-import { Peers, PrimaryLink, ThreadRouter, drainChildrenName, peersElsewhere, phoneCommands, primaryElsewhere, primaryRemote, projectRouter, removeDrainInfo, scheduleRouter, writeDrainInfo, type CrossRunnerHooks, type Elsewhere } from './handover.ts';
+import { scheduledSendMethods, sendScheduled, Peers, PrimaryLink, ThreadRouter, drainChildrenName, peersElsewhere, phoneCommands, primaryElsewhere, primaryRemote, projectRouter, removeDrainInfo, scheduleRouter, writeDrainInfo, type CrossRunnerHooks, type Elsewhere } from './handover.ts';
 import { RunnerUpdater, releaseTreeAt } from './update.ts';
 import { RELEASE_NOTES_SYSTEM, SETTLE_MS, Upstream } from './upstream.ts';
 import { BringIn } from './bring-in.ts';
@@ -418,6 +418,7 @@ async function main(): Promise<void> {
     clock: realClock,
     log,
     elsewhere: (id) => peers.owns(id),
+    sendElsewhere: (id, text, scheduleId) => sendScheduled(runner, peers, id, text, scheduleId),
     self: { id: syncRunnerId, name: cfg.sync.name ?? defaultRunnerName(), icon: runnerIcon, version: RUNNER_VERSION, release: RELEASE.release, startedAt },
     syncOn: Boolean(cfg.sync.enabled && cfg.sync.url && readSyncKey(cfg.home)),
   });
@@ -1338,6 +1339,7 @@ async function main(): Promise<void> {
         gate: new CallerGate({ runner, schedules: scheduler }),
         callerOfPort: (port) => threadOfPort(port, { registry, known: (id) => runner.has(id), log }),
         methods: {
+          ...scheduledSendMethods(runner),
           'drain.hello': () => {
             primaryHeard = true;
             // After this answer, so the primary has subscribed first.

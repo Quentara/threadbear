@@ -215,11 +215,17 @@ export class Scheduler {
   // Threads a draining runner still has (docs/protocol.md, "Handovers"):
   // they're real threads, just not loaded here yet.
   private elsewhere: (threadId: string) => boolean;
+  private sendElsewhere?: (threadId: string, text: string, scheduleId: string) => Promise<{ turnId: string }>;
   // Schedule checks (schedule-check.ts).
   private home: string;
   private check: (p: { command: string; cwd: string; home: string; scheduleId: string; timeoutMs?: number }) => Promise<CheckResult>;
-  // Local mode's runs waiting on their check, so a tick doesn't start another.
+  // Local runs waiting on their check or send, so a tick doesn't start another.
   private checking = new Set<string>();
+  private sending = new Set<string>();
+  // A slow draining process must hold only its own schedule, not the
+  // serial backend tick (which also serves every other thread).
+  private dispatching = new Set<string>();
+  private runningNow = new Set<string>();
   // Every check under way, for settled(): the runner waits for them before
   // it exits, so what they print is kept for the next one.
   // Each with its time limit, so a stop waits for the longest.
@@ -252,6 +258,7 @@ export class Scheduler {
     log: Logger;
     zone?: () => string;
     elsewhere?: (threadId: string) => boolean;
+    sendElsewhere?: (threadId: string, text: string, scheduleId: string) => Promise<{ turnId: string }>;
     self?: SelfRunner;
     syncOn?: boolean;
     runCheck?: (p: { command: string; cwd: string; home: string; scheduleId: string; timeoutMs?: number }) => Promise<CheckResult>;
@@ -262,6 +269,7 @@ export class Scheduler {
     this.self = deps.self ?? { id: 'runner', name: 'this Mac' };
     this.syncOn = deps.syncOn ?? false;
     this.elsewhere = deps.elsewhere ?? (() => false);
+    this.sendElsewhere = deps.sendElsewhere;
     this.file = path.join(deps.home, 'schedules.json');
     this.runsDir = path.join(deps.home, 'schedule-runs');
     this.clock = deps.clock;
@@ -748,6 +756,16 @@ export class Scheduler {
   // Runs it now, as if it were due. A repeating one keeps its next time.
   // Another runner's is asked for through the backend, and runs there.
   async runNow(scheduleId: string): Promise<{ schedule: Schedule; threadId?: string; turnId?: string; queued?: boolean }> {
+    if (this.runningNow.has(scheduleId)) throw new RpcError(ErrorCode.busy, 'This schedule is already being run; try again in a moment.');
+    this.runningNow.add(scheduleId);
+    try {
+      return await this.runNowOnce(scheduleId);
+    } finally {
+      this.runningNow.delete(scheduleId);
+    }
+  }
+
+  private async runNowOnce(scheduleId: string): Promise<{ schedule: Schedule; threadId?: string; turnId?: string; queued?: boolean }> {
     const rec = this.mustGet(scheduleId);
     if (!this.mine(rec)) {
       const at = this.iso();
@@ -762,7 +780,7 @@ export class Scheduler {
       return { schedule: this.view(rec), queued: true };
     }
     this.notMidCheck(rec);
-    const res = this.send(rec, true, this.keptFor(rec));
+    const res = await this.send(rec, true, this.keptFor(rec));
     if (res.outcome !== 'sent') throw new RpcError(ErrorCode.other, res.note ?? "Couldn't run it.");
     // A one-off run now has used its time: that slot isn't due again.
     const slot = rec.at ? rec.nextRunAt : undefined;
@@ -936,38 +954,28 @@ export class Scheduler {
     this.timer = undefined;
     if (this.stopped) return;
     const now = this.clock.now();
-    let changed = this.prune(now);
+    const changed = this.prune(now);
     for (const rec of [...this.items.values()]) {
       if (rec.paused || !rec.nextRunAt || Date.parse(rec.nextRunAt) > now) continue;
       if (this.checking.has(rec.id)) continue;
-      if (rec.check) {
-        // Its check first, then the run (or a skip) as below.
-        this.checking.add(rec.id);
-        void this.checked(rec).then((checked) => {
-          this.checking.delete(rec.id);
-          // Stopped: what it printed is kept (checked), for the next runner.
-          if (this.stopped) return;
-          if (!this.items.has(rec.id)) {
-            this.dropKept(rec.id);
-            return;
-          }
-          // Its check is running in another runner process, or was changed
-          // while it ran: left due for the next tick.
-          if (checked === 'later') return;
-          const res = this.send(rec, false, checked);
-          if (res.outcome === 'retry') return;
-          if (rec.at) this.finish(rec);
-          else this.plan(rec);
-          this.changed();
-        });
-        continue;
-      }
-      const res = this.send(rec, false);
-      // The runner is restarting: leave it due for the next runner.
-      if (res.outcome === 'retry') continue;
-      if (rec.at) this.finish(rec);
-      else this.plan(rec);
-      changed = true;
+      // Keep a run in flight through its send too: a handover's RPC is
+      // asynchronous, and a new tick mustn't send the same local slot again.
+      this.checking.add(rec.id);
+      void this.checked(rec).then(async (checked) => {
+        if (this.stopped) return;
+        if (!this.items.has(rec.id)) {
+          this.dropKept(rec.id);
+          return;
+        }
+        if (checked === 'later') return;
+        const res = await this.send(rec, false, checked);
+        if (res.outcome === 'retry') return;
+        if (rec.at) this.finish(rec);
+        else this.plan(rec);
+        this.changed();
+        // Replan from the next slot, rather than the old slot's retry timer.
+        this.tick();
+      }).finally(() => this.checking.delete(rec.id));
     }
     if (changed) this.changed();
     let next = Infinity;
@@ -1001,6 +1009,7 @@ export class Scheduler {
       for (const row of [...this.items.values()]) {
         let rec = row;
         if (!this.mine(rec)) continue;
+        if (this.dispatching.has(rec.id) || this.sending.has(rec.id)) continue;
         if (rec.finishedAt && now - Date.parse(rec.finishedAt) > KEEP_FINISHED_MS) {
           await backend.remove(rec.id).catch(() => {});
           this.items.delete(rec.id);
@@ -1008,7 +1017,15 @@ export class Scheduler {
           continue;
         }
         if (this.hasUnrecorded(rec.id)) await this.recordRuns(rec.id);
-        if (rec.runRequestedAt) await this.runRequested(backend, rec);
+        if (rec.runRequestedAt) {
+          if (rec.threadId && this.elsewhere(rec.threadId)) {
+            this.dispatching.add(rec.id);
+            void this.runRequested(backend, rec).catch((e) => this.log.warn('could not finish a requested schedule run', { scheduleId: rec.id, error: String(e) }))
+              .finally(() => this.dispatching.delete(rec.id));
+            continue;
+          }
+          await this.runRequested(backend, rec);
+        }
         if (rec.paused || !rec.nextRunAt || Date.parse(rec.nextRunAt) > now) continue;
         if (this.slotRan(rec.id, rec.nextRunAt)) continue;
         const claimed = await backend.claim(rec.id, 'due', rec.nextRunAt).catch((e) => {
@@ -1032,7 +1049,22 @@ export class Scheduler {
           continue;
         }
         const slot = rec.nextRunAt;
-        const res = this.send(rec, false, checked);
+        if (rec.threadId && this.elsewhere(rec.threadId)) {
+          this.dispatching.add(rec.id);
+          void this.send(rec, false, checked).then(async (res) => {
+            if (res.outcome === 'retry') {
+              await backend.release(rec.id).catch(() => {});
+              return;
+            }
+            if (rec.at) this.finish(rec);
+            else this.plan(rec);
+            await this.recordRun(rec, res.outcome === 'sent', undefined, slot);
+            this.changed();
+          }).catch((e) => this.log.warn('could not finish a scheduled send to the old runner', { scheduleId: rec.id, error: String(e) }))
+            .finally(() => this.dispatching.delete(rec.id));
+          continue;
+        }
+        const res = await this.send(rec, false, checked);
         if (res.outcome === 'retry') {
           await backend.release(rec.id).catch(() => {});
           continue;
@@ -1070,10 +1102,10 @@ export class Scheduler {
     // the one claimed, it isn't sent.
     const rec = this.stillClaimed(backend, row);
     if (!rec) return;
-    let res: ReturnType<Scheduler['send']>;
+    let res: Awaited<ReturnType<Scheduler['send']>>;
     try {
       this.notMidCheck(rec);
-      res = this.send(rec, true, this.keptFor(rec));
+      res = await this.send(rec, true, this.keptFor(rec));
     } catch (e) {
       // Busy (a restart, or its thread finishing on the old runner): leave
       // the request for the next look.
@@ -1254,7 +1286,7 @@ export class Scheduler {
     }
   }
 
-  private send(rec: ScheduleRecord, manual: boolean, checked?: { skip: string } | Carried): { outcome: 'sent' | 'skipped' | 'failed' | 'retry'; threadId?: string; turnId?: string; note?: string } {
+  private async send(rec: ScheduleRecord, manual: boolean, checked?: { skip: string } | Carried): Promise<{ outcome: 'sent' | 'skipped' | 'failed' | 'retry'; threadId?: string; turnId?: string; note?: string }> {
     const at = this.iso();
     const text = `[Scheduled: "${rec.title}", ${this.whenText(rec)}]\n\n${rec.text}${checked && 'extra' in checked ? checked.extra : ''}`;
     const record = (outcome: 'sent' | 'skipped' | 'failed', threadId?: string, note?: string) => {
@@ -1280,16 +1312,23 @@ export class Scheduler {
       record('skipped', undefined, checked.skip);
       return { outcome: 'skipped', note: checked.skip };
     }
-    // Its thread is busy on a draining runner: it's sent once the thread
-    // has come across, like a busy thread's queue.
-    if (rec.threadId && this.elsewhere(rec.threadId)) {
-      if (manual) throw new RpcError(ErrorCode.busy, 'That thread is finishing a turn on the old runner; try again in a moment.');
-      return { outcome: 'retry' };
-    }
     try {
       if (rec.threadId) {
-        // queue: a busy thread finishes what it's doing first.
-        const { turnId } = this.runner.send(rec.threadId, text, [], { origin: 'schedule', scheduleId: rec.id, queue: true });
+        if (this.sending.has(rec.id)) throw new RpcError(ErrorCode.busy, 'This scheduled message is being sent.');
+        // A draining runner can keep a thread for hours while shells run.
+        // Queue there, with the same origin as a local scheduled message.
+        let turnId: string;
+        if (this.elsewhere(rec.threadId)) {
+          if (!this.sendElsewhere) throw new RpcError(ErrorCode.busy, 'That thread is finishing on the old runner.');
+          this.sending.add(rec.id);
+          try {
+            ({ turnId } = await this.sendElsewhere(rec.threadId, text, rec.id));
+          } finally {
+            this.sending.delete(rec.id);
+          }
+        } else {
+          ({ turnId } = this.runner.send(rec.threadId, text, [], { origin: 'schedule', scheduleId: rec.id, queue: true }));
+        }
         record('sent', rec.threadId);
         return { outcome: 'sent', threadId: rec.threadId, turnId };
       }
