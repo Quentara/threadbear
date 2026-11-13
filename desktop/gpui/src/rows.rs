@@ -67,6 +67,13 @@ pub(crate) struct RowsState {
     /// The list's width at its last layout (for picture grids, which lay out
     /// to it). The list can't be asked mid-layout.
     pub(crate) list_width: f32,
+    /// Messages lifting off the composer, by their words, and when Return
+    /// went (`SendLift`): by the words so the runner's own row for it,
+    /// coming in mid-lift, carries on with it.
+    pub(crate) lifts: HashMap<String, std::time::Instant>,
+    /// Each message row that's lifted in this pane, so one drawn again
+    /// doesn't lift twice.
+    pub(crate) lifted: HashSet<String>,
     /// Where to come back to once older pages have brought its row in: the
     /// pane is new each time a thread opens, with only the newest page.
     pub(crate) pending_restore: Option<ScrollMemory>,
@@ -257,7 +264,32 @@ impl ThreadPane {
         if pending == Some(Pending::WaitingForRunner) {
             col = col.child(div().mt(px(WAITING_NOTE_GAP)).pr(px(4.)).h(px(WAITING_NOTE_HEIGHT)).text_size(px(size::SMALL)).text_color(faint).child("Runner restarting. Sends when it's back."));
         }
+        let lift = self.send_lift(&row.id, &message.text, pending, window, cx);
+        let col = match lift {
+            Some((fade, below)) => div().relative().top(px(below)).opacity(fade).child(col).into_any_element(),
+            None => col.into_any_element(),
+        };
         row_wrap(row, col)
+    }
+
+    /// A message just sent lifting off the composer into the thread: Return
+    /// is the most-used thing in the app, so it's well under 200 ms and holds
+    /// nothing up (`SendLift`; the mockup Mike picked, 13 Nov). Only one on
+    /// its way now, not one queued behind a turn or from history. Its
+    /// (opacity, distance below its place) while it rises.
+    fn send_lift(&mut self, id: &str, text: &str, pending: Option<Pending>, window: &Window, cx: &mut Context<Self>) -> Option<(f32, f32)> {
+        let reduce = cx.reduce_motion();
+        let now = std::time::Instant::now();
+        self.rows.lifts.retain(|_, at| threadbear_core::juice::send_lifting(now - *at, reduce));
+        if pending == Some(Pending::Sending) && self.rows.lifted.insert(id.to_owned()) {
+            self.rows.lifts.insert(text.to_owned(), now);
+        }
+        if pending.is_some_and(|p| p != Pending::Sending) {
+            return None;
+        }
+        let at = *self.rows.lifts.get(text)?;
+        window.request_animation_frame();
+        Some(threadbear_core::juice::send_lift(now - at, reduce))
     }
 
     /// `runnerMessageText` and `scheduledMessageText`: a centred quiet note

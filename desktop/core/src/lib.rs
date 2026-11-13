@@ -28,6 +28,7 @@ pub mod home;
 pub mod inbox;
 pub mod inline_chips;
 pub mod investigate;
+pub mod juice;
 pub mod keyboard;
 pub mod librarian;
 pub mod local_preview;

@@ -31,7 +31,9 @@ export class SwiftDriver implements Driver {
     // The build is done once, up front (features/README.md): `start` would
     // otherwise spend several seconds finding nothing to build each scenario.
     const fixtures = process.env.TB_MOCK_FIXTURES ? ['--fixtures', process.env.TB_MOCK_FIXTURES] : [];
-    await this.script(['start', '--mock', ...fixtures, '--no-build', '--id', this.id, '--size', '1180x800'], 120);
+    // TB_BEAR_DATE: the bears' clock (bedtime, December's hat), for clips of them.
+    const bearDate = process.env.TB_BEAR_DATE ? ['--bear-date', process.env.TB_BEAR_DATE] : [];
+    await this.script(['start', '--mock', ...fixtures, ...bearDate, '--no-build', '--id', this.id, '--size', '1180x800'], 120);
   }
 
   async do(cmd: Record<string, unknown>, timeoutSeconds = 30): Promise<string> {

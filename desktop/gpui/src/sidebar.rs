@@ -323,6 +323,9 @@ pub(crate) struct SidebarState {
     /// folded then (row_motion.rs).
     was_folding: bool,
     was_folded: HashSet<&'static str>,
+    /// The selection's highlight is sliding to the open row this frame, so
+    /// the row leaves its own off (row_motion.rs `selection`).
+    selection_sliding: bool,
     pub(crate) scroll: ScrollHandle,
     /// The Threads panel's keyboard: a click in it takes it, and then the
     /// arrows move through the threads and Esc goes back to the Inbox
@@ -393,6 +396,7 @@ impl SidebarState {
             fold_serial: 0,
             was_folding: false,
             was_folded: HashSet::new(),
+            selection_sliding: false,
             scroll: ScrollHandle::new(),
             focus: cx.focus_handle(),
             reveal: Default::default(),
@@ -1085,7 +1089,10 @@ impl Threadbear {
         // what's drawn, top to bottom, and what a fold is moving already.
         let motion = self.sidebar.motion.clone();
         let (mut drawn, mut quiet) = (Vec::<String>::new(), HashSet::<String>::new());
-        let mut list = v_flex().px(px(OUTER_INSET)).pb(px(32.)).child(motion.list_marker());
+        // The selected row's highlight slides to it from the last one.
+        let open_row = self.selected.as_deref().filter(|_| self.home_page().is_none() && self.projects.open.is_none());
+        self.sidebar.selection_sliding = motion.selection(open_row, cx.reduce_motion());
+        let mut list = v_flex().px(px(OUTER_INSET)).pb(px(32.)).child(motion.list_marker()).child(motion.selection_marker(p.selected, CORNER));
         let loaded = self.sidebar.loaded;
         if !loaded {
             list = list.child(render_loading_rows(&p));
@@ -1557,7 +1564,8 @@ impl Threadbear {
             .pl(px(LEADING))
             .pr(px(TRAILING))
             .rounded(px(CORNER))
-            .when(selected, |s| s.bg(bg_sel))
+            // Not while it slides here: `selection_marker` draws it then.
+            .when(selected && !self.sidebar.selection_sliding, |s| s.bg(bg_sel))
             .when(!selected && show_buttons, |s| s.bg(bg_hover))
             .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
                 if *hovered {
