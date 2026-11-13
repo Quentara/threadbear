@@ -84,8 +84,8 @@ export function isCodexLogin(dir: string): boolean {
   return store === 'keyring' || store === 'auto';
 }
 
-export type DiscoveryConfig = Pick<Config, 'claudeMainDir' | 'claudeMainJson' | 'tokenStatsAccountsDir'> &
-  Partial<Pick<Config, 'codexMainDir' | 'accountNotes' | 'accountsDir' | 'home' | 'userHome' | 'pathEnv' | 'cursorPath' | 'opencodePath'>>;
+export type DiscoveryConfig = Pick<Config, 'claudeMainDir' | 'claudeMainJson' | 'tokenStatsAccountsDir' | 'userHome' | 'pathEnv'> &
+  Partial<Pick<Config, 'codexMainDir' | 'accountNotes' | 'accountsDir' | 'home' | 'cursorPath' | 'opencodePath'>>;
 
 // claude-main is ~/.claude (its .claude.json sits at ~/.claude.json);
 // codex-main is ~/.codex. Token Stats' Accounts folder holds claude-N and

@@ -120,8 +120,11 @@ for (const target of [fs, fs.promises]) {
 }
 syncBuiltinESMExports();
 process.on('exit', () => {
-  fs.rmSync(testHome, { recursive: true, force: true });
-  if (!violations.size) return;
-  console.error('Unit tests accessed real account folders:\n' + [...violations.values()].join('\n'));
-  process.exitCode = 1;
+  if (violations.size) {
+    console.error('Unit tests accessed real account folders:\n' + [...violations.values()].join('\n'));
+    process.exitCode = 1;
+  }
+  // A child finishing its shutdown can still have a file open here.
+  // Cleanup must not hide a violation or fail an otherwise passing test.
+  try { fs.rmSync(testHome, { recursive: true, force: true, maxRetries: 3, retryDelay: 20 }); } catch { /* Temporary files can be swept later. */ }
 });

@@ -736,11 +736,19 @@ test("Threadbear's own patches don't make every edit ask, from a project folder 
   const root = tmpDir();
   // Keep the real patch, but scan it in a fixture checkout: trust scans
   // ancestor .claude folders too, which must never be this user's own.
-  const repo = path.join(root, 'repo');
-  for (const file of ['.threadbear/patches/checks.ts', 'worktree-setup.sh', 'check.sh']) put(path.join(repo, file), fs.readFileSync(path.join(REPO, file), 'utf8'));
+  const main = path.join(root, 'repo');
+  fs.mkdirSync(main);
+  for (const dir of ['.threadbear', '.claude']) fs.cpSync(path.join(REPO, dir), path.join(main, dir), { recursive: true });
+  for (const file of ['worktree-setup.sh', 'check.sh', 'scripts/swift-freeze.sh']) put(path.join(main, file), fs.readFileSync(path.join(REPO, file), 'utf8'));
+  const git = (...args: string[]) => execFileSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' });
+  git('init', '-q', '-b', 'main');
+  git('add', '-A');
+  git('commit', '-qm', 'fixture');
+  const repo = path.join(root, 'worktree');
+  git('worktree', 'add', '-qb', 'thread/fixture', repo);
   const elsewhere = path.join(root, 'misc');
   fs.mkdirSync(elsewhere, { recursive: true });
-  const { h, thread } = inProject(root, elsewhere, repo);
+  const { h, thread } = inProject(root, elsewhere, repo, [main]);
   await settle(h, thread.id);
   // Asked directly for the thread in its own checkout: starting one there
   // would give the test a real worktree of this repo.
@@ -753,6 +761,7 @@ test("Threadbear's own patches don't make every edit ask, from a project folder 
     assert.equal(runsAsCode(path.join(repo, 'worktree-setup.sh')), true, cwd);
     assert.equal(runsAsCode(path.join(repo, 'check.sh')), true, cwd);
     assert.equal(runsAsCode(path.join(repo, '.threadbear/patches/checks.ts')), true, cwd);
+    assert.equal(runsAsCode(path.join(repo, '.threadbear/patches/app-store.ts')), true, cwd);
   }
 });
 

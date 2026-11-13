@@ -53,8 +53,8 @@ export type Config = {
   home: string; // data dir
   // Account discovery uses the environment loadConfig was given, which may
   // differ from this process's (a test or an embedded runner).
-  userHome?: string;
-  pathEnv?: string;
+  userHome: string;
+  pathEnv: string;
   port: number;
   host: string;
   logFile: string;
