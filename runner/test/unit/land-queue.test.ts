@@ -137,8 +137,12 @@ test('a group check that fails is narrowed down, and only the one that broke it 
     }
   }
   // Every check that passed had no bad.txt in it: main only moved to those.
+  // At most 7: a's, the group's, then halves. Which half goes first is
+  // timing: if d lands from [c, d] first, main moves and the limits lapse,
+  // so b and c are checked together again before c alone (a, abcd, cd, d,
+  // bc, c, b). The slower cloud box took that order (14 Nov).
   const checks = fs.readFileSync(path.join(root, 'checks'), 'utf8').trim().split('\n');
-  assert.ok(checks.length <= 6, checks.join('\n'));
+  assert.ok(checks.length <= 7, checks.join('\n'));
   assert.equal(sh(c.path, 'git rev-parse --abbrev-ref HEAD'), c.branch, 'the failed one is back on its branch');
 });
 
