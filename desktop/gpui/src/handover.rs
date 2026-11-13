@@ -172,6 +172,14 @@ mod mac {
         }
     }
 
+    /// The old window's last moment: clicks pass to the new one under it.
+    pub(super) fn stop_taking_clicks() {
+        let Some(mtm) = MainThreadMarker::new() else { return };
+        for window in NSApplication::sharedApplication(mtm).windows().iter() {
+            window.setIgnoresMouseEvents(true);
+        }
+    }
+
     /// Every window of this app off the screen, without the closing
     /// animation, so the incoming one under them is what shows.
     pub(super) fn hide_all() {
@@ -261,6 +269,16 @@ impl Threadbear {
                 }
                 if let Some(ready) = rules::read_message(&dir, rules::READY_FILE) {
                     let incoming_pid = rules::ready_pid(&ready);
+                    // Ready, then gone (while a hold kept the go back, say):
+                    // nothing to hand over to, so the old way (Codex's second look).
+                    if !incoming_pid.is_some_and(alive) {
+                        log("the new app said ready, then went; restarting the old way");
+                        let _ = std::fs::remove_dir_all(&dir);
+                        if let Some(f) = fallback.take() {
+                            this.update(cx, |t, cx| f(t, cx)).ok();
+                        }
+                        break;
+                    }
                     this.update(cx, |t, cx| t.say_go(incoming_pid, &dir, cx)).ok();
                     break;
                 }
@@ -269,7 +287,13 @@ impl Threadbear {
                     if started.is_some_and(alive) {
                         // It takes over when it sees this app go.
                         log("no ready after 20 s; quitting for it");
-                        this.update(cx, |t, cx| t.quit_handed_over(&dir, cx)).ok();
+                        // Not without the restart's snapshot: it may not
+                        // have read it yet (Codex's second look).
+                        this.update(cx, |t, cx| {
+                            t.leave_state_for_incoming(false, cx);
+                            t.quit_handed_over(&dir, cx)
+                        })
+                        .ok();
                     } else {
                         log("the new app went away; restarting the old way");
                         let _ = std::fs::remove_dir_all(&dir);
@@ -296,7 +320,13 @@ impl Threadbear {
             mac::yield_to(pid);
         }
         let _ = incoming_pid;
-        self.leave_state_for_incoming(cx);
+        // No more clicks in the old window from here: what it holds now is
+        // what goes across (Codex's second look). The keys went with the
+        // activation, and with another app in front it had none.
+        #[cfg(target_os = "macos")]
+        mac::stop_taking_clicks();
+        // It read the restart's snapshot at launch, before it said ready.
+        self.leave_state_for_incoming(true, cx);
         let selection = self.selected.clone().unwrap_or_default();
         // Where each open thread is scrolled to now, as he may have scrolled
         // while the new copy loaded (Codex's review, 13 Nov).
@@ -311,6 +341,12 @@ impl Threadbear {
             while !dir.join(rules::DONE_FILE).exists() && began.elapsed() < rules::DONE_TIMEOUT {
                 cx.background_executor().timer(rules::POLL).await;
             }
+            // No "done" and the new app gone: open it again once this one
+            // has quit, as the old way would, rather than leave nothing.
+            if !dir.join(rules::DONE_FILE).exists() && !incoming_pid.is_some_and(alive) {
+                log("the new app went before taking over; opening it again");
+                crate::app_update::relaunch_installed();
+            }
             this.update(cx, |t, cx| t.quit_handed_over(&dir, cx)).ok();
         })
         .detach();
@@ -321,21 +357,21 @@ impl Threadbear {
     /// the incoming app reads as it takes over, and the settings are saved
     /// for it to read then too, without the restart's snapshot (it took that
     /// at launch, and a later launch mustn't restore it again).
-    fn leave_state_for_incoming(&mut self, cx: &mut Context<Self>) {
+    fn leave_state_for_incoming(&mut self, snapshot_taken: bool, cx: &mut Context<Self>) {
         if HANDED_OVER.load(Ordering::Acquire) {
             return;
         }
         self.client.stop_holding();
         self.save_drafts(cx);
-        self.settings.saved.update_restore = None;
+        if snapshot_taken {
+            self.settings.saved.update_restore = None;
+        }
         self.settings_dirty = false;
         self.settings.save();
         HANDED_OVER.store(true, Ordering::Release);
     }
 
     fn quit_handed_over(&mut self, dir: &Path, cx: &mut Context<Self>) {
-        // The ready timeout comes here without a "go" (Codex's review).
-        self.leave_state_for_incoming(cx);
         log("handed over; quitting");
         let _ = std::fs::remove_dir_all(dir);
         #[cfg(target_os = "macos")]

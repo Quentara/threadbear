@@ -424,6 +424,12 @@ impl Composer {
 
     /// Whether the box holds anything a restart would lose: words, or a
     /// picture, one still being copied in included (app_update.rs).
+    /// A picture still being copied in: not in the draft yet (`draft`), so a
+    /// handover waits for it rather than lose it.
+    pub(crate) fn copying_picture(&self, cx: &App) -> bool {
+        self.box_chips(cx).iter().any(|(_, chip)| matches!(chip, threadbear_core::inline_chips::BoxChip::Picture(None)))
+    }
+
     pub(crate) fn holds_anything(&self, cx: &App) -> bool {
         let text = self.input.read(cx).value().to_string();
         threadbear_core::inline_chips::holds_anything(&text, &self.box_chips(cx))

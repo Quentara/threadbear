@@ -222,6 +222,12 @@ pub(crate) fn settings_to_pass_on() -> Vec<(String, std::ffi::OsString)> {
     settings
 }
 
+/// The installed app opened again once this one has gone, in front: a
+/// handover whose new app went before taking over (handover.rs).
+pub(crate) fn relaunch_installed() {
+    relaunch_after_exit(&install_dir(), false);
+}
+
 /// The installed app's build, if it can follow main, or why it can't.
 fn followable() -> Result<BuildInfo, String> {
     let launch = installed::launch();
@@ -731,10 +737,12 @@ impl Threadbear {
 
     /// Something a restart by itself would have waited for, started while a
     /// handover's new copy loaded: it holds the go (handover.rs). Not words
-    /// in a message box, which go across in the drafts file, and nothing for
-    /// a Restart to Update he chose, which never waited for these.
+    /// in a message box, which go across in the drafts file, but a picture
+    /// still being copied into one, which doesn't; and nothing for a Restart
+    /// to Update he chose, which never waited for these.
     pub(crate) fn handover_held(&self, windows: WindowsNow, cx: &App) -> bool {
-        self.updater.auto_restart && (windows.held || windows.other_window_input || self.under_way(cx) || self.schedule_editor.is_some() || crate::unsent::any(cx))
+        let copying = self.composers.values().chain(self.new_thread.composer.iter()).any(|c| c.read(cx).copying_picture(cx));
+        self.updater.auto_restart && (windows.held || windows.other_window_input || copying || self.under_way(cx) || self.schedule_editor.is_some() || crate::unsent::any(cx))
     }
 
     /// What a restart leaves for the next launch: the list and the thread

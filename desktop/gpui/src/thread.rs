@@ -1210,8 +1210,10 @@ impl ThreadPane {
         if !self.loaded {
             return;
         }
+        // The place it was still paging back to is the old one now
+        // (Codex's second look).
+        self.rows.pending_restore = None;
         if memory.pinned {
-            self.rows.pending_restore = None;
             self.scroller.update(cx, |s, cx| s.scroll_to_end(cx));
         } else {
             self.restore_memory(Some(memory), cx);
