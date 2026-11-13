@@ -132,7 +132,7 @@ test('the waiting line recognises a landing already in the running group', () =>
   setRunning(common, { startedAt: now - 180_000, branches: ['thread/holder', me.branch, 'thread/peer', 'thread/another'] });
   assert.equal(waitingLine(common, times, me, now), ': this landing is being checked with 3 other landings; the check has been running 3 min, so roughly 3 min to go (a check takes about 6 min here).');
   setRunning(common, { startedAt: now - 600_000, branches: [me.branch] });
-  assert.equal(waitingLine(common, times, me, now), ': this landing is being checked; the check has been running 10 min, so roughly 1 min to go (a check takes about 6 min here).');
+  assert.equal(waitingLine(common, times, me, now), ': this landing is being checked; the check has been running 10 min, longer than usual (a check takes about 6 min here).');
   fs.rmSync(times);
   assert.equal(waitingLine(common, times, me, now), ': this landing is being checked; the check has been running 10 min.');
 });

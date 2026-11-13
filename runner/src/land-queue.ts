@@ -184,8 +184,11 @@ export function waitingLine(common: string, timesFile: string, me: QueueEntry | 
     if (me && checking(me)) {
       const peers = running.branches.length - 1;
       const withOthers = peers ? ` with ${peers} other landing${peers === 1 ? '' : 's'}` : '';
-      const estimate = typical !== undefined
-        ? `, so roughly ${minutes(Math.max(60, typical - ago))} to go (a check takes about ${minutes(typical)} here)` : '';
+      let estimate = '';
+      if (typical !== undefined) {
+        const left = ago >= typical ? 'longer than usual' : `so roughly ${minutes(Math.max(60, typical - ago))} to go`;
+        estimate = `, ${left} (a check takes about ${minutes(typical)} here)`;
+      }
       return `: this landing is being checked${withOthers}; the check has been running ${minutes(ago)}${estimate}.`;
     }
     const what = running.branches.length > 1 ? `${running.branches[0]} and ${running.branches.length - 1} more` : running.branches[0] ?? 'another landing';

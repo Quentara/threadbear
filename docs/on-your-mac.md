@@ -218,8 +218,10 @@ File references are where to look.
   A landing waiting for the lock leaves a small JSON file in
   `threadbear-land-queue/` there (branch, worktree, commits, process id),
   removed when it's done, and the lock's holder keeps
-  `threadbear-land-running.json` (what it's checking, since when) while
-  its check runs. `threadbear-land-done/` there keeps, for a week, what
+  `threadbear-land-running.json` (what it's checking, since when, its
+  process id and the queue entry ids) while its check runs. The waiting
+  status checks whether that process is still alive.
+  `threadbear-land-done/` there keeps, for a week, what
   landed for a landing whose `tb` was stopped before it heard.
 - **The runner** listens on `127.0.0.1:8797` only, and needs a token
   (`runner/src/config.ts`). It starts the official `claude` and `codex`

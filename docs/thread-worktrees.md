@@ -222,10 +222,12 @@ their own.
   already in the running group, it says it is being checked and estimates
   only the rest of that check. Landings in the running group don't count
   as waiting ahead of anyone else. The status record includes the holder's
-  pid and the entries being checked, so a dead holder or a new landing on
-  the same branch doesn't look like a check of the new entry. Older holders'
-  records still work, using their branch names. It says it again every
-  three minutes.
+  pid and the entries being checked, so a check left by a dead holder is
+  ignored, and a new landing on a branch already in the check isn't counted
+  as being checked. Older holders' records still work, using their branch
+  names. An active group's check that runs past the usual time says
+  "longer than usual" instead of guessing how much longer. It says it again
+  every three minutes.
 
 So a landing waits for at most the check that's running and the next one,
 unless a check fails.
