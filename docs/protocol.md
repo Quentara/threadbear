@@ -5327,9 +5327,11 @@ kept in `schedules.json` in the data dir.
   A draining release that
   doesn't know this method leaves the run due until its thread comes across.
   New primaries use `drain.sendScheduledOnce { threadId, text, scheduleId,
-  run, since? }` instead. `run` identifies the due slot and accepted run
-  count, or backend Run now request; rearming a consumed time gets a new id.
+  run, since? }` instead. `run` identifies the cron slot, one-off slot and
+  accepted run count, or backend Run now request; rearming a consumed
+  one-off time gets a new id, while manual cron runs leave its due id alone.
   `since` is its earliest possible delivery time, bounding the log lookup.
+  The lookup includes five minutes before it for clocks on other runners.
   the schedule, thread and run produce a stable message/turn id. Both the
   draining runner and a primary that adopts it acknowledge an already
   logged delivery instead of sending again after a lost reply. A message

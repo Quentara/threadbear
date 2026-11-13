@@ -109,10 +109,12 @@ for (const backend of [false, true]) for (const crashed of [false, true]) for (c
   await tick();
   await old.runner.beginDrain([thread.id], { onHandedOver: () => assert.fail('the shell holds ownership') });
   let away = true;
+  let arriving = false;
   const sched = new Scheduler({
     runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
     elsewhere: () => away,
     sendElsewhere: async (id, text, scheduleId, run, since) => {
+      if (arriving) return sendScheduled(h.runner, { call: async () => { throw new RpcError(ErrorCode.moved, 'arriving'); } }, id, text, scheduleId, run, since);
       const methods = scheduledSendMethods(old.runner);
       const deliver = methods['drain.sendScheduledOnce'] ?? methods['drain.sendScheduled'];
       deliver({ threadId: id, text, scheduleId, run, since });
@@ -128,6 +130,10 @@ for (const backend of [false, true]) for (const crashed of [false, true]) for (c
     await tick(8);
     assert.equal(session.sent.length, 2, 'the old process started the scheduled turn');
     assert.equal(sched.find(sc.id).lastRun, undefined, 'the missing reply left the slot due');
+    arriving = true;
+    h.clock.advance(MIN);
+    await tick(8);
+    assert.equal(sched.find(sc.id).lastRun, undefined, 'the arriving gap leaves delivery pending');
     if (!crashed) { session.result('completed'); await tick(8); }
     old.runner.flush();
     away = false;
@@ -139,6 +145,75 @@ for (const backend of [false, true]) for (const crashed of [false, true]) for (c
     assert.equal(sched.find(sc.id).runs, 1);
     assert.ok(sched.find(sc.id).finishedAt);
   } finally { sched.stop(); }
+});
+
+test('a manual cron run cannot change the identity of a lost due delivery', async () => {
+  const h = makeHarness();
+  const { thread, s } = idleThread(h);
+  let away = true;
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger,
+    elsewhere: () => away,
+    sendElsewhere: async (id, text, scheduleId, run, since) => {
+      h.runner.sendScheduled(id, text, scheduleId, run, since);
+      throw new RpcError(ErrorCode.busy, 'lost reply');
+    },
+  });
+  sched.start();
+  try {
+    const sc = await sched.create({ text: 'Inspect', cron: '* * * * *', threadId: thread.id });
+    h.clock.advance(MIN);
+    await tick(8);
+    s.result('completed');
+    await tick();
+    away = false;
+    await sched.runNow(sc.id);
+    s.result('completed');
+    await tick();
+    h.clock.advance(MIN / 2);
+    await tick(8);
+    const messages = h.events(thread.id).filter((e) => e.type === 'user.message' && e.scheduleId === sc.id);
+    assert.equal(messages.length, 2, 'one due delivery and one explicit manual delivery');
+    assert.equal(sched.find(sc.id).runs, 2);
+  } finally { sched.stop(); }
+});
+
+test('Run now consuming a one-off while its backend claim waits does not send it twice', async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const sched = new Scheduler({ runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5 });
+  sched.start();
+  const be = fakeBackend(h.clock, [M5]).for('primary', M5.id);
+  let release!: () => void;
+  await sched.attach({ ...be, claim: async (...args) => {
+    const claimed = await be.claim(...args);
+    await new Promise<void>((resolve) => { release = resolve; });
+    return claimed;
+  } });
+  await tick(8);
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    h.clock.advance(MIN);
+    await tick(8);
+    assert.equal(typeof release, 'function');
+    await sched.runNow(sc.id);
+    release();
+    await tick(8);
+    assert.equal(sched.find(sc.id).runs, 1);
+    assert.equal(h.events(thread.id).filter((e) => e.type === 'user.message' && e.scheduleId === sc.id).length, 1);
+  } finally { sched.stop(); release?.(); }
+});
+
+test('a delivery timestamp from a slightly faster runner does not hide its logged message', async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const since = h.clock.now() + 2 * MIN;
+  const sent = h.runner.sendScheduled(thread.id, 'Inspect', 's1', 'due:slot#0', since);
+  await tick();
+  const recovered = makeHarness(h.home);
+  assert.deepEqual(recovered.runner.sendScheduled(thread.id, 'Inspect', 's1', 'due:slot#0', since), sent);
+  const log = recovered.store.log(thread.id);
+  assert.equal(log.read(1, log.lastSeq).filter((e) => e.type === 'user.message' && e.scheduleId === 's1').length, 1);
 });
 
 test('explicit cron runs remain distinct from each other and the next due slot', async () => {
@@ -184,7 +259,7 @@ test('a new keyed send searches recent events and legacy sends do not scan histo
   const { thread } = idleThread(h);
   const st = h.runner.mustGet(thread.id);
   for (let i = 0; i < 1024; i++) h.runner.emit(st, { type: 'system.note', text: 'Earlier work' });
-  h.clock.advance(MIN);
+  h.clock.advance(10 * MIN);
   const log = h.store.log(thread.id);
   const read = log.read.bind(log);
   const ranges: number[] = [];

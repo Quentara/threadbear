@@ -1044,7 +1044,8 @@ export class Scheduler {
         }
         if (rec.paused || !rec.nextRunAt || Date.parse(rec.nextRunAt) > now) continue;
         if (this.slotRan(rec.id, rec.nextRunAt)) continue;
-        const claimed = await backend.claim(rec.id, 'due', rec.nextRunAt).catch((e) => {
+        const due = rec.nextRunAt;
+        const claimed = await backend.claim(rec.id, 'due', due).catch((e) => {
           this.log.warn('could not claim a schedule run', { scheduleId: rec.id, error: String(e) });
           return false;
         });
@@ -1052,12 +1053,12 @@ export class Scheduler {
         // The record as it is now: the subscription may have brought a
         // newer one (its check changed) or none (deleted, maybe by another
         // runner) while the claim was out, and again while it checked.
-        const fresh = this.stillClaimed(backend, rec);
+        const fresh = this.stillDue(backend, rec, due);
         if (!fresh) continue;
         rec = fresh;
         const checked = await this.checked(rec);
         if (this.stopped) continue;
-        const after = this.stillClaimed(backend, rec);
+        const after = this.stillDue(backend, rec, due);
         if (!after) continue;
         rec = after;
         if (checked === 'later') {
@@ -1135,6 +1136,15 @@ export class Scheduler {
     if (res.outcome === 'sent' && rec.at) this.finish(rec);
     delete rec.runRequestedAt;
     await this.recordRun(rec, res.outcome === 'sent', request, slot);
+  }
+
+  private stillDue(backend: ScheduleBackend, claimed: ScheduleRecord, slot: string): ScheduleRecord | undefined {
+    const rec = this.stillClaimed(backend, claimed);
+    if (!rec) return undefined;
+    if (!rec.paused && !rec.finishedAt && rec.nextRunAt === slot) return rec;
+    // Run now or an edit can consume this slot while its claim/check waits.
+    void backend.release(rec.id).catch(() => {});
+    return undefined;
   }
 
   // The schedule a claim was taken for, as the subscription has it now, or
@@ -1305,7 +1315,7 @@ export class Scheduler {
   private async send(rec: ScheduleRecord, manual: boolean, checked?: { skip: string } | Carried, requestedRun?: string): Promise<{ outcome: 'sent' | 'skipped' | 'failed' | 'retry'; threadId?: string; turnId?: string; note?: string }> {
     // Run now consumes an unfinished one-off's due slot too. A cron's
     // explicit runs have their own identity and leave the next slot alone.
-    const run = rec.at && !rec.finishedAt ? `due:${rec.at}#${rec.runs}` : requestedRun ?? (manual ? `manual:${crypto.randomUUID()}` : `due:${rec.nextRunAt}#${rec.runs}`);
+    const run = rec.at && !rec.finishedAt ? `due:${rec.at}#${rec.runs}` : requestedRun ?? (manual ? `manual:${crypto.randomUUID()}` : `due:${rec.nextRunAt}`);
     const since = rec.at ? Date.parse(rec.createdAt) : requestedRun ? Date.parse(requestedRun.slice('request:'.length)) : manual ? this.clock.now() : Date.parse(rec.nextRunAt!);
     const at = this.iso();
     const text = `[Scheduled: "${rec.title}", ${this.whenText(rec)}]\n\n${rec.text}${checked && 'extra' in checked ? checked.extra : ''}`;

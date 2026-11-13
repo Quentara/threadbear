@@ -1528,6 +1528,8 @@ export class Runner {
   private scheduledMessages = new WeakMap<EventLog, Map<string, { through: number; since: number; message?: { seq: number; started: boolean; text: string; images: ImageRef[] } }>>();
 
   private scheduledMessage(st: ThreadState, messageId: string, since: number) {
+    // A schedule/request may have been timestamped by another runner.
+    since = Math.max(0, since - 5 * 60_000);
     const log = this.store.log(st.rec.id);
     let index = this.scheduledMessages.get(log);
     if (!index) { index = new Map(); this.scheduledMessages.set(log, index); }
