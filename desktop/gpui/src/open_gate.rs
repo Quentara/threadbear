@@ -157,7 +157,7 @@ pub(crate) fn open_in_chrome_profile(url: &str, directory: &str, cx: &mut App) {
         // bundle it's given (Daybreak 112, 13 Nov 2026). Its signature is
         // checked off the main thread (a quarter of a second), with a note
         // up meanwhile, and anything but Google's own Chrome isn't started.
-        let Some(chrome) = running_chrome().filter(|p| policy::real_path(Path::new(p)).is_ok_and(|r| INSTALLED_APPS.iter().any(|root| r.starts_with(root)))) else {
+        let Some(chrome) = running_chrome().filter(|p| policy::real_path(Path::new(p)).is_ok_and(|r| installed_where_apps_are(&r))) else {
             system_open(&web, cx);
             return;
         };
@@ -198,6 +198,12 @@ fn running_chrome() -> Option<String> {
 #[cfg(target_os = "macos")]
 const INSTALLED_APPS: &[&str] = &["/Applications/", "/System/Applications/", "/Library/Developer/"];
 
+/// Whether a real (symlinks followed) path is under `INSTALLED_APPS`.
+#[cfg(target_os = "macos")]
+fn installed_where_apps_are(real: &Path) -> bool {
+    INSTALLED_APPS.iter().any(|root| real.starts_with(root))
+}
+
 #[cfg(target_os = "macos")]
 const GOOGLE_CHROME: &str = "anchor apple generic and identifier \"com.google.Chrome\" and certificate leaf[subject.OU] = \"EQHXZ8M8AV\"";
 
@@ -217,9 +223,13 @@ fn start_chrome_profile(path: &str, web: &str, directory: &str) -> Result<(), St
 #[cfg(target_os = "macos")]
 fn signed_as(path: &str, requirement: &str) -> Result<std::path::PathBuf, ()> {
     let real = policy::real_path(Path::new(path)).map_err(|_| ())?;
-    if !INSTALLED_APPS.iter().any(|root| real.starts_with(root)) { return Err(()); }
+    if !installed_where_apps_are(&real) { return Err(()); }
     let signed = std::process::Command::new("/usr/bin/codesign")
-        .args(["--verify", "--strict", &format!("-R={requirement}")])
+        // Not --strict: that also refuses extended attributes on the bundle
+        // ("detritus"), which a real Chrome on a real Mac can have (Tinker
+        // Desk's did), and says nothing about who made the code. The
+        // signature, the sealed resources and the requirement are checked.
+        .args(["--verify", &format!("-R={requirement}")])
         .arg(&real).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
     if signed.is_ok_and(|s| s.success()) { Ok(real) } else { Err(()) }
 }

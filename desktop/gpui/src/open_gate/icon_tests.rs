@@ -125,15 +125,22 @@ fn only_googles_chrome_passes_the_chrome_check() {
     assert!(super::signed_as(&app.0.to_string_lossy(), super::GOOGLE_CHROME).is_err());
     assert!(super::start_chrome_profile(&app.0.to_string_lossy(), "https://example.com", "Default").is_err());
     assert!(!Path::new("/tmp/tb-impostor-ran").exists());
-    // A genuine, Apple-signed app copied out of where apps are installed
-    // passes the signature check but is still refused: a copy in a folder
-    // something else writes could be swapped between the check and `open`.
+    // Apple's own app, where apps are installed, passes; a link to it from
+    // a temp folder is followed to it. Anywhere else isn't started however
+    // it's signed: a copy in a folder something else writes could be
+    // swapped between the check and `open`.
     let calculator = Path::new("/System/Applications/Calculator.app");
     let requirement = "anchor apple and identifier \"com.apple.calculator\"";
     assert!(super::signed_as(&calculator.to_string_lossy(), requirement).is_ok());
-    let copy = app.0.parent().unwrap().join("Calculator.app");
-    assert!(std::process::Command::new("/usr/bin/ditto").arg(calculator).arg(&copy).status().unwrap().success());
-    assert!(super::signed_as(&copy.to_string_lossy(), requirement).is_err(), "a signed copy in a temp folder");
+    let link = app.0.parent().unwrap().join("Calculator.app");
+    std::os::unix::fs::symlink(calculator, &link).unwrap();
+    assert!(super::signed_as(&link.to_string_lossy(), requirement).is_ok(), "a link is followed to the real app");
+    for elsewhere in ["/private/var/folders/x/Calculator.app", "/Users/someone/dev/repo/Calculator.app", "/Users/someone/Applications/Google Chrome.app", "/Applicationsx/Chrome.app"] {
+        assert!(!super::installed_where_apps_are(Path::new(elsewhere)), "{elsewhere}");
+    }
+    for installed in ["/Applications/Google Chrome.app", "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app", "/System/Applications/Calculator.app"] {
+        assert!(super::installed_where_apps_are(Path::new(installed)), "{installed}");
+    }
     let installed = Path::new("/Applications/Google Chrome.app");
     if installed.exists() {
         assert!(super::signed_as(&installed.to_string_lossy(), super::GOOGLE_CHROME).is_ok(), "Google's own Chrome was refused");
