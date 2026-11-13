@@ -17,7 +17,7 @@ import { CLAUDE_PATCH_ID, claudeCommands, claudeOptions, settingsCommands, setti
 import { canonicalPath, runsAsCodeByName, type CodeWrite } from '../code-writes.ts';
 import { patchCommands, sayValue } from '../patch-commands.ts';
 import type { PatchInfo } from '../protocol.ts';
-import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, runCommand, type CommandOutcome, type PanelRender, type PatchSet, type ProjectFolder, projectPatchFiles } from '../patches.ts';
+import { actionRunProblem, automaticTrust, isInside, EMPTY_PATCH_SET, PATCH_EXTENSIONS, patchDirs, projectRoots, hookApplies, loadPatchSet, applyLive, hasLive, projectPanels, renderListPanel, renderPanel, runCommand, PATCH_SH_MAX_BYTES, type CommandOutcome, type PanelRender, type PatchSet, type ProjectFolder, projectPatchFiles } from '../patches.ts';
 import { liveCommandEnv } from '../shell-allowlist.ts';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -402,6 +402,12 @@ export const patchesPart = {
     const key = `${cwd}\u0000${command}`;
     const hit = this.liveRuns.get(key);
     if (hit && (hit.doneAt === undefined || this.clock.now() - hit.doneAt < LIVE_SHARE_MS)) return hit.out;
+    // Finished runs past their share go now, not at the next turn's end: a
+    // command whose text changes each poll (a timestamp in it) would
+    // otherwise keep every output, each up to PATCH_SH_MAX_BYTES (Codex's
+    // review, 13 Nov).
+    const now = this.clock.now();
+    for (const [k, run] of this.liveRuns) if (run.doneAt !== undefined && now - run.doneAt >= LIVE_SHARE_MS) this.liveRuns.delete(k);
     const entry: { doneAt?: number; out: Promise<CommandOutcome> } = { out: this.runPatchCommand(threadId, command, cwd) };
     this.liveRuns.set(key, entry);
     void entry.out.then(
@@ -419,7 +425,7 @@ export const patchesPart = {
   // own .git/config could make git run (shell-allowlist.ts).
   runPatchCommand(this: Runner, threadId: string, command: string, cwd: string) {
     const env = { ...process.env, ...threadEnv(threadId, this.cfg.home) };
-    return runCommand(command, { cwd, env: { ...env, ...liveCommandEnv(env) }, shell: this.actionShell, timeoutMs: this.actionTimeoutMs, killGroup: true });
+    return runCommand(command, { cwd, env: { ...env, ...liveCommandEnv(env) }, shell: this.actionShell, timeoutMs: this.actionTimeoutMs, killGroup: true, maxBytes: PATCH_SH_MAX_BYTES });
   },
 
   // Reads live state again for the inbox's threads that have any, every

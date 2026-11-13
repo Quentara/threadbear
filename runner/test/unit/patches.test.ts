@@ -244,6 +244,10 @@ test('runCommand: output, exit codes, the time limit and the size cap', async ()
   assert.equal(big.ok, true);
   assert.equal(big.truncated, true);
   assert.equal(big.text.length, 64 * 1024);
+  // A patch function's sh asks for more (PATCH_SH_MAX_BYTES).
+  const whole = await runCommand('yes abcdefghij | head -c 200000', { cwd, env, shell: sh, maxBytes: 1024 * 1024 });
+  assert.equal(whole.truncated, false);
+  assert.equal(whole.text.length, 200000);
   const missing = await runCommand('true', { cwd, env, shell: ['/no/such/shell', '-c'] });
   assert.equal(missing.ok, false);
   assert.match(missing.text, /ENOENT/);
@@ -419,6 +423,40 @@ test('a panel with an items function is a list panel, filled by renderListPanel 
   assert.match((await renderListPanel(slow!, set, { ...ctx, timeoutMs: 50 })).note ?? '', /took over/);
   assert.deepEqual(await renderListPanel(notList!, set, ctx), { note: "The panel's items function didn't return a list." });
   assert.equal(readPatchModule('x', 'project', '/x.ts', { panels: [{ title: 'Both', url: 'https://a.dev', items: () => [] }] }).info.error, 'panels[0] ("Both") should have url or items, not both.');
+});
+
+// 13 Nov: `tandem waiting --json` printed 310 KB for a folder of 32
+// projects, sh handed the Tandem patch the first 64 KB, and its JSON.parse
+// failed with "Expected ',' or ']' after array element at position 65536".
+test("a patch function's sh gets a command's whole output, or an error, never part of it", async () => {
+  const { renderListPanel, applyLive, PATCH_SH_MAX_BYTES } = await import('../../src/patches.ts');
+  const home = tmpDir();
+  const app = project(home, 'dev/app', { 'package.json': '{}' });
+  writePatch(path.join(app, '.threadbear/patches'), 'big.ts', `
+    const read = async ({ sh }) => JSON.parse("[" + (await sh("yes 1234567, | head -n 30000")) + "0]").length - 1;
+    export default {
+      actions: [{ title: "Big", prompt: "x", badge: async (ctx) => (await read(ctx)) / 1000 }],
+      panels: [{ title: "Big list", items: async (ctx) => [{ title: String(await read(ctx)) }] }],
+    };
+  `);
+  const set = await loadPatchSet(app, home);
+  assert.equal(set.patches[0]?.error, undefined);
+  const ctx = {
+    cwd: app,
+    threadId: 't1',
+    timeoutMs: 120_000,
+    // 30,000 lines of 9 bytes: 270 KB, over the old 64 KB.
+    run: (command: string, cwd: string) => runCommand(command, { cwd, env: process.env, maxBytes: PATCH_SH_MAX_BYTES }),
+  };
+  assert.deepEqual(await renderListPanel(set.panels[0]!, set, ctx), { items: [{ title: '30000' }] });
+  assert.equal((await applyLive(set, ctx)).actions[0]!.badge, 30);
+  // Past the cap: a plain error, not half a document.
+  const cut = { ...ctx, run: async () => ({ ok: true, text: '[1,', truncated: true, durationMs: 1 }) };
+  assert.deepEqual(await renderListPanel(set.panels[0]!, set, cut), { note: "Couldn't fill this panel: yes 1234567, | head -n 30000 printed more than the 16 MB a patch's sh reads" });
+  // A failure's huge last line doesn't go to clients whole.
+  const failed = { ...ctx, run: async () => ({ ok: false, exitCode: 1, text: 'x'.repeat(5_000_000), truncated: false, durationMs: 1 }) };
+  assert.ok(((await renderListPanel(set.panels[0]!, set, failed)).note ?? '').length < 600);
+  assert.ok(((await applyLive(set, failed)).patches[0]!.liveError ?? '').length < 600);
 });
 
 test('a tool patch (appliesTo) applies only where its name is found, from any project folder, and runs there', async () => {

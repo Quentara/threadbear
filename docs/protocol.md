@@ -3613,7 +3613,8 @@ and video while it's out of sight.
 
 `items` gets `{ cwd, threadId, sh }`, where `sh(command)` runs a command
 in `cwd` through a login shell and resolves with what it printed (it
-rejects on a non-zero exit). For a project's patch trusted by its hash,
+rejects on a non-zero exit, and on output over 16 MB rather than hand
+back part of it). For a project's patch trusted by its hash,
 `sh` runs from the folder holding `.threadbear/` instead, and only what
 trusting it covers (see "Trusting a folder's patches"); `cwd` is still
 where the thread is. It returns `PanelItem`s (or a promise of
