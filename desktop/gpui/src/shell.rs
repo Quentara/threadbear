@@ -153,7 +153,9 @@ impl DockContent for Panels {
         // A patch's panel: its own picture or symbol, as on the rail.
         let (found, _) = self.patch_panel(panel, cx)?;
         let symbol = threadbear_core::highlights::panel_symbol(&found).to_owned();
-        Some(crate::patch_icons::patch_icon(found.icon_file.as_deref(), &symbol, 13., Some(color)))
+        let icon = crate::patch_icons::patch_icon(found.icon_file.as_deref(), &symbol, 13., Some(color));
+        // A pinned one has a pin before it (pinned_panels.rs).
+        Some(if crate::pinned_panels::pinned(panel).is_some() { crate::pinned_panels::tab_icon(icon, cx) } else { icon })
     }
 
     fn badge(&self, panel: &str, _window: &mut Window, cx: &mut App) -> Option<AnyElement> {
@@ -205,6 +207,26 @@ impl DockContent for Panels {
         let Some(app) = self.app.upgrade() else { return true };
         app.read(cx).panel_available(panel)
     }
+
+    /// Pin on a thread's patch panel, Unpin on a pinned one (pinned_panels.rs).
+    fn menu_items(&self, panel: &str, cx: &App) -> Vec<threadbear_dock::DockMenuItem> {
+        let Some(app) = self.app.upgrade() else { return vec![] };
+        let Some(label) = app.read(cx).pin_menu_label(panel) else { return vec![] };
+        let icon = if label == "Unpin" { gpui_kit::assets::IconName::PinOff } else { gpui_kit::assets::IconName::Pin };
+        let (weak, panel) = (self.app.clone(), panel.to_owned());
+        vec![threadbear_dock::DockMenuItem {
+            label: label.into(),
+            icon: Some(icon),
+            on_click: std::rc::Rc::new(move |_, cx| {
+                weak.update(cx, |t, cx| t.choose_pin_menu(&panel, cx)).ok();
+            }),
+        }]
+    }
+
+    /// A pinned panel's tab says whose it is.
+    fn tip(&self, panel: &str, cx: &App) -> Option<SharedString> {
+        self.app.upgrade()?.read(cx).pinned_tip(panel).map(SharedString::from)
+    }
 }
 
 /// `WindowDock.symbol(of:)`: the icon on a panel's tab.
@@ -212,6 +234,11 @@ impl Panels {
     /// The open thread's patch panel with this id, and the thread.
     fn patch_panel(&self, panel: &str, cx: &App) -> Option<(threadbear_core::highlights::Panel, threadbear_core::inbox::ThreadSummary)> {
         let app = self.app.upgrade()?;
+        // A pinned panel's is its own thread's (pinned_panels.rs).
+        if crate::pinned_panels::pinned(panel).is_some() {
+            let (thread, found) = app.read(cx).pinned_owner(panel)?;
+            return Some((found, thread));
+        }
         let thread = app.read(cx).pane_thread()?;
         let found = thread.panels().into_iter().find(|p| p.id == panel)?;
         Some((found, thread))
@@ -398,7 +425,7 @@ fn standard_keys() -> Vec<(&'static str, Command)> {
 
 impl Threadbear {
     pub(crate) fn panel_title(&self, panel: &str) -> String {
-        if let Some(title) = self.thread_panel_title(panel) {
+        if let Some(title) = self.thread_panel_title(panel).or_else(|| self.pinned_title(panel)) {
             return title;
         }
         match panel {
@@ -441,7 +468,7 @@ impl Threadbear {
     /// sidebar, the main panel, one of the activity bar's panels or a thread
     /// in a panel of its own.
     pub(crate) fn is_pane_section(panel: &str) -> bool {
-        !matches!(panel, THREADS | MAIN | USAGE | UPDATES | CONNECTORS | RUNNERS | TERMINAL) && crate::thread_panels::pinned_thread(panel).is_none()
+        !matches!(panel, THREADS | MAIN | USAGE | UPDATES | CONNECTORS | RUNNERS | TERMINAL) && crate::thread_panels::pinned_thread(panel).is_none() && crate::pinned_panels::pinned(panel).is_none()
     }
 
     /// `available` in `RootView.content`: Highlights, Files and a thread's own
@@ -456,6 +483,11 @@ impl Threadbear {
         // another machine leaves it nothing to show.
         if let Some(id) = crate::thread_panels::pinned_thread(panel) {
             return self.threads.contains_key(id);
+        }
+        // A pinned panel while its thread has the panel, whichever is picked
+        // (pinned_panels.rs).
+        if crate::pinned_panels::pinned(panel).is_some() {
+            return self.pinned_owner(panel).is_some();
         }
         if !Self::is_pane_section(panel) {
             return true;
@@ -475,9 +507,10 @@ impl Threadbear {
         self.dock.read(cx).controller.is_showing(panel)
     }
 
-    /// The pane sections open in the dock, in layout order (`openPanes`).
+    /// The pane sections open in the dock, in layout order (`openPanes`),
+    /// and pinned panels, which sit among them.
     fn open_panes(&self, cx: &App) -> Vec<String> {
-        self.dock.read(cx).layout().panels().into_iter().filter(|p| Self::is_pane_section(p)).collect()
+        self.dock.read(cx).layout().panels().into_iter().filter(|p| Self::is_pane_section(p) || crate::pinned_panels::pinned(p).is_some()).collect()
     }
 
     /// Shows a section's panel, beside another pane section if one's open,
@@ -491,6 +524,12 @@ impl Threadbear {
     /// A rail button, VS Code's way: closes the section's panel if it's
     /// showing, else brings it up (`clickRail`).
     pub(crate) fn click_rail(&mut self, panel: &str, cx: &mut Context<Self>) {
+        // The thread's own panel is pinned: that's it, brought to the front
+        // rather than a second copy opened. Unpin is how it goes.
+        if let Some(pin) = self.own_pin(panel, cx).filter(|_| !self.is_panel_showing(panel, cx)) {
+            self.dock.update(cx, |m, cx| m.select(&pin, cx));
+            return;
+        }
         if self.is_panel_showing(panel, cx) {
             self.dock.update(cx, |m, cx| m.close(panel, cx));
         } else {
@@ -558,6 +597,7 @@ impl Threadbear {
         self.thread_panels_layout_changed(&layout, cx);
         // A patch panel come into sight goes in ⌘K's Recent.
         self.note_panels_shown(&layout, cx);
+        self.pinned_panels_layout_changed(&layout);
         cx.notify();
     }
 
@@ -1402,6 +1442,8 @@ impl Threadbear {
             TERMINAL => crate::terminal::panel_view(cx),
             // A thread in a panel of its own (thread_panels.rs).
             _ if crate::thread_panels::pinned_thread(panel).is_some() => self.thread_panel_view(panel, ghost, window, cx),
+            // A panel pinned to its thread (pinned_panels.rs).
+            _ if crate::pinned_panels::pinned(panel).is_some() => self.pinned_panel_view(panel, ghost, window, cx),
             // Highlights, Files, Patches and a patch's own panels are sections of
             // the one pane beside the thread (highlights.rs), each its own panel
             // in the dock, as in the Swift app.
@@ -1480,7 +1522,7 @@ impl Threadbear {
             // follows its slot (web_panels.rs); a preview over it is the pane's.
             let previewing = self.side.read(cx).previews.get(&thread.id).is_some_and(|pv| pv.from == section);
             if !previewing {
-                if let Some(page) = crate::web_panels::section(self, &thread, section, window, cx) {
+                if let Some(page) = crate::web_panels::section(self, &thread, section, false, window, cx) {
                     return page;
                 }
             }

@@ -825,7 +825,10 @@ impl DockView {
             panel.to_string(),
             panel.to_string(),
             panel.to_string(),
-            self.move_tip(panel, cx),
+            match content.tip(panel, cx) {
+                Some(about) => format!("{about}. {}", self.move_tip(panel, cx)),
+                None => self.move_tip(panel, cx),
+            },
             panel.to_string(),
             panel.to_string(),
         );
@@ -951,6 +954,9 @@ impl DockView {
                 menu = menu.item(
                     PopupMenuItem::new("Open in New Window").icon(Icon::new(Lucide::ExternalLink)).on_click(move |_, _, cx| m2.update(cx, |m, cx| m.open_in_window(&p2, cx))),
                 );
+            }
+            for extra in content.menu_items(&panel, cx) {
+                menu = menu.item(crate::content::popup_item(extra));
             }
             if content.closable(&panel, cx) {
                 let (m3, p3) = (model.clone(), panel.clone());

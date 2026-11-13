@@ -33,6 +33,8 @@ pub(crate) struct ThreadPanels {
     main_tabs: HashSet<String>,
     /// What the main panel showed when last looked at.
     context: Option<MainContext>,
+    /// Pinned list and picture panels' views, by panel id (pinned_panels.rs).
+    pub(crate) pinned: HashMap<String, Entity<crate::pinned_panels::PinnedPanelView>>,
 }
 
 struct PanelPane {

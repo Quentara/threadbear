@@ -406,8 +406,26 @@ pub(crate) fn reload_requested(thread: &ThreadSummary, panel_id: &str, cx: &mut 
             None => return,
         },
     };
-    if let Some(page) = panels.read(cx).page(&key).cloned() {
-        page.reload();
+    // And a pinned copy's (pinned_panels.rs), which is a page of its own.
+    for key in [pinned_key(&key), key] {
+        if let Some(page) = panels.read(cx).page(&key).cloned() {
+            page.reload();
+        }
+    }
+}
+
+/// A pinned panel's page is its own, apart from the same page in the
+/// ordinary panel (two threads in one Convex project, say), as one page can
+/// only be placed in one slot a frame.
+pub(crate) fn pinned_key(key: &str) -> String {
+    format!("pin:{key}")
+}
+
+fn page_key(key: String, pinned: bool) -> String {
+    if pinned {
+        pinned_key(&key)
+    } else {
+        key
     }
 }
 
@@ -442,15 +460,18 @@ struct Opener {
 /// A panel's section in the pane, drawn here rather than by the side pane so
 /// its page is placed every frame (the side pane is a cached view, redrawn
 /// only when it changes). None for a panel that isn't a page.
-pub(crate) fn section(app: &Threadbear, thread: &ThreadSummary, panel_id: &str, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
+/// `pinned`: drawn in a pinned copy of the panel (pinned_panels.rs), with a
+/// page of its own.
+pub(crate) fn section(app: &Threadbear, thread: &ThreadSummary, panel_id: &str, pinned: bool, window: &mut Window, cx: &mut App) -> Option<AnyElement> {
     let panel = thread.panels().into_iter().find(|p| p.id == panel_id && p.kind == "url")?;
     let panels = panels(cx)?;
     let main = window.window_handle() == app.main_window;
     let body = match &panel.convex {
-        Some(configured) => convex_view(&panels, thread, &panel, configured, main, window, cx),
-        None => page_view(&panels, &panel, main, window, cx),
+        Some(configured) => convex_view(&panels, thread, &panel, configured, main, pinned, window, cx),
+        None => page_view(&panels, &panel, main, pinned, window, cx),
     };
-    Some(div().id(SharedString::from(format!("web-panel-{panel_id}"))).size_full().child(body).into_any_element())
+    let id = if pinned { format!("web-panel-pin-{}-{panel_id}", thread.id) } else { format!("web-panel-{panel_id}") };
+    Some(div().id(SharedString::from(id)).size_full().child(body).into_any_element())
 }
 
 /// What a patch's url panel can be: a web page, or one of the app's own
@@ -460,7 +481,7 @@ fn loads_in_panel(url: &str) -> bool {
     threadbear_web::site(url).is_some() || url.starts_with("data:")
 }
 
-fn page_view(panels: &Entity<WebPanels>, panel: &Panel, main: bool, window: &mut Window, cx: &mut App) -> AnyElement {
+fn page_view(panels: &Entity<WebPanels>, panel: &Panel, main: bool, pinned: bool, window: &mut Window, cx: &mut App) -> AnyElement {
     let Some(url) = panel.url.clone().filter(|u| !u.trim().is_empty()) else {
         return note("This panel has no page to show.", cx);
     };
@@ -469,7 +490,7 @@ fn page_view(panels: &Entity<WebPanels>, panel: &Panel, main: bool, window: &mut
         return away("This panel's page isn't a web page, so it opens outside the app.", open, cx);
     }
     match running(&format!("web-panel-{}", panel.id), "this panel's page", main, open.clone(), window, cx) {
-        Ok(parent) => slot(panels, &url, &url, || PanelKind::Patch, parent, open, cx),
+        Ok(parent) => slot(panels, &page_key(url.clone(), pinned), &url, || PanelKind::Patch, parent, open, cx),
         Err(instead) => instead,
     }
 }
@@ -543,11 +564,15 @@ fn open_button(open: &Opener, _p: Palette, cx: &App) -> AnyElement {
 /// A pane panel's buttons at the end of its bar in the dock (`DockPaneButtons`):
 /// for a page, Back once it's moved on from its own page, Reload and Open in
 /// browser; for the Convex panel, New deploy key, Reload and Open in browser.
+/// A pinned panel's are for its own thread's panel and page.
 pub(crate) fn bar_buttons(app: &Threadbear, panel_id: &str, cx: &mut App) -> Option<AnyElement> {
-    let thread = app.pane_thread()?;
+    let (thread, panel_id, pinned) = match threadbear_core::pinned_panels::pinned(panel_id) {
+        Some((thread, id)) => (app.threads.get(thread)?.clone(), id, true),
+        None => (app.pane_thread()?, panel_id, false),
+    };
     let panel = thread.panels().into_iter().find(|p| p.id == panel_id && p.kind == "url")?;
     // Over a preview the side pane draws its own bar.
-    if app.side.read(cx).previews.get(&thread.id).is_some_and(|pv| pv.from == panel_id) {
+    if !pinned && app.side.read(cx).previews.get(&thread.id).is_some_and(|pv| pv.from == panel_id) {
         return None;
     }
     let panels = panels(cx)?;
@@ -555,7 +580,7 @@ pub(crate) fn bar_buttons(app: &Threadbear, panel_id: &str, cx: &mut App) -> Opt
     let mut row = h_flex().flex_none().items_center().pr(px(4.));
     if let Some(configured) = &panel.convex {
         let selected = panels.read(cx).selected(configured);
-        let key = format!("convex:{selected}");
+        let key = page_key(format!("convex:{selected}"), pinned);
         let page = panels.read(cx).page(&key).cloned();
         // A key and a reload only mean something with the dashboard here.
         let here = web_runtime::runtime(cx).is_some_and(|r| r.read(cx).engine == Engine::Running);
@@ -579,7 +604,7 @@ pub(crate) fn bar_buttons(app: &Threadbear, panel_id: &str, cx: &mut App) -> Opt
         return Some(row.into_any_element());
     }
     let url = panel.url.clone().filter(|u| !u.trim().is_empty())?;
-    let page = panels.read(cx).page(&url).cloned();
+    let page = panels.read(cx).page(&page_key(url.clone(), pinned)).cloned();
     // Its own page moved on to another (a same-site link, a script's
     // window.open): back a page at a time.
     if let Some(page) = page.clone().filter(|pg| pg.can_go_back()) {
@@ -726,6 +751,7 @@ impl WebPanels {
     /// New deploy key: drops the page with the old key and asks for a fresh one.
     fn renew(&mut self, deployment: &str, cx: &mut Context<Self>) {
         self.forget(&format!("convex:{deployment}"));
+        self.forget(&pinned_key(&format!("convex:{deployment}")));
         self.renewing.insert(deployment.to_owned());
         let states: Vec<String> = self.convex.iter().filter(|(_, s)| self.selected(&s.configured) == deployment).map(|(k, _)| k.clone()).collect();
         for key in states {
@@ -822,7 +848,7 @@ fn embedded() -> String {
     convex::EMBEDDED.to_owned()
 }
 
-fn convex_view(panels: &Entity<WebPanels>, thread: &ThreadSummary, panel: &Panel, configured: &Deployment, main: bool, window: &mut Window, cx: &mut App) -> AnyElement {
+fn convex_view(panels: &Entity<WebPanels>, thread: &ThreadSummary, panel: &Panel, configured: &Deployment, main: bool, pinned: bool, window: &mut Window, cx: &mut App) -> AnyElement {
     let state_key = format!("{}/{}", thread.id, panel.id);
     let selected = panels.read(cx).selected(configured);
     let open = convex::browser_url(&selected).map(|url| Opener { url, tip: format!("Open {selected} in browser") });
@@ -832,7 +858,7 @@ fn convex_view(panels: &Entity<WebPanels>, thread: &ThreadSummary, panel: &Panel
     let header = convex_header(panels, &state_key, configured, &selected, window, cx);
     let body = match parent {
         Err(instead) => instead,
-        Ok(parent) => convex_body(panels, &state_key, &selected, parent, open, cx),
+        Ok(parent) => convex_body(panels, &state_key, &selected, pinned, parent, open, cx),
     };
     v_flex().size_full().child(header).child(div().h(px(1.)).flex_none().bg(style::hairline(cx))).child(div().flex_1().min_h_0().child(body)).into_any_element()
 }
@@ -932,7 +958,7 @@ fn open_deployment_menu(panels: &Entity<WebPanels>, state_key: &str, configured:
 
 /// The dashboard once there's a key, the sign-in under way, why there's no
 /// key with what to do about it, or a note while it's asked for.
-fn convex_body(panels: &Entity<WebPanels>, state_key: &str, selected: &str, parent: *mut c_void, open: Option<Opener>, cx: &mut App) -> AnyElement {
+fn convex_body(panels: &Entity<WebPanels>, state_key: &str, selected: &str, pinned: bool, parent: *mut c_void, open: Option<Opener>, cx: &mut App) -> AnyElement {
     let p = palette(cx);
     let (key, sign_in, failure, sign_in_failure, loading) = {
         let s = panels.read(cx).convex.get(state_key);
@@ -942,7 +968,7 @@ fn convex_body(panels: &Entity<WebPanels>, state_key: &str, selected: &str, pare
         let url = embedded();
         let origin = convex::origin_of(&url);
         let script = move || PanelKind::Convex { credentials_script: convex::credentials_script(&key, &origin) };
-        return slot(panels, &format!("convex:{selected}"), &url, script, parent, open, cx);
+        return slot(panels, &page_key(format!("convex:{selected}"), pinned), &url, script, parent, open, cx);
     }
     let words = |text: String, color: Hsla, weight: FontWeight| div().max_w(px(320.)).text_center().text_size(px(style::size::LABEL)).line_height(px(18.)).font_weight(weight).text_color(color).child(text);
     let column = || v_flex().size_full().items_center().justify_center().gap(px(12.)).p(px(24.));
@@ -1014,6 +1040,13 @@ fn save_selections(selections: &HashMap<String, String>) {
 
 // ---------------------------------------------------------------- dumps
 
+/// A kept page's address as the dump gives it: a pinned copy's as its own,
+/// the Convex dashboard's as the embedded page.
+fn dumped_url(key: &str) -> String {
+    let key = key.strip_prefix("pin:").unwrap_or(key);
+    key.strip_prefix("convex:").map_or(key.to_owned(), |_| embedded())
+}
+
 fn page_dump(key: &str, kept: Option<&Kept>, frame: u64) -> Value {
     match kept {
         None => json!({ "key": key }),
@@ -1022,7 +1055,7 @@ fn page_dump(key: &str, kept: Option<&Kept>, frame: u64) -> Value {
             let (x, y, w, h) = k.page.bounds();
             json!({
                 "key": key,
-                "url": k.key.strip_prefix("convex:").map_or(k.key.clone(), |_| embedded()),
+                "url": dumped_url(&k.key),
                 "address": k.page.address(),
                 "title": k.page.title(),
                 "loading": k.page.loading(),

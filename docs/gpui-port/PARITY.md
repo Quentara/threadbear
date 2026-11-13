@@ -222,6 +222,40 @@ run or a screenshot from the running app. A slice with no runtime check doesn't
 count. (Ghostex's port log is where this shape comes from; its slices 214 to 268
 built parsers and gates with no launch of the app, which is the trap.)
 
+### 2026-11-13 Pin a side panel to its thread (`dock.pin`)
+
+- Right-click a patch panel's tab (a page, the Convex dashboard, a list or a
+  picture) and choose Pin: the panel becomes, in the same place, a copy pinned
+  to the thread it came from (`threadbear.pin:<thread>:<panel>`, in
+  `threadbear_core::pinned_panels`), which keeps showing that thread's panel
+  whichever thread is picked and isn't hidden for a thread without it. Unpin
+  puts the ordinary panel back where it was, following the selection again.
+  Prompted by Ville (his acceptance-testing panel stayed open in every thread)
+  and Mike wanting one project's panel in view while in another's thread.
+- The tab has a small pin before the panel's icon, keeps the origin badge, and
+  its tip starts "Pinned to “<thread>”". The thread's own rail button lights for
+  its pinned copy and brings it to the front rather than opening a second one.
+- A pinned page has a page of its own (`web_panels::pinned_key`), so two threads
+  in one Convex project can show the same dashboard pinned and unpinned at
+  once; a pinned list or picture is the side pane's drawing in a view of its
+  own (`PinnedPanelView`), and keeps polling while it shows. It steps aside
+  once its thread is gone or no longer has the panel, and comes back with the
+  layout after a relaunch.
+- BearDock got `DockLayout::rename` (a panel's new id in the same tab, window
+  and hidden title) and two `DockContent` hooks: `menu_items`, the app's own
+  items in a panel's right-click menu above Close, and `tip`, a line before
+  the tab's move tip.
+- GPUI only: the Swift app is frozen, so the specs are `@swift-pending` there.
+- Not done: a file or link row clicked in a pinned list opens its preview in
+  the ordinary side pane for that thread, which only shows when that thread
+  is picked; Highlights, Files and Patches can't be pinned (the side pane
+  draws one section for the selected thread).
+
+Verification: `features/pinned-panels.feature` (3 scenarios) passes on the
+cloud box (Linux) with `TB_APP=gpui`, as do `@dock.threadpanel`, `@panel.list`
+and `@panel.image`; `cargo test` for `pinned_panels` (core) and
+`rename_keeps_a_panels_place_selection_window_and_hidden_title` (dock layout).
+
 ### 2026-11-12 The limit box asks: Continue now on (`banner.limit`)
 
 - A pool thread no longer waits while its pool has a login with room: the

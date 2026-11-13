@@ -1408,6 +1408,8 @@ impl Threadbear {
         // What came across from the Swift app, while its note's up. Set
         // after, as the literal above is as long as serde_json's macro goes.
         dump["importNote"] = json!(self.import_note);
+        // Panels pinned to their threads (pinned_panels.rs).
+        dump["pinnedPanels"] = self.pinned_panels_dump(cx);
         // Videos and PDFs up in the system's views, in any window (media_view.rs).
         dump["media"] = crate::media_view::dump();
         // The card a page swipe shows while it's under way (swipe_nav.rs).

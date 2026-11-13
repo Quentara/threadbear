@@ -681,6 +681,15 @@ and Patches at the foot. To open a thread in a panel of its own, beside
 the one you're reading, right-click it in the list and pick Open in New
 Panel.
 
+A patch's panel follows the thread you pick, and steps aside for a thread
+that doesn't have it. To keep one in view while you work in another
+thread (one project's Convex dashboard while you're in another project's
+thread, say), right-click its tab and choose Pin. It stays where it is,
+with a pin on its tab, showing the thread it was pinned from whichever
+thread you pick; hover over the tab to see which. That thread's button on
+the rail brings it to the front. Unpin, on the same menu, puts the
+ordinary panel back. Pinned panels are in the new desktop app only.
+
 The View menu has the rest: Show or Hide Threads (⌃⌘S) for the list,
 Collapse or Expand Threads (⌘/), which folds the list away while the bar
 of icons on the left stays, gives its room to the thread, and brings it
@@ -1636,6 +1645,10 @@ opens Convex's page to approve it (for a thread on another of your Macs,
 it opens on the Mac you're at), and the dashboard loads by itself once you
 have. If the signed-in account can't reach the project, Sign in as someone
 else switches to one that can.
+
+A patch can also show in only some of a folder's threads: those in a
+project, or with a word in their title. Ask for that when you ask for the
+panel ("only in my acceptance testing threads").
 
 You don't need to write one yourself. In a thread in that folder, ask
 "add a button that runs the tests" or "add a panel showing localhost:3000",

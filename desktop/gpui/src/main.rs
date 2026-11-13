@@ -61,6 +61,7 @@ mod open_gate;
 mod pane_cache;
 mod patch_icons;
 mod patches;
+mod pinned_panels;
 mod prefs;
 mod project_decisions;
 mod project_page;

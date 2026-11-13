@@ -531,6 +531,9 @@ impl FloatingPanelView {
             let mut menu = menu.item(PopupMenuItem::new(if hidden { "Show Title" } else { "Hide Title" }).on_click(move |_, _, cx| m1.update(cx, |m, cx| m.set_title_hidden(&p1, !hidden, cx))));
             let (m2, p2) = (model.clone(), panel.clone());
             menu = menu.item(PopupMenuItem::new("Put Back in Main Window").on_click(move |_, _, cx| m2.update(cx, |m, cx| m.put_back(&p2, cx))));
+            for extra in content.menu_items(&panel, cx) {
+                menu = menu.item(crate::content::popup_item(extra));
+            }
             if content.closable(&panel, cx) {
                 let (m3, p3) = (model.clone(), panel.clone());
                 let title = content.title(&panel, cx);

@@ -60,6 +60,7 @@ pub mod swift_import;
 pub mod terminal;
 pub mod text_file;
 pub mod thread_link;
+pub mod pinned_panels;
 pub mod thread_panels;
 pub mod transcript;
 pub mod updates;

@@ -273,7 +273,8 @@ impl Threadbear {
         // The accent dot while the last turn's asks aren't all ticked.
         let open_ask = thread.asks.iter().flatten().any(|a| !a.ticked.unwrap_or(false)) && thread.asks_seq.is_some();
         let panels: Vec<(threadbear_core::highlights::Panel, bool)> = thread.panels().into_iter().map(|p| {
-            let shown = dock.controller.is_showing(&p.id);
+            // Or the thread's pinned copy of it (pinned_panels.rs).
+            let shown = dock.controller.is_showing(&p.id) || dock.controller.is_showing(&crate::pinned_panels::pinned_panel(&thread.id, &p.id));
             (p, shown)
         }).collect();
         let _ = dock;

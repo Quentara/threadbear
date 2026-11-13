@@ -95,7 +95,8 @@ impl SidePane {
         cx.spawn(async move |this, cx| loop {
             let image = this
                 .update(cx, |t, cx| {
-                    let showing = t.thread(cx).is_some_and(|th| th.id == thread) && t.chosen.get(&thread) == Some(&panel);
+                    // Or a pinned copy of it is (pinned_panels.rs), whichever thread's picked.
+                    let showing = (t.thread(cx).is_some_and(|th| th.id == thread) && t.chosen.get(&thread) == Some(&panel)) || t.pin_showing(&thread, &panel, cx);
                     if !showing {
                         t.panels.polling.remove(&key);
                     }
@@ -107,7 +108,7 @@ impl SidePane {
                 return;
             }
             // As ImagePanel's loop: 3 s with a picture, 5 without; a list 15.
-            let kind_is_list = this.update(cx, |t, cx| t.panel_is_list(&panel, cx)).unwrap_or(false);
+            let kind_is_list = this.update(cx, |t, cx| t.panel_is_list(&thread, &panel, cx)).unwrap_or(false);
             let delay = if kind_is_list { LIST_REFRESH } else if has_image { Duration::from_secs(3) } else { Duration::from_secs(5) };
             cx.background_executor().timer(delay).await;
             if this.update(cx, |t, cx| t.fetch_panel(key.clone(), thread.clone(), panel.clone(), cx)).is_err() {
@@ -117,8 +118,24 @@ impl SidePane {
         .detach();
     }
 
-    fn panel_is_list(&self, panel_id: &str, cx: &App) -> bool {
-        self.thread(cx).is_some_and(|t| t.panels().iter().any(|p| p.id == panel_id && p.kind == "list"))
+    /// Keeps a pinned panel's rows or picture coming while it shows
+    /// (pinned_panels.rs): the ordinary panel's polling stops when its
+    /// thread isn't the selected one.
+    pub(crate) fn keep_panel_fresh(&mut self, thread_id: &str, panel_id: &str, cx: &mut Context<Self>) {
+        if !self.panels.polling.contains(&panel_key(thread_id, panel_id)) {
+            self.refresh_panel(thread_id, panel_id, cx);
+        }
+    }
+
+    fn panel_is_list(&self, thread_id: &str, panel_id: &str, cx: &App) -> bool {
+        let Some(app) = self.app.upgrade() else { return false };
+        app.read(cx).threads.get(thread_id).is_some_and(|t| t.panels().iter().any(|p| p.id == panel_id && p.kind == "list"))
+    }
+
+    /// A pinned copy of the thread's panel is showing (pinned_panels.rs).
+    fn pin_showing(&self, thread_id: &str, panel_id: &str, cx: &App) -> bool {
+        let Some(app) = self.app.upgrade() else { return false };
+        app.read(cx).dock.read(cx).controller.is_showing(&threadbear_core::pinned_panels::panel(thread_id, panel_id))
     }
 
     fn fetch_panel(&mut self, key: String, thread_id: String, panel_id: String, cx: &mut Context<Self>) {

@@ -358,6 +358,20 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         "open-url" => crate::deep_links::automation(app, cmd, window.window_handle(), cx),
         // A thread in a panel of its own, and back (thread_panels.rs).
         "open-panel" | "move-to-main" => crate::thread_panels::automation(app, cmd, window, cx),
+        // A panel's right-click menu's own items (Pin, Unpin): what it offers,
+        // and with `click`, chosen (pinned_panels.rs).
+        "panel-menu" => {
+            let panel = cmd["panel"].as_str().ok_or("panel is a panel's id")?.to_owned();
+            let offers: Vec<&str> = app.read(cx).pin_menu_label(&panel).into_iter().collect();
+            if let Some(click) = cmd["click"].as_str() {
+                if !offers.contains(&click) {
+                    return Err(format!("{panel}'s menu has no {click}: it offers {offers:?}"));
+                }
+                app.update(cx, |t, cx| t.choose_pin_menu(&panel, cx));
+                window.render_frame(cx);
+            }
+            Ok(json!(offers))
+        }
         // The keys beside the buttons as if ⌘ were held (key_hints.rs).
         "hints" => {
             let on = cmd["on"].as_bool().unwrap_or(true);
