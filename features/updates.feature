@@ -23,6 +23,17 @@ Feature: The Updates panel
     And the Updates panel lists "Claude Code 2.1.312, up to date (automatic)"
 
   @updates.panel
+  Scenario: Reinstall now reinstalls the runner from the panel, with no command to copy
+    When the runner says Threadbear Runner.app is behind main
+    And I open the Updates panel
+    Then the Updates panel lists "Threadbear Runner.app was built from older launcher sources than main's. Reinstalling restarts the runner, so it waits until no thread is busy."
+    And the Updates panel lists "  [Reinstall now]"
+    When I press "Reinstall the runner once no thread is busy" in the Updates panel
+    Then the Updates panel lists "Reinstalling the runner. It restarts, and is back in a minute or so."
+    And the Updates panel lists "  [Reinstalling: busy]"
+    And the Updates panel lists "The runner is up to date."
+
+  @updates.panel
   Scenario: Mike's release says what's new, and Bring Them In starts a thread for it
     When Mike has a release of 10 Nov with 3 new changes
     And I open the Updates panel

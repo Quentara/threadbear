@@ -378,6 +378,12 @@ export class Restarter {
   // too, and an agent waiting on a 40-minute test run would never hear back.
   // Background work only holds it until backgroundUntil, though: a dev
   // server or a watcher never finishes.
+  // For the LaunchAgent reinstall (reinstall.ts), which stops the runner
+  // the same way.
+  busyThreads(): string[] {
+    return this.busy();
+  }
+
   private busy(): string[] {
     const ids = new Set(
       this.deps.runner

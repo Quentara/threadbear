@@ -1931,6 +1931,14 @@ the runner and the Claude Code and Codex tools. A grey dot means something
 is in progress and will sort itself out, and a coloured dot means it needs
 you. Right-click it for a quick Restart to Update.
 
+A few parts of the runner (the program that keeps it going, and the small
+Threadbear Runner app macOS names in its privacy prompts) don't come with
+its updates, only with reinstalling it. When one of them is behind, the
+Updates panel says which and has a Reinstall now button. Reinstalling
+restarts the runner, so it waits until no thread is busy, then runs on its
+own and is back in a minute or so. If the new runner doesn't come up, the
+old one is put back and the panel says why, with Try again and the log.
+
 ### Mike's updates
 
 Your copy is a fork of Mike's, and it doesn't change unless you say so.

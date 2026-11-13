@@ -20,15 +20,12 @@ use gpui_kit::*;
 use crate::style::px;
 use serde_json::{json, Value};
 use std::collections::HashSet;
-use std::time::Duration;
 use threadbear_core::inbox::ThreadSummary;
 use threadbear_core::new_thread::{Draft, NewThreadPicks};
 use threadbear_core::updates::{self as rules, AppSide, CliStatus, RunnerUpdates};
 use crate::tips::Tip as _;
 
 
-/// How long Copy says it copied.
-const COPIED_FOR: Duration = Duration::from_millis(1500);
 
 /// The Updates panel's state in the app (`Threadbear::updates_panel`).
 #[derive(Default)]
@@ -49,10 +46,9 @@ pub(crate) struct UpdatesPanelState {
     pub(crate) bringing_in: bool,
     /// Port this on its way, by commit.
     pub(crate) porting: HashSet<String>,
-    /// The launcher's command was copied a moment ago (counts the copies, so
-    /// an older one's timer leaves a newer one's word alone).
-    copied: Option<u64>,
-    copies: u64,
+    /// Reinstall now is on its way to the runner (runner.reinstall), until
+    /// its answer brings the runner's own word of it.
+    pub(crate) reinstalling: bool,
     /// The icon's right-click popover is up, and its keyboard (Return
     /// restarts, Esc puts it away).
     pub(crate) popover: bool,
@@ -247,21 +243,30 @@ impl Threadbear {
         .detach();
     }
 
-    /// Copy: the command, to run in Terminal. The button says Copied for a
-    /// moment, as nothing else shows the click took.
-    fn copy_install_command(&mut self, command: String, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(command));
-        self.updates_panel.copies += 1;
-        let n = self.updates_panel.copies;
-        self.updates_panel.copied = Some(n);
+    /// Reinstall now (or Try again): the runner reinstalls its LaunchAgent
+    /// once no thread is busy (protocol "Runner updates"). The button spins
+    /// and takes no clicks from the press until the runner says where it's
+    /// got to; an error puts it back, with the error.
+    fn reinstall_runner(&mut self, cx: &mut Context<Self>) {
+        if self.updates_panel.reinstalling {
+            return;
+        }
+        self.updates_panel.reinstalling = true;
         cx.notify();
+        let client = self.client.clone();
         cx.spawn(async move |this, cx| {
-            cx.background_executor().timer(COPIED_FOR).await;
+            let res = call(client, "runner.reinstall", json!({})).await;
             this.update(cx, |t, cx| {
-                if t.updates_panel.copied == Some(n) {
-                    t.updates_panel.copied = None;
-                    cx.notify();
+                t.updates_panel.reinstalling = false;
+                match res {
+                    Ok(v) => {
+                        if let Some(r) = t.updates_panel.runner.as_mut() {
+                            r.reinstall = rules::Reinstall::decode(&v["reinstall"]);
+                        }
+                    }
+                    Err(e) => t.show_error(e.message, cx),
                 }
+                cx.notify();
             })
             .ok();
         })
@@ -341,13 +346,6 @@ impl Threadbear {
     }
 
     // What it shows.
-
-    /// The command for a changed launch.mjs, from the checkout the runner
-    /// follows when it says, else where the README's fork puts one.
-    fn install_command(&self) -> String {
-        let checkout = self.updates_panel.runner.as_ref().and_then(|r| r.upstream.as_ref()).and_then(|u| u.checkout.clone());
-        rules::install_command(checkout.as_deref(), &std::env::var("HOME").unwrap_or_default())
-    }
 
     /// A thread's title for a link to it, or the start of its id when it
     /// isn't listed here.
@@ -519,18 +517,17 @@ impl Threadbear {
         }
         if let Some(launcher) = launcher {
             out.push(line(launcher));
-            let command = self.install_command();
-            let copy = command.clone();
-            let copied = self.updates_panel.copied.is_some();
-            let mono = cx.theme().mono_font_family.clone();
-            out.push(
-                h_flex()
-                    .gap(px(6.))
-                    .items_center()
-                    .child(text_line(command, 11., fg).font_family(mono).flex_1().min_w_0().line_clamp(2))
-                    .child(push_button("updates-copy", if copied { "Copied" } else { "Copy" }, "Copy the command, to run in Terminal", false, false, cx, move |t, _, cx| t.copy_install_command(copy.clone(), cx)))
-                    .into_any_element(),
-            );
+            let log = runner.reinstall.as_ref().filter(|r| r.state == "failed").and_then(|r| r.log_file.clone());
+            if let Some((label, tip, on_its_way)) = rules::launcher_button(&runner) {
+                let busy = on_its_way || self.updates_panel.reinstalling;
+                out.push(
+                    h_flex()
+                        .gap(px(6.))
+                        .child(push_button("updates-reinstall", label, tip, false, busy, cx, |t, _, cx| t.reinstall_runner(cx)))
+                        .children(log.map(|file| push_button("updates-reinstall-log", "Show the Log", "Open the reinstall's output, to see why it didn't work", false, false, cx, move |_, _, cx| crate::open_gate::open_own(std::path::Path::new(&file), cx))))
+                        .into_any_element(),
+                );
+            }
         }
         out
     }
@@ -731,7 +728,10 @@ impl Threadbear {
                 }
                 if let Some(launcher) = launcher {
                     lines.push(launcher);
-                    lines.push(format!("  $ {} [Copy]", self.install_command()));
+                    if let Some((label, _, on_its_way)) = rules::launcher_button(runner) {
+                        let busy = on_its_way || self.updates_panel.reinstalling;
+                        lines.push(format!("  [{label}{}]", if busy { ": busy" } else { "" }));
+                    }
                 }
             }
             None => lines.extend(rules::runner_lines(None)),

@@ -19,6 +19,7 @@ import type { Logger } from './log.ts';
 import { currentLink, readRelease, readState, type ReleaseJson } from './release.ts';
 import type { RestartResult } from './restart.ts';
 import { atomicWriteFileSync, readJsonSync } from './fsutil.ts';
+import { launcherKey } from './reinstall.ts';
 import { inBackground } from './background.ts';
 import type { UpdateFailure } from './fix-update.ts';
 import { machineTrouble } from './machine-trouble.ts';
@@ -91,6 +92,9 @@ export type UpdateStatus = {
   // (launchAgentBehind below), and which way.
   launcherChanged?: boolean;
   launcherReason?: string;
+  // What main's launcher is (reinstall.ts launcherKey), while it's behind:
+  // a failed reinstall isn't tried again by itself until this changes.
+  launcherKey?: string;
   // followOrigin in runner.json: this machine follows GitHub's main itself.
   followsOrigin?: boolean;
   // What's wrong with that, in a sentence or two, when something is: its main
@@ -555,6 +559,7 @@ export class RunnerUpdater {
   private subject?: string;
   private launcherChanged = false;
   private launcherReason?: string;
+  private launcherKey?: string;
   private followsOrigin = false;
   private followProblem?: string;
   private fetchFailingSince?: number;
@@ -644,6 +649,7 @@ export class RunnerUpdater {
     if (this.releaseBuilt) out.release = this.releaseBuilt;
     if (this.launcherChanged) out.launcherChanged = true;
     if (this.launcherReason) out.launcherReason = this.launcherReason;
+    if (this.launcherKey) out.launcherKey = this.launcherKey;
     if (this.followsOrigin) out.followsOrigin = true;
     if (this.followProblem) out.followProblem = this.followProblem;
     if (this.state !== 'off') out.logFile = updateLogPath(this.deps.home);
@@ -693,6 +699,7 @@ export class RunnerUpdater {
       this.subject = main.subject;
       this.launcherReason = launchAgentBehind(path.join(dir, release.prefix), home, this.deps.env ?? process.env, this.deps.findLauncherApp, this.deps.platform);
       this.launcherChanged = this.launcherReason !== undefined;
+      this.launcherKey = this.launcherChanged ? launcherKey(path.join(dir, release.prefix)) : undefined;
       if (origin) {
         this.behindNote = await this.behindTrouble(origin, main, release);
         this.followProblem = joined(this.originTrouble, this.behindNote);
@@ -941,8 +948,9 @@ export function launcherSourcesHash(dir: string): string | undefined {
 // Why the installed LaunchAgent is behind main's runner/ (`mainRunner`, in
 // the updater's clone), in a sentence, or undefined when it isn't.
 // Releases never change any of it, and the runner can't reinstall the
-// launchd job it runs in, so this is said (tb status, the app's Updates
-// panel) for Mike to run install-runner.sh. The app is the one
+// launchd job it runs in from inside it, so install-runner.sh runs as a
+// launchd job of its own (reinstall.ts): from the Updates panel's
+// Reinstall now, or by itself with the selfReinstall experiment. The app is the one
 // install-runner.sh put in the plist (THREADBEAR_RUNNER_APP), else the
 // process that started launch.mjs, for a plist written before that
 // variable; a supervised runner with neither still runs node as the

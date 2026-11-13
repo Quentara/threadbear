@@ -29,6 +29,7 @@ import { StuckJobs } from './stuck-jobs.ts';
 import { FrozenClis } from './frozen-cli.ts';
 import { KeepAwake } from './keep-awake.ts';
 import { experimentOn } from './experiments.ts';
+import { Reinstaller } from './reinstall.ts';
 import { MacScreen } from './mac-screen.ts';
 import { Projects, drainProjectMethods, projectMethods } from './projects.ts';
 import { Librarian, librarianMethods } from './librarian.ts';
@@ -693,6 +694,26 @@ async function main(): Promise<void> {
     restart: (p) => restarter.request({ when: 'idle', ...p }),
     pendingRestart: () => Boolean(restarter.status().pendingRestart),
     followsOrigin: () => followOriginOn(cfg.home),
+    onChange: () => {
+      // updaterReady: the first onChange can come before the reinstaller exists.
+      if (updaterReady) reinstaller.consider();
+      publishUpdates();
+    },
+  });
+  // The LaunchAgent reinstalling itself when it's behind main (reinstall.ts):
+  // the Updates panel's Reinstall now, or by itself with selfReinstall on.
+  const reinstaller = new Reinstaller({
+    home: cfg.home,
+    checkout: updateRelease?.checkout,
+    clock: realClock,
+    log,
+    behind: () => {
+      const u = updater.status();
+      return u.launcherChanged && u.launcherReason && u.launcherKey ? { reason: u.launcherReason, key: u.launcherKey } : undefined;
+    },
+    // As a restart would wait: no busy thread, no old runner still finishing turns.
+    idle: () => !draining && restarter.busyThreads().length === 0 && peers.status().length === 0,
+    auto: () => experimentOn(cfg.home, 'selfReinstall'),
     onChange: () => publishUpdates(),
   });
   // Mike's releases for a fork, and on Mike's own runner the tagging of
@@ -822,6 +843,9 @@ async function main(): Promise<void> {
     if (u.reason) out.reason = u.reason;
     if (u.launcherChanged) out.launcherChanged = true;
     if (u.launcherReason) out.launcherReason = u.launcherReason;
+    if (u.checkout) out.checkout = u.checkout;
+    const reinstall = reinstaller.status();
+    if (reinstall) out.reinstall = reinstall;
     if (u.followProblem) out.followProblem = u.followProblem;
     const webRuntimeProblem = webRuntimeUpdates.problem();
     if (webRuntimeProblem) out.webRuntimeProblem = webRuntimeProblem;
@@ -856,6 +880,8 @@ async function main(): Promise<void> {
   };
   // tb updates (docs/protocol.md, "Mike's releases").
   methods['upstream.status'] = () => ({ upstream: upstream.status() });
+  // The Updates panel's Reinstall now (docs/protocol.md, "Runner updates").
+  methods['runner.reinstall'] = () => ({ reinstall: reinstaller.request() ?? null });
   // Other runners' threads, for the Mac app's sidebar (step 6 part 2).
   // `forTools`: a draining runner's agent tools (handover.ts primaryRemote),
   // given what this runner's own tools get, the wait for the rows included.
@@ -1194,6 +1220,7 @@ async function main(): Promise<void> {
   const cancelMarkGood = markGoodLater(cfg.home, RELEASE.release, log, process.env, () => {
     restarter.proven();
     updater.start();
+    reinstaller.consider();
     upstream.start();
     swiftChanges.start();
   });
@@ -1225,6 +1252,7 @@ async function main(): Promise<void> {
     stopping = true;
     cancelMarkGood();
     updater.stop();
+    reinstaller.stop();
     upstream.stop();
     swiftChanges.stop();
     stopHousekeeping();
@@ -1288,6 +1316,7 @@ async function main(): Promise<void> {
     try {
       cancelMarkGood();
       updater.stop();
+      reinstaller.stop();
       upstream.stop();
       swiftChanges.stop();
       stopHousekeeping();

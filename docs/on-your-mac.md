@@ -103,6 +103,15 @@ File references are where to look.
   `~/.config/systemd/user/com.mikerosoft.threadbear.runner.service`, and no
   apps; it converts pictures with ImageMagick and rsvg-convert, and reads
   the account's full name from `getent passwd` rather than `id -F`.
+- **A one-shot reinstall job:** when the runner's LaunchAgent or
+  Threadbear Runner.app is behind main and you press Reinstall now in the
+  Updates panel (or the `selfReinstall` experiment is on), the runner
+  writes `<data folder>/runner/reinstall/<label>.reinstall.plist` and
+  loads it with `launchctl bootstrap` (it isn't in `~/Library/LaunchAgents`,
+  so it never starts at login). It runs `runner/scripts/install-runner.sh`
+  from your clone once, logging to `<data folder>/runner/reinstall.log`,
+  and is left loaded but stopped until the next one replaces it. On Linux
+  it's a transient `systemd-run --user` unit instead (`runner/src/reinstall.ts`).
 - **Commands:** `~/.local/bin/threadbear`, a link into your clone, and
   `~/.local/bin/tb`, a three-line script that runs the `tb` of the runner
   release this Mac runs (`runner/scripts/link-tb.sh`; it leaves a `tb` that

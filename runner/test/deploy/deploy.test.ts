@@ -1103,7 +1103,7 @@ test('install-runner.sh guards: sandbox labels, and not from inside its own thre
   // A busy runner isn't replaced (or removed) without --force.
   setBusy(['t-9']);
   r = sh('install-runner.sh', ['--home', home, '--label', LABEL, '--port', '0', '--path', '/usr/bin:/bin']);
-  assert.equal(r.status, 1, out(r));
+  assert.equal(r.status, 75, out(r));
   assert.match(r.stderr, /1 thread would be cut short/);
   assert.match(r.stderr, /while threads are busy/);
   r = sh('install-runner.sh', ['--uninstall', '--home', home, '--label', LABEL]);
@@ -1129,7 +1129,7 @@ test('reinstalling checks everything first, builds from HEAD, and puts the old s
   commit({ v: 'launch change', goodAfterMs: 1500 }, 'launch.mjs change');
   setBusy(['t-9']);
   let r = install();
-  assert.equal(r.status, 1, out(r));
+  assert.equal(r.status, 75, out(r));
   assert.match(r.stderr, /while threads are busy/);
   assert.equal(fs.readFileSync(installed, 'utf8'), oldLaunch, 'launch.mjs untouched');
   assert.equal(current(), before, 'no release built');

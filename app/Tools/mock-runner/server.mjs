@@ -753,6 +753,20 @@ async function dispatch(client, method, p) {
       setTimeout(() => fakeTurn(threadId, p.text, p.images ?? []), 10);
       return { thread: summary };
     }
+    // Reinstall now (protocol "Runner updates"): running at once, and up
+    // to date about 2 s later, as a reinstall with nothing busy goes.
+    case 'runner.reinstall': {
+      if (!updates.launcherChanged) return { reinstall: null };
+      updates.reinstall = { state: 'running', logFile: path.join(dataDir, 'runner', 'reinstall.log') };
+      broadcast('runner.updates', { updates });
+      setTimeout(() => {
+        delete updates.reinstall;
+        delete updates.launcherChanged;
+        delete updates.launcherReason;
+        broadcast('runner.updates', { updates });
+      }, 2000);
+      return { reinstall: updates.reinstall };
+    }
     // A fork's own Swift changes (protocol "Your changes to the old app"),
     // as mock.updates set them.
     case 'swiftChanges.list':
@@ -1756,6 +1770,7 @@ async function dispatch(client, method, p) {
       updates = { state: p.state ?? 'idle', oldRunners: Array.isArray(p.oldRunners) ? p.oldRunners : [] };
       for (const k of ['commit', 'subject', 'reason', 'launcherReason', 'webRuntimeProblem']) if (typeof p[k] === 'string') updates[k] = p[k];
       if (p.launcherChanged) updates.launcherChanged = true;
+      if (p.reinstall && typeof p.reinstall === 'object') updates.reinstall = p.reinstall;
       // Mike's releases (protocol "Mike's releases"), as given.
       if (p.upstream && typeof p.upstream === 'object') updates.upstream = p.upstream;
       // A fork's own Swift changes (protocol "Your changes to the old app").

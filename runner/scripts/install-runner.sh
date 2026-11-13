@@ -480,6 +480,10 @@ point_current() {
 }
 
 RDIR="$DATA_HOME/runner"
+# The exit for "threads are busy, nothing changed": EX_TEMPFAIL, so the
+# runner reinstalling itself (src/reinstall.ts) tells it from a failure and
+# tries again once they've finished.
+BUSY_EXIT=75
 LOADED=0
 svc_loaded && LOADED=1
 
@@ -503,7 +507,7 @@ if [ "$LOADED" = 1 ] && [ "$FORCE" = 0 ]; then
   fi
   if ! deploy --check-idle; then
     echo "Not replacing the running $LABEL while threads are busy: they'd be cut short. Run this again once they finish, or add --force." >&2
-    exit 1
+    exit "$BUSY_EXIT"
   fi
 fi
 
@@ -631,6 +635,21 @@ fail_back() {
   exit 1
 }
 
+# Building the app and a release can take minutes, and a thread may have
+# started meanwhile (the runner reinstalling itself starts this unattended),
+# so busy is asked again right before anything is stopped. Only the app is
+# changed by then; it goes back, and the release just built stays for the
+# runner's next restart, as one its updater built would.
+if [ "$LOADED" = 1 ] && [ "$FORCE" = 0 ] && ! deploy --check-idle; then
+  if [ "$APP_BUILT" = 1 ] && [ -d "$OLD_APP" ]; then
+    rm -rf "$RUNNER_APP"
+    mv "$OLD_APP" "$RUNNER_APP"
+  fi
+  [ -z "$NEW_LAUNCH" ] || rm -f "$NEW_LAUNCH"
+  echo "A thread got busy while this was building, so the running $LABEL wasn't replaced. Run this again once it finishes, or add --force." >&2
+  exit "$BUSY_EXIT"
+fi
+
 [ ! -f "$PLIST" ] || cp "$PLIST" "$PREV"
 # An EXIT trap rather than ERR: it also covers set -e exits inside
 # functions and Ctrl-C, and never runs in a $(...) subshell.
@@ -704,6 +723,8 @@ echo "Restart it with: launchctl kickstart -k $DOMAIN/$LABEL"
 echo
 echo "If nobody sits at this Mac, give Threadbear Runner Full Disk Access:"
 echo "  System Settings > Privacy & Security > Full Disk Access, then add $RUNNER_APP"
-if [ "$SANDBOX" = 0 ] && [ ! -d "/Applications/Threadbear.app" ] && [ ! -d "$HOME/Applications/Threadbear.app" ]; then
+# THREADBEAR_INSTALL_QUIET: the runner reinstalling itself, with nobody
+# there to have asked for a settings window.
+if [ -z "${THREADBEAR_INSTALL_QUIET:-}" ] && [ "$SANDBOX" = 0 ] && [ ! -d "/Applications/Threadbear.app" ] && [ ! -d "$HOME/Applications/Threadbear.app" ]; then
   open "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension?Privacy_AllFiles" 2>/dev/null || true
 fi

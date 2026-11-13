@@ -1,6 +1,7 @@
 // The thread manager: owns threads, turns, the event log, approvals, idle
 // release and snoozes. Providers plug in through AgentAdapter; the WebSocket
 // server in rpc.ts is a thin layer over the public methods here.
+import type { ReinstallStatus } from './reinstall.ts';
 import { RELEASE } from './release.ts';
 import type { UserInput } from './adapters/types.ts';
 import { INSTRUCTIONS_CLEARED, INSTRUCTIONS_REWOUND } from './instructions.ts';
@@ -194,6 +195,10 @@ export type RunnerUpdates = {
   oldRunners: { version: string; threads: string[] }[];
   launcherChanged?: true;
   launcherReason?: string;
+  // The checkout this runner follows (install-runner.sh's), and what's
+  // being done about launcherChanged (reinstall.ts).
+  checkout?: string;
+  reinstall?: ReinstallStatus;
   // Mike's releases, for a fork (upstream.ts); left out while off.
   upstream?: UpstreamStatus;
   // This machine isn't following GitHub's main properly (follow-origin.ts).
