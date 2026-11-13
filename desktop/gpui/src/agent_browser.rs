@@ -101,21 +101,24 @@ pub(crate) fn handoff(url: &str) -> bool {
     let line = bear::request_line(1, "handoff", json!({ "tab": url }), None);
     // On a thread of its own, so a connect that hangs (a full accept queue)
     // can't hold the link past the deadline. A connect can't be called off,
-    // so while an earlier one is still stuck no other is started: the link
-    // just opens in the browser, and stuck threads never pile up.
-    use std::sync::atomic::{AtomicBool, Ordering};
-    static ASKING: AtomicBool = AtomicBool::new(false);
-    if ASKING.swap(true, Ordering::SeqCst) {
+    // so a few may be under way at once (links clicked close together each
+    // get theirs), and past that the link just opens in the browser: stuck
+    // threads never pile up.
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    static ASKING: AtomicUsize = AtomicUsize::new(0);
+    const AT_ONCE: usize = 4;
+    if ASKING.fetch_add(1, Ordering::SeqCst) >= AT_ONCE {
+        ASKING.fetch_sub(1, Ordering::SeqCst);
         return false;
     }
     let (tx, rx) = std::sync::mpsc::channel();
     let deadline = Instant::now() + HANDOFF_WITHIN;
     let started = std::thread::Builder::new().name("browserbear-handoff".into()).spawn(move || {
         let _ = tx.send(one_request(&path, &line, deadline));
-        ASKING.store(false, Ordering::SeqCst);
+        ASKING.fetch_sub(1, Ordering::SeqCst);
     });
     if started.is_err() {
-        ASKING.store(false, Ordering::SeqCst);
+        ASKING.fetch_sub(1, Ordering::SeqCst);
         return false;
     }
     let Ok(Some(reply)) = rx.recv_timeout(HANDOFF_WITHIN) else { return false };
