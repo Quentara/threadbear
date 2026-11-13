@@ -319,6 +319,40 @@ pub fn should_auto_restart(m: &RestartMoment) -> bool {
     !m.active || m.idle_for >= AUTO_RESTART_IDLE_SECONDS
 }
 
+/// What a staged build's restart is waiting on just now, for the Updates
+/// panel. Mike, 13 Nov, after one sat staged with no word of why: "can it
+/// just have a little countdown number on there or something? And that gets
+/// reset when I do something?"
+#[derive(Clone, Debug, PartialEq)]
+pub enum RestartWait {
+    /// Only his input holds it: whole seconds left of the idle wait, back to
+    /// the full wait at each key, click or pointer move.
+    Countdown(u32),
+    /// Something a restart would lose or cut off, as the end of "It
+    /// switches in once ..." ("the threads have loaded").
+    Held(String),
+}
+
+/// What the restart waits on (`should_auto_restart`'s own reasons, in the
+/// same order), or none when nothing's staged or it's going now. `why_held`
+/// names what's typed or under way, asked only when that's what holds it.
+pub fn restart_wait(m: &RestartMoment, why_held: impl FnOnce() -> String) -> Option<RestartWait> {
+    if !m.staged {
+        return None;
+    }
+    if !m.loaded {
+        return Some(RestartWait::Held("the threads have loaded".to_owned()));
+    }
+    if m.has_drafts || m.held || m.other_window_input {
+        return Some(RestartWait::Held(why_held()));
+    }
+    if !m.active || m.idle_for >= AUTO_RESTART_IDLE_SECONDS {
+        return None;
+    }
+    // Rounded up, so it reads 5 while he's using the app and 1 last.
+    Some(RestartWait::Countdown((AUTO_RESTART_IDLE_SECONDS - m.idle_for.max(0.)).ceil().max(1.) as u32))
+}
+
 /// The update script's arguments, run at background priority (`taskpolicy
 /// -b`, as Mike asks of every build on his M5): throttled CPU and disk, off
 /// the cores he's using, inherited by everything it starts, the copy to a
@@ -438,6 +472,29 @@ mod tests {
         // Touched within the last five seconds: not yet.
         assert!(!should_auto_restart(&RestartMoment { idle_for: 4.9, ..quiet() }));
         assert!(!should_auto_restart(&RestartMoment { idle_for: 0., ..quiet() }));
+    }
+
+    #[test]
+    fn the_wait_counts_down_and_starts_again_with_input() {
+        let held = || "the message box in “Fix it” is sent or cleared".to_owned();
+        let wait = |m: RestartMoment| restart_wait(&m, held);
+        // In use: the full five. Then down to 1, and none once it's going.
+        assert_eq!(wait(RestartMoment { idle_for: 0., ..quiet() }), Some(RestartWait::Countdown(5)));
+        assert_eq!(wait(RestartMoment { idle_for: 0.4, ..quiet() }), Some(RestartWait::Countdown(5)));
+        assert_eq!(wait(RestartMoment { idle_for: 2.5, ..quiet() }), Some(RestartWait::Countdown(3)));
+        assert_eq!(wait(RestartMoment { idle_for: 4.9, ..quiet() }), Some(RestartWait::Countdown(1)));
+        assert_eq!(wait(quiet()), None);
+        assert_eq!(wait(RestartMoment { active: false, idle_for: 0., ..quiet() }), None);
+        // Whatever holds it is said instead, in front or behind.
+        for moment in [RestartMoment { has_drafts: true, ..quiet() }, RestartMoment { held: true, active: false, ..quiet() }, RestartMoment { other_window_input: true, idle_for: 0., ..quiet() }] {
+            assert_eq!(wait(moment), Some(RestartWait::Held(held())));
+        }
+        assert_eq!(wait(RestartMoment { loaded: false, has_drafts: true, ..quiet() }), Some(RestartWait::Held("the threads have loaded".into())));
+        assert_eq!(wait(RestartMoment { staged: false, idle_for: 0., ..quiet() }), None);
+        // It says a wait exactly when it isn't restarting.
+        for m in [quiet(), RestartMoment { idle_for: 1., ..quiet() }, RestartMoment { held: true, ..quiet() }, RestartMoment { active: false, ..quiet() }] {
+            assert_eq!(wait(m).is_none(), should_auto_restart(&m), "{m:?}");
+        }
     }
 
     #[test]

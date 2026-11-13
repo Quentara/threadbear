@@ -108,10 +108,10 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
     if cmd["cmd"] == "updates" && cmd["restartCheck"].as_bool() == Some(true) {
         let main = app.read_with(cx, |t, _| t.main_window).map_err(|e| e.to_string())?;
         let windows = cx.update(|cx| crate::app_update::windows_now(main, cx));
-        let m = app.read_with(cx, |t, cx| t.restart_moment(windows, cx)).map_err(|e| e.to_string())?;
+        let (m, line) = app.read_with(cx, |t, cx| (t.restart_moment(windows, cx), threadbear_core::updates::app_line(&t.app_update_side()))).map_err(|e| e.to_string())?;
         return Ok(json!({
             "staged": m.staged, "loaded": m.loaded, "hasDrafts": m.has_drafts, "held": m.held,
-            "otherWindowInput": m.other_window_input, "active": m.active, "idleFor": m.idle_for,
+            "otherWindowInput": m.other_window_input, "active": m.active, "idleFor": m.idle_for, "line": line,
         }));
     }
     // The runners' figures, asked for and waited on, as the Swift command does.

@@ -255,6 +255,9 @@ pub struct AppSide {
     /// Why the installed GPUI app can't follow main (one installed before it
     /// could, say). The Swift app has no such case.
     pub not_following: Option<String>,
+    /// What the staged build's restart waits on (`restart_wait`), when the
+    /// app knows: a countdown, or what's typed or open.
+    pub wait: Option<crate::app_update::RestartWait>,
 }
 
 impl AppSide {
@@ -503,7 +506,12 @@ pub fn tooltip(app: &AppSide, runner: Option<&RunnerUpdates>) -> String {
 
 pub fn app_line(a: &AppSide) -> String {
     if let Some(staged) = &a.staged {
-        return format!("The app's next version ({staged}) is ready. It switches in when you're not using the app, or now.");
+        use crate::app_update::RestartWait;
+        return match &a.wait {
+            Some(RestartWait::Countdown(n)) => format!("The app's next version ({staged}) is ready. It switches in {n}s if you leave the app alone, or now."),
+            Some(RestartWait::Held(why)) => format!("The app's next version ({staged}) is ready. It switches in once {why}, or now."),
+            None => format!("The app's next version ({staged}) is ready. It switches in when you're not using the app, or now."),
+        };
     }
     if a.building {
         return "Building the app from main.".to_owned();
@@ -946,6 +954,20 @@ mod tests {
         let waiting = AppSide { running: Some("abc1234".into()), waiting: true, ..Default::default() };
         assert!(shown(&waiting, None) && !needs_you(&waiting, None));
         assert_eq!(app_line(&waiting), "The app has a new version on main, waiting for a Mac to build it on.");
+    }
+
+    // Mike, 13 Nov: a countdown that starts again when he does something,
+    // and otherwise what it's waiting for.
+    #[test]
+    fn a_staged_app_says_what_its_restart_waits_on() {
+        use crate::app_update::RestartWait;
+        let staged = |wait| AppSide { running: Some("abc1234".into()), staged: Some("def5678".into()), wait, ..Default::default() };
+        assert_eq!(app_line(&staged(None)), "The app's next version (def5678) is ready. It switches in when you're not using the app, or now.");
+        assert_eq!(app_line(&staged(Some(RestartWait::Countdown(3)))), "The app's next version (def5678) is ready. It switches in 3s if you leave the app alone, or now.");
+        assert_eq!(
+            app_line(&staged(Some(RestartWait::Held("the message box in “Fix it” is sent or cleared".into())))),
+            "The app's next version (def5678) is ready. It switches in once the message box in “Fix it” is sent or cleared, or now."
+        );
     }
 
     #[test]

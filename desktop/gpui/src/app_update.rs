@@ -63,6 +63,12 @@ pub(crate) struct AppUpdater {
     /// it's the installed app.
     pub(crate) disabled: Option<String>,
     restarting: bool,
+    /// What the staged build's restart waits on, as the Updates panel says
+    /// it, set at each once-a-second look (`consider_auto_restart`).
+    pub(crate) wait: Option<rules::RestartWait>,
+    /// The same hold since when, and whether the log has it: one that lasts
+    /// a minute goes in the log once, so a restart that never came says why.
+    held_since: Option<(String, std::time::Instant, bool)>,
     build_pid: Option<u32>,
     soon: Option<Task<()>>,
     watch: Option<crate::file_watch::FolderWatch>,
@@ -376,17 +382,7 @@ impl Threadbear {
                 cx.background_executor().timer(LOOK_EVERY).await;
             }
         });
-        let main = self.main_window;
-        let restarts = cx.spawn(async move |this, cx| loop {
-            cx.background_executor().timer(RESTART_LOOK).await;
-            // The windows are looked at here, outside the app's own update:
-            // a window's dialogs and focus are read through its root, which
-            // reads the app back.
-            let windows = cx.update(|cx| windows_now(main, cx));
-            if this.update(cx, |t, cx| t.consider_auto_restart(windows, cx)).is_err() {
-                break;
-            }
-        });
+        let restarts = self.restart_looks(cx);
         self.updater.tasks = vec![looks, restarts];
         // A merge to main is built within seconds, not at the next look: its
         // ref is written in refs/heads, or packed into the git folder.
@@ -398,6 +394,21 @@ impl Threadbear {
             }
             self.updater.watch = watch;
         }
+    }
+
+    /// The once-a-second look at whether to restart into a staged build.
+    fn restart_looks(&self, cx: &mut Context<Self>) -> Task<()> {
+        let main = self.main_window;
+        cx.spawn(async move |this, cx| loop {
+            cx.background_executor().timer(RESTART_LOOK).await;
+            // The windows are looked at here, outside the app's own update:
+            // a window's dialogs and focus are read through its root, which
+            // reads the app back.
+            let windows = cx.update(|cx| windows_now(main, cx));
+            if this.update(cx, |t, cx| t.consider_auto_restart(windows, cx)).is_err() {
+                break;
+            }
+        })
     }
 
     /// Main moved: a look in a few seconds. A burst of ref writes (a merge,
@@ -538,6 +549,56 @@ impl Threadbear {
             || self.move_sheet.is_some()
     }
 
+    /// What holds a restart, as the end of "It switches in once ...", for
+    /// the Updates panel and the log: the first of `has_unsent_words`,
+    /// `under_way` and the windows' that holds, with the thread whose
+    /// message box has words in it named, as that's the one he can't see.
+    fn restart_hold(&self, windows: WindowsNow, cx: &App) -> String {
+        let s = |text: &str| text.to_owned();
+        if let Some((id, _)) = self.composers.iter().find(|(_, c)| c.read(cx).holds_anything(cx)) {
+            return format!("the message box in “{}” is sent or cleared", self.thread_title(id));
+        }
+        if self.new_thread.composer.as_ref().is_some_and(|c| c.read(cx).holds_anything(cx)) {
+            return s("the new thread's message box is sent or cleared");
+        }
+        if self.schedule_editor.is_some() {
+            return s("the schedule you're editing is saved or closed");
+        }
+        if crate::unsent::any(cx) {
+            return s("what you're typing in a field is saved or cleared");
+        }
+        if crate::terminal::holds_a_restart(cx) {
+            return s("the Terminal's shell is back at an empty prompt");
+        }
+        if crate::web_panels::holds_a_restart(cx) {
+            return s("a panel's page has been left alone for a minute");
+        }
+        if cx.has_active_drag() || crate::reply_links::left_held() || self.swipe_nav.under_way() || self.sidebar.gestures.under_way() {
+            return s("the drag or swipe ends");
+        }
+        if windows.other_window_input {
+            return s("you've finished typing in the other window");
+        }
+        s("the open menu, popover or dialog is closed")
+    }
+
+    /// A hold that's lasted a minute goes in the update log, once.
+    fn note_long_hold(&mut self, wait: Option<&rules::RestartWait>) {
+        let Some(rules::RestartWait::Held(why)) = wait else {
+            self.updater.held_since = None;
+            return;
+        };
+        match &mut self.updater.held_since {
+            Some((was, since, noted)) if was == why => {
+                if !*noted && since.elapsed() >= Duration::from_secs(60) {
+                    *noted = true;
+                    note(&format!("the staged build waits until {why}"));
+                }
+            }
+            _ => self.updater.held_since = Some((why.clone(), std::time::Instant::now(), false)),
+        }
+    }
+
     /// What a restart by itself is weighed against just now, with what the
     /// windows have up (`windows_now`). A script reads it too (`updates` with
     /// `restartCheck`), as a scripted app never restarts.
@@ -560,11 +621,25 @@ impl Threadbear {
         // Looked at every second, staged or not, so a page used just before
         // a build is staged still counts as used lately.
         crate::web_panels::holds_a_restart(cx);
-        if self.updater.restarting || self.updater.staged.is_none() || self.updater.preview {
+        // A scripted app's made-up update (`preview`) says what it would
+        // wait on, for pictures and specs, but never restarts.
+        if self.updater.restarting || self.updater.staged.is_none() {
+            self.updater.held_since = None;
+            if self.updater.wait.take().is_some() {
+                cx.notify();
+            }
             return;
         }
         let moment = self.restart_moment(windows, cx);
-        if rules::should_auto_restart(&moment) {
+        let wait = rules::restart_wait(&moment, || self.restart_hold(windows, cx));
+        self.note_long_hold(wait.as_ref());
+        // Drawn again only when the line changes: once a second while it
+        // counts down, not at all while it's held or he's using the app.
+        if wait != self.updater.wait {
+            self.updater.wait = wait;
+            cx.notify();
+        }
+        if !self.updater.preview && rules::should_auto_restart(&moment) {
             note(if moment.active { "restarting into the staged build: nothing typed, and no input for five seconds" } else { "restarting into the staged build: nothing typed, and the app isn't in front" });
             // In front it comes back in front; behind, it stays behind.
             self.restart_for_update(!moment.active, cx);
@@ -651,6 +726,7 @@ impl Threadbear {
             // not to. No builder is only ever set by an installed app's build
             // (or a scripted app's made-up update).
             not_following: u.disabled.clone().filter(|_| installed::launch().installed).or_else(|| u.no_builder.then(|| NO_BUILDER.to_owned())),
+            wait: u.wait.clone().filter(|_| u.staged.is_some()),
         }
     }
 
@@ -668,6 +744,12 @@ impl Threadbear {
         u.failed = (state == "failed").then(|| "def5678".to_owned());
         u.waiting_for_host = state == "waiting";
         u.no_builder = state == "no-builder";
+        // A scripted app never follows main, so its looks start here: what
+        // a made-up staged build waits on is said as the real one's is.
+        if u.tasks.is_empty() {
+            let restarts = self.restart_looks(cx);
+            self.updater.tasks.push(restarts);
+        }
         self.menus_stale = true;
         cx.notify();
     }

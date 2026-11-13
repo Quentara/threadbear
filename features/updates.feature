@@ -55,6 +55,17 @@ Feature: The Updates panel
     And I open the Updates panel
     Then the Updates panel lists "The app's next version (def5678) is ready. It switches in when you're not using the app, or now."
 
+  # Mike, 13 Nov, after one sat staged with no word of why. In front, with
+  # nothing in the way, it counts down from 5 s and starts again at any input
+  # (core's restart_wait tests that, as a scripted app is kept behind).
+  @system.selfupdate @swift-pending
+  Scenario: The app's next version says what it's waiting for
+    When I open the thread "Morning brief"
+    And I type "half a thought" in the composer
+    And the app's next version, def5678, is ready
+    And I open the Updates panel
+    Then the Updates panel lists "The app's next version (def5678) is ready. It switches in once the message box in “Morning brief” is sent or cleared, or now."
+
   # The Swift app's menu bar didn't show the made-up update's item within 5 s
   # of a script making it up (its SwiftUI commands, read by `menus`), so this
   # is only checked on the GPUI app for now.

@@ -342,7 +342,7 @@ impl Threadbear {
 
     /// A thread's title for a link to it, or the start of its id when it
     /// isn't listed here.
-    fn thread_title(&self, id: &str) -> String {
+    pub(crate) fn thread_title(&self, id: &str) -> String {
         match self.threads.get(id) {
             Some(t) if !t.title.is_empty() => t.title.clone(),
             _ => id.chars().take(8).collect(),
