@@ -5442,13 +5442,15 @@ only way the app opens another runner's thread.
   other runner's key from its row, as the phone seals it, so the value
   never reaches the backend in the clear), `threads.markSeen` (only when
   the row is unread), `threads.update` (`title`, `archived` with its `verdict`, `starred`,
-  `snoozedUntil`; or, from backend API 77 and on their own, `accountId`,
-  `model` and `effort`, with `carryOn` beside `accountId`, which go as one
-  `update` command that runner applies through its own `threads.update`,
-  with `unconfine` unless `by: "agent"` (an agent's change, `byAgent`);
-  only the main Mac's commands, `from: "mac"`, can carry them; an older
-  backend's runner says it works once the backend is updated; a folder,
-  pool or mode change is `-32000`), `threads.hibernateWhen` (an
+  `snoozedUntil`; or, from backend API 77 and on their own, `accountId`
+  and `model`, with `carryOn` beside `accountId`, which go as one `update`
+  command that runner applies through its own `threads.update`, with
+  `unconfine` unless `by: "agent"` (an agent's change, `byAgent`), and
+  finishes with the login and model it applied as the command's `result`,
+  which the answer's `{ thread }` shows; only the main Mac's commands,
+  `from: "mac"`, can carry them; an older backend's runner says it works
+  once the backend is updated; a folder, pool, mode or effort change is
+  `-32000`, as no row carries effort), `threads.hibernateWhen` (an
   `update` with `snooze: { said }`; that runner puts the thread away at once
   and the command is done once its model has said when, so the answer is
   `{ thread }` from the row, without `until`, `topic` or `why`, or the

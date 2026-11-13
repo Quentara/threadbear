@@ -15,7 +15,7 @@ and web" is the iPhone app and the website, which read every thread through Conv
 | Opening a tool's output | `threads.heldBody` | Yes | Yes |
 | Sending a message, pictures too | `threads.send` | Yes | Yes |
 | Stop | `threads.interrupt` | Yes | Yes |
-| Rename, archive, star, hibernate, and from the Mac its login, model or effort | `threads.update` | Yes | Yes |
+| Rename, archive, star, hibernate, and from the Mac its login or model | `threads.update` | Yes | Yes |
 | Marking it read | `threads.markSeen` | Yes | Yes |
 | Sharing by link | `threads.share` | Yes | Yes |
 | Answering an approval or a question | `approvals.respond` | Yes | Yes |

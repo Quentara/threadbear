@@ -169,15 +169,16 @@ export function commandArgs(kind: Kind, raw: unknown): Record<string, unknown> {
       out = pick(a, ['approvalId', 'decision', 'message', 'answers', 'secret', 'sealed']);
       break;
     case 'update':
-      // A login, model or effort change (API 77): the composer's pickers and
-      // the limit box's Continue now on, for a thread on another runner.
-      // They go together, as one threads.update there, since a model picked
-      // from another provider's column moves the login with it, and only
-      // with nothing else, so it reads as the one change it is.
-      if (['accountId', 'model', 'effort', 'carryOn'].some((k) => a[k] !== undefined)) {
-        out = pick(a, ['accountId', 'model', 'effort']);
+      // A login or model change (API 77): the composer's pickers and the
+      // limit box's Continue now on, for a thread on another runner. They
+      // go together, as one threads.update there, since a model picked from
+      // another provider's column moves the login with it, and only with
+      // nothing else, so it reads as the one change it is. Not effort: the
+      // rows don't carry it, so the Mac couldn't show what it became.
+      if (['accountId', 'model', 'carryOn'].some((k) => a[k] !== undefined)) {
+        out = pick(a, ['accountId', 'model']);
         for (const [k, x] of Object.entries(out)) {
-          // null puts the model or effort back to the login's default.
+          // null puts the model back to the login's default.
           if (!(typeof x === 'string' && x.length > 0 && x.length <= 200) && !(x === null && k !== 'accountId')) throw bad(`${k} must be a short string`);
         }
         if (!Object.keys(out).length) throw bad('carryOn goes with accountId');

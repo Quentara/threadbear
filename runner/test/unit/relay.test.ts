@@ -250,26 +250,29 @@ test('sends, stops and changes go to the thread runner; settings that only work 
 
 // 13 Nov: Continue now on for a Pixel thread at its limit was refused as
 // "Changing its login, model or settings isn't possible through Convex yet".
-test("a login, model or effort change goes to the thread's runner as one update, once the backend takes it", async () => {
+test("a login or model change goes to the thread's runner as one update, once the backend takes it, and shows what it applied", async () => {
   const old = harness();
   await assert.rejects(old.relay.call(T, 'threads.update', { threadId: T, accountId: 'claude-2' }), /once your Convex backend is updated/);
   assert.ok(!old.calls.some((c) => c.fn === 'relay:queueCommand'), 'nothing queued for a backend that would refuse it');
   const h = harness({ apiVersion: 77 });
   const moved = h.relay.call(T, 'threads.update', { threadId: T, accountId: 'claude-2', model: 'opus', carryOn: true });
   await new Promise((r) => setImmediate(r));
-  h.subs.get('relay:commandState')![0]!.onUpdate({ state: 'done' });
+  // That runner put its own default in place of a model its login can't run.
+  h.subs.get('relay:commandState')![0]!.onUpdate({ state: 'done', result: { accountId: 'claude-2', model: 'claude-sonnet-5-5' } });
   const { thread } = (await moved) as { thread: { accountId: string; model?: string } };
   const queued = h.calls.find((c) => c.fn === 'relay:queueCommand')!;
   assert.equal(queued.args.kind, 'update');
   assert.deepEqual(queued.args.args, { accountId: 'claude-2', model: 'opus', carryOn: true });
   assert.equal(thread.accountId, 'claude-2', 'the reply has the new login at once');
-  assert.equal(thread.model, 'opus');
+  assert.equal(thread.model, 'claude-sonnet-5-5', 'and the model that runner applied, not the one asked for');
   // An agent's goes as one, so that runner keeps a sandboxed thread in.
-  const agent = h.relay.call(T, 'threads.update', { threadId: T, effort: 'high', byAgent: true });
+  const agent = h.relay.call(T, 'threads.update', { threadId: T, model: 'haiku', byAgent: true });
   await new Promise((r) => setImmediate(r));
   h.subs.get('relay:commandState')![1]!.onUpdate({ state: 'done' });
   await agent;
-  assert.deepEqual(h.calls.filter((c) => c.fn === 'relay:queueCommand').at(-1)!.args.args, { effort: 'high', by: 'agent' });
+  assert.deepEqual(h.calls.filter((c) => c.fn === 'relay:queueCommand').at(-1)!.args.args, { model: 'haiku', by: 'agent' });
+  // No row carries effort, so this Mac couldn't show what it became.
+  await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, effort: 'high' }), /isn't possible through Convex yet/);
   await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, accountId: 'claude-2', title: 'x' }), /on its own/);
   await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, model: 'opus', carryOn: true }), /carryOn goes with accountId/);
 });

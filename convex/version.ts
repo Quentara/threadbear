@@ -351,8 +351,9 @@
 //    plan and what became of it, so another Mac draws its plan card rather
 //    than folding the plan into the turn's work. A runner sends `review`,
 //    `cardTurn` and `planDecision` only from 76.
-// 77: an `update` command from the main Mac can change a thread's login,
-//    model or effort (with carryOn, the limit box's Continue now on), and
+// 77: an `update` command from the main Mac can change a thread's login
+//    or model (with carryOn, the limit box's Continue now on), and its
+//    finished command keeps the login and model that runner applied;
 //    relay:remoteAccounts includes each login's usage, so the Mac switches
 //    another runner's thread to one of that runner's logins with room. The
 //    Mac's runner sends one only from 77; an older backend refuses it.

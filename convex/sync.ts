@@ -2614,7 +2614,10 @@ export const finishCommand = mutation({
     if (!c) return null;
     if (!mayFinish(caller, c)) throw forbidden("finish that command: it isn't for its runner");
     // A call's answer, or a slashCommands list (API 62).
-    const kept = ok && (c.kind === 'call' || c.kind === 'slashCommands') && result !== undefined && utf8Bytes(result) <= RESULT_MAX_BYTES ? cleanResult(result) : undefined;
+    // And (API 77) a login or model change's: the login and model that
+    // runner applied, which may not be the model asked for.
+    const settings = c.kind === 'update' && (c.args?.accountId !== undefined || c.args?.model !== undefined);
+    const kept = ok && (c.kind === 'call' || c.kind === 'slashCommands' || settings) && result !== undefined && utf8Bytes(result) <= RESULT_MAX_BYTES ? cleanResult(result) : undefined;
     // The thread a create made is the command's runner's (it writes the row
     // before finishing): never another runner's id, which the main Mac would
     // then open as this runner's new thread.

@@ -92,6 +92,12 @@ pub(crate) struct LimitAdvice {
     /// Not for another Mac's thread, whose runner the setting can't reach
     /// through the backend yet.
     pub(crate) stopped: bool,
+    /// A turn stopped at the limit, or it's waiting for room, on any
+    /// runner: Continue now on asks it to carry on there at once
+    /// (`carryOn`), which another runner's thread takes through the backend
+    /// too (API 77). Without it, a thread whose Carry on by itself is off
+    /// moved to the new login and sat there (Codex's review, 13 Nov).
+    pub(crate) carry_on: bool,
     /// It's waiting, and carries on by itself at this time.
     pub(crate) carries_on_at: Option<i64>,
 }
@@ -835,7 +841,7 @@ impl Threadbear {
         if logins.uses_pools() {
             if let Some(pool) = thread.pool_id.as_deref().and_then(|id| logins.pool(id)) {
                 if let Some(until) = thread.waiting_for_room_until_ms() {
-                    return Some(LimitAdvice { text: format!("Every login in {} is out of room.", pool.title), targets, stopped: local, carries_on_at: Some(until) });
+                    return Some(LimitAdvice { text: format!("Every login in {} is out of room.", pool.title), targets, stopped: local, carry_on: true, carries_on_at: Some(until) });
                 }
                 if pool_logins(pool, accounts, None).into_iter().any(has_room) {
                     return None;
@@ -866,7 +872,8 @@ impl Threadbear {
             }
         }
         text.push('.');
-        Some(LimitAdvice { text, targets, stopped: local && (failed_on_limit || waiting.is_some()), carries_on_at: waiting })
+        let carry_on = failed_on_limit || waiting.is_some();
+        Some(LimitAdvice { text, targets, stopped: local && carry_on, carry_on, carries_on_at: waiting })
     }
 
     /// The limit box's Carry on by itself (`setCarryOnAtReset`): shown at

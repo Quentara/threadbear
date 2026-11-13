@@ -91,7 +91,7 @@ const PICTURES_API = 63;
 // Reply buttons and slash commands on a thread there (convex/relay.ts press,
 // slashCommands, rows' buttons): an older backend refuses the commands.
 const BUTTONS_API = 68;
-// A login, model or effort change for a thread there (convex/relay.ts
+// A login or model change for a thread there (convex/relay.ts
 // commandArgs, version.ts 77): an older backend refuses the command.
 const SETTINGS_API = 77;
 // A send or a new thread with pictures answers within this, as the app gives
@@ -1201,20 +1201,20 @@ export class Relay {
           const s = p.snoozedUntil;
           changes.push(s === null ? [{ wake: true }, { snoozedUntil: undefined }] : s === 'restart' ? [{ snooze: { untilRestart: true } }, { snoozedUntil: UNTIL_RESTART }] : [{ snooze: { until: String(s) } }, { snoozedUntil: String(s) }]);
         }
-        // A login, model or effort change (the composer's pickers, the limit
-        // box's Continue now on): one command, on its own, as that runner's
-        // threads.update takes them together. A folder, pool or mode change
-        // still isn't possible this way.
-        const settings = ['accountId', 'model', 'effort', 'carryOn'] as const;
+        // A login or model change (the composer's pickers, the limit box's
+        // Continue now on): one command, on its own, as that runner's
+        // threads.update takes them together. A folder, pool, mode or effort
+        // change still isn't possible this way (no row carries effort, so
+        // this Mac couldn't show what it became).
+        const settings = ['accountId', 'model', 'carryOn'] as const;
         const known = new Set(['threadId', 'title', 'archived', 'verdict', 'archivedBy', 'starred', 'snoozedUntil', ...settings, 'byAgent', 'unconfine']);
-        if (Object.keys(p).some((k) => !known.has(k) && p[k] !== undefined)) this.unsupported(w, 'Changing its folder, pool or mode');
+        if (Object.keys(p).some((k) => !known.has(k) && p[k] !== undefined)) this.unsupported(w, 'Changing its folder, pool, mode or effort');
         if (settings.some((k) => p[k] !== undefined)) {
-          if (changes.length) throw new RpcError(ErrorCode.badParams, `Change ${this.runnerName(w.runnerId)}'s thread's login, model or effort on its own, not with anything else.`);
-          this.needsBackend(w, SETTINGS_API, 'Changing its login, model or effort');
+          if (changes.length) throw new RpcError(ErrorCode.badParams, `Change ${this.runnerName(w.runnerId)}'s thread's login or model on its own, not with anything else.`);
+          this.needsBackend(w, SETTINGS_API, 'Changing its login or model');
           const change: Record<string, unknown> = {};
           if (p.accountId !== undefined) change.accountId = reqStr(p.accountId, 'accountId');
           if (p.model !== undefined) change.model = p.model === null ? null : reqStr(p.model, 'model');
-          if (p.effort !== undefined) change.effort = p.effort === null ? null : reqStr(p.effort, 'effort');
           if (p.carryOn === true) {
             if (change.accountId === undefined) throw new RpcError(ErrorCode.badParams, 'carryOn goes with accountId');
             change.carryOn = true;
@@ -1222,10 +1222,16 @@ export class Relay {
           // An agent's (rpc.ts: byAgent, or unconfine false from a draining
           // runner): that runner keeps a sandboxed thread in, and starts no turn.
           if (p.byAgent === true || p.unconfine === false) change.by = 'agent';
-          await this.command(w.runnerId, threadId, 'update', change, { done: true });
+          const done = await this.command(w.runnerId, threadId, 'update', change, { done: true });
+          // What that runner applied (sync.ts apply), not what was asked:
+          // it may put its login's default in place of a model that login
+          // can't run, and a remembered request would hide that for a minute.
+          // Without its answer, the login alone, which it can't change.
+          const applied = (done.result && typeof done.result === 'object' ? done.result : {}) as { accountId?: unknown; model?: unknown };
           const patch: Partial<RemoteThread> = {};
-          if (typeof change.accountId === 'string') patch.accountId = change.accountId;
-          if (change.model !== undefined) patch.model = typeof change.model === 'string' ? change.model : undefined;
+          if (typeof applied.accountId === 'string') patch.accountId = applied.accountId;
+          else if (typeof change.accountId === 'string') patch.accountId = change.accountId;
+          if ('model' in applied) patch.model = typeof applied.model === 'string' ? applied.model : undefined;
           this.remember(threadId, patch);
           return { thread: this.summary(threadId) };
         }

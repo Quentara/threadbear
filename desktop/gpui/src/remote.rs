@@ -33,6 +33,11 @@ pub(crate) struct RemoteState {
     /// has (backend API 77), which the limit box goes by, so they're asked
     /// for again on opening one of its threads once they're a minute old.
     pub(crate) logins_at: HashMap<String, std::time::Instant>,
+    /// Asks again each minute for the open thread's runner's logins while
+    /// it's another runner's, so its limit box follows that login's room as
+    /// it runs out or resets (Codex's review, 13 Nov: left open, it said
+    /// "has reached its limit" long after the limit had reset).
+    pub(crate) logins_refresh: Option<Task<()>>,
     /// `runners.list`: every runner, this Mac's too.
     pub(crate) all_runners: Vec<RunnerInfo>,
     /// `hello.experiments`: what's on for this runner.
@@ -47,6 +52,21 @@ impl Threadbear {
     /// on (`loadRemoteThreads`). A runner from before them answers -32601,
     /// which is none: the sidebar has only this Mac's.
     pub(crate) fn load_remote(&mut self, cx: &mut Context<Self>) {
+        if self.remote.logins_refresh.is_none() {
+            self.remote.logins_refresh = Some(cx.spawn(async move |this, cx| loop {
+                cx.background_executor().timer(std::time::Duration::from_secs(60)).await;
+                let gone = this
+                    .update(cx, |t, cx| {
+                        if let Some(runner) = t.open_thread().and_then(|o| o.runner_id.clone()) {
+                            t.load_remote_logins(runner, cx);
+                        }
+                    })
+                    .is_err();
+                if gone {
+                    break;
+                }
+            }));
+        }
         let client = self.client.clone();
         cx.spawn(async move |this, cx| {
             let res = call(client.clone(), "remoteThreads.list", json!({})).await;

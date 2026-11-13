@@ -321,7 +321,7 @@ impl Composer {
                 let tip = "Pin this thread to that login and carry on there now, from where it stopped";
                 let (account, title) = picked.clone();
                 let (app_c, id) = (self.app.clone(), thread.id.clone());
-                let carry_on = advice.stopped;
+                let carry_on = advice.carry_on;
                 row = row.child(
                     div().id("limit-switch").test_support().aria_label(tip).child(Button::new("limit-switch-button").label("Continue now on").small().secondary().tooltip(tip).on_click(move |_, _, cx| {
                         app_c.update(cx, |a, cx| a.continue_now_on(&id, account.clone(), carry_on, cx)).ok();

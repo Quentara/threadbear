@@ -577,10 +577,9 @@ export type CommandHost = {
     archived?: boolean;
     verdict?: ArchiveVerdict;
     starred?: boolean;
-    // A login, model or effort change from the main Mac (API 77).
+    // A login or model change from the main Mac (API 77).
     accountId?: string;
     model?: string | null;
-    effort?: EffortLevel | null;
     carryOn?: boolean;
     unconfine?: boolean;
     byAgent?: boolean;
@@ -4252,25 +4251,27 @@ export class ConvexSync {
         else if (a.markSeen) await host.markSeen(id);
         else if (typeof a.star === 'boolean') await host.update({ threadId: id, starred: a.star });
         else if (typeof a.title === 'string') await host.update({ threadId: id, title: a.title });
-        else if (typeof a.accountId === 'string' || a.model !== undefined || a.effort !== undefined) {
-          // The main Mac's login, model or effort pickers, or its limit
-          // box's Continue now on (API 77), only ever from the main Mac:
+        else if (typeof a.accountId === 'string' || a.model !== undefined) {
+          // The main Mac's login or model pickers, or its limit box's
+          // Continue now on (API 77), only ever from the main Mac:
           // convex/relay.ts queues it, the phone has no way to. Mike's own
           // pick may take a sandboxed thread out of its sandbox, as the
           // app's does here; an agent's (by: "agent") may not, and starts
           // no turn by itself.
           if (a.from !== 'mac') throw new Error('Only the main Mac changes a login from another device.');
           const byAgent = a.by === 'agent';
-          if (a.effort !== undefined && a.effort !== null && !isEffortLevel(a.effort)) throw new Error(`No effort level called ${String(a.effort)}`);
-          await host.update({
+          const done = (await host.update({
             threadId: id,
             ...(typeof a.accountId === 'string' ? { accountId: a.accountId } : {}),
             ...(a.model === null || typeof a.model === 'string' ? { model: a.model } : {}),
-            ...(a.effort === null || isEffortLevel(a.effort) ? { effort: a.effort as EffortLevel | null } : {}),
             ...(a.carryOn === true && typeof a.accountId === 'string' ? { carryOn: true } : {}),
             unconfine: !byAgent,
             ...(byAgent ? { byAgent: true } : {}),
-          });
+          })) as { thread?: { accountId?: unknown; model?: unknown } } | undefined;
+          // What it became, which the Mac shows: this runner may have put
+          // its own default in place of a model its login can't run.
+          const t = done?.thread;
+          return { result: { ...(typeof t?.accountId === 'string' ? { accountId: t.accountId } : {}), model: typeof t?.model === 'string' ? t.model : null } };
         } else throw new Error('nothing to change');
         return undefined;
       }
