@@ -410,7 +410,11 @@ impl ThreadPane {
     /// A quiet centred system note.
     fn note_row(&mut self, row: &Row, note: &str, cx: &mut Context<Self>) -> AnyElement {
         let quiet = style::quiet_text(cx);
-        let content = div().py(px(ROW_TOP)).w_full().flex().justify_center().child(div().text_size(px(size::SMALL)).line_height(px(17.)).text_color(quiet).text_center().child(note.to_owned()));
+        // A block as wide as the column, centred line by line. It used to be
+        // a flex row centring a text box with no width of its own, so a long
+        // note (the same-work one naming several threads) never wrapped and
+        // ran off both sides of the window (13 Nov).
+        let content = div().py(px(ROW_TOP)).w_full().text_size(px(size::SMALL)).line_height(px(17.)).text_color(quiet).text_center().child(note.to_owned());
         row_wrap(row, content)
     }
 
