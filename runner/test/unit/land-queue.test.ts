@@ -391,6 +391,12 @@ test('a commit made while the carried commits are picked stops the put-back rath
   assert.match(c.err.join('\n'), /moved to .* while tb land was putting/);
   assert.equal(sh(a.path, 'git log --format=%s -1 HEAD'), 'Fix two', 'HEAD left on the new commit');
   assert.equal(sh(a.path, `git log --format=%s -1 ${a.branch}`), 'Fix a', 'the first fix is on the branch');
+  // The next tb land carries the second one too, and lands both.
+  const again = capture();
+  assert.equal(await land({ ...a, check: 'true' }, again.opts), 0, again.err.join('\n'));
+  assert.match(again.out.join('\n'), /Fix two/);
+  assert.equal(sh(main, 'git log --format=%s -3 main'), 'Fix two\nFix a\nAdd a');
+  assert.ok(!fs.existsSync(path.join(main, 'other.txt')));
 });
 
 test('a marker from before the stack was written down never checks out over HEAD', async () => {

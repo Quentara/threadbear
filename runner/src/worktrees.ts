@@ -537,7 +537,7 @@ const detachedMarker = (gitDir: string): string => path.join(gitDir, 'threadbear
 // on no branch at all, silently, so the same check failed again. One that
 // won't go on cleanly leaves HEAD where it is and says how to keep them.
 // `top` is unknown only in a marker from before it was written down.
-async function leaveStack(t: LandTarget, own: string, top: string | undefined): Promise<{ ok: true; carried?: string } | { ok: false; reason: string }> {
+async function leaveStack(t: LandTarget, gitDir: string, own: string, top: string | undefined): Promise<{ ok: true; carried?: string } | { ok: false; reason: string }> {
   const head = await gitOut(t.path, ['rev-parse', 'HEAD']);
   const detached = (await gitOut(t.path, ['rev-parse', '--abbrev-ref', 'HEAD'])) === 'HEAD';
   if (!detached || !head) {
@@ -560,7 +560,10 @@ async function leaveStack(t: LandTarget, own: string, top: string | undefined): 
     }
     const back = await git(t.path, ['checkout', '-q', t.branch]);
     if (!back.ok) return { ok: false, reason: `${pre}${t.branch} couldn't be checked out in ${t.path}: ${firstLine(back.stderr || back.stdout)}. Check it out there, then run tb land again.` };
-    const left = await gitOut(t.path, ['rev-parse', 'HEAD@{1}']);
+    // This checkout's own entry, not whatever is newest by now (a hook's
+    // commit after it, say): detached, git names where it moved from in full.
+    const log = (await gitOut(t.path, ['reflog', 'show', '-n', '20', '--format=%gs', 'HEAD'])) ?? '';
+    const left = /^checkout: moving from ([0-9a-f]{40,}) to /m.exec(log)?.[1];
     if (left !== from) {
       return { ok: false, reason: `${pre}A commit was made in ${t.path} just as ${t.branch} was checked out again, and it's on no branch now: ${left?.slice(0, 9) ?? 'see git reflog'}. Keep it with git cherry-pick ${from.slice(0, 9)}..${left?.slice(0, 9) ?? '<it>'}, then run tb land again.` };
     }
@@ -584,6 +587,13 @@ async function leaveStack(t: LandTarget, own: string, top: string | undefined): 
   if (!(await git(t.path, ['update-ref', `refs/heads/${t.branch}`, tip, own])).ok) {
     return { ok: false, reason: [`Commits were made in ${t.path} on top of the checked group, and ${t.branch} couldn't be moved to take them:`, ...ids.split('\n').map((l) => `  ${l}`), keep].join('\n') };
   }
+  // Those are on the branch now: if the checkout below stops, the next tb
+  // land carries only what's past `head` (Codex, 13 Nov).
+  try {
+    if (fs.existsSync(detachedMarker(gitDir))) fs.writeFileSync(detachedMarker(gitDir), JSON.stringify({ branch: t.branch, own: tip, top: head }));
+  } catch {
+    // Then the next one stops and says what to keep, as with an old marker.
+  }
   return checkoutFrom(head, `Commits made on the checked group while tb land had this worktree were moved onto ${t.branch}, as the group itself isn't yours to land:\n${ids.split('\n').map((l) => `  ${l}`).join('\n')}`);
 }
 
@@ -598,7 +608,7 @@ async function recoverDetached(t: LandTarget, gitDir: string, out: (line: string
   if (m?.branch === t.branch && m.own &&
       (await gitOut(t.path, ['rev-parse', '--abbrev-ref', 'HEAD'])) === 'HEAD' &&
       (await gitOut(t.path, ['rev-parse', t.branch])) === m.own) {
-    const r = await leaveStack(t, m.own, typeof m.top === 'string' ? m.top : undefined);
+    const r = await leaveStack(t, gitDir, m.own, typeof m.top === 'string' ? m.top : undefined);
     if (r.ok) {
       out(`An earlier tb land was stopped during a check with others' work; ${t.branch} is checked out again${r.carried ? '.' : ' as it was.'}`);
       if (r.carried) out(r.carried);
@@ -1029,7 +1039,7 @@ async function landLocked(
     let carried = false;
     const back = async (): Promise<boolean> => {
       if (!group.length) return true;
-      const r = await leaveStack(t, own, checked);
+      const r = await leaveStack(t, gitDir, own, checked);
       if (!r.ok) {
         stuck = r.reason;
         return false;
@@ -1225,7 +1235,7 @@ async function landLocked(
       // Through leaveStack, as a commit made since the check was looked at
       // would otherwise be checked out away.
       const moved = (await git(t.path, ['update-ref', `refs/heads/${t.branch}`, checked, own])).ok
-        ? await leaveStack(t, checked, checked)
+        ? await leaveStack(t, gitDir, checked, checked)
         : undefined;
       if (moved?.ok) {
         fs.rmSync(detachedMarker(gitDir), { force: true });
