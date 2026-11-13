@@ -3,7 +3,6 @@
 import { Given, Then, When } from '@cucumber/cucumber';
 import assert from 'node:assert/strict';
 import { okValue, sleep, type Dump } from '../support/driver.ts';
-import { pane } from '../support/pane.ts';
 import type { ThreadbearWorld } from '../support/world.ts';
 
 type Page = { title: string; host: string; buttons: string[] };
@@ -43,9 +42,10 @@ When("I click the right rail's Browser button", async function (this: Threadbear
   await this.app.do({ cmd: 'click', tipPrefix: "This thread's browser" });
 });
 
+// The pane's pages while it's on show (GPUI's dump has them as `panels.browser`).
 const listed = (d: Dump): Page[] | undefined => {
-  const p = pane(d) as (ReturnType<typeof pane> & { pages?: Page[] }) | undefined;
-  return p?.section === 'threadbear.browser' ? p.pages ?? [] : undefined;
+  const b = (d as Dump & { panels?: { browser?: { pages?: Page[] } } }).panels?.browser;
+  return b ? b.pages ?? [] : undefined;
 };
 
 Then('the Browser pane lists {string} from {string} with {string}', async function (this: ThreadbearWorld, title: string, host: string, buttons: string) {

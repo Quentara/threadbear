@@ -1790,7 +1790,15 @@ impl SidePane {
             .filter(|id| self.dock_showing(id, cx))
             .map(|id| json!({ "id": id, "draws": self.drawn.get(&id).cloned().unwrap_or_default() }))
             .collect();
-        json!({ "shown": true, "width": PANE_WIDTH as i64, "items": items, "preview": preview, "highlights": self.highlights_line(&thread.id), "pane": self.pane_dump(&thread, &section, cx), "drawn": drawn })
+        let mut out = json!({ "shown": true, "width": PANE_WIDTH as i64, "items": items, "preview": preview, "highlights": self.highlights_line(&thread.id), "pane": self.pane_dump(&thread, &section, cx), "drawn": drawn });
+        // The Browser pane's pages while it's on show, wherever it is, as
+        // sections now draw side by side whichever one was last chosen.
+        if self.dock_showing(BROWSER, cx) {
+            let mut browser = serde_json::Map::new();
+            self.fill_browser_dump(&mut browser, &thread, cx);
+            out["browser"] = Value::Object(browser);
+        }
+        out
     }
 
     /// `highlightsLine`.
