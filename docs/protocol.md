@@ -1727,7 +1727,12 @@ that process started: it sits silent with no CPU while it waits its turn
 for the landing lock, or while its check runs on another machine, and
 stopping one sends it to the back of the line and throws away the group
 check it was running (13 Nov: a dozen threads were told theirs looked
-stuck, and nothing landed for 35 minutes). Codex's background terminals leave no files,
+stuck, and nothing landed for 35 minutes). That's asked at every look
+rather than kept: once the landing has gone, what's left is judged as
+usual, and the three hours count from the first landing seen under the
+job. A quiet shell beside one (a loop polling the landing's log) is still
+told, as nothing ties the two together, with a line saying a `tb land`
+in the thread is still going and to leave it running. Codex's background terminals leave no files,
 so Codex threads aren't looked at.
 
 The thread gets one message from the runner (origin `runner`) listing
