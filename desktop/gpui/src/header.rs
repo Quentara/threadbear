@@ -872,7 +872,12 @@ impl Threadbear {
             }
         }
         text.push('.');
-        let carry_on = failed_on_limit || waiting.is_some();
+        // Another runner's thread always asks: neither why its turn failed
+        // nor its wait for room comes through the backend, and that runner
+        // carries on only a thread whose turn really stopped at its limit
+        // (runner.ts update, limitHitTurn), so asking is safe (Codex's
+        // second review, 13 Nov).
+        let carry_on = failed_on_limit || waiting.is_some() || !local;
         Some(LimitAdvice { text, targets, stopped: local && carry_on, carry_on, carries_on_at: waiting })
     }
 

@@ -55,9 +55,13 @@ impl Threadbear {
         if self.remote.logins_refresh.is_none() {
             self.remote.logins_refresh = Some(cx.spawn(async move |this, cx| loop {
                 cx.background_executor().timer(std::time::Duration::from_secs(60)).await;
+                // Every thread showing, its own panels too, not only the
+                // sidebar's selection (Codex's second review, 13 Nov).
                 let gone = this
                     .update(cx, |t, cx| {
-                        if let Some(runner) = t.open_thread().and_then(|o| o.runner_id.clone()) {
+                        let panes: Vec<_> = t.pane.iter().chain(t.thread_panels.panes()).cloned().collect();
+                        let runners: HashSet<String> = panes.iter().filter_map(|p| p.read(cx).summary.runner_id.clone()).collect();
+                        for runner in runners {
                             t.load_remote_logins(runner, cx);
                         }
                     })
