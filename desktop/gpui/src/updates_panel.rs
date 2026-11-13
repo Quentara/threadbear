@@ -283,6 +283,14 @@ impl Threadbear {
                 match res {
                     Ok(v) => {
                         t.take_swift_changes(&v["swiftChanges"]);
+                        // The thread itself, so it opens before the list's
+                        // own word of it arrives (open goes nowhere for a
+                        // thread it doesn't know; Windows lost that race).
+                        if let Ok(thread) = serde_json::from_value::<ThreadSummary>(v["thread"].clone()) {
+                            if !thread.id.is_empty() && !t.threads.contains_key(&thread.id) {
+                                t.threads.insert(thread.id.clone(), thread);
+                            }
+                        }
                         match v["threadId"].as_str() {
                             Some(id) if !id.is_empty() => t.open(id.to_owned(), window, cx),
                             _ => t.show_error("The runner didn't say what thread it made.".to_owned(), cx),

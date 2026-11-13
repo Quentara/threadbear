@@ -877,7 +877,19 @@ async function main(): Promise<void> {
     }
   };
   methods['swiftChanges.list'] = async () => ({ swiftChanges: await swiftChanges.scan() });
-  methods['swiftChanges.port'] = (p) => swiftCall(() => swiftChanges.port(swiftCommit(p)));
+  // With the thread itself, so the app can open it before its
+  // threads.updated arrives (Windows lost that race on GitHub, 13 Nov).
+  methods['swiftChanges.port'] = (p) =>
+    swiftCall(async () => {
+      const res = await swiftChanges.port(swiftCommit(p));
+      let thread;
+      try {
+        thread = runner.get(res.threadId);
+      } catch {
+        thread = undefined;
+      }
+      return { ...res, ...(thread ? { thread } : {}) };
+    });
   methods['swiftChanges.dismiss'] = (p) => swiftCall(() => swiftChanges.dismiss(swiftCommit(p), (p as { undo?: unknown } | undefined)?.undo === true));
   const codexWarning = missingCodex(updates.codexBinary(), cfg);
   if (codexWarning) log.warn('codex CLI not found', { path: updates.codexBinary() });

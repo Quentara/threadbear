@@ -771,7 +771,7 @@ async function dispatch(client, method, p) {
       updates.swiftChanges = sc;
       if (!sc.changes.length) delete updates.swiftChanges;
       broadcast('runner.updates', { updates });
-      return { swiftChanges: sc, ...(method === 'swiftChanges.port' ? { threadId } : {}) };
+      return { swiftChanges: sc, ...(method === 'swiftChanges.port' ? { threadId, ...(threads.has(threadId) ? { thread: threads.get(threadId).summary } : {}) } : {}) };
     }
     case 'threads.send': {
       const t = need(p.threadId);

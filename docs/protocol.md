@@ -1499,7 +1499,7 @@ minute), as do an hourly timer and each check for Mike's releases.
 | Request | Params | Result |
 |---|---|---|
 | `swiftChanges.list` | `{}` | `{ swiftChanges: SwiftChanges }`, after looking again |
-| `swiftChanges.port` | `{ commit }` | `{ threadId, swiftChanges }`: starts a thread to rebuild that one change, or returns the open one already on it. `-32602` for a commit not on the list |
+| `swiftChanges.port` | `{ commit }` | `{ threadId, thread?: ThreadSummary, swiftChanges }`: starts a thread to rebuild that one change, or returns the open one already on it. `thread` is its summary, so a client can open it before `threads.updated` reaches it. `-32602` for a commit not on the list |
 | `swiftChanges.dismiss` | `{ commit, undo?: true }` | `{ swiftChanges }`: leaves it off the list from now on, or with `undo` puts it back |
 
 "Pending" for a client means `building`, `waiting`, any `oldRunners`, or
