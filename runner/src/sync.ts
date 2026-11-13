@@ -4180,26 +4180,31 @@ export class ConvexSync {
   // Each pending command once: takeCommand says no if another runner (or
   // an earlier update of the same list) already has it.
   private async takeCommands(commands: Command[]): Promise<void> {
+    const runs: Promise<void>[] = [];
     for (const c of commands) {
       if (!this.running || this.inFlight.has(c.commandId)) continue;
       this.inFlight.add(c.commandId);
-      let taken: unknown;
-      try {
-        taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });
-        this.untaken.delete(c.commandId);
-      } catch (e) {
-        // Still pending: the next heartbeat tries it again.
-        if (!refusedForGood(e)) this.untaken.set(c.commandId, c);
-        this.deps.log.debug('phone command not taken', { commandId: c.commandId, error: String(e) });
-      }
-      if (taken !== true) {
-        this.inFlight.delete(c.commandId);
-        continue;
-      }
-      // Not waited for here: one thread's command waiting on the one before
-      // it (inOrder) mustn't hold up another thread's.
-      void this.inOrder(c.threadId ?? '', () => this.runTaken(c)).finally(() => this.inFlight.delete(c.commandId));
+      // Its place in its thread's line is kept from here, before the take:
+      // a slow answer to an earlier command's take let a later one for the
+      // same thread go first (Codex's review). Other threads' don't wait.
+      runs.push(this.inOrder(c.threadId ?? '', () => this.takeAndRun(c)).finally(() => this.inFlight.delete(c.commandId)));
     }
+    await Promise.all(runs);
+  }
+
+  private async takeAndRun(c: Command): Promise<void> {
+    if (!this.running) return;
+    let taken: unknown;
+    try {
+      taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });
+      this.untaken.delete(c.commandId);
+    } catch (e) {
+      // Still pending: the next heartbeat tries it again.
+      if (!refusedForGood(e)) this.untaken.set(c.commandId, c);
+      this.deps.log.debug('phone command not taken', { commandId: c.commandId, error: String(e) });
+      return;
+    }
+    if (taken === true) await this.runTaken(c);
   }
 
   private async runTaken(c: Command): Promise<void> {

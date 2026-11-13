@@ -1346,7 +1346,8 @@ test('commands: one for a thread that has gone is finished quietly; a forwarded 
     { commandId: 'g3', kind: 'send', threadId: t.id, args: { text: 'fails later' }, createdAt: 3 },
   ]);
   await tick(10);
-  const finished = calls.filter((c) => c.fn === 'sync:finishCommand').map((c) => c.args);
+  // Each thread's in order; across threads, as they finish.
+  const finished = calls.filter((c) => c.fn === 'sync:finishCommand').map((c) => c.args).sort((a, b) => String(a.commandId).localeCompare(String(b.commandId)));
   assert.deepEqual(finished.map((f) => [f.commandId, f.ok, f.note]), [
     ['g1', false, `Thread not found: ${gone.id}`],
     ['g2', false, `Thread not found: ${gone.id}`],
@@ -3804,5 +3805,32 @@ test("commands: a thread's next message waits for its photo, another thread's do
   release!();
   await tick(20);
   assert.deepEqual(applied.filter((x) => x.startsWith(`send ${a.id}`)).map((x) => x.split(' ')[2]), ['look', 'what']);
+  await sync.stop();
+});
+
+// From Codex's review of that fix: a command's place in its thread's line
+// was only kept once its take was answered, so a slow answer to an earlier
+// command's take let a later one for the same thread go first.
+test("commands: a slow answer to a thread's first take doesn't let its next command go first", async () => {
+  let release: (() => void) | undefined;
+  const { h, sync, push, applied } = setupFull({
+    apiVersion: BACKEND_API_VERSION,
+    hold: (fn, args) => (fn === 'sync:takeCommand' && args.commandId === 'first' && !release ? new Promise<void>((r) => (release = r)) : undefined),
+  });
+  sync.start();
+  await sync.flushNow();
+  const t = h.runner.create({ text: 'hello', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await tick();
+  push([{ commandId: 'first', kind: 'send', threadId: t.id, args: { text: 'one' }, createdAt: 1 }]);
+  await tick(5);
+  assert.ok(release, "the first take's answer is on its way");
+  push([
+    { commandId: 'first', kind: 'send', threadId: t.id, args: { text: 'one' }, createdAt: 1 },
+    { commandId: 'second', kind: 'send', threadId: t.id, args: { text: 'two' }, createdAt: 2 },
+  ]);
+  await tick(10);
+  release!();
+  await tick(20);
+  assert.deepEqual(applied.filter((a) => a.startsWith(`send ${t.id}`)).map((a) => a.split(' ')[2]), ['one', 'two']);
   await sync.stop();
 });
