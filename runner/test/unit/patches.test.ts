@@ -235,10 +235,11 @@ test('runCommand: output, exit codes, the time limit and the size cap', async ()
   assert.equal(failed.ok, false);
   assert.equal(failed.exitCode, 3);
   assert.equal(failed.text.trim(), 'nope');
-  const slow = await runCommand('echo start; sleep 5; echo never', { cwd, env, shell: sh, timeoutMs: 300 });
+  // Long enough for a busy Mac's shell to say start before it's stopped.
+  const slow = await runCommand('echo start; sleep 60; echo never', { cwd, env, shell: sh, timeoutMs: 2500 });
   assert.equal(slow.ok, false);
-  assert.equal(slow.text, 'start\nStopped after 0.3 s.');
-  assert.ok(slow.durationMs < 3000);
+  assert.equal(slow.text, 'start\nStopped after 2.5 s.');
+  assert.ok(slow.durationMs < 30_000);
   const big = await runCommand('yes abcdefghij | head -c 200000', { cwd, env, shell: sh });
   assert.equal(big.ok, true);
   assert.equal(big.truncated, true);

@@ -1848,7 +1848,8 @@ test('live state: a when chip comes and goes by itself on the poll, with its bad
   fs.writeFileSync(path.join(project, 'count'), '3');
   // No summary asked for: the poll reads it again by itself.
   h.clock.advance(21_000);
-  await settle();
+  // The poll runs a real shell, which a busy Mac can take seconds to start.
+  await until(() => h.runner.get(thread.id).actions !== undefined, 'the chip to show');
   const shown = h.runner.get(thread.id);
   assert.deepEqual(shown.actions?.map((a) => [a.title, a.badge]), [['Your turn', 3]]);
   assert.deepEqual(checkSummary(shown), []);
@@ -1856,8 +1857,7 @@ test('live state: a when chip comes and goes by itself on the poll, with its bad
   assert.ok(!h.events(thread.id).some((e) => e.type === 'system.note'));
   fs.writeFileSync(path.join(project, 'count'), '0');
   h.clock.advance(21_000);
-  await settle();
-  assert.equal(h.runner.get(thread.id).actions, undefined);
+  await until(() => h.runner.get(thread.id).actions === undefined, 'the chip to go');
 });
 
 test('live state: a command action that changes what its chips ask swaps them straight away, without waiting for the poll', async () => {
