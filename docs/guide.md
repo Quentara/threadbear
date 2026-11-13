@@ -675,8 +675,10 @@ keep Files open beside Highlights; a file opened from one opens over that
 one.
 
 To move a panel, press and hold on it for a moment, then drag. That works
-anywhere on the panel: its title, one of its tabs, the empty part of its
-bar or its background. On a title or tab a plain drag works too. A quick drag on the empty part of a
+on its title, one of its tabs or the empty part of its bar, and on its
+background too if you turn on Settings > General > Move panels by their
+background (a panel with its title hidden always moves from its
+background). On a title or tab a plain drag works too. A quick drag on the empty part of a
 bar moves the whole window instead, as there's no title bar, and a
 double-click there zooms it. While you drag, the panel shrinks under the
 pointer and shows where it will go when you let go:

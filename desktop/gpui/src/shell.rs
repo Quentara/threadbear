@@ -109,7 +109,8 @@ pub(crate) fn make_layout(saved: Option<&Value>) -> DockLayout {
 /// The `DockOptions` for this window, as `RootView.options` makes them: the
 /// bars are the window's title bar, with room for the traffic lights in the
 /// top-left panel's bar (the activity bar has the first 44 points of them).
-pub(crate) fn dock_options(app: WeakEntity<Threadbear>, cx: &App) -> DockOptions {
+/// `settings` is the app's, for the switches in Settings that change the dock.
+pub(crate) fn dock_options(app: WeakEntity<Threadbear>, settings: &crate::settings::Settings, cx: &App) -> DockOptions {
     let traffic_lights = if cfg!(target_os = "macos") { (78. - f32::from(px(crate::rails::BAR_WIDTH))).max(0.) } else { 0. };
     DockOptions {
         header_height: f32::from(px(crate::header::HEADER_HEIGHT)),
@@ -117,6 +118,7 @@ pub(crate) fn dock_options(app: WeakEntity<Threadbear>, cx: &App) -> DockOptions
         traffic_lights,
         corner_moves_window: true,
         bars_move_window: true,
+        background_moves_panel: settings.panel_background_drag(),
         accent: Some(style::control_accent(cx)),
         window_content: None,
         prepare_window: None,
@@ -663,6 +665,20 @@ impl Threadbear {
         self.save_settings_soon(cx);
     }
 
+    /// Gives the dock its options again, after the zoom or a setting it
+    /// reads changed.
+    fn refresh_dock_options(&mut self, cx: &mut Context<Self>) {
+        let options = dock_options(cx.entity().downgrade(), &self.settings, cx);
+        self.dock_view.update(cx, |d, cx| d.set_options(options, cx));
+    }
+
+    /// Settings > General's Move panels by their background.
+    pub(crate) fn set_panel_background_drag(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.settings.saved.panel_background_drag = Some(on);
+        self.save_settings_soon(cx);
+        self.refresh_dock_options(cx);
+    }
+
     /// Zoom In, Zoom Out, Actual Size (TextZoom): the zoom goes in `style`, so
     /// every `px` in the window scales; the panels' bars and the transcript's
     /// measured rows follow, and it's saved (and `textZoomPercent` is the
@@ -674,8 +690,7 @@ impl Threadbear {
         }
         style::set_zoom_percent(percent);
         apply_zoom_to_theme(percent, cx);
-        let options = dock_options(cx.entity().downgrade(), cx);
-        self.dock_view.update(cx, |d, cx| d.set_options(options, cx));
+        self.refresh_dock_options(cx);
         if let Some(pane) = &self.pane {
             pane.update(cx, |p, cx| p.remeasure_rows(cx));
         }

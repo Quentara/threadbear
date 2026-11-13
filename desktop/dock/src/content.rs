@@ -113,6 +113,12 @@ pub struct DockOptions {
     /// a panel up always takes a press held for a moment first, with or
     /// without this.
     pub bars_move_window: bool,
+    /// A press held on a panel's background (not its bar) picks the panel up.
+    /// A panel with no bar along its top (its title hidden) can always be
+    /// picked up from its background, whatever this says. On by default,
+    /// as BearDock does it; Threadbear turns it off unless Settings says
+    /// otherwise, as Mike found it got in the way more than it helped (13 Nov).
+    pub background_moves_panel: bool,
     /// The colour of drop targets and the lit divider. Default: the theme's
     /// primary (Swift's `Color.accentColor`). Apps with an accent of their
     /// own (the demo's macOS blue) set it here.
@@ -133,6 +139,7 @@ impl Default for DockOptions {
             traffic_lights: 0.,
             corner_moves_window: false,
             bars_move_window: false,
+            background_moves_panel: true,
             accent: None,
             window_content: None,
             prepare_window: None,

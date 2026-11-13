@@ -519,7 +519,7 @@ impl SettingsWindow {
 
     fn render_general(&mut self, settings: Option<&RunnerSettings>, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         // This Mac's own, so they're here while the runner's away too.
-        let mut sections = vec![self.appearance_section(cx), self.quitting_section(cx), self.notifications_section(cx)];
+        let mut sections = vec![self.appearance_section(cx), self.panels_section(cx), self.quitting_section(cx), self.notifications_section(cx)];
         // The web runtime is this Mac's too (web_runtime.rs), last, so it
         // moves nothing the Swift app's General has.
         let web_runtime = section("settings-web-runtime", "Web runtime", crate::web_runtime::SETTINGS_ABOUT, "check whether it's installed and working, or why a diagram or panel isn't showing.", vec![row("Web runtime", crate::web_runtime::settings_control(cx), cx)], cx);
@@ -663,6 +663,23 @@ impl SettingsWindow {
             "Light or dark for Threadbear only. Same as the Mac follows System Settings > Appearance.",
             "change it for you.",
             vec![row("Appearance", div().id("settings-appearance-holder").test_support().aria_label("Light or dark for Threadbear, whatever the Mac is set to").child(menu), cx)],
+            cx,
+        )
+    }
+
+    /// Whether a press held on a panel's background picks it up, or only one
+    /// on its title or tab (`panelBackgroundDrag`, off to begin with).
+    fn panels_section(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let on = self.app.upgrade().is_some_and(|a| a.read(cx).settings.panel_background_drag());
+        let switch = self.switch("settings-panel-background-drag", on, "Press and hold anywhere on a panel to move it, not just on its title or tab", cx, |this, on, cx| {
+            this.app.update(cx, |app, cx| app.set_panel_background_drag(on, cx)).ok();
+        });
+        section(
+            "settings-panels",
+            "Panels",
+            "To move a panel, drag its title or tab. With this on, pressing and holding anywhere on a panel picks it up too. A panel with its title hidden can always be moved that way, as it has nothing else to drag it by.",
+            "change it for you.",
+            vec![row("Move panels by their background", switch, cx)],
             cx,
         )
     }

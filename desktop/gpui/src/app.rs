@@ -390,7 +390,7 @@ impl Threadbear {
             model
         });
         let content = Rc::new(shell::Panels { app: app.clone() });
-        let options = shell::dock_options(app.clone(), cx);
+        let options = shell::dock_options(app.clone(), &settings, cx);
         let dock_view = {
             let model = dock.clone();
             cx.new(|cx| DockView::new(model, content, options, cx))

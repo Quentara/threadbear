@@ -108,6 +108,13 @@ pub struct Saved {
     /// across (swift_import.rs, `tour_once`): once, and before the tour may
     /// start by itself, so someone who finished it there never sees it again.
     pub swift_tour_import: Option<String>,
+    /// `panelBackgroundDrag`: Settings > General's Move panels by their
+    /// background. A press held on a panel's background picks it up, as on
+    /// its bar. None is off: most of the time a press there is meant for
+    /// the panel, and its title or tab is the place to drag it from (Mike,
+    /// 13 Nov). A panel with its title hidden moves from its background
+    /// either way. The GPUI app's own.
+    pub panel_background_drag: Option<bool>,
 }
 
 /// The settings file: where it is and what's in it. Reading is at launch only;
@@ -184,6 +191,10 @@ impl Settings {
 
     pub fn ding_volume(&self) -> f64 {
         self.saved.completion_sound_volume.unwrap_or(completion_sound::DEFAULT_VOLUME).clamp(0.1, 1.)
+    }
+
+    pub fn panel_background_drag(&self) -> bool {
+        self.saved.panel_background_drag.unwrap_or(false)
     }
 
     pub fn asks_before_quitting(&self) -> bool {
