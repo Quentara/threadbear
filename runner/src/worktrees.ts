@@ -1420,3 +1420,38 @@ export async function cleanUpWorktree(w: WorktreeRecord, stillOurs: () => boolea
   }
   return { removed: true };
 }
+
+// When a worktree has to stay after its thread is archived or deleted (work
+// that isn't on main, uncommitted changes), its build caches (the patch's
+// `keep`) go. Nothing else can use them: no other thread takes the folder
+// until its branch is landed or dropped, and only a spare's caches are
+// reused. On 13 Nov 2026 such slots held 39 GB of app builds on Mike's Mac,
+// and he asked for them to go once no thread can use them. A thread brought
+// back just builds again. Only while the folder is still this branch's own
+// checkout, and only real folders inside it, never through a link to
+// somewhere else. Each is renamed aside first, right after that check with
+// nothing awaited between, then deleted: deleting a gigabyte or two takes a
+// while, and the check can't hold for that long. Returns what went.
+export async function clearBuildCaches(w: WorktreeRecord): Promise<string[]> {
+  if (!w.keep?.length || !(await stillCheckedOut(w))) return [];
+  const cleared: string[] = [];
+  for (const k of w.keep) {
+    const rel = k.replace(/^\/+|\/+$/g, '');
+    if (!rel || rel.split('/').includes('..')) continue;
+    const here = worktreeFolderNow(w);
+    if (!here) break;
+    const dir = path.join(here, rel);
+    let aside: string;
+    try {
+      // A real folder, reached without a link anywhere in `rel`.
+      if (!fs.lstatSync(dir).isDirectory() || realpath(dir) !== dir) continue;
+      aside = path.join(here, `.threadbear-clearing-${rel.replace(/\//g, '-')}-${Date.now()}`);
+      fs.renameSync(dir, aside);
+    } catch {
+      continue;
+    }
+    cleared.push(rel);
+    await fs.promises.rm(aside, { recursive: true, force: true }).catch(() => undefined);
+  }
+  return cleared;
+}

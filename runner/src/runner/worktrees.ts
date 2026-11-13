@@ -7,7 +7,7 @@ import type { RunnerPart } from './part.ts';
 import type { Action, EventBody } from '../protocol.ts';
 import type { ThreadRecord } from '../store.ts';
 import { BIN_DIR, threadEnv } from '../restart.ts';
-import { cleanUpWorktree, makeWorktree, readPlainFile, sameSubfolder, stillCheckedOut, worktreeFolderNow, worktreeGone, type WorktreeRecord } from '../worktrees.ts';
+import { cleanUpWorktree, clearBuildCaches, makeWorktree, readPlainFile, sameSubfolder, stillCheckedOut, worktreeFolderNow, worktreeGone, type WorktreeRecord } from '../worktrees.ts';
 import { isDirectory } from '../fsutil.ts';
 import { automaticTrust, findWorktreePatch, isInside, readWorktreePatch, runCommand, type PatchSet, type WorktreePatch, worktreePatchFiles } from '../patches.ts';
 import fs from 'node:fs';
@@ -421,11 +421,23 @@ export const worktreesPart = {
     const how =
       `To land it, run tb land in ${w.path}${deleted ? '' : ' (or bring the thread back and press Land)'}. ` +
       `To drop it, git -C ${w.mainCheckout} worktree remove --force ${w.path} && git -C ${w.mainCheckout} branch -D ${w.branch}.`;
+    // Staying, it can't be a spare, so no other thread will use its build
+    // caches: they go to free the space (clearBuildCaches says why).
+    let cleared: string[] = [];
+    if (stillOurs()) {
+      try {
+        cleared = await clearBuildCaches(w);
+      } catch (e) {
+        this.log.warn("couldn't clear a kept worktree's build caches", { threadId: rec.id, path: w.path, error: String(e) });
+      }
+      if (cleared.length) this.log.info("cleared a kept worktree's build caches", { threadId: rec.id, path: w.path, cleared });
+    }
+    const freed = cleared.length ? ` Its build caches (${cleared.join(', ')}) were cleared to save space, and get built again if it carries on.` : '';
     if (deleted) {
-      this.notice('info', `"${rec.title}" was deleted, but its worktree at ${w.path} and branch ${w.branch} stay: ${result.reason}. ${how}`);
+      this.notice('info', `"${rec.title}" was deleted, but its worktree at ${w.path} and branch ${w.branch} stay: ${result.reason}. ${how}${freed}`);
       return;
     }
-    this.emit(st, { type: 'system.note', text: `This thread's worktree at ${w.path} and its branch ${w.branch} stay: ${result.reason}. ${how}` });
+    this.emit(st, { type: 'system.note', text: `This thread's worktree at ${w.path} and its branch ${w.branch} stay: ${result.reason}. ${how}${freed}` });
     this.markDirty(st);
   },
 };

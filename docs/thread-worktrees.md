@@ -337,6 +337,14 @@ With `keep`:
   and `git checkout -b thread/<id8> main`. Setup runs as for a new one.
 - A patch's `teardown` runs before the worktree is set aside, as for one
   that's removed: what the thread made is its own, not the next thread's.
+- A worktree that has to stay (work not on main, uncommitted changes)
+  can't be a spare, so no other thread will use its kept folders: they're
+  deleted, with a line in the note saying so (`clearBuildCaches`). Mike, 13
+  Nov 2026: such slots held 39 GB of app builds, and he asked for build
+  files to go once no thread can use them. A thread brought back builds
+  again. Only while the folder is still the thread's own checkout, and only
+  real folders inside it, never through a link; each is renamed aside right
+  after that check, then deleted.
 - The record keeps `keep`, and `spare: true` once it's set aside. A
   spare's thread, unarchived, moves to the main checkout even though the
   folder is still there: it's another thread's now. So does any thread
