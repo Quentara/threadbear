@@ -279,7 +279,7 @@ fn the_media_views_read_only_what_the_gate_checked() {
 #[test]
 fn fixed_apps_start_only_once_signed_and_icons_never_ask_launch_services() {
     let desktop = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_owned();
-    let gate = std::fs::read_to_string(desktop.join("gpui/src/open_gate.rs")).unwrap();
+    let gate = std::fs::read_to_string(desktop.join("gpui/src/open_gate.rs")).unwrap().replace("\r\n", "\n");
     assert!(!gate.contains("iconForFile"), "the gate asks NSWorkspace for an icon");
     let mut native = Vec::new();
     rust_files(&desktop.join("gpui"), &mut native);
@@ -287,13 +287,34 @@ fn fixed_apps_start_only_once_signed_and_icons_never_ask_launch_services() {
         let text = std::fs::read_to_string(file).unwrap();
         assert!(!text.contains("iconForFile") && !text.contains("[NSWorkspace"), "{} asks NSWorkspace", file.display());
     }
-    let chrome = gate.split("fn start_chrome_profile(").nth(1).unwrap().split("\n}\n").next().unwrap();
+    let chrome = fn_body(&gate, "fn start_chrome_profile(");
     let check = chrome.find("signed_as(path, GOOGLE_CHROME)").expect("Chrome is checked");
     assert!(check < chrome.find("Command::new(\"/usr/bin/open\")").unwrap(), "checked before it's started");
     assert!(chrome.contains(".arg(&real)"), "the checked path is the one started");
     assert!(gate.contains("certificate leaf[subject.OU] = \\\"EQHXZ8M8AV\\\""), "Google's team");
     assert!(!gate.contains("URLForApplicationWithBundleIdentifier(&NSString::from_str(threadbear_core::reply_links::CHROME_BUNDLE_ID))"), "Chrome by id, not the running one");
-    let simulator = gate.split("fn apple_simulator(").nth(1).unwrap().split("\n}\n").next().unwrap();
+    let simulator = fn_body(&gate, "fn apple_simulator(");
     assert!(simulator.contains("signed_as(path, \"anchor apple and identifier"));
     assert_eq!(gate.matches("Command::new(\"/usr/bin/open\")").count(), 1, "one place starts an application by path");
+}
+
+/// A top-level function's body, up to its closing `}` line. The source is
+/// read with `\r\n` endings on a Windows checkout, where splitting at
+/// `"\n}\n"` found nothing and the "body" ran to the end of the file, so a
+/// check moved into a later function still passed. Line endings are made
+/// `\n` first.
+fn fn_body(source: &str, signature: &str) -> String {
+    let source = source.replace("\r\n", "\n");
+    let rest = source.split(signature).nth(1).unwrap_or_else(|| panic!("{signature} not found"));
+    rest.split("\n}\n").next().unwrap().to_owned()
+}
+
+#[test]
+fn a_function_body_ends_at_its_own_brace_with_either_line_ending() {
+    let source = "fn start_chrome_profile(path: &Path) {\n    open(path);\n}\n\nfn later() {\n    signed_as(path, GOOGLE_CHROME);\n}\n";
+    for text in [source.to_owned(), source.replace('\n', "\r\n")] {
+        let body = fn_body(&text, "fn start_chrome_profile(");
+        assert!(body.contains("open(path);"));
+        assert!(!body.contains("signed_as"), "a check in a later function counts for this one");
+    }
 }
