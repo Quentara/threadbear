@@ -525,6 +525,25 @@ test('a hibernating thread that is archived stays asleep in the archive, and wak
   assert.deepEqual(h.runner.list().map((x) => x.id), [thread.id]);
 });
 
+// Archived (or snoozed) during a turn with a message queued behind it: the
+// turn ends and the queue is kept for when it comes back, but scheduleIdle
+// returned on the queue before releasing a put-away thread's CLI, so it
+// stayed alive with any background work, and the archive's cleanup never
+// ran (13 Nov 2026, the implicit state machines scan, Codex's review).
+test('a thread archived during a turn with a message queued behind it lets its CLI go', async () => {
+  const h = makeHarness();
+  const { thread } = create(h);
+  const s = h.adapter.last;
+  s.init();
+  h.runner.send(thread.id, 'and then this', [], { queue: true });
+  assert.equal(h.runner.threads.get(thread.id)!.rec.queue.length, 1);
+  h.runner.update({ threadId: thread.id, archived: true });
+  if (h.runner.get(thread.id).status === 'running') s.result('interrupted');
+  await tick();
+  assert.equal(s.ended, true, 'its CLI goes');
+  assert.equal(h.runner.threads.get(thread.id)!.rec.queue.length, 1, 'the message waits for it to come back');
+});
+
 test('the wake note counts from when it first went away, even if the time changed', () => {
   const h = makeHarness();
   const { thread } = create(h);
