@@ -59,6 +59,8 @@ const CALL_ENTRIES = 500;
 // thread's preview and working line change many times a second.
 export const SYNC_COALESCE_MS = 2000;
 export const HEARTBEAT_MS = 60_000;
+// How many heartbeats a finishCommand that failed is tried again with.
+export const FINISH_TRIES = 60;
 // How often other runners' usage readings are read (followSharedUsage).
 export const SHARED_USAGE_POLL_MS = 5 * 60_000;
 // Threads per upsert mutation, and messages per append.
@@ -1434,6 +1436,14 @@ export class ConvexSync {
   // Commands.
   private unsubCommands?: () => void;
   private inFlight = new Set<string>();
+  // A command whose take failed before the backend answered (an outage, or
+  // .env files still being read), tried again with the next heartbeat: the
+  // pending list doesn't change by itself, so nothing else brings it round.
+  private untaken = new Map<string, Command>();
+  // A command applied here whose finishCommand failed, tried again with
+  // each heartbeat: otherwise it stays "taken", which nothing reaps for 14
+  // days, and the phone shows "Sending…" with no Cancel all that time.
+  private unfinished = new Map<string, { args: Record<string, unknown>; tries: number }>();
   private applied = 0;
   private failed = 0;
   private commandError?: string;
@@ -3819,6 +3829,7 @@ export class ConvexSync {
         this.pushOff = (r as { pushOff?: unknown } | null)?.pushOff === true;
         this.notePushFailing(asPushFailing((r as { pushFailing?: unknown } | null)?.pushFailing));
         this.lookForReplyImages();
+        this.retryCommands();
         if ((this.backendApiVersion ?? 0) >= SCHEDULES_API_VERSION && this.running) void this.deps.schedules?.attach(this.scheduleBackend());
         if ((this.backendApiVersion ?? 0) >= SHARED_POOLS_API_VERSION && this.running) this.deps.pools?.attach(this.poolBackend());
         if ((this.backendApiVersion ?? 0) >= SHARED_USAGE_API_VERSION && this.running) this.followSharedUsage();
@@ -4153,7 +4164,16 @@ export class ConvexSync {
       if (!this.running || this.inFlight.has(c.commandId)) continue;
       this.inFlight.add(c.commandId);
       try {
-        const taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });
+        let taken: unknown;
+        try {
+          taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });
+          this.untaken.delete(c.commandId);
+        } catch (e) {
+          // Still pending: the next heartbeat tries it again.
+          if (!refusedForGood(e)) this.untaken.set(c.commandId, c);
+          this.deps.log.debug('phone command not taken', { commandId: c.commandId, error: String(e) });
+          continue;
+        }
         if (taken !== true) continue;
         let resultThreadId: string | undefined;
         let result: unknown;
@@ -4172,15 +4192,46 @@ export class ConvexSync {
           if ((e as { code?: unknown })?.code === ErrorCode.threadNotFound) this.deps.log.info('phone command for a thread that has gone', { kind: c.kind, threadId: c.threadId });
           else this.deps.log.warn('phone command failed', { kind: c.kind, threadId: c.threadId, error: note });
         }
-        if (resultThreadId) await this.writeRowNow(resultThreadId);
-        await this.post('mutation', 'sync:finishCommand', { key: this.deps.key, commandId: c.commandId, ok, ...(note ? { note } : {}), ...(resultThreadId ? { resultThreadId } : {}), ...(result !== undefined ? { result: JSON.stringify(result) } : {}) });
-      } catch (e) {
-        // Couldn't take or finish it: the next update of the list brings
-        // it round again if it's still pending.
-        this.deps.log.debug('phone command not taken', { commandId: c.commandId, error: String(e) });
+        // The row first, so the phone opens a thread it already has; one
+        // that can't be written now goes with the next flush, and the
+        // command is finished either way.
+        if (resultThreadId) await this.writeRowNow(resultThreadId).catch((e) => this.deps.log.debug('could not write the row of a command thread yet', { threadId: resultThreadId, error: String(e) }));
+        await this.finishCommand(c.commandId, { key: this.deps.key, commandId: c.commandId, ok, ...(note ? { note } : {}), ...(resultThreadId ? { resultThreadId } : {}), ...(result !== undefined ? { result: JSON.stringify(result) } : {}) });
       } finally {
         this.inFlight.delete(c.commandId);
       }
+    }
+  }
+
+  private async finishCommand(commandId: string, args: Record<string, unknown>): Promise<void> {
+    try {
+      await this.post('mutation', 'sync:finishCommand', args);
+      this.unfinished.delete(commandId);
+    } catch (e) {
+      const tries = (this.unfinished.get(commandId)?.tries ?? 0) + 1;
+      // A refusal won't change, and after an hour of heartbeats the backend
+      // is long past caring (the phone has given up on it too).
+      if (refusedForGood(e) || tries > FINISH_TRIES) {
+        this.unfinished.delete(commandId);
+        this.deps.log.warn('could not say how a phone command went', { commandId, tries, error: String(e) });
+      } else {
+        this.unfinished.set(commandId, { args, tries });
+        this.deps.log.debug('could not say how a phone command went yet', { commandId, tries, error: String(e) });
+      }
+    }
+  }
+
+  // With each heartbeat that got through: the backend is answering again.
+  private retryCommands(): void {
+    for (const [commandId, { args }] of [...this.unfinished]) {
+      if (this.inFlight.has(commandId)) continue;
+      this.inFlight.add(commandId);
+      void this.finishCommand(commandId, args).finally(() => this.inFlight.delete(commandId));
+    }
+    if (this.untaken.size && this.deps.commands) {
+      const again = [...this.untaken.values()];
+      this.untaken.clear();
+      void this.takeCommands(again);
     }
   }
 

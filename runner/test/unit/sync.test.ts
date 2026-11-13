@@ -3728,3 +3728,46 @@ test("loose ends go up on a done thread's row for the phone's done card, and not
   assert.deepEqual(forBackend(doc, LOOSE_ENDS_API_VERSION, now).looseEnds, doc.looseEnds);
   assert.equal(forBackend(doc, LOOSE_ENDS_API_VERSION - 1, now).looseEnds, undefined);
 });
+
+// A command the runner took and applied, whose finishCommand failed once (a
+// network blip, or .env files still being read), stayed "taken": nothing
+// reaps those for 14 days, and the phone showed "Sending…" with no Cancel
+// all that time. A take that failed before the backend answered stayed
+// pending until some other command changed the list. Both go again with
+// the next heartbeat (13 Nov 2026, the implicit state machines scan).
+test('commands: a finish or a take that failed goes again with the next heartbeat', async () => {
+  const down = new Set<string>();
+  const { h, sync, push, calls, applied } = setupFull({
+    apiVersion: BACKEND_API_VERSION,
+    hold: (fn) => (down.has(fn) ? Promise.reject(new Error('fetch failed')) : undefined),
+  });
+  sync.start();
+  await sync.flushNow();
+  const t = h.runner.create({ text: 'hello', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await tick();
+  const finished = (id: string) => calls.filter((c) => c.fn === 'sync:finishCommand' && c.args.commandId === id).length;
+
+  down.add('sync:finishCommand');
+  push([{ commandId: 'c1', kind: 'send', threadId: t.id, args: { text: 'from the phone' }, createdAt: 1 }]);
+  await tick(10);
+  assert.deepEqual(applied.filter((a) => a.startsWith('send')), [`send ${t.id} from the phone phone`]);
+  assert.equal(finished('c1'), 1, 'tried once, and failed');
+  down.clear();
+  h.clock.advance(HEARTBEAT_MS);
+  await tick(10);
+  assert.equal(finished('c1'), 2, 'said again with the next heartbeat');
+  h.clock.advance(HEARTBEAT_MS);
+  await tick(10);
+  assert.equal(finished('c1'), 2, 'and only until it lands');
+
+  down.add('sync:takeCommand');
+  push([{ commandId: 'c2', kind: 'send', threadId: t.id, args: { text: 'second' }, createdAt: 2 }]);
+  await tick(10);
+  assert.equal(applied.filter((a) => a.startsWith('send')).length, 1, 'not taken, so not applied');
+  down.clear();
+  h.clock.advance(HEARTBEAT_MS);
+  await tick(10);
+  assert.deepEqual(applied.filter((a) => a.startsWith('send')).at(-1), `send ${t.id} second phone`);
+  assert.equal(finished('c2'), 1);
+  await sync.stop();
+});
