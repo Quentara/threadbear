@@ -92,6 +92,26 @@ evict() {
   return 0
 }
 
+# Called by check-remote.sh (-) to make room while it picks a host, outside
+# the host's locks: then it gives nothing back while a build, measurement or
+# check holds them (scripts/perf-lock.pl's two), as deleting GBs would skew a
+# measurement there (9c00a5ed). It holds the ones it takes until it's done, so
+# none starts mid-trim. remote.sh's own trim already runs inside them.
+if [ "$own" = - ]; then
+  fd=5
+  for lockfile in "$HOME/.cache/threadbear-perf.lock" "$HOME/.cache/threadbear-check/lock"; do
+    [ -e "$lockfile" ] || continue
+    eval "exec $fd>>\"\$lockfile\"" || exit 0
+    if command -v flock >/dev/null 2>&1; then got=0; flock -n "$fd" && got=1
+    else got=0; perl -e 'use Fcntl ":flock"; open(my $f, ">&=", $ARGV[0]) or exit 1; flock($f, LOCK_EX | LOCK_NB) or exit 1' "$fd" && got=1; fi
+    if [ "$got" = 0 ]; then
+      echo "A build, measurement or check is running on this host, so no build folders are given back now." >&2
+      exit 0
+    fi
+    fd=$((fd + 1))
+  done
+fi
+
 # One trim at a time on a host, holding a lock (fd 8, so it goes when this
 # does, however it ends) from before it decides a folder is idle until it's
 # gone, and this checkout's own folders are marked used under the same lock.

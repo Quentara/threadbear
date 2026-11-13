@@ -440,3 +440,18 @@ test("an idle checkout's whole build from before the shared targets goes, even w
   assert.deepEqual(h.left(), ['target-aaa', 'target-busy', 'target-new']);
   assert.match(r.stderr, /target-old, a whole build from before/);
 });
+
+test("check-remote.sh's trim gives nothing back while a build or measurement holds the host", (t) => {
+  const h = host(t, 1, WORK);
+  const lock = path.join(h.root, 'home', '.cache', 'threadbear-perf.lock');
+  fs.writeFileSync(lock, '');
+  const holder = path.join(h.root, 'hold.pl');
+  fs.writeFileSync(holder, `use Fcntl ":flock"; open(my $f, ">>", ${JSON.stringify(lock)}) or die; flock($f, LOCK_EX) or die; $| = 1; print "held\\n"; sleep 4;`);
+  const r = spawnSync('/bin/bash', ['-c', `perl ${JSON.stringify(holder)} | { read -r _; bash ${JSON.stringify(TRIM)} -; }`], { cwd: h.base, env: h.env, encoding: 'utf8', timeout: 20_000 });
+  assert.equal(r.status, 0, r.stderr);
+  assert.match(r.stderr, /no build folders are given back now/);
+  assert.deepEqual(h.left(), ['target-aaa', 'target-bbb', 'target-ccc', 'target-ddd']);
+  // Free again, it does.
+  assert.equal(h.trim('-').status, 0);
+  assert.deepEqual(h.left(), ['target-aaa', 'target-ddd']);
+});
