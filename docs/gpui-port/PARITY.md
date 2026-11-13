@@ -39,7 +39,7 @@ earlier four-platform run.
 
 126 of 329 features have a spec so far, across 226 scenarios.
 
-Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linux: 208 of 226.
+Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linux: 214 of 226.
 
 
 ### 0. Foundations everything else needs
@@ -64,7 +64,7 @@ Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linu
 |---|---|---|---|---|
 | `rail.activity` Activity bar | pass | pass | pass | pass |
 | `rail.dots` Rail dots | pass | pass | pass | pass |
-| `rail.right` Right rail | partly | pass | partly | partly |
+| `rail.right` Right rail | partly | pass | partly | pass |
 
 ### 3. Sidebar and inbox
 
@@ -133,7 +133,7 @@ Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linu
 
 | Feature | Swift | Mac | Windows | Linux |
 |---|---|---|---|---|
-| `rich.browserbear` BrowserBear tab handover | pending | pass | pending | pending |
+| `rich.browserbear` BrowserBear tab handover | pending | pass | pending | pass |
 
 ### 7. Composer
 
@@ -194,9 +194,9 @@ Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linu
 
 | Feature | Swift | Mac | Windows | Linux |
 |---|---|---|---|---|
-| `browser.pages` Page list | pending | pass | pending | pending |
-| `browser.show` Show window | pending | pass | pending | pending |
-| `browser.handoff` Your turn and Done | pending | pass | pending | pending |
+| `browser.pages` Page list | pending | pass | pending | pass |
+| `browser.show` Show window | pending | pass | pending | pass |
+| `browser.handoff` Your turn and Done | pending | pass | pending | pass |
 
 ### 12. File previews and folders
 
@@ -442,8 +442,7 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   (`features/support/browserbear.ts`).
 - The Swift app's dump has no Browser button or pane and it's frozen, so
   the pane's scenarios are `@swift-pending`; the two link scenarios aren't,
-  but weren't run against it (nor on Windows or Linux: the cloud host's disk
-  was full).
+  but weren't run against it, nor on Windows.
 - Codex's review found seven things, all fixed: the socket's connect ran on
   the main thread (now the writer thread connects), tabs.json was read
   whole every 0.75 s with no limit and merged in quadratic time (now only
@@ -464,7 +463,8 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
 - Buttons are Swift's small size (`PushButton::small`), and a long title
   ends with an ellipsis, beside the Swift app's pane in the same mock.
 - Verification: on Tinker Desk's desktop, browser-pane.feature with
-  panel-requests, reply-links and rails: 26 scenarios, 26 passed. Core's
+  panel-requests, reply-links and rails: 26 scenarios, 26 passed; on the
+  cloud host (Linux), browser-pane and panel-requests: 9 of 9. Core's
   browserbear and panel_requests tests, and the runner's thread-keys test.
 
 ### 2026-11-12 The limit box asks: Continue now on (`banner.limit`)
