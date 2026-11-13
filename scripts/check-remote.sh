@@ -754,6 +754,23 @@ while :; do
       echo "None of $HOST_LIST can run this check ($CANT), and it doesn't run on this Mac instead. Add a host that can to THREADBEAR_CHECK_HOST, or leave it unset for runner.json's." >&2
       exit "$BUSY_EXIT"
     fi
+    # The last word before this Mac takes the check: every host, on a fresh
+    # connection of its own. Any that logs in at all (anything but ssh's own
+    # 255, or no answer) is reachable, whatever went wrong on the way, and
+    # the M5 isn't the place for a check a reachable host couldn't take.
+    # Codex's reviews kept finding paths that took one for gone (a broken
+    # shared connection, a host back since it dropped, a login whose shell
+    # failed); asking here covers them all.
+    answering=""
+    for h in "${HOSTS[@]}"; do
+      case "$h" in -*|"") continue ;; esac
+      timed 20 "${PING[@]}" "$h" true </dev/null >/dev/null 2>&1
+      case $? in 255|124) ;; *) answering+="${answering:+, }$h" ;; esac
+    done
+    if [ -n "$answering" ]; then
+      echo "None of $HOST_LIST could take this check${CANT:+ ($CANT)}, but $answering still answers, so it doesn't run on this Mac instead. Run it again when that host is back to normal." >&2
+      exit "$BUSY_EXIT"
+    fi
     echo "None of $HOST_LIST can be reached, so this check can't run on any of them now." >&2
     exit 255
   fi

@@ -107,6 +107,9 @@ case "$cmd" in
   *"uname -s"*)
     # A host's "probe-fails" file: it answers, but the probe's mkdir fails.
     [ ! -f "$d/probe-fails" ] || exit 1
+    # "probe-255": the probe's connection fails as ssh's own 255, though a
+    # fresh one (the ping) still gets in.
+    [ ! -f "$d/probe-255" ] || exit 255
     # A host's "base" file says what folder it reports, if not its own.
     b="$d/home/.cache/threadbear-check"; [ -f "$d/base" ] && b="$(cat "$d/base")"
     # A host's "free-after" file: busy for that many more probes, then free.

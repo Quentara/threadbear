@@ -125,3 +125,11 @@ test('a hung check that ignores SIGTERM is still killed, and the next host runs 
   assert.ok(Date.now() - started < 60_000, `took ${Date.now() - started} ms`);
   assert.match(r.stdout, /ran on h2 now/);
 });
+
+test("a host whose probe fails as ssh's own 255 but takes a fresh connection is never this Mac's to stand in for", () => {
+  const s = setup({ h1: { state: 'free' } });
+  fs.writeFileSync(path.join(s.fake, 'h1', 'probe-255'), '');
+  const r = s.run('h1', 3600);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /but h1 still answers, so it doesn't run on this Mac instead/);
+});
