@@ -95,3 +95,29 @@ pointer could reveal an auto-hidden Dock after the check.
 
 `@picture-loading` gives the mock a cancellable scripted turn while a picture
 is delayed. Its script is temporary and no model runs.
+
+
+## Measuring performance on a shared host
+
+`desktop/scripts/remote.sh` takes `~/.cache/threadbear-perf.lock`, then
+`~/.cache/threadbear-check/lock`, for the whole command, including a build
+followed by a benchmark. It waits and says what it is waiting for. Other
+checkouts and landing checks cannot build over a measurement. Cargo and Swift
+build executables run at background priority; the benchmark keeps normal
+priority. Cancellation keeps the locks until the remote command has stopped.
+
+A measurement tool that can run directly starts with:
+
+```ts
+import { ensurePerfLock } from './perf-lock.ts';
+await ensurePerfLock();
+```
+
+Put the call after imports, before making fixtures, compiling helpers or
+starting an app. Use it in an A/B parent and its children, preserving
+`process.env` in child spawns: they share the parent's turn, including between
+runs. Keep this in entry points; `real-screen.ts` is also used by running
+spec scenarios and must not restart their process to take a lock. Remove manual `lockf` wrappers when using these tools: an outer manual lock cannot
+hand its ownership to the helper. Shell tools can use
+`perl scripts/perf-lock.pl - <command...>` with an open stdin channel; closing
+it cancels the run. `remote.sh` handles that channel itself.

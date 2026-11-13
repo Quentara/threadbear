@@ -151,6 +151,7 @@ export CARGO_TARGET_DIR="\$HOME/$target" CARGO_HTTP_MULTIPLEXING=false CARGO_NET
 export CARGO_PROFILE_DEV_DEBUG=line-tables-only
 export TMPDIR="\$HOME/$base/tmp"
 mkdir -p "\$TMPDIR"
+. scripts/build-priority.sh
 # What the specs need, the first time this folder's used.
 for dir in features app/Tools/mock-runner runner; do
   [ -d "\$dir/node_modules" ] || npm ci --silent --prefix "\$dir" >/dev/null 2>&1 || true

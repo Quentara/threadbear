@@ -26,6 +26,9 @@ import { SwiftDriver } from '../support/swift.ts';
 import { okValue, sleep, type Driver, type Dump } from '../support/driver.ts';
 import { windowFrame } from './real-screen.ts';
 import { fileURLToPath } from 'node:url';
+import { ensurePerfLock } from './perf-lock.ts';
+
+await ensurePerfLock();
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 

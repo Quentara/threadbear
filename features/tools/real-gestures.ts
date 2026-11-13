@@ -12,6 +12,9 @@ import { execFileSync, spawn } from 'node:child_process';
 import { GpuiDriver } from '../support/gpui.ts';
 import { sleep, type Dump } from '../support/driver.ts';
 import { assertInFront, swiftTool, windowFrame } from './real-screen.ts';
+import { ensurePerfLock } from './perf-lock.ts';
+
+await ensurePerfLock();
 
 const gesture = swiftTool('post-gesture');
 const dragger = swiftTool('realdrag');

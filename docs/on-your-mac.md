@@ -285,7 +285,11 @@ File references are where to look.
   `runner.json` (never `checkHosts`), copies the clone's files (not its history) with rsync over
   ssh to the first of them that's a Mac and answers, builds there under
   `~/.cache/threadbear-check/gpui` and copies the two binaries back with scp
-  (`desktop/scripts/remote.sh`); with update build hosts set but none
+  (`desktop/scripts/remote.sh`). Remote commands and performance tools keep
+  `~/.cache/threadbear-perf.lock` and `~/.cache/threadbear-check/lock` on the
+  host while they run, waiting for other builds, checks and measurements.
+  Temporary wrappers under the run's temp folder background Cargo and Swift
+  builds and are removed when the run ends. With update build hosts set but none
   answering it waits and tries again later, with only check hosts set it
   builds nothing and says so, and with neither it builds in that cache
   folder here. The new app is put together and signed here as

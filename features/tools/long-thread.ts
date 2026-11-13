@@ -7,6 +7,9 @@
 // a real GPU (Tinker Desk), or the frame times are software rendering's.
 import { GpuiDriver } from '../support/gpui.ts';
 import { sleep } from '../support/driver.ts';
+import { ensurePerfLock } from './perf-lock.ts';
+
+await ensurePerfLock();
 
 process.env.TB_MOCK_FIXTURES = process.argv[2];
 const app = new GpuiDriver();

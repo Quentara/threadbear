@@ -98,11 +98,13 @@ case "$cmd" in
     printf '%s\\n%s\\n%s\\n' "$b" "$(cat "$d/os" 2>/dev/null || echo Darwin)" "$(cat "$d/state")"
     # What the probe runs after the lock's "fi && ", for real.
     (cd "$d/home" && bash -c "\${cmd##*fi && }") ;;
+  # A blocking run can start with a nonblocking -k probe too. Match its
+  # actual blocking lock first, so that probe doesn't turn it into "now".
+  *"lockf -k"*) run_copy "after waiting" ;;
   *"lockf -t 0 -k"*)
     n="$(cat "$d/lose" 2>/dev/null || echo 0)"
     if [ "$n" -gt 0 ]; then echo $((n - 1)) >"$d/lose"; [ ! -f "$d/df-after" ] || cp "$d/df-after" "$d/df-out"; [ -f "$d/looks-free" ] || echo busy >"$d/state"; exit 75; fi
     run_copy now ;;
-  *"lockf -k"*) run_copy "after waiting" ;;
   *"flock -n -E 75"*) run_copy now ;;
   *"flock "*) run_copy "after waiting" ;;
   *) bash -c "$cmd" ;;
