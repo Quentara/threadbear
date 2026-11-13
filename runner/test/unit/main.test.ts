@@ -128,6 +128,7 @@ for (const createdAway of [false, true]) test(`the production scheduler runs a d
     const { threads } = await client.call('threads.list', { include: ['inbox'] });
     assert.equal(threads.find((t: { id: string }) => t.id === thread.id)?.onOldRunner, true, fs.readFileSync(path.join(home, 'runner.log'), 'utf8'));
     schedule ??= (await client.call('schedules.create', params)).schedule;
+    assert.ok(schedule, 'the primary returned the schedule');
     const state = checkStateFile(home, schedule.id);
     await patiently(() => fs.existsSync(state));
     assert.equal(fs.readFileSync(state, 'utf8').trim(), cwd, primary.out());
