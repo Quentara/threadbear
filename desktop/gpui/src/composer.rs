@@ -70,7 +70,8 @@ pub struct Composer {
     #[cfg(feature = "automation")]
     pub(crate) debug_opened: Option<(Vec<String>, usize)>,
     /// Stop was pressed and the turn hasn't ended yet: a spinner in its place.
-    stopping: bool,
+    /// When Stop was pressed (`still_stopping`).
+    stopping: Option<i64>,
     /// A refused send's draft, to put back at the next render.
     restore: Option<RestoreDraft>,
     /// The model picker's search and column, kept while it's open.
@@ -201,7 +202,7 @@ impl Composer {
             hover_serial: 0,
             #[cfg(feature = "automation")]
             debug_opened: None,
-            stopping: false,
+            stopping: None,
             restore: None,
             model_picker: None,
             card: CardState::default(),
@@ -569,10 +570,17 @@ impl Composer {
 
     /// The Stop button (⌘. goes through ThreadPane::stop too).
     fn stop(&mut self, cx: &mut Context<Self>) {
-        self.stopping = true;
+        self.stopping = Some(crate::now_ms());
         if let Some(pane) = self.pane() {
             pane.update(cx, |p, cx| p.stop(cx));
         }
+        // Drawn again once the spinner's time is up, in case nothing else
+        // draws it (a turn that ignored Stop and went quiet).
+        cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(std::time::Duration::from_millis(threadbear_core::composer::STOPPING_SHOWN_MS as u64)).await;
+            this.update(cx, |_, cx| cx.notify()).ok();
+        })
+        .detach();
         cx.notify();
     }
 
@@ -1298,7 +1306,7 @@ impl Composer {
                 .tip("Starting the thread")
                 .into_any_element();
         }
-        if running && !can_send && self.stopping {
+        if running && !can_send && self.stopping.is_some() {
             return circle()
                 .id("composer-stopping")
                 .test_support()
@@ -1497,8 +1505,8 @@ impl Render for Composer {
             self.input.update(cx, |s, cx| s.set_placeholder(placeholder, window, cx));
         }
         let running = self.pane().is_some_and(|p| p.read(cx).summary.busy());
-        if !running {
-            self.stopping = false;
+        if !running || !threadbear_core::composer::still_stopping(self.stopping, crate::now_ms()) {
+            self.stopping = None;
         }
         let strip = self.render_strip(cx);
         let creating = self.creating(cx);
