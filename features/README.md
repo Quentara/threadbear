@@ -131,8 +131,23 @@ Queued runs mark their source and target in use before waiting for the host
 locks and renew those markers until they finish.
 
 The performance wrapper registers the workload's process group and the GPUI
-driver's detached app and mock groups before starting them. After the worker
-ends, including a crash or KILL, it stops those registered groups before
+driver's detached app and mock groups before starting them. SwiftDriver uses
+`open` and Node adapters under that lease to register its private app and mock
+before exec too, including a start or rebuild killed before PID recording.
+The adapters stay in the checkout when the registry is retired. Only launch
+commands get a separate group; dumps and other commands stay in the worker's
+group. The instance path is recorded with the lease for cleanup diagnostics.
+
+The Swift app runs directly from its registered private bundle, preserving
+arguments, requested `--env` values and output files. It inherits the worker's
+environment; LaunchServices normally supplies launchd's environment. The mock
+uses `THREADBEAR_NODE` (or its old alias), else the worker's Node binary.
+Every remote Swift run uses this path, including specs and screenshots;
+ordinary debug launches outside a lease still use LaunchServices. The driver
+prints the direct-launch mode. Settle the app before sampling counters, and
+check LaunchServices/direct QoS and App Nap before treating timings as equivalent.
+
+After the worker ends, including a crash or KILL, it stops registered groups before
 unlocking. The registry is temporary, under
 `~/.cache/threadbear-check/perf-children-*`; records contain group IDs and start
 times, so a reused PID is left alone. Desk workloads register in that same run,

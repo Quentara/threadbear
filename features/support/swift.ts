@@ -3,6 +3,8 @@
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { Driver, Dump } from './driver.ts';
 
@@ -16,7 +18,16 @@ export class SwiftDriver implements Driver {
   private id = `spec-${process.pid}-${++instances}`;
 
   private async script(args: string[], timeoutSeconds = 60): Promise<string> {
-    const { stdout } = await run(script, args, {
+    // Only start/rebuild can detach work. Other commands stay in the worker's
+    // group, avoiding a registry entry for every dump in a polling loop.
+    const registry = (args[0] === 'start' || args[2] === 'rebuild') ? process.env.THREADBEAR_PERF_CHILDREN : undefined;
+    // A shared host lease gates the frozen launcher's detached mock and app.
+    // Ordinary debug launches still use LS, including its temp-folder setup.
+    const instance = registry ? path.join(fs.realpathSync(os.tmpdir()), 'threadbear-dev-app', this.id) : '';
+    const { stdout } = await run(registry ? 'perl' : script, registry
+      ? [path.join(root, 'scripts/perf-swift.pl'), '--run', registry,
+        process.env.THREADBEAR_NODE || process.env.THREADBARE_NODE || process.execPath, instance, script, ...args]
+      : args, {
       timeout: timeoutSeconds * 1000,
       maxBuffer: 32 * 1024 * 1024,
       // The other Macs' demo threads are their own feature's business, and
@@ -28,6 +39,7 @@ export class SwiftDriver implements Driver {
   }
 
   async start(): Promise<void> {
+    if (process.env.THREADBEAR_PERF_CHILDREN) console.error('Swift reference: direct private-bundle launch under a shared host lease.');
     // The build is done once, up front (features/README.md): `start` would
     // otherwise spend several seconds finding nothing to build each scenario.
     const fixtures = process.env.TB_MOCK_FIXTURES ? ['--fixtures', process.env.TB_MOCK_FIXTURES] : [];
