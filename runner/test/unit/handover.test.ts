@@ -977,39 +977,39 @@ test('Peers.openCards, from a release before drain.openCards: reads the whole lo
 
 // THREADBEAR-1Z: read here a thread at a time on one shared deadline, the
 // first slow answer took it all, and no thread on either draining runner was
-// read. Each runner now sends only its open cards (drain.openCards), all
-// runners side by side, and no log crosses the connection.
-test("Peers.openCards: each draining runner's own open cards, side by side, with no logs read", async () => {
+// read. Each runner now sends a thread's open cards (drain.openCards), every
+// thread at once, and no log crosses the connection.
+test("Peers.openCards: each thread's open cards from its draining runner, all at once, a slow one costing only its own", async () => {
   const h = makeHarness();
   const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
   const since = new Date().toISOString();
-  writeDrainInfo(h.home, { pid: 474747, port: 1, version: 'older', since, threads: ['t-hung'] });
-  writeDrainInfo(h.home, { pid: 484848, port: 2, version: 'old', since, threads: ['t-a', 't-b'] });
+  writeDrainInfo(h.home, { pid: 474747, port: 1, version: 'older', since, threads: ['t-gone'] });
+  writeDrainInfo(h.home, { pid: 484848, port: 2, version: 'old', since, threads: ['t-hung', 't-a', 't-b'] });
   const ts = '2026-11-13T00:00:00.000Z';
   const asked: string[] = [];
   const clientFor = (pid: number, threads: string[]) => ({
-    call: async (method: string) => {
+    call: async (method: string, p: any) => {
       if (method === 'drain.hello') return { threads, version: 'old' };
       if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
-      if (method !== 'threads.subscribe') asked.push(method);
-      // The first runner has stopped answering.
-      if (method === 'drain.openCards' && pid === 474747) return new Promise(() => {});
-      if (method === 'drain.openCards') return { threads: [{ threadId: 't-a', events: [{ type: 'question.requested', seq: 9, ts, approvalId: 'q-a', questions: [] }] }, { threadId: 't-b', events: [] }] };
+      if (method !== 'threads.subscribe') asked.push(`${method} ${p.threadId}`);
+      // The first runner has stopped answering, and so has one thread on the second.
+      if (method === 'drain.openCards' && (pid === 474747 || p.threadId === 't-hung')) return new Promise(() => {});
+      if (method === 'drain.openCards') return { events: p.threadId === 't-a' ? [{ type: 'question.requested', seq: 9, ts, approvalId: 'q-a', questions: [] }] : [] };
       return {};
     },
     onNotification: () => () => {},
     waitClosed: () => new Promise<never>(() => {}),
     close: () => {},
   });
-  const connect = async (_port: number, _token: string, _legacy: boolean, pid: number) => clientFor(pid, pid === 474747 ? ['t-hung'] : ['t-a', 't-b']) as any;
+  const connect = async (_port: number, _token: string, _legacy: boolean, pid: number) => clientFor(pid, pid === 474747 ? ['t-gone'] : ['t-hung', 't-a', 't-b']) as any;
   const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect, alive: () => true });
   await peers.connectAll();
   const found = await peers.openCards({ deadlineMs: 300 });
   assert.deepEqual(found.map((f) => [f.thread.id, f.thread.onOldRunner, f.events.map((e) => (e as { approvalId: string }).approvalId)]), [['t-a', true, ['q-a']], ['t-b', true, []]]);
-  assert.deepEqual(asked, ['drain.openCards', 'drain.openCards']);
+  assert.deepEqual(asked.sort(), ['drain.openCards t-a', 'drain.openCards t-b', 'drain.openCards t-gone', 'drain.openCards t-hung']);
 });
 
-test('Runner.openCards: a draining runner\'s kept threads with the cards nothing has answered, a chunk of log at a time', async () => {
+test('Runner.openCards: the cards nothing has answered on a kept thread, a chunk of log at a time', async () => {
   const h = makeHarness();
   const { thread } = h.runner.create({ text: 'Clean up', accountId: 'claude-3', permissionMode: 'ask' });
   const s = h.adapter.last;
@@ -1022,22 +1022,17 @@ test('Runner.openCards: a draining runner\'s kept threads with the cards nothing
   h.runner.respondApproval({ threadId: thread.id, approvalId: req.approvalId, decision: 'allow' });
   await first;
   void s.sink.requestApproval({ toolUseId: 'tu1', name: 'Bash', title: 'rm -rf build', input: { command: 'rm -rf build' }, canAlwaysAllow: true, signal: ac.signal });
-  const other = h.runner.create({ text: 'Other', accountId: 'claude-3' }).thread;
+  const idle = h.runner.create({ text: 'Other', accountId: 'claude-3' }).thread;
   h.adapter.last.init();
-  assert.equal((await h.runner.openCards()).length, 0, 'not draining: nothing kept');
-  await h.runner.beginDrain([thread.id, other.id], { onHandedOver: () => {}, backgroundMs: 30 * MIN });
-  const show = (cards: { threadId: string; events: PersistedEvent[] }[]) => cards.map((c) => [c.threadId, c.events.map((e) => [e.type, (e as { title?: string }).title])]);
-  const want = [[thread.id, [['approval.requested', 'rm -rf build']]], [other.id, []]];
-  assert.deepEqual(show(await h.runner.openCards(2)), want);
-  assert.deepEqual(show(await h.runner.openCards()), want);
-  // A log that can't be read costs only its own thread.
-  const store = h.runner.store;
-  const log = store.log.bind(store);
-  store.log = (id: string) => {
-    if (id === other.id) throw new Error('EIO');
-    return log(id);
-  };
-  assert.deepEqual(show(await h.runner.openCards()), [want[0]]);
+  const moved = (e: unknown) => e instanceof RpcError && e.code === ErrorCode.moved;
+  // Not draining: nothing kept to ask about.
+  await assert.rejects(h.runner.openCards(thread.id), moved);
+  await h.runner.beginDrain([thread.id, idle.id], { onHandedOver: () => {}, backgroundMs: 30 * MIN });
+  const show = (events: PersistedEvent[]) => events.map((e) => [e.type, (e as { title?: string }).title]);
+  assert.deepEqual(show(await h.runner.openCards(thread.id, 2)), [['approval.requested', 'rm -rf build']]);
+  assert.deepEqual(show(await h.runner.openCards(thread.id)), [['approval.requested', 'rm -rf build']]);
+  assert.deepEqual(await h.runner.openCards(idle.id), []);
+  await assert.rejects(h.runner.openCards('t-not-here'), moved);
   ac.abort();
 });
 

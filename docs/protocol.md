@@ -1579,13 +1579,13 @@ restart wait for busy threads. It hands over instead:
   `threads.search` and `hello` include kept threads.
 - The draining runner's sync stops at the handover, and the primary only
   hears its events from then on. So the primary's sync starts listening
-  but holds its writes while it asks each draining runner, all at once,
-  for the cards nothing has answered on its kept threads
-  (`drain.openCards {}` → `{ threads: { threadId, events }[] }`, each
-  thread's open request events oldest first, worked out from its whole log
-  there a chunk at a time, so no log crosses the connection; a thread whose
-  log can't be read is left out), within 5 seconds: a draining
-  runner that stops answering costs its threads their cards, not the
+  but holds its writes while it asks the draining runners for the cards
+  nothing has answered on each kept thread, every thread at once
+  (`drain.openCards { threadId }` → `{ events }`, the thread's open request
+  events oldest first, worked out from its whole log there a chunk at a
+  time, so no log crosses the connection; `moved` for a thread it no
+  longer keeps), within 5 seconds: a thread not read in time, or not at
+  all, costs only that thread its card, not the others or the
   startup. A runner from before `drain.openCards` answers it "method not
   found", and its logs are read instead, a thread at a time
   (`threads.events`, a page at a time from the end). It puts them back on

@@ -350,35 +350,42 @@ export class Peers {
   // put back on their rows
   // (ConvexSync.seedCards). It subscribed from the end, so it never saw
   // their requests, and the old runner's own sync stopped at the handover.
-  // Each draining runner works them out from its own logs (drain.openCards)
-  // and sends only those, all of them side by side: read here a thread at a
-  // time on one shared deadline, the first slow answer of a busy startup
-  // used it up and no kept thread on either draining runner was read
-  // (THREADBEAR-1Z), and reading every log at once could pile up past the
-  // 32 MiB a runner lets wait on a connection (rpc.ts CLOSE_BYTES), which
-  // closes it, and the primary would stop a healthy runner as gone.
-  // By `deadlineMs` at most, as startup waits on it: a draining runner that
-  // has stopped answering gives what's read so far, and a thread not read
-  // at all keeps its row as it is.
+  // Each draining runner works a thread's out from its own log
+  // (drain.openCards) and sends only those, every thread at once: read here
+  // a thread at a time on one shared deadline, the first slow answer of a
+  // busy startup used it up and no kept thread on either draining runner
+  // was read (THREADBEAR-1Z), and reading every log at once could pile up
+  // past the 32 MiB a runner lets wait on a connection (rpc.ts CLOSE_BYTES),
+  // which closes it, and the primary would stop a healthy runner as gone.
+  // By `deadlineMs` at most, as startup waits on it: a thread not read in
+  // time, or not at all, keeps its row as it is, and costs no other thread.
   async openCards(opts: { deadlineMs?: number; page?: number } = {}): Promise<{ thread: ThreadSummary; events: PersistedEvent[] }[]> {
     const until = Date.now() + (opts.deadlineMs ?? OPEN_CARDS_DEADLINE_MS);
     const size = opts.page ?? OPEN_CARDS_PAGE;
-    const fromPeer = async (peer: Peer): Promise<{ peer: Peer; threadId: string; events: PersistedEvent[] }[]> => {
-      try {
-        const r = await withTimeout(peer.client.call<{ threads: { threadId: string; events: PersistedEvent[] }[] }>('drain.openCards', {}), Math.max(1, until - Date.now()));
-        return r.threads.map((t) => ({ peer, threadId: t.threadId, events: t.events }));
-      } catch (e) {
-        if (!((e instanceof RpcClientError || e instanceof RpcError) && e.code === ErrorCode.methodNotFound)) {
-          this.deps.log.warn("could not read a draining runner's open cards", { pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
-          return [];
-        }
-      }
+    type Read = { peer: Peer; threadId: string; events: PersistedEvent[] };
+    const unknown = (e: unknown) => (e instanceof RpcClientError || e instanceof RpcError) && e.code === ErrorCode.methodNotFound;
+    const fromPeer = async (peer: Peer): Promise<Read[]> => {
+      const ids = [...peer.threads.keys()];
+      let old = false;
+      const asked = await Promise.all(
+        ids.map(async (threadId): Promise<Read | undefined> => {
+          try {
+            const r = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('drain.openCards', { threadId }), Math.max(1, until - Date.now()));
+            return { peer, threadId, events: r.events };
+          } catch (e) {
+            if (unknown(e)) old = true;
+            else this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
+            return undefined;
+          }
+        }),
+      );
+      if (!old) return asked.filter((r) => r !== undefined);
       // A release from before drain.openCards: its logs, one thread at a time
       // so only one page waits on the connection, the whole log a page at a
       // time from the end: a sub-agent's card can outlive the turn that asked
       // it, with any amount of work after it (Codex's review, 13 Nov).
-      const read: { peer: Peer; threadId: string; events: PersistedEvent[] }[] = [];
-      for (const threadId of [...peer.threads.keys()]) {
+      const read: Read[] = [];
+      for (const threadId of ids) {
         const log: PersistedEvent[] = [];
         try {
           let before: number | undefined;

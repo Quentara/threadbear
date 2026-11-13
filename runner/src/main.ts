@@ -1203,7 +1203,10 @@ async function main(): Promise<void> {
             setTimeout(() => runner.recheckHandovers(), 1000);
             return { pid: process.pid, version: RUNNER_VERSION, release: RELEASE.release, threads: runner.keeping() ?? [] };
           },
-          'drain.openCards': async () => ({ threads: await runner.openCards() }),
+          'drain.openCards': async (p) => {
+            if (typeof p.threadId !== 'string') throw new RpcError(ErrorCode.badParams, 'threadId must be a string');
+            return { events: await runner.openCards(p.threadId) };
+          },
           'drain.stop': () => {
             setImmediate(() => void stop('drain.stop'));
             return {};
