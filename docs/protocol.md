@@ -1579,12 +1579,16 @@ restart wait for busy threads. It hands over instead:
   `threads.search` and `hello` include kept threads.
 - The draining runner's sync stops at the handover, and the primary only
   hears its events from then on. So the primary's sync starts listening
-  but holds its writes while it reads each kept thread's whole log
-  (`threads.events`, 1,000 events a page from the end, four threads at a
-  time on each draining runner, all within 5 seconds: a draining runner
-  that stops answering costs a thread its card, not the startup, and a
-  slow thread doesn't cost the others theirs) for the cards nothing has answered, puts them back on the
-  thread's row and marks every thread it read, then writes
+  but holds its writes while it asks each draining runner, all at once,
+  for the cards nothing has answered on its kept threads
+  (`drain.openCards {}` → `{ threads: { threadId, events }[] }`, each
+  thread's open request events oldest first, worked out from its whole log
+  there, so no log crosses the connection), within 5 seconds: a draining
+  runner that stops answering costs its threads their cards, not the
+  startup. A runner from before `drain.openCards` answers it "method not
+  found", and its logs are read instead, a thread at a time
+  (`threads.events`, a page at a time from the end). It puts them back on
+  the thread's row and marks every thread it read, then writes
   (`Peers.openCards`, `ConvexSync.seedCards`, `release`). A card asked for
   or answered on the draining runner later reaches the row with the
   `thread.updated` that follows it, written straight away even while the
@@ -1665,7 +1669,8 @@ restart wait for busy threads. It hands over instead:
 - The runner's notice when it hands over starts "The runner is restarting
   onto a new release", which clients already read as a restart under way.
 
-The methods between runners (`drain.hello`, `drain.stop`) and
+The methods between runners (`drain.hello`, `drain.openCards`,
+`drain.stop`) and
 `drain.handedOver`, `drain.usage` and `drain.projects` are for runners only.
 
 ### Stopped background work

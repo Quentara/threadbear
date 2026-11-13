@@ -3,9 +3,10 @@
 // fork's change to one area doesn't clash with another's. Each method's `this`
 // is the Runner; runner.ts puts them on its prototype.
 import { neutraliseCopied, realCopy } from '../real-copy.ts';
+import { openCardEvents } from '../open-cards.ts';
 import type { Runner } from '../runner.ts';
 import type { RunnerPart } from './part.ts';
-import type { ThreadSummary } from '../protocol.ts';
+import type { PersistedEvent, ThreadSummary } from '../protocol.ts';
 import type { ThreadRecord } from '../store.ts';
 import type { Drain, ThreadState } from '../runner.ts';
 import { DRAIN_AGENT_MS, DRAIN_BACKGROUND_MS, DRAIN_CHECK_MS, DRAIN_MAX_OLD_MS, DRAIN_SETTLE_MS, newRuntime } from '../runner.ts';
@@ -60,6 +61,16 @@ export const handoversPart = {
   // The threads a draining runner still has; undefined when not draining.
   keeping(this: Runner): string[] | undefined {
     return this.draining ? [...this.draining.keep] : undefined;
+  },
+
+  // drain.openCards: the cards still open on each thread a draining runner
+  // keeps, read from its own logs here, so only those few events cross to
+  // the primary rather than every log (THREADBEAR-1Z, Peers.openCards).
+  openCards(this: Runner): { threadId: string; events: PersistedEvent[] }[] {
+    return (this.keeping() ?? []).filter((id) => this.threads.has(id)).map((threadId) => {
+      const log = this.store.log(threadId);
+      return { threadId, events: openCardEvents(log.read(1, log.lastSeq)) };
+    });
   },
 
   // Whether this runner has the thread (a draining one lets them go).
