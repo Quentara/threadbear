@@ -1514,10 +1514,14 @@ impl TranscriptModel {
         let from = summary.and_then(|k| turns.iter().position(|id| *id == key(k))).unwrap_or(0);
         let mut out = HashSet::new();
         for id in &turns[from..] {
-            let items: Vec<usize> = turn.clone().filter(|&k| key(k) == *id).collect();
+            // Without the error's own words over again (`is_error_echo`),
+            // before the reply is chosen: left in, they beat a summary the
+            // turn wrote just before its login ran out, and taking them out
+            // afterwards left that turn with no reply at all (Codex's
+            // review, 13 Nov).
+            let items: Vec<usize> = turn.clone().filter(|&k| key(k) == *id && !self.is_error_echo(k)).collect();
             out.extend(self.reply_of(&items));
         }
-        out.retain(|&k| !self.is_error_echo(k));
         out
     }
 
@@ -1528,8 +1532,14 @@ impl TranscriptModel {
     /// finished turn draws only the error.
     fn is_error_echo(&self, k: usize) -> bool {
         let item = &self.items[k];
-        let (RowContent::Assistant(said), Some(turn)) = (&item.content, &item.turn_id) else { return false };
-        let error = self.error_row_for_turn.get(turn).and_then(|id| self.item_index.get(id)).and_then(|&i| self.items.get(i));
+        let RowContent::Assistant(said) = &item.content else { return false };
+        // Its turn's error; for a message that never got its turn (one that
+        // was streaming as the app reconnected keeps none), the error right
+        // after it.
+        let error = match &item.turn_id {
+            Some(turn) => self.error_row_for_turn.get(turn).and_then(|id| self.item_index.get(id)).and_then(|&i| self.items.get(i)),
+            None => self.items.get(k + 1),
+        };
         let Some(RowContent::Error { message, .. }) = error.map(|row| &row.content) else { return false };
         let message = message.trim();
         !message.is_empty() && message == said.text.trim()

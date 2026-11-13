@@ -145,9 +145,53 @@ fn a_failed_turns_other_words_stay() {
     assert_eq!(ids(&model), ["u:1", "a:m1", "e:3", "f:t1"]);
 }
 
+/// The turn ended its work with end_turn and a summary, and its login ran
+/// out before it wrote its reply: the summary is the reply, not lost under
+/// the limit's words (from Codex's review of this).
+#[test]
+fn a_summary_written_before_the_limit_is_still_the_reply() {
+    let mut events = vec![
+        mike(1, "Patch it", "t1"),
+        call_titled(2, "c1", "make"),
+        result(3, "c1"),
+        call_with(4, "e1", "mcp__threadbear__end_turn", "command", "ls", json!({"needs": "nothing"})),
+        result_text(5, "e1", "Noted: this thread is done."),
+        event_turn(6, "assistant.text", json!({"itemId": "e1.summary", "text": "- Patched.", "summary": true}), Some("t1")),
+    ];
+    events.extend(ran_dry(7, "t1"));
+    events.push(note(10, MOVED));
+    let model = from_events(events);
+    let rows = ids(&model);
+    assert!(rows.iter().any(|r| r == "a:e1.summary"), "{rows:?}");
+    assert!(rows.iter().any(|r| r == "n:10"), "{rows:?}");
+    assert!(!rows.iter().any(|r| r == "a:limit-t1" || r == "e:8"), "{rows:?}");
+}
+
+/// A message that was streaming as the app reconnected never gets its turn
+/// (the live copy has none), so its error is found by place.
+#[test]
+fn an_echo_with_no_turn_goes_too() {
+    let mut events = work_then_dry();
+    events[3].turn_id = None;
+    events.push(note(7, MOVED));
+    let model = from_events(events);
+    let rows = ids(&model);
+    assert!(!rows.iter().any(|r| r == "a:limit-t1" || r == "e:5"), "{rows:?}");
+}
+
+/// Mike's No on the limit box takes the wait back: that stays on show too,
+/// or the line above it would go on promising a time.
+#[test]
+fn turning_carry_on_off_shows_under_the_wait() {
+    let mut events = work_then_dry();
+    events.extend([note(7, WAITING), note(8, "Won't carry on by itself. Send a message when you want it to.")]);
+    let model = from_events(events);
+    assert_eq!(ids(&model), ["u:1", "g:t:c1", "f:t1", "n:7", "n:8"]);
+}
+
 #[test]
 fn which_notes_are_a_logins() {
-    for text in [MOVED, MOVED_AGAIN, WAITING, "Moved to Codex: mike@example.net isn't in Claude.", "Still no room in Claude. Carrying on at 5:00 am.", "mike@example.net hit its usage limit. Carrying on at 6:10 pm when mike@example.net is back."] {
+    for text in [MOVED, MOVED_AGAIN, WAITING, "Won't carry on by itself. Send a message when you want it to.", "Moved to Codex: mike@example.net isn't in Claude.", "Still no room in Claude. Carrying on at 5:00 am.", "mike@example.net hit its usage limit. Carrying on at 6:10 pm when mike@example.net is back."] {
         assert!(RowContent::Note(text.to_owned()).is_login_note(), "{text}");
     }
     // A move to another folder is one Mike (or the agent) asked for.

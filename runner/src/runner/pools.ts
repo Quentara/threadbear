@@ -277,6 +277,8 @@ export const poolsPart = {
       rec.carryOnAtReset = false;
       if (rec.waitingForRoom) {
         delete rec.waitingForRoom;
+        // Stays on show in the app by its first words, under the wait
+        // note it takes back (is_login_note in desktop/core/src/reducer/row.rs).
         this.emit(st, { type: 'system.note', text: "Won't carry on by itself. Send a message when you want it to." });
         this.armRoomTimer();
       }
