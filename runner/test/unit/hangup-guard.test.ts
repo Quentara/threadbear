@@ -40,11 +40,25 @@ function tmp(t: { after: (fn: () => void) => void }) {
   return dir;
 }
 
-test('a finished command keeps its output and exit code, and gets no stdin', () => {
-  const r = spawnSync('/bin/sh', ['-c', guarded('-', 'bash', '-c', `echo "it's out"; echo err >&2; read x; echo "in=[$x]"; exit 7`)], { input: 'typed\n', encoding: 'utf8' });
-  assert.equal(r.status, 7);
-  assert.equal(r.stdout, "it's out\nin=[]\n");
-  assert.equal(r.stderr, 'err\n');
+// The channel stays open until the command has finished, as a live ssh's
+// does: closed straight after the typing (spawnSync's input), it was the ssh
+// going, and on a busy Mac the guard stopped the command (143) before its
+// exit 7 (the runner's release build, 13 Nov).
+test('a finished command keeps its output and exit code, and gets no stdin', async () => {
+  const ssh = spawn('/bin/sh', ['-c', guarded('-', 'bash', '-c', `echo "it's out"; echo err >&2; read x; echo "in=[$x]"; exit 7`)], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  ssh.stdout.setEncoding('utf8').on('data', (d: string) => (out += d));
+  ssh.stderr.setEncoding('utf8').on('data', (d: string) => (err += d));
+  const exited = new Promise<number | null>((resolve) => ssh.on('exit', resolve));
+  const closed = new Promise((resolve) => ssh.on('close', resolve));
+  ssh.stdin.write('typed\n');
+  const status = await exited;
+  ssh.stdin.end();
+  await closed;
+  assert.equal(status, 7);
+  assert.equal(out, "it's out\nin=[]\n");
+  assert.equal(err, 'err\n');
 });
 
 test('the ssh going stops the command and everything under it', async (t) => {
