@@ -288,7 +288,11 @@ impl Threadbear {
         // waits for a restarting runner (`sendDecision`'s `holding`).
         let remote = self.threads.get(&thread).is_some_and(|t| t.runner_id.is_some());
         let holding = !remote && self.client.restart_under_way();
-        if !matches!(self.status, Status::Connected { .. }) && !holding {
+        // Connected by the client's own word too: it says so a moment before
+        // the app hears it, and the restart it held for is already over then
+        // (Codex's review, 13 Nov).
+        let connected = matches!(self.status, Status::Connected { .. }) || self.client.connected_session().is_some();
+        if !connected && !holding {
             self.show_error("Not connected to the runner, so that wasn't sent.".to_owned(), cx);
             // Once this update is over: the card's own update is what sent
             // it (a pick, Return in its box), and GPUI refuses to update the

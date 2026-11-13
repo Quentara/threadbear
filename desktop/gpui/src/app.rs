@@ -820,6 +820,11 @@ impl Threadbear {
                     // go in the error bar (`notice`).
                     let message = params["message"].as_str().unwrap_or("");
                     if threadbear_client::restart::RunnerRestart::parse(message).is_some() {
+                        // Heard while it's still reconnecting: this outage is
+                        // the restart's now (`restart_outage`).
+                        if !matches!(self.status, Status::Connected { .. }) {
+                            self.note_restart_outage();
+                        }
                         self.refresh_restart(cx);
                         self.watch_restart_expiry(cx);
                     } else if params["level"].as_str().is_some_and(|l| l != "info") && !message.is_empty() {
@@ -967,6 +972,12 @@ impl Threadbear {
                         this.open_pending(cx);
                         this.try_waiting_link(cx);
                     }
+                    // A load the connection cut off says nothing here: the
+                    // connection banner speaks for that (quietly through a
+                    // restart), and the list loads again once it's back. A
+                    // restart's drop put "The connection to the runner
+                    // closed" under the search box (Codex's review, 13 Nov).
+                    Err(e) if e.is_connection() => {}
                     Err(e) => this.list_error = Some(e.message),
                 }
                 cx.notify();
