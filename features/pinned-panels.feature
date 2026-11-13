@@ -23,6 +23,10 @@ Feature: A side panel pinned to its thread
     When I open the thread "Rebuild the three landing pages"
     And I show the "deploys.previews" section of the pane
     And I choose "Pin" from the "deploys.previews" panel's menu
+    # The GPUI app writes its settings at most every 300 ms, and the spec's
+    # quit kills it without waiting for that: the pin, a moment after the
+    # section showed, was lost on GitHub's slower machines.
+    And I wait a moment
     And the app is quit and opened again
     Then "Previews" is pinned to "Rebuild the three landing pages" and showing
     When I choose "Unpin" from the pinned "Previews" panel's menu
