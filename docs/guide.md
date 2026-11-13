@@ -1103,6 +1103,21 @@ to continue, with the conversation carried across. It pins the thread to
 that Codex login. Anything you've typed in the message field stays there.
 The switch happens only when you click.
 
+OpenCode and Cursor, and other agent CLIs that speak the Agent Client
+Protocol, get threads of their own too. If one is installed and logged in
+it turns up as a login and a pool, with its models in the picker. OpenCode's
+free models work with no login; Cursor needs `agent login` first.
+Everything the agent wants to do comes through Threadbear first: on Ask and
+Plan first you get the usual cards, Auto behaves like Ask, and Full access
+goes ahead without them. A folder's own OpenCode config and plugins aren't
+read in these threads. Cursor can't be told to always ask, so its Ask, Auto
+and Plan first threads run in its read-only modes and can't change
+anything; to let Cursor change files, use Full access. Small jobs (titles
+and summaries) stay on Claude unless you pick a pool of only OpenCode
+logins for them in Settings. There are no usage readings, sandbox or going
+back to an earlier message for these yet, and Threadbear only updates their
+CLIs when you press Update in the Updates panel.
+
 Titles, the librarian and Wake when… run on a Claude login, so with only
 Codex they don't happen: threads keep the first line of their first message
 as their title.

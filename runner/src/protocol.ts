@@ -4,8 +4,8 @@
 
 export const PROTOCOL_VERSION = 1;
 
-// cursor and opencode run over ACP (adapters/acp/), behind the acpAgents
-// experiment: activeProviders (providers.ts) is the list a runner offers.
+// cursor and opencode run over ACP (adapters/acp/); each turns up as a login
+// only where its CLI is installed and logged in (adapters/acp/agents.ts).
 export type Provider = 'claude' | 'codex' | 'cursor' | 'opencode';
 export const PROVIDERS: readonly Provider[] = ['claude', 'codex', 'cursor', 'opencode'];
 

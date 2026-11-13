@@ -45,8 +45,6 @@ export type AcpAdapterDeps = {
   agent: AcpAgent;
   // Read for every process: runner.json's path, or wherever it's installed.
   binary: () => string | undefined;
-  // The acpAgents experiment. Off, a thread on one of these can't start.
-  on: () => boolean;
   registry: ProcessRegistry;
   log: Logger;
   toolsFor?: (threadId: string) => ToolDefinition[];
@@ -105,7 +103,6 @@ export class AcpAdapter implements AgentAdapter {
 
   private binary(): string {
     const name = providerName(this.provider);
-    if (!this.deps.on()) throw new Error(`${name} threads are off: the acpAgents experiment isn't on.`);
     const bin = this.deps.binary();
     if (!bin) throw new Error(`Threadbear can't find ${name} on this Mac.`);
     return bin;
@@ -555,7 +552,6 @@ export class AcpSession implements AgentSession {
     this.state = 'turn';
     let result: TurnResult;
     try {
-      if (!this.deps.on()) throw new Error(`${providerName(this.deps.agent.provider)} threads are off: the acpAgents experiment isn't on.`);
       // Between turns, so the next message takes any change made during this one.
       await this.applyMode();
       if (this.modelChanged) {

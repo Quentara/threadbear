@@ -90,7 +90,7 @@ export type Config = {
   // one the codex next to the runner's Node; never ~/.local/bin/codex.
   codexPath?: string;
   // Used as is by the ACP agents (adapters/acp/agents.ts), else wherever
-  // each is installed. Only with the acpAgents experiment on.
+  // each is installed.
   cursorPath?: string;
   opencodePath?: string;
   codexArgs: string[]; // extra `codex app-server` arguments

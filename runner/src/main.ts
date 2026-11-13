@@ -188,7 +188,6 @@ async function main(): Promise<void> {
   const projectControl = () => projectRouter(projects, () => primaryLink, { draining: () => draining, holds: (threadId) => runner.has(threadId) });
   // Keeps both CLIs current (E). Its hooks call back into the runner and
   // the Restarter, made below; nothing calls them before start().
-  const acpOn = () => experimentOn(cfg.home, 'acpAgents');
   const acpBinary = (p: AcpProvider) => () => ACP_AGENTS[p].findBinary({ explicit: p === 'cursor' ? cfg.cursorPath : cfg.opencodePath, home: os.homedir(), pathEnv: process.env.PATH ?? '' });
   const updates = new CliUpdates({
     cfg,
@@ -202,7 +201,7 @@ async function main(): Promise<void> {
     },
     codex: { resolve: (start) => resolveCodexBinary(start), checkSurface, testedVersion },
     notice: (level, message) => runner.notice(level, message),
-    acp: { on: acpOn, providers: ACP_PROVIDERS, binary: (p) => acpBinary(p as AcpProvider)(), updateArgs: (p) => ACP_AGENTS[p as AcpProvider].updateArgs },
+    acp: { providers: ACP_PROVIDERS, binary: (p) => acpBinary(p as AcpProvider)(), updateArgs: (p) => ACP_AGENTS[p as AcpProvider].updateArgs },
   });
   // Other CLIs you use alongside Threadbear (Grok, Muse...), from runner.json.
   const extraUpdates = new ExtraUpdates({ home: cfg.home, log, clock: realClock, extra: cfg.cliUpdates.extra ?? [] });
@@ -287,7 +286,6 @@ async function main(): Promise<void> {
       new AcpAdapter({
         agent: ACP_AGENTS[p],
         binary: acpBinary(p),
-        on: acpOn,
         registry,
         log,
         toolsFor: codexStyleTools,
@@ -303,7 +301,7 @@ async function main(): Promise<void> {
     settings: () => cfg.models,
     claudePath: cfg.claudePath,
     registry,
-    askers: Object.fromEntries(ACP_PROVIDERS.filter((p) => PROVIDER_INFO[p].smallJobs).map((p) => [p, acpAsker({ agent: ACP_AGENTS[p], binary: acpBinary(p), on: acpOn, registry, log })])),
+    askers: Object.fromEntries(ACP_PROVIDERS.filter((p) => PROVIDER_INFO[p].smallJobs).map((p) => [p, acpAsker({ agent: ACP_AGENTS[p], binary: acpBinary(p), registry, log })])),
     poolHost: { pool: (id) => runner.smallModelPool(id), ranDry: (id) => runner.noteRanDry(id) },
   });
   const projects = new Projects({ home: cfg.home, clock: realClock, log });
