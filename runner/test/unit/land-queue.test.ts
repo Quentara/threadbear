@@ -678,7 +678,9 @@ async function brokenMainQueue(fixBreaks: boolean) {
   // f's commit is the repair: fix.txt. Without it, any change to b or c
   // fails on main's own error.
   commit(f.path, { 'fix.txt': 'fixed\n' }, 'Repair main');
+  // a's own check fails too, so main stays where the limits below were set.
   const check = slowCheck(root) + `; if (test -f b.txt || test -f c.txt) && ! test -f fix.txt; then exit 1; fi` +
+    `; if test -f a.txt && ! test -f b.txt && ! test -f c.txt && ! test -f fix.txt; then exit 1; fi` +
     (fixBreaks ? '; ! test -f fix.txt' : '');
   const first = land({ ...a, check }, capture().opts);
   await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
@@ -687,14 +689,15 @@ async function brokenMainQueue(fixBreaks: boolean) {
   await until(() => caps.slice(0, 2).every((x) => x.out.some((l) => l.startsWith('Waiting for another landing'))), 'b and c waiting');
   // As after earlier failed group checks: each to be checked alone.
   const common = path.join(main, '.git');
-  for (const e of waiting(common)) fs.writeFileSync(path.join(queueDir(common), `${e.id}.json`), JSON.stringify({ ...e, limit: 1 }));
+  const at = sh(main, 'git rev-parse main');
+  for (const e of waiting(common)) fs.writeFileSync(path.join(queueDir(common), `${e.id}.json`), JSON.stringify({ ...e, limit: 1, limitAt: at }));
   rest.push(land({ ...f, check }, { ...caps[2].opts, despiteRed: true }));
   try {
     await until(() => caps[2].out.some((l) => l.startsWith('Waiting for another landing')), 'the fix waiting');
   } finally {
     write(root, { release: '' });
   }
-  assert.equal(await first, 0);
+  assert.equal(await first, 1);
   return { main, root, codes: await Promise.all(rest), caps };
 }
 
@@ -740,4 +743,23 @@ test("an ordinary landing doesn't get past the red hold by riding with a fix tha
   } else {
     assert.match(cn.err.join('\n'), /Held: guard is red on main\./);
   }
+});
+
+test('limits from a failed group check lapse once main has moved', async () => {
+  const { root, main } = makeRepo();
+  const [a, b, c] = branches(main, ['a', 'b', 'c']);
+  const check = slowCheck(root);
+  const first = land({ ...a, check }, capture().opts);
+  await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const caps = [capture(), capture()];
+  const rest = [land({ ...b, check }, caps[0].opts), land({ ...c, check }, caps[1].opts)];
+  await until(() => caps.every((x) => x.out.some((l) => l.startsWith('Waiting for another landing'))), 'b and c waiting');
+  // Set on the main before a lands: a lands, so they no longer hold.
+  const common = path.join(main, '.git');
+  const at = sh(main, 'git rev-parse main');
+  for (const e of waiting(common)) fs.writeFileSync(path.join(queueDir(common), `${e.id}.json`), JSON.stringify({ ...e, limit: 1, limitAt: at }));
+  write(root, { release: '' });
+  assert.equal(await first, 0);
+  assert.deepEqual(await Promise.all(rest), [0, 0]);
+  assert.equal(fs.readFileSync(path.join(root, 'checks'), 'utf8').trim().split('\n').length, 2, 'b and c in one check');
 });

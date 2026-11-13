@@ -452,7 +452,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
       // An earlier tb of this branch, killed, may have landed while this one
       // waited.
       await recoverLandedFor(t, common, out);
-      return await landLocked(t, opts, { file: timesFile, waitedMs: Date.now() - asked, entryId: entry?.id }, common, gitDir, mine?.limit);
+      return await landLocked(t, opts, { file: timesFile, waitedMs: Date.now() - asked, entryId: entry?.id }, common, gitDir, mine?.limit === undefined ? undefined : { limit: mine.limit, at: mine.limitAt });
     } finally {
       await release();
     }
@@ -1024,7 +1024,7 @@ async function stackWaiting(
   const ordered = withFixes ? [...all.filter((e) => e.fix), ...all.filter((e) => !e.fix)] : all.filter((e) => !e.fix);
   for (const e of ordered) {
     if (e.pid === process.pid && e.path === t.path) continue; // this one
-    const c = e.fix ? Infinity : Math.min(cap, e.limit ?? Infinity);
+    const c = e.fix ? Infinity : Math.min(cap, e.limit !== undefined && e.limitAt === main ? e.limit : Infinity);
     if (!e.fix && counted + 2 > c) continue;
     if (!e.fix && !includeOthers) continue;
     if (e.path === t.path || e.branch === t.branch) continue;
@@ -1053,7 +1053,7 @@ async function landLocked(
   times: { file: string; waitedMs: number; entryId?: string },
   common: string,
   gitDir: string,
-  startLimit: number | undefined,
+  startLimit: { limit: number; at?: string } | undefined,
 ): Promise<number> {
   const out = opts.out ?? ((l: string) => process.stdout.write(l + '\n'));
   const err = opts.err ?? ((l: string) => process.stderr.write(l + '\n'));
@@ -1067,7 +1067,10 @@ async function landLocked(
   if (typeof ready === 'number') return ready;
   const own = ready.commit;
   const main = ready.base;
-  let limit = startLimit ?? Infinity;
+  // A limit from a failed group check only holds while main is where it
+  // was: a failure on an old main (13 Nov: its own compile error) says
+  // nothing about a new one, and kept every later landing checked alone.
+  let limit = startLimit && startLimit.at === main ? startLimit.limit : Infinity;
   let withFixes = true;
 
   for (;;) {
@@ -1200,7 +1203,7 @@ async function landLocked(
         limit = Math.max(1, Math.ceil((counted + 1) / 2));
         for (const g of group) {
           const now = readEntry(common, g.entry.id);
-          if (now && !now.result) writeEntry(common, { ...now, limit: Math.min(now.limit ?? Infinity, limit) });
+          if (now && !now.result) writeEntry(common, { ...now, limit: Math.min(now.limitAt === main ? now.limit ?? Infinity : Infinity, limit), limitAt: main });
         }
         out('Checking them in smaller groups to find which.');
         continue;

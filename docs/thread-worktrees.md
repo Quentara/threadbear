@@ -245,7 +245,9 @@ their own.
   editing the holder's worktree, which it still uses for retries.
   That is the group's result; an individual landing is
   only refused if its own check fails, so the one that broke it is found
-  in a few checks, and the rest land.
+  in a few checks, and the rest land. Those limits hold only on the main
+  they were set on: once main moves, a failure on the old one says nothing
+  about the new, and they lapse.
 - While it waits, a landing says where it is: whose check is running and
   for how long, how many are waiting ahead of it, and roughly how long it
   has to go, from the last 20 checks in the times log below. If it is

@@ -54,6 +54,7 @@ export type QueueEntry = {
   // halves it for everyone in that group, so a failure is narrowed down in a
   // few checks rather than one by one.
   limit?: number;
+  limitAt?: string; // the main that limit was set on; it lapses once main moves
   result?: QueueResult;
 };
 
