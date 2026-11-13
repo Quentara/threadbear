@@ -396,14 +396,25 @@ final class AppModel {
     private(set) var lastModels: [String: String] = AppModel.loadMemory(AppModel.lastModelKey)
     private(set) var lastEfforts: [String: String] = AppModel.loadMemory(AppModel.lastEffortKey)
     /// The mode picked in the new-thread composer, for that draft only.
-    /// Nil: the runner's default (`newThreadPermission`).
+    /// Nil: the last one picked, else the runner's default (`newThreadPermission`).
     var newThreadPermissionPick: PermissionMode?
-    /// The mode the next new thread starts on: the one picked, else its
-    /// runner's `defaults.permissionMode` (Auto on a new install), else Full
-    /// access, for a runner that has none, predates it, or hasn't said yet.
+    /// The mode last picked for a new thread, kept across launches as the
+    /// model is: Full, Ask or Auto, never Plan first, which is for one task
+    /// (Mike, 13 Nov, after Ian kept landing back on Auto).
+    private(set) var lastPermission: PermissionMode? = AppModel.loadLastPermission()
+    /// The mode the next new thread starts on: the one picked, else the one
+    /// last picked, else its runner's `defaults.permissionMode` (Auto on a
+    /// new install), else Full access, for a runner that has none, predates
+    /// it, or hasn't said yet.
     var newThreadPermission: PermissionMode {
-        get { newThreadPermissionPick ?? newThreadLogins?.defaults.permissionMode ?? .full }
-        set { newThreadPermissionPick = newValue }
+        get { newThreadPermissionPick ?? lastPermission ?? newThreadLogins?.defaults.permissionMode ?? .full }
+        set {
+            newThreadPermissionPick = newValue
+            if [.full, .ask, .auto].contains(newValue) {
+                lastPermission = newValue
+                UserDefaults.standard.set(newValue.rawValue, forKey: Self.lastPermissionKey)
+            }
+        }
     }
     /// What the runner says about the Claude and Codex CLIs (`clis.list`,
     /// `clis.updated`). Empty until it's said anything.
@@ -762,6 +773,7 @@ final class AppModel {
     /// came along is still remembered; other providers add ".<provider>".
     static let lastModelKey = "lastModel"
     static let lastEffortKey = "lastEffort"
+    static let lastPermissionKey = "lastPermissionMode"
     static let memoryProviders = ["claude", "codex", "cursor", "opencode"]
     static let collapsedSectionsKey = "collapsedSections"
     /// Set once Hibernating and Archive have been folded the first time.
@@ -939,6 +951,10 @@ final class AppModel {
 
     static func memoryKey(_ base: String, provider: String) -> String {
         provider == "claude" || provider.isEmpty ? base : base + "." + provider
+    }
+
+    private static func loadLastPermission() -> PermissionMode? {
+        UserDefaults.standard.string(forKey: lastPermissionKey).flatMap(PermissionMode.init(rawValue:)).flatMap { [.full, .ask, .auto].contains($0) ? $0 : nil }
     }
 
     private static func loadMemory(_ base: String) -> [String: String] {
