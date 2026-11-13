@@ -129,3 +129,31 @@ Then('the box is locked, saying {string}', async function (this: ThreadbearWorld
 Then("the box isn't locked", async function (this: ThreadbearWorld) {
   await this.until('the box unlocked', (d) => !(d.composer as WithMoving).moving);
 });
+
+When('its runner lets the thread go to {string}', async function (this: ThreadbearWorld, to: string) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'moveAway', params: { threadId: d.selection?.id, to } });
+});
+
+When('the destination lists the moved thread', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'moveArrive', params: { threadId: d.selection?.id } });
+  // Allow the destination read/subscription to finish before it emits events.
+  await this.app.do({ cmd: 'waitFor', loaded: true });
+  await sleep(500);
+});
+
+When('a reply arrives on the destination', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'stream', params: { threadId: d.selection?.id, text: 'The destination is serving this thread', hz: 60 } });
+});
+
+When('the index restarts while its move to this Mac is waiting', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'moveIndexRestart', params: { threadId: d.selection?.id } });
+});
+
+When('that waiting move is cancelled', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'moveCancelAfterRestart', params: { threadId: d.selection?.id } });
+});

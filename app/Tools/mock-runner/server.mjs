@@ -525,10 +525,10 @@ async function handle(client, { id, method, params = {} }) {
     // backend"), the app's default way in: here, that's bruce's own code
     // answering, on the same connection and with the same shapes. Events
     // come to whoever subscribed, whichever runner's connection they used.
-    if (client.as !== null || ownerOf(params.threadId) !== BRUCE) {
+    if (client.as !== null || !runners.some((r) => !r.self && r.id === ownerOf(params.threadId))) {
       return reply(client, id, null, { code: -32004, message: 'Thread not found' });
     }
-    caller = { ...client, as: BRUCE };
+    caller = { ...client, as: ownerOf(params.threadId) };
   }
   if (method === 'threads.create' && params?.runnerId === BRUCE && client.as === null) {
     // A new thread on bruce through this runner, as the relay files it.
@@ -619,7 +619,7 @@ async function dispatch(client, method, p) {
       return { pools };
     }
     case 'runner.status': {
-      const all = [...threads.values()].filter((t) => (t.runnerId ?? null) === client.as).map((t) => t.summary);
+      const all = [...threads.values()].filter((t) => !t.awaitingDestination && (t.runnerId ?? null) === client.as).map((t) => t.summary);
       const status = {
         version: runnerVersion, pid: process.pid, startedAt, home: dataDir, logFile: path.join(dataDir, 'runner.log'),
         liveClis: all.filter((s) => s.live).length,
@@ -670,7 +670,7 @@ async function dispatch(client, method, p) {
       if (listDelay > 0) await new Promise((r) => setTimeout(r, listDelay));
       const include = new Set(p.include ?? ['inbox']);
       const now = Date.now();
-      const list = [...threads.values()].filter((t) => (t.runnerId ?? null) === client.as).map((t) => t.summary).filter((s) => {
+      const list = [...threads.values()].filter((t) => !t.awaitingDestination && (t.runnerId ?? null) === client.as).map((t) => t.summary).filter((s) => {
         if (s.archivedAt) return include.has('archived');
         if (s.snoozedUntil && Date.parse(s.snoozedUntil) > now) return include.has('snoozed');
         return include.has('inbox');
@@ -679,7 +679,7 @@ async function dispatch(client, method, p) {
     }
     case 'threads.search': {
       const q = String(p.query ?? '').toLowerCase();
-      const list = [...threads.values()].filter((t) => (t.runnerId ?? null) === client.as).map((t) => t.summary)
+      const list = [...threads.values()].filter((t) => !t.awaitingDestination && (t.runnerId ?? null) === client.as).map((t) => t.summary)
         .filter((s) => s.title.toLowerCase().includes(q) || s.preview.toLowerCase().includes(q));
       return { threads: newestFirst(list).slice(0, p.limit ?? 50) };
     }
@@ -883,6 +883,7 @@ async function dispatch(client, method, p) {
       const eventsDelay = Number(process.env.THREADBEAR_MOCK_EVENTS_DELAY_MS ?? 0);
       if (eventsDelay > 0) await new Promise((r) => setTimeout(r, eventsDelay));
       const t = need(p.threadId);
+      if (t.awaitingDestination) throw rpcError(-32000, 'The destination has not listed this thread yet.');
       const failing = failingEvents.get(t.summary.id) ?? 0;
       if (failing > 0) {
         failingEvents.set(t.summary.id, failing - 1);
@@ -1605,19 +1606,51 @@ async function dispatch(client, method, p) {
     // lists the thread. Keep the destination's first row held until asked.
     case 'mock.moveAway': {
       const t = need(p.threadId);
-      t.summary.moving = { moveId: 'demo-move', to: BRUCE, toName: 'bruce', state: 'copying' };
+      const destination = p.to === 'This Mac' ? null : p.to === 'cloud' ? 'runner_cloud' : BRUCE;
+      if (destination === 'runner_cloud' && !runners.some((r) => r.id === destination)) {
+        runners.push({ id: destination, name: 'cloud', icon: 'cloud', self: false });
+      }
+      const wasRemote = Boolean(t.runnerId);
+      t.summary.moving = { moveId: 'demo-move', to: destination ?? SELF_RUNNER.id, toName: p.to ?? 'bruce', state: 'copying' };
       broadcastSummary(t.summary.id);
-      t.runnerId = BRUCE;
-      delete t.summary.moving;
-      broadcast('thread.deleted', { threadId: t.summary.id });
+      t.movingDestination = destination;
+      t.awaitingDestination = true;
+      // The source stops serving before the destination lists it. Drop the
+      // old subscription too: the destination must really be subscribed anew.
+      for (const c of clients) c.subs.delete(t.summary.id);
+      if (wasRemote) {
+        for (const c of clients) if (c.authed && c.as === null) send(c, 'remoteThreads.updated', remoteThreads(c));
+      } else broadcast('thread.deleted', { threadId: t.summary.id });
       if (p.staleIndex) {
         for (const c of clients) if (c.authed && c.as === null) {
           const index = remoteThreads(c);
           index.runners.push({ id: 'runner_old', name: 'the old Mac', online: true, lastSeenAt: iso() });
-          index.threads = index.threads.map((row) => row.threadId === t.summary.id ? { ...row, runnerId: 'runner_old' } : row);
+          index.threads.push({ ...t.summary, threadId: t.summary.id, runnerId: 'runner_old' });
           send(c, 'remoteThreads.updated', index);
         }
       }
+      return { ok: true };
+    }
+    case 'mock.moveIndexRestart': {
+      const t = need(p.threadId);
+      t.summary.moving = { moveId: 'demo-move', to: SELF_RUNNER.id, toName: 'This Mac', state: 'ready' };
+      broadcastSummary(t.summary.id);
+      for (const c of clients) if (c.authed && c.as === null) send(c, 'remoteThreads.updated', { runners: [], threads: [], ready: false });
+      return { ok: true };
+    }
+    case 'mock.moveCancelAfterRestart': {
+      const t = need(p.threadId);
+      t.summary.moving = { ...t.summary.moving, state: 'cancelled' };
+      broadcastSummary(t.summary.id);
+      return { ok: true };
+    }
+    case 'mock.moveArrive': {
+      const t = need(p.threadId);
+      t.runnerId = t.movingDestination;
+      delete t.awaitingDestination;
+      delete t.movingDestination;
+      delete t.summary.moving;
+      broadcastSummary(t.summary.id);
       return { ok: true };
     }
     // The librarian's search words on a thread, by title, as it leaves
@@ -2502,18 +2535,19 @@ function ownerOf(threadId) {
 function remoteThreads(client) {
   if (client.as) return { runners: [], threads: [] };
   const bruce = runners.find((r) => r.id === BRUCE);
-  const rows = [...threads.values()].filter((t) => t.runnerId === BRUCE).map(({ summary: s }) => ({
-    runnerId: BRUCE, threadId: s.id, title: s.title, cwd: s.cwd, accountId: s.accountId, provider: s.provider,
+  const rows = [...threads.values()].filter((t) => t.runnerId && !t.awaitingDestination).map(({ summary: s, runnerId }) => ({
+    runnerId, threadId: s.id, title: s.title, cwd: s.cwd, accountId: s.accountId, provider: s.provider,
     ...(s.model ? { model: s.model } : {}), status: s.status, needsYou: Boolean(s.needsYou), unread: s.lastSeq > s.lastSeenSeq,
     preview: s.preview, createdAt: s.createdAt, lastActivityAt: s.lastActivityAt,
     ...(s.snoozedUntil ? { snoozedUntil: s.snoozedUntil } : {}), ...(s.archivedAt ? { archivedAt: s.archivedAt } : {}),
     ...(s.startedBy ? { startedBy: s.startedBy } : {}),
+    ...(s.moving ? { moving: s.moving } : {}),
     ...(s.asked ? { asked: s.asked } : {}),
   }));
   return {
     runners: [{
       id: BRUCE, name: bruce.name, icon: bruce.icon, online: true, lastSeenAt: iso(),
-    }, ...MORE_RUNNERS],
+    }, ...MORE_RUNNERS, ...runners.filter((r) => !r.self && r.id !== BRUCE && !MORE_RUNNERS.some((m) => m.id === r.id)).map((r) => ({ ...r, online: true, lastSeenAt: iso() }))],
     threads: rows,
     order: runnerOrder,
   };

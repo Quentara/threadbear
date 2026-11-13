@@ -805,7 +805,17 @@ impl Threadbear {
                     if let Ok(mut t) = serde_json::from_value::<ThreadSummary>(params["thread"].clone()) {
                         // Another runner's thread from this Mac's runner (the
                         // relay) stays marked as that runner's.
+                        let arriving = self.threads.get(&t.id).is_some_and(|old| {
+                            old.moving.as_ref().is_some_and(|m| self.remote.all_runners.iter().any(|r| r.is_self && m["to"].as_str() == Some(r.id.as_str())))
+                                || (old.runner_id.is_none() && self.remote.made.contains(&t.id))
+                        });
                         t.runner_id = self.threads.get(&t.id).and_then(|old| old.runner_id.clone());
+                        if arriving {
+                            // Relay and local updates share a notification. Verify
+                            // ownership with the local list before replacing it.
+                            if t.moving.is_none() { t.moving = self.threads.get(&t.id).and_then(|old| old.moving.clone()); }
+                            self.load_list(cx);
+                        }
                         if let Some(pane) = &self.pane {
                             pane.update(cx, |p, cx| p.summary_changed(&t, cx));
                         }
@@ -842,6 +852,8 @@ impl Threadbear {
                         self.threads.remove(id);
                         self.failed_on_account.remove(id);
                         self.refresh_dock_badge();
+                    } else {
+                        self.apply_remote_index(cx);
                     }
                 }
                 "runner.notice" => {
@@ -972,7 +984,7 @@ impl Threadbear {
         });
     }
 
-    fn load_list(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn load_list(&mut self, cx: &mut Context<Self>) {
         let client = self.client.clone();
         cx.spawn(async move |this, cx| {
             let res = call(client, "threads.list", json!({ "include": ["inbox", "snoozed", "archived"] })).await;
@@ -982,10 +994,15 @@ impl Threadbear {
                         let list: Vec<ThreadSummary> = serde_json::from_value(v["threads"].clone()).unwrap_or_default();
                         let before = std::mem::take(&mut this.threads);
                         this.threads = list.into_iter().map(|t| (t.id.clone(), t)).collect();
+                        let confirmed: std::collections::HashSet<_> = this.threads.keys().cloned().collect();
+                        let reload: std::collections::HashSet<_> = confirmed.iter().filter(|id| {
+                            this.remote.made.contains(*id) || before.get(*id).is_some_and(|t| t.is_remote())
+                        }).cloned().collect();
+                        this.remote.made.retain(|id| !confirmed.contains(id));
                         // A destination's first index row can lag behind a
                         // reconnect. Keep known remote rows until the remote
                         // index reconciles them, including moves in flight.
-                        for old in before.values().filter(|t| t.is_remote()) {
+                        for old in before.values().filter(|t| t.is_remote() || this.remote.made.contains(&t.id)) {
                             this.threads.entry(old.id.clone()).or_insert_with(|| old.clone());
                         }
                         // Open panes take the summaries as they are now: on
@@ -993,12 +1010,7 @@ impl Threadbear {
                         // changed while it was away (a loose-ends check that
                         // finished then isn't sent again), and each pane's
                         // reload reads its own summary (Codex's review, 12 Nov).
-                        let panes: Vec<_> = this.pane.iter().chain(this.subagent_pane.iter()).chain(this.thread_panels.panes()).chain(this.kept.panes()).cloned().collect();
-                        for pane in panes {
-                            let Some(mut t) = this.threads.get(&pane.read(cx).summary.id).cloned() else { continue };
-                            t.runner_id = pane.read(cx).summary.runner_id.clone();
-                            pane.update(cx, |p, cx| p.summary_changed(&t, cx));
-                        }
+                        this.sync_thread_panes(&reload, cx);
                         crate::terminal::list_loaded(&this.threads, cx);
                         this.note_failed_accounts(&before);
                         // Other runners' rows stay listed beside these (and

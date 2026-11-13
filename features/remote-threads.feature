@@ -26,6 +26,44 @@ Feature: Other runners' threads
     Then the row "Morning brief" is on the runner "On bruce"
     And the composer is on the runner "bruce"
 
+  @sidebar.move @remote-threads
+  Scenario: A moved open thread resumes when its destination lists it
+    When I open the thread "Morning brief"
+    And its runner lets the thread go to bruce
+    Then the row "Morning brief" is on the runner "On bruce"
+    When the destination lists the moved thread
+    And a reply arrives on the destination
+    Then the transcript shows a reply starting "The destination is serving this thread"
+
+  @sidebar.move @remote-threads
+  Scenario: A thread moved between two other Macs keeps its destination
+    When I open the thread "Tidy the media drive"
+    And its runner lets the thread go to "cloud"
+    Then the row "Tidy the media drive" is on the runner "On cloud"
+    When the destination lists the moved thread
+    And a reply arrives on the destination
+    Then the transcript shows a reply starting "The destination is serving this thread"
+
+  @sidebar.move @remote-threads
+  Scenario: A thread moved back to this Mac resumes here
+    When I open the thread "Tidy the media drive"
+    And its runner lets the thread go to "This Mac"
+    Then the row "Tidy the media drive" isn't on another runner
+    When the destination lists the moved thread
+    And a reply arrives on the destination
+    Then the transcript shows a reply starting "The destination is serving this thread"
+    And the row "Tidy the media drive" isn't on another runner
+
+  @sidebar.move @remote-threads
+  Scenario: Restarting the index during a waiting move keeps the source until it really moves
+    When I open the thread "Tidy the media drive"
+    And the index restarts while its move to this Mac is waiting
+    Then the row "Tidy the media drive" is on the runner "On bruce"
+    When that waiting move is cancelled
+    And a reply arrives on the destination
+    Then the transcript shows a reply starting "The destination is serving this thread"
+    And the row "Tidy the media drive" is on the runner "On bruce"
+
   # Its picture is a path on bruce: asked of the runner, which keeps another
   # Mac's files there for now, so the tile says it couldn't get it, and never
   # shows whatever this Mac has at that path.
@@ -126,7 +164,7 @@ Feature: Other runners' threads
   # Anything typed or answered while it moves could land on the wrong side
   # of the move, so the box and its card wait (ComposerView's `moving`). The
   # Swift app's dump, frozen since 12 Nov, has no "moving".
-  @sidebar.move @remote-threads @swift-pending
+  @sidebar.move @remote-threads
   Scenario: The box is locked while its thread moves, and given back when the move is called off
     Given a move would leave nothing behind
     When I open the thread "Morning brief"

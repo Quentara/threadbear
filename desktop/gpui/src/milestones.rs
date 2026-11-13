@@ -1,5 +1,5 @@
-// The Swift milestone toast's behavior and capsule. Its entrance and bear's
-// wave are added by the motion port after Mike has reviewed its clips.
+// The Swift milestone toast's behavior and capsule, with Mike's chosen paw.
+// It stays still, as he picked in the motion review.
 use crate::app::Threadbear;
 use crate::style::{self, px};
 use crate::tips::Tip as _;
@@ -13,6 +13,7 @@ use threadbear_core::milestones::{self as rules, Decision};
 pub(crate) struct Milestones {
     pub(crate) note: Option<usize>,
     pub(crate) active: bool,
+    enabled: bool,
     pending: bool,
     last_count: Option<usize>,
     #[cfg(feature = "automation")]
@@ -20,7 +21,7 @@ pub(crate) struct Milestones {
 }
 
 impl Milestones {
-    pub(crate) fn new(active: bool) -> Self { Self { active, ..Default::default() } }
+    pub(crate) fn new(active: bool) -> Self { Self { active, enabled: crate::installed::launch().installed && crate::installed::on_real_data(), ..Default::default() } }
 }
 
 impl Threadbear {
@@ -29,7 +30,7 @@ impl Threadbear {
         let scripted = self.milestone.count.is_some();
         #[cfg(not(feature = "automation"))]
         let scripted = false;
-        if !scripted && (!crate::installed::launch().installed || !crate::installed::on_real_data()) { return; }
+        if !scripted && !self.milestone.enabled { return; }
         if !self.sidebar.loaded || !self.remote.heard || self.milestone.pending || self.milestone.note.is_some() { return; }
         if self.milestone.last_count == Some(self.threads.len()) { return; }
         self.milestone.last_count = Some(self.threads.len());
@@ -98,18 +99,29 @@ impl Threadbear {
             .cursor_pointer()
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
                 this.milestone.note = None;
+                this.toast_hovered = false;
                 cx.notify();
             }))
-            .child(milestone_bear(cx))
+            .child(milestone_mark(cx))
             .child(div().id("milestone-title").test_support().aria_label(rules::title(tier)).child(rules::title(tier)))
             .child(div().text_color(style::secondary_text(cx)).child(rules::line(tier)))
             .into_any_element()
     }
 }
 
-/// The motion port's hook for the Swift toast's 17pt waving bear.
-pub(crate) fn milestone_bear(_cx: &App) -> AnyElement {
-    div().w(px(17.)).h(px(17.)).into_any_element()
+/// The static 17pt mark, kept separate from the capsule's content.
+pub(crate) fn milestone_mark(cx: &App) -> AnyElement {
+    let ink = style::secondary_text(cx);
+    // Paint the small mark directly, so the toast doesn't wait for an SVG
+    // asset to load in a covered window.
+    let dot = |x, y, w, h| div().absolute().left(px(x)).top(px(y)).w(px(w)).h(px(h)).rounded_full().bg(ink);
+    div().relative().flex_none().size(px(17.))
+        .child(dot(0., 4., 4., 5.))
+        .child(dot(4., 0., 4., 5.))
+        .child(dot(9., 0., 4., 5.))
+        .child(dot(13., 4., 4., 5.))
+        .child(dot(3., 8., 11., 8.))
+        .into_any_element()
 }
 
 #[cfg(feature = "automation")]

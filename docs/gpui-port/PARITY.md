@@ -4476,12 +4476,14 @@ Fixes from Codex's review of the slice before:
 
 - A move keeps the sidebar row as the destination Mac's until its first
   index row arrives. The open transcript reloads through that runner, and
-  an old source row cannot take the move back.
+  an active source row cannot take the move back. An unanswered index keeps
+  the known rows and defers milestone totals (`ready: false`); a cancelled
+  move restores the source.
 - Relay subscriptions can say which sparse event ranges that pane already
   has (`relaySeen`); only missing events in its loaded window come back.
   Another reader's page cannot consume live events owed to existing readers.
   A gap's uncertain turn boundaries wait for the missing rows, while known
-  messages stay readable and a failed gap fetch is retried on the next read.
+  messages stay readable and a failed gap fetch is retried on the next read or subscribed-watch sweep.
 - Direct runner connections are deliberately absent: they were removed from
   the runner and the Swift app on 13 Nov. Both apps use their own runner and
   Convex. The Swift remote-video copy path now fails the same `files.read`
@@ -4497,8 +4499,8 @@ Fixes from Codex's review of the slice before:
   and a program's mouse reporting still work.
 - The milestone capsule keeps the Swift thresholds, words, saved highest
   tier, active/idle checks and dismissal. Scripted and dev apps do not spend
-  the installed app's milestone; the motion thread owns the bear and entrance
-  after Mike reviews its clips (`milestones.rs`, `milestone_bear`).
+  the installed app's milestone; it uses a static paw, with no entrance motion or wave, as Mike chose
+  in the motion review (`milestones.rs`, `milestone_mark`).
 - The moon's menu hangs from its button, and a completed sub-agent whose
   transcript is open stays listed under Inbox.
 - Verification: focused relay tests, core tests on cloud, a debug Mac build,
@@ -4508,3 +4510,8 @@ Fixes from Codex's review of the slice before:
   retained sub-agent were also inspected in the scripted app. A follow-up
   run passed five scenarios (43 steps), including an additional stale-source
   index case.
+
+- The follow-up cross-lab review added coverage for a delayed destination,
+  moves between other Macs and back here, and overlapping relay reads/tails.
+  Five move flows passed on Tinker (47 steps), 35 Terminal core tests passed,
+  58 relay/parity tests and 14 real-backend route scenarios passed locally.
