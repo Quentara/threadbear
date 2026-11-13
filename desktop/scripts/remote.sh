@@ -109,7 +109,15 @@ for helper in perf-lock.pl perf-children.pl hangup-guard.sh; do
   ssh "$host" "cat > $boot/$helper" <"$root/scripts/$helper"
 done
 ssh "$host" "cat > $boot/trim-remote-cache.sh" <"$root/desktop/scripts/trim-remote-cache.sh"
-precopy="mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name '${target##*/}' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -rf {} + 2>/dev/null; true
+# A checkout's target from before the shared ones (cargo's own folders in it)
+# is a whole build, many GB, that nothing reads any more: it goes, and the
+# folder's left for the programs builds hand back. Not on a --perf run, whose
+# own target is perf-target and whose old one the perf threads may still want.
+# Found with find, not a glob: Tinker Desk's login shell is zsh, where a glob
+# that matches nothing ends the whole command.
+old_target=""
+[ "$perf" = 1 ] || old_target="[ -z \"\$(find $base/target-$key -maxdepth 3 -name .fingerprint -type d 2>/dev/null | head -1)\" ] || rm -rf $base/target-$key; "
+precopy="$old_target""mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name '${target##*/}' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -rf {} + 2>/dev/null; true
 cd \"\$HOME/$base\"
 bash \"\$HOME/$boot/trim-remote-cache.sh\" $key ${target##*/}"
 alive_stdin 7
@@ -168,14 +176,20 @@ if [ -x "\$HOME/$base/cargo/bin/cargo" ]; then
 elif [ -x "\$HOME/.cargo/bin/cargo" ]; then
   export PATH="\$HOME/.cargo/bin:\$PATH"
 fi
-# A target folder per checkout. Cargo's names for path crates ignore where the
-# checkout is, so with a shared one each checkout's build replaced the other's.
+# Where a run finds what it built: this checkout's own folder, or perf-target.
 export CARGO_TARGET_DIR="\$HOME/$target" CARGO_HTTP_MULTIPLEXING=false CARGO_NET_RETRY=10
 if [ "$perf" = 1 ]; then
   export THREADBEAR_PERF_BUILD_KEY="$key" THREADBEAR_PERF_BUILD_SOURCE="\$PWD"
   bash scripts/perf-build.sh --prepare
 else
   unset THREADBEAR_PERF_BUILD_KEY THREADBEAR_PERF_BUILD_SOURCE
+  # Ordinary builds share a few warm targets on the host, taking turns
+  # (desktop/scripts/shared-cargo/cargo, first on the PATH, says how): one
+  # target per checkout, up to 8 GB each, filled the cloud box on 13 Nov. The
+  # checkout's own target-<key> holds only the programs each build hands back,
+  # so CARGO_TARGET_DIR still names where a run finds what it built. A --perf
+  # run keeps its own stable target, and the shim steps aside for it.
+  export THREADBEAR_SHARED_CARGO_BASE="\$HOME/$base" THREADBEAR_SHARED_CARGO_SRC="\$HOME/$src" THREADBEAR_SHARED_CARGO_KEY="$key"
 fi
 # Debug builds keep line numbers (enough for a panic's backtrace) but not the
 # rest of the debug info, which was most of a target: one checkout's reached
@@ -186,6 +200,11 @@ export CARGO_PROFILE_DEV_DEBUG=line-tables-only
 export TMPDIR="\$HOME/$base/tmp"
 mkdir -p "\$TMPDIR"
 . scripts/build-priority.sh
+# The shared targets' cargo goes in front of build-priority's, which wrote the
+# real cargo's path into its own as it was made: so the slot's wait and copy
+# come first, then the priority, then cargo. In front of it before that, the
+# priority cargo would have called this one, and this one it, for ever.
+export PATH="\$HOME/$src/desktop/scripts/shared-cargo:\$PATH"
 # What the specs need, the first time this folder's used.
 for dir in features app/Tools/mock-runner runner; do
   [ -d "\$dir/node_modules" ] || npm ci --silent --prefix "\$dir" >/dev/null 2>&1 || true

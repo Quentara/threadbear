@@ -178,13 +178,13 @@ test('builds take turns for a slot, and with two slots two run at once', async (
   h.checkout('bbb', 'b');
   h.checkout('ccc', 'c');
   const hold = path.join(h.root, 'hold');
-  const first = run(h, 'aaa', { FAKE_HOLD: hold });
+  const first = run(h, 'aaa', { THREADBEAR_REMOTE_SLOTS: '2', FAKE_HOLD: hold });
   await started(`${hold}.started`);
   // A second slot is free: b doesn't wait.
-  const second = run(h, 'bbb', { FAKE_HOLD: `${hold}-b` });
+  const second = run(h, 'bbb', { THREADBEAR_REMOTE_SLOTS: '2', FAKE_HOLD: `${hold}-b` });
   await started(`${hold}-b.started`);
   // Both taken: c waits, and says so.
-  const third = run(h, 'ccc', {});
+  const third = run(h, 'ccc', { THREADBEAR_REMOTE_SLOTS: '2' });
   await new Promise((r) => setTimeout(r, 1500));
   assert.match(third.stderr(), /Waiting for one of this host's 2 shared build folders/);
   // Only a's and b's cargo have started.
@@ -203,7 +203,7 @@ test('a checkout goes back to the slot it used last', (t) => {
   h.checkout('bbb', 'b');
   fs.mkdirSync(path.join(h.base, 'shared-2'), { recursive: true });
   fs.writeFileSync(path.join(h.base, 'shared-2', '.last-key'), 'bbb\n');
-  assert.equal(h.cargo('bbb').status, 0);
+  assert.equal(h.cargo('bbb', ['build'], { THREADBEAR_REMOTE_SLOTS: '2' }).status, 0);
   assert.ok(h.logLines()[0].includes('/shared-2/'), h.logLines()[0]);
 });
 

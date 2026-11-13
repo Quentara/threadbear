@@ -58,7 +58,7 @@ recent() {
 # long copy still looks in use (Codex's review, 12 Nov). With "always" they go
 # even with room to spare (one past MAX_TARGETS).
 evict() {
-  [ "${2:-}" = always ] || [ "$(free_gib)" -lt "$TRIM_GIB" ] || return 0
+  [ "${2:-}" = always ] || [ "${2:-}" = old ] || [ "$(free_gib)" -lt "$TRIM_GIB" ] || return 0
   [ -d "$1" ] || return 0
   local key="${1#target}"
   key="${key#-}"
@@ -69,7 +69,9 @@ evict() {
   [ "$key" != "$own" ] || [ "$active_target" != perf-target ] || src=""
   recent "$1" && return 0
   [ -n "$src" ] && recent "$src" && return 0
-  if [ "${2:-}" = always ]; then
+  if [ "${2:-}" = old ]; then
+    echo "Removing $1, a whole build from before checkouts shared this host's build folders, which nothing has used lately." >&2
+  elif [ "${2:-}" = always ]; then
     echo "More than $MAX_TARGETS build folders on this host, so removing $1, which nothing has used lately. Its checkout rebuilds next time it runs." >&2
   else
     echo "Short of disk on this host, so removing $1, which nothing has used lately. Its checkout rebuilds next time it runs." >&2
@@ -144,10 +146,38 @@ for t in $(ls -dt target-* 2>/dev/null); do
   n=$((n + 1))
   [ "$n" -le "$limit" ] || evict "$t" always
 done
+# A checkout's target with cargo's own folders in it is a whole build from
+# before builds shared this host's few (shared-cargo/cargo), 1 to 9 GB that
+# nothing from this remote.sh reads: idle ones go, whatever the room. A
+# checkout still on an older remote.sh builds its own again next time.
+for t in $(ls -d target-* 2>/dev/null); do
+  case "$t" in target-gone-*|"target-$own") continue ;; esac
+  [ -z "$(find "$t" -maxdepth 3 -name .fingerprint -type d 2>/dev/null | head -1)" ] || evict "$t" old
+done
 # Longest since a run first: remote.sh touches each target as a run starts.
 # Names are target-<hex>, so the unquoted list is safe.
 for t in $(ls -dtr target-* 2>/dev/null); do
   [ "$t" = "$own_target" ] || evict "$t"
+done
+
+# The shared targets builds take turns in (shared-cargo/cargo): one goes only
+# when the host is too short to build even on a warm target, and no build
+# holds it (its lock, taken here without waiting and held while it's moved
+# aside). Last, and not just to get back to TRIM_GIB, as each is warm for
+# every checkout: losing one makes the next builds cold, and wanting more
+# room. Its copy of the source is small and stays.
+for lockfile in $(ls shared-*.lock 2>/dev/null); do
+  [ "$(free_gib)" -lt "$REFUSE_GIB" ] || break
+  slot="${lockfile%.lock}"
+  [ -d "$slot/target" ] || continue
+  (
+    exec 7>>"$lockfile"
+    if command -v flock >/dev/null 2>&1; then flock -n 7 || exit 0
+    else perl -e 'use Fcntl ":flock"; open(my $f, ">&=", 7) or exit 1; flock($f, LOCK_EX | LOCK_NB) or exit 1' || exit 0; fi
+    echo "Short of disk on this host, so removing $slot/target, a shared build folder no build is using. The next build there starts from cold." >&2
+    gone="target-gone-$$-$slot"
+    mv "$slot/target" "$gone" && rm -rf "$gone"
+  )
 done
 
 # A copy whose target has gone (deleted by hand, or by an older trim that left
@@ -163,8 +193,17 @@ done
 need="$REFUSE_GIB"
 # By size, not whether it's empty: a first build that died early leaves a
 # folder with next to nothing to build on.
-kb="$(du -sk "$active_target" 2>/dev/null | awk '{print $1}')"
-[ "${kb:-0}" -ge 1048576 ] || need="$REFUSE_COLD_GIB"
+# A shared target counts: ordinary builds go there now, and a checkout's own
+# holds only what they hand back. A --perf run's is its own.
+warm=0
+targets=("$active_target")
+[ "$active_target" = perf-target ] || targets+=(shared-*/target)
+for t in "${targets[@]}"; do
+  [ -d "$t" ] || continue
+  kb="$(du -sk "$t" 2>/dev/null | awk '{print $1}')"
+  [ "${kb:-0}" -lt 1048576 ] || { warm=1; break; }
+done
+[ "$warm" = 1 ] || need="$REFUSE_COLD_GIB"
 free="$(free_gib)"
 if [ "$free" -lt "$need" ]; then
   echo "This host has only $free GiB free and this run wants $need, with every other build folder in use, so it won't start. Free some space there and run it again." >&2

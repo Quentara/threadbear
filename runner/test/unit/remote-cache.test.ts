@@ -337,3 +337,106 @@ test('perf mode counts and evicts an old normal target without deleting its acti
   assert.ok(!fs.existsSync(path.join(h.base, 'target-aaa')));
   assert.ok(fs.existsSync(path.join(h.base, 'src-aaa')), 'perf run still needs its source');
 });
+
+// 13 Nov: one target per checkout, six of them, 34 GB, filled the cloud box.
+// Builds now share a few targets (desktop/scripts/shared-cargo/cargo), each
+// under a lock its build holds.
+function sharedSlot(h: ReturnType<typeof host>, n: number, built: boolean) {
+  const t = path.join(h.base, `shared-${n}`, 'target');
+  fs.mkdirSync(path.join(t, 'debug'), { recursive: true });
+  if (built) fs.writeFileSync(path.join(t, 'debug', 'out'), 'x');
+  fs.writeFileSync(path.join(h.base, `shared-${n}.lock`), '');
+  return t;
+}
+
+test('too short to build at all, a shared target no build holds goes, but only after every idle checkout', (t) => {
+  const h = host(t, 1, { 'target-aaa': 0 });
+  const slot = sharedSlot(h, 1, true);
+  const r = h.trim();
+  assert.equal(r.status, 3, r.stderr); // the fake df only counts per-checkout targets
+  assert.equal(fs.existsSync(slot), false);
+  assert.match(r.stderr, /shared-1\/target, a shared build folder/);
+  assert.equal(fs.existsSync(path.join(h.base, 'shared-1')), true, 'its copy of the source stays');
+  assert.deepEqual(fs.readdirSync(h.base).filter((n) => n.includes('gone')), []);
+  // An idle checkout's target first: that's room enough, so the warm one stays.
+  const idle = host(t, 0, { 'target-aaa': 0, 'src-bbb': 30, 'target-bbb': 30 });
+  const kept = sharedSlot(idle, 1, true);
+  assert.equal(idle.trim().status, 0);
+  assert.equal(fs.existsSync(path.join(idle.base, 'target-bbb')), false);
+  assert.equal(fs.existsSync(kept), true);
+});
+
+test('a shared target a build holds stays, however low the disk', (t) => {
+  const h = host(t, 1, { 'target-aaa': 0 });
+  const slot = sharedSlot(h, 1, true);
+  // A build holding the slot's lock, as shared-cargo's flock does.
+  const holder = path.join(h.root, 'hold.pl');
+  fs.writeFileSync(holder, `use Fcntl ":flock"; open(my $f, ">>", "shared-1.lock") or die; flock($f, LOCK_EX) or die; $| = 1; print "held\\n"; sleep 4;`);
+  const r = spawnSync('/bin/bash', ['-c', `perl ${JSON.stringify(holder)} | { read -r _; bash ${JSON.stringify(TRIM)} aaa; }`], { cwd: h.base, env: h.env, encoding: 'utf8', timeout: 20_000 });
+  assert.match(r.stderr, /won't start/);
+  assert.equal(fs.existsSync(path.join(slot, 'debug', 'out')), true);
+});
+
+test("a checkout with no build of its own isn't cold when a shared target is warm", (t) => {
+  const h = host(t, 5, { 'target-aaa': -1 });
+  assert.equal(h.trim().status, 3);
+  sharedSlot(h, 2, true);
+  const r = h.trim();
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test("remote.sh puts the shared cargo first and clears a checkout's target from before", (t) => {
+  const h = host(t, 40, {});
+  fs.writeFileSync(path.join(h.bin, 'ssh'), `#!/bin/bash\nshift\ncd "$HOME" && eval "$*"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h.bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
+  const findNode = path.join(import.meta.dirname, '..', '..', 'scripts', 'find-node.sh');
+  // The shim's own copy, from the checkout's copy to its slot, is a real one.
+  fs.writeFileSync(path.join(h.bin, 'rsync'), `#!/bin/bash
+case "\${!#}" in *:*) ;; *) exec /usr/bin/rsync "$@" ;; esac
+dest="$HOME/\${!##*:}"
+mkdir -p "$dest/runner/scripts" "$dest/scripts"
+cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
+source="\${@: -2:1}"
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh perf-build.sh; do
+  cp "$source/scripts/$helper" "$dest/scripts/"
+done
+mkdir -p "$dest/desktop/scripts"
+cp -R "$source/desktop/scripts/shared-cargo" "$dest/desktop/scripts/"
+`, { mode: 0o755 });
+  // The first run makes this checkout's folders; then its target gets an old-style build in it.
+  // A host each: the fake ssh runs here, so a run's in-use marker keeps the
+  // last run's turn lock open.
+  const run = (where: string, ...cmd: string[]) => spawnSync('/bin/bash', [path.join(SCRIPTS, 'remote.sh'), where, '--', ...cmd], { env: h.env, encoding: 'utf8', timeout: 30_000 });
+  assert.equal(run('host1', 'true').status, 0);
+  const target = path.join(h.base, fs.readdirSync(h.base).find((n) => n.startsWith('target-'))!);
+  fs.mkdirSync(path.join(target, 'debug', '.fingerprint'), { recursive: true });
+  fs.writeFileSync(path.join(target, 'debug', 'big'), 'x');
+  const r = run('host2', 'bash', '-c', 'echo "path=$PATH"; echo "base=$THREADBEAR_SHARED_CARGO_BASE src=$THREADBEAR_SHARED_CARGO_SRC target=$CARGO_TARGET_DIR"');
+  assert.equal(r.status, 0, r.stderr);
+  const first = /path=([^:\n]*)/.exec(r.stdout)![1];
+  assert.match(first, /\/src-[0-9a-f]+\/desktop\/scripts\/shared-cargo$/);
+  assert.match(r.stdout, new RegExp(`base=${h.base} src=${h.base}/src-[0-9a-f]+ target=${target}`));
+  assert.equal(fs.existsSync(path.join(target, 'debug', 'big')), false, 'the old build went');
+  assert.equal(fs.existsSync(target), true);
+  // And cargo through the whole chain: this, build-priority's, then the real one, once.
+  const log = path.join(h.root, 'cargo.log');
+  fs.writeFileSync(path.join(h.bin, 'cargo'), `#!/bin/bash\necho "$(pwd -P) $CARGO_TARGET_DIR $*" >>${JSON.stringify(log)}\n`, { mode: 0o755 });
+  const built = run('host3', 'bash', '-c', 'cd desktop && cargo build -p x');
+  assert.equal(built.status, 0, built.stderr);
+  const lines = fs.readFileSync(log, 'utf8').trim().split('\n');
+  assert.equal(lines.length, 1, lines.join('\n'));
+  assert.match(lines[0], new RegExp(`/shared-1/src/desktop ${h.base}/shared-1/target build -p x$`));
+});
+
+test("an idle checkout's whole build from before the shared targets goes, even with room", (t) => {
+  const h = host(t, 400, { 'target-aaa': 0, 'src-old': 2, 'target-old': 2, 'src-busy': 0.1, 'target-busy': 0.1, 'src-new': 2, 'target-new': 2 });
+  for (const k of ['old', 'busy']) fs.mkdirSync(path.join(h.base, `target-${k}`, 'debug', '.fingerprint'));
+  // mkdir changed the folders' times: put the idle one's back.
+  const when = new Date(Date.now() - 2 * HOUR);
+  fs.utimesSync(path.join(h.base, 'target-old', 'debug', '.fingerprint'), when, when);
+  fs.utimesSync(path.join(h.base, 'target-old', 'debug'), when, when);
+  const r = h.trim();
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(h.left(), ['target-aaa', 'target-busy', 'target-new']);
+  assert.match(r.stderr, /target-old, a whole build from before/);
+});
