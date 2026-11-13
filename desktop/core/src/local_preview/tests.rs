@@ -362,3 +362,97 @@ fn the_gate_shows_only_this_macs_real_pages() {
     fs::create_dir(f.dir.join("folder.html")).unwrap();
     assert!(decide_page(f.dir.join("folder.html").to_str().unwrap(), Origin::ThisMac).is_err(), "a folder");
 }
+
+/// Daybreak 118: `srcset=` inside a bare `src` value was read as another
+/// attribute, and its value read again to the end of the page.
+#[test]
+fn a_value_is_read_once() {
+    assert_eq!(html_references("<img src=srcset=one.png>", usize::MAX), ["srcset=one.png"]);
+    assert_eq!(html_references("<img alt=\"src=a.png\" title='srcset=b.png 2x'>", usize::MAX), Vec::<String>::new());
+    assert_eq!(html_references("<img srcset=\"a.png 1x,\n b.png 2x\" src=c.png>", usize::MAX), ["a.png", "b.png", "c.png"]);
+}
+
+/// One budget for a page's names: `srcset` isn't read once it's spent, and
+/// a name longer than `MAX_REFERENCE_BYTES` is skipped, not kept.
+#[test]
+fn every_name_shares_one_budget_and_long_ones_are_skipped() {
+    let full: String = (0..10).map(|n| format!("<img src=p{n}.png>")).collect::<String>() + "<img srcset=\"late.png 1x\" style=\"background:url(css.png)\">";
+    assert_eq!(html_references(&full, 10).len(), 10);
+    assert!(!html_references(&full, 10).iter().any(|r| r == "late.png" || r == "css.png"));
+    let long = "a".repeat(MAX_REFERENCE_SOURCE_BYTES);
+    let text = format!("<img src=\"{long}.png\" srcset=\"{long}.png 1x, ok1.png 2x\" style=\"background:url({long}.png)\"><link href='{long}.css'><img src=ok2.png>");
+    assert_eq!(html_references(&text, usize::MAX), ["ok1.png", "ok2.png"]);
+    let css = format!("@import '{long}.css'; @import 'ok.css'; a{{b:url({long}.png)}}");
+    assert_eq!(css_references(&css, usize::MAX), ["ok.css"]);
+}
+
+/// This thread's CPU seconds (other tests run beside it).
+fn cpu_seconds() -> f64 {
+    crate::html_tags::tests::cpu_seconds()
+}
+
+/// Daybreak 118's page, at the full 4 MiB a page is read for names:
+/// `<img `, 2,000 `src=srcset=`, padding, `.png>`. It made 15.6 GiB of
+/// names and aborted the core under 512 MiB; now it names one file, the
+/// site keeps a bounded amount, and it reads quickly.
+#[cfg(unix)]
+#[test]
+fn the_amplifying_page_is_served_with_bounded_names() {
+    let f = Folder::new();
+    let head = format!("<img {}", "src=srcset=".repeat(2_000));
+    let page = format!("{head}{}.png>", "x".repeat(SCAN_BYTES - head.len() - 5));
+    assert_eq!(page.len(), SCAN_BYTES);
+    let started = cpu_seconds();
+    let refs = html_references(&page, MAX_REFERENCES_PER_FILE);
+    let spent = cpu_seconds() - started;
+    assert!(refs.is_empty(), "one value, longer than any name: {}", refs.len());
+    // Linear work over 4 MiB in a debug build: well under the seconds the
+    // old scan took before it ran out of memory.
+    assert!(spent < 0.5, "reading the page's names took {spent}s");
+    f.write("index.html", &page);
+    let site = f.site();
+    assert_eq!(site.allowed_count(), 1, "the page alone");
+}
+
+/// However many names the files of a site give, what it keeps stays under
+/// `MAX_ALLOWED_BYTES`.
+#[cfg(unix)]
+#[test]
+fn what_a_site_keeps_is_bounded_in_bytes() {
+    let f = Folder::new();
+    let name = |n: usize| format!("{n:0>1000}.png");
+    let links: String = (0..8).map(|n| format!("<link rel=stylesheet href=\"s{n}.css\">")).collect();
+    f.write("index.html", &links);
+    for n in 0..8 {
+        f.write(&format!("s{n}.css"), &(0..2_000).map(|m| format!("a{{b:url({})}}", name(n * 2_000 + m))).collect::<String>());
+    }
+    let site = f.site();
+    for n in 0..8 {
+        let _ = site.serve(&format!("s{n}.css"));
+    }
+    let kept = site.allowed_count();
+    // The page and eight stylesheets, then 1,004-byte names up to the budget.
+    assert!(kept >= 2_000 && kept <= 9 + MAX_ALLOWED_BYTES / 1_004, "kept {kept}");
+    assert!(site.allows(&name(0)) && !site.allows(&name(15_999)));
+}
+
+/// A path in Japanese folders, every byte `%XX`, is longer as written than
+/// the path it names: the limit is on the path (Codex's review).
+#[cfg(unix)]
+#[test]
+fn an_encoded_name_is_limited_by_the_path_it_names() {
+    let f = Folder::new();
+    let folder = "\u{3042}".repeat(60);
+    let encoded = "%E3%81%82".repeat(60);
+    fs::create_dir_all(f.dir.join(&folder).join(&folder)).unwrap();
+    f.write(&format!("{folder}/{folder}/photo.png"), "x");
+    let src = format!("{encoded}/{encoded}/photo.png");
+    assert!(src.len() > MAX_REFERENCE_BYTES);
+    f.write("index.html", &format!("<img src=\"{src}\">"));
+    let site = f.site();
+    assert!(site.serve(&format!("/{folder}/{folder}/photo.png")).is_some());
+    let too_long = format!("<img src=\"{}.png\">", "%61".repeat(MAX_REFERENCE_BYTES));
+    assert!(html_references(&too_long, 10).len() == 1 && resolve(&html_references(&too_long, 10)[0], "").is_some_and(|p| p.len() > MAX_REFERENCE_BYTES));
+    f.write("index.html", &too_long);
+    assert_eq!(f.site().allowed_count(), 1, "a decoded path past MAX_REFERENCE_BYTES isn't kept");
+}

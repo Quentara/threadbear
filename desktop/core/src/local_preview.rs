@@ -45,6 +45,18 @@ pub const MAX_BYTES: u64 = 64 * 1024 * 1024;
 pub const SCAN_BYTES: usize = 4 * 1024 * 1024;
 pub const MAX_REFERENCES_PER_FILE: usize = 2_000;
 pub const MAX_ALLOWED: usize = 10_000;
+/// The longest path kept, decoded. A Mac path stops at 1,024 bytes, so a
+/// longer one names nothing a page could read. The counts above didn't bound
+/// the bytes: 2,000 names of megabytes each made 15.6 GiB from a 4 MiB page
+/// (Daybreak 118, 13 Nov 2026).
+pub const MAX_REFERENCE_BYTES: usize = 1_024;
+/// The longest name read from a page, as written: room for a 1,024-byte path
+/// with every byte `%XX` (Japanese folder names, say). Longer is skipped,
+/// never copied (Codex's review).
+pub const MAX_REFERENCE_SOURCE_BYTES: usize = 3 * MAX_REFERENCE_BYTES + 64;
+/// What all the names a site keeps come to, in bytes: thousands of real
+/// asset paths, a few megabytes at the very most.
+pub const MAX_ALLOWED_BYTES: usize = 2 * 1024 * 1024;
 /// How much of a page `has_scripts` reads.
 pub const SCRIPT_SCAN_BYTES: usize = 4 * 1024 * 1024;
 
@@ -113,7 +125,8 @@ pub struct Site {
     /// is served only while its bytes still match, so a page rewritten after
     /// the click gets nothing.
     pub page_digest: Option<String>,
-    allowed: Mutex<HashSet<String>>,
+    /// What it may read, and their names' bytes together (`MAX_ALLOWED_BYTES`).
+    allowed: Mutex<(HashSet<String>, usize)>,
     /// The folder, held open for the site's life: every read starts here, so
     /// the folder being moved or swapped for a link later changes nothing.
     #[cfg(unix)]
@@ -140,7 +153,7 @@ impl Site {
                 return None;
             }
             let root_fd = unsafe { std::os::fd::OwnedFd::from_raw_fd(fd) };
-            Some(Site { root, allowed: Mutex::new(HashSet::from([page.clone()])), page, page_digest, root_fd })
+            Some(Site { root, allowed: Mutex::new((HashSet::from([page.clone()]), page.len())), page, page_digest, root_fd })
         }
         #[cfg(not(unix))]
         {
@@ -151,11 +164,11 @@ impl Site {
 
     /// Whether `relative` is one the page may read now (for tests).
     pub fn allows(&self, relative: &str) -> bool {
-        self.allowed.lock().is_ok_and(|a| a.contains(relative))
+        self.allowed.lock().is_ok_and(|a| a.0.contains(relative))
     }
 
     pub fn allowed_count(&self) -> usize {
-        self.allowed.lock().map_or(0, |a| a.len())
+        self.allowed.lock().map_or(0, |a| a.0.len())
     }
 
     /// The bytes and type for `path` (from the folder, decoded, as the page
@@ -186,10 +199,16 @@ impl Site {
             let dir = relative.rsplit_once('/').map_or("", |(d, _)| d);
             let refs = if ext == "css" { css_references(&text, MAX_REFERENCES_PER_FILE) } else { html_references(&text, MAX_REFERENCES_PER_FILE) };
             if let Ok(mut allowed) = self.allowed.lock() {
+                let (allowed, bytes) = &mut *allowed;
                 for found in refs.iter().filter_map(|r| resolve(r, dir)) {
-                    if allowed.len() >= MAX_ALLOWED {
+                    if allowed.len() >= MAX_ALLOWED || *bytes + found.len() > MAX_ALLOWED_BYTES {
                         break;
                     }
+                    // A name joined to its folder can come out longer than it went in.
+                    if found.len() > MAX_REFERENCE_BYTES || allowed.contains(&found) {
+                        continue;
+                    }
+                    *bytes += found.len();
                     allowed.insert(found);
                 }
             }
@@ -456,77 +475,44 @@ pub fn without_script_contents(text: &str) -> String {
     out
 }
 
-/// One attribute's value after `name\s*=\s*`: quoted, or bare up to a space,
-/// a quote or `>`.
-fn attribute_values(text: &[u8], name: &[u8], limit: usize, out: &mut Vec<String>) {
-    let mut next_dq = Seek::new(|b| b == b'"');
-    let mut next_sq = Seek::new(|b| b == b'\'');
-    for at in find_all_ci(text, name) {
-        if out.len() >= limit {
-            return;
-        }
-        // `\bname`: a word starts here, and `name` isn't the start of a longer one.
-        if at > 0 && is_word(text[at - 1]) {
-            continue;
-        }
-        let mut i = at + name.len();
-        while i < text.len() && is_space(text[i]) {
-            i += 1;
-        }
-        if text.get(i) != Some(&b'=') {
-            continue;
-        }
-        i += 1;
-        while i < text.len() && is_space(text[i]) {
-            i += 1;
-        }
-        let value = match text.get(i) {
-            Some(b'"') => {
-                let end = next_dq.first(text, i + 1);
-                (end < text.len()).then(|| &text[i + 1..end])
-            }
-            Some(b'\'') => {
-                let end = next_sq.first(text, i + 1);
-                (end < text.len()).then(|| &text[i + 1..end])
-            }
-            Some(_) => {
-                let mut end = i;
-                while end < text.len() && !is_space(text[end]) && !matches!(text[end], b'"' | b'\'' | b'>') {
-                    end += 1;
-                }
-                (end > i).then(|| &text[i..end])
-            }
-            None => None,
-        };
-        if let Some(value) = value {
-            out.push(String::from_utf8_lossy(value).trim().to_owned());
-        }
+/// `value` with spaces trimmed, kept in `out` if it's a name a page could
+/// read: not empty, and no longer than `MAX_REFERENCE_SOURCE_BYTES`. A longer one
+/// is skipped before it's copied.
+fn keep(out: &mut Vec<String>, value: &[u8]) {
+    let value = value.trim_ascii();
+    if !value.is_empty() && value.len() <= MAX_REFERENCE_SOURCE_BYTES {
+        out.push(String::from_utf8_lossy(value).trim().to_owned());
     }
 }
 
 /// What a page's markup names: `src`, `href`, `poster` and `data`
 /// attributes, each part of a `srcset`, and `url()` and `@import` in its
 /// style attributes and `<style>` blocks. Scripts' contents are taken out
-/// first, so nothing a script says counts. At most `limit`.
+/// first, so nothing a script says counts. At most `limit`, shared by all of
+/// them. The tags are read once, each value as a browser reads it
+/// (`html_tags`), so `srcset=` inside a `src`'s value is that value, not
+/// another attribute that reads the rest of the page again (Daybreak 118).
 pub fn html_references(text: &str, limit: usize) -> Vec<String> {
-    let markup = without_script_contents(text);
-    let bytes = markup.as_bytes();
     let mut out = vec![];
-    for name in [&b"src"[..], b"href", b"poster", b"data"] {
-        attribute_values(bytes, name, limit, &mut out);
+    if limit == 0 {
+        return out;
     }
-    let mut srcsets = vec![];
-    attribute_values(bytes, b"srcset", limit, &mut srcsets);
-    'sets: for set in srcsets {
-        for piece in set.split(',') {
-            if out.len() >= limit {
-                break 'sets;
+    let markup = without_script_contents(text);
+    crate::html_tags::each_attribute(markup.as_bytes(), |_, name, value| {
+        if name.eq_ignore_ascii_case(b"srcset") {
+            for piece in value.split(|&b| b == b',') {
+                if out.len() >= limit {
+                    return false;
+                }
+                if let Some(first) = piece.split(|b| b.is_ascii_whitespace()).find(|s| !s.is_empty()) {
+                    keep(&mut out, first);
+                }
             }
-            if let Some(first) = piece.split(' ').find(|s| !s.is_empty()) {
-                out.push(first.to_owned());
-            }
+        } else if [&b"src"[..], b"href", b"poster", b"data"].iter().any(|n| name.eq_ignore_ascii_case(n)) {
+            keep(&mut out, value);
         }
-    }
+        out.len() < limit
+    });
     let left = limit.saturating_sub(out.len());
     out.extend(css_references(&markup, left));
     out
@@ -556,7 +542,7 @@ pub fn css_references(text: &str, limit: usize) -> Vec<String> {
             _ => continue,
         };
         if end < bytes.len() {
-            out.push(String::from_utf8_lossy(&bytes[i + 1..end]).trim().to_owned());
+            keep(&mut out, &bytes[i + 1..end]);
         }
     }
     out
@@ -600,7 +586,7 @@ fn css_urls(text: &str, limit: usize) -> Vec<String> {
             }
         }
         let Some((start, end, close)) = found else { continue };
-        out.push(String::from_utf8_lossy(&bytes[start..end]).trim().to_owned());
+        keep(&mut out, &bytes[start..end]);
         resume = close + 1;
         if out.len() >= limit {
             break;

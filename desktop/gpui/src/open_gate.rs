@@ -149,23 +149,79 @@ pub(crate) fn open_in_chrome_profile(url: &str, directory: &str, cx: &mut App) {
     if scripted_opens(&format!("chrome {directory} {web}")) {
         return;
     }
-    if !start_chrome_profile(&web, directory) {
-        system_open(&web, cx);
+    #[cfg(target_os = "macos")]
+    {
+        // The Chrome that's running (the profiles are only offered while it
+        // is), never whichever bundle Launch Services has for Chrome's id:
+        // any folder's .app can claim that id, and `open -na` starts the
+        // bundle it's given (Daybreak 112, 13 Nov 2026). Its signature is
+        // checked off the main thread (a quarter of a second), with a note
+        // up meanwhile, and anything but Google's own Chrome isn't started.
+        let Some(chrome) = running_chrome().filter(|p| policy::real_path(Path::new(p)).is_ok_and(|r| INSTALLED_APPS.iter().any(|root| r.starts_with(root)))) else {
+            system_open(&web, cx);
+            return;
+        };
+        let Some(app) = cx.try_global::<GateNotices>().and_then(|n| n.0.upgrade()) else { return };
+        let directory = directory.to_owned();
+        cx.defer(move |cx| {
+            if !app.update(cx, |app, cx| app.begin_note("opening-chrome", "Opening Chrome…", cx)) { return; }
+            cx.spawn(async move |cx| {
+                let page = web.clone();
+                let result = cx.background_executor().spawn(async move { start_chrome_profile(&chrome, &page, &directory) }).await;
+                cx.update(|cx| {
+                    app.update(cx, |app, cx| app.end_note("opening-chrome", cx));
+                    if let Err(why) = result { refuse(why, cx) }
+                });
+            }).detach();
+        });
+        return;
     }
+    #[cfg(not(target_os = "macos"))]
+    system_open(&web, cx);
 }
+
+/// The running Chrome's bundle, if there is one.
+#[cfg(target_os = "macos")]
+fn running_chrome() -> Option<String> {
+    use objc2_app_kit::NSRunningApplication;
+    use objc2_foundation::NSString;
+    let running = NSRunningApplication::runningApplicationsWithBundleIdentifier(&NSString::from_str(threadbear_core::reply_links::CHROME_BUNDLE_ID));
+    (0..running.count()).find_map(|i| running.objectAtIndex(i).bundleURL().and_then(|u| u.path()).map(|p| p.to_string()))
+}
+
+/// What Google's Chrome is signed as: Apple's anchor for a Developer ID,
+/// Chrome's own id and Google's team. A copy with Chrome's id but anything
+/// else inside fails it.
+/// Where an app this gate starts by itself may be: the Mac's own folders
+/// for apps, which an agent confined to a project can't write. Chrome in
+/// ~/Applications goes to the default browser without its profile.
+#[cfg(target_os = "macos")]
+const INSTALLED_APPS: &[&str] = &["/Applications/", "/System/Applications/", "/Library/Developer/"];
 
 #[cfg(target_os = "macos")]
-fn start_chrome_profile(web: &str, directory: &str) -> bool {
-    use objc2_app_kit::NSWorkspace;
-    use objc2_foundation::NSString;
-    let Some(app) = NSWorkspace::sharedWorkspace().URLForApplicationWithBundleIdentifier(&NSString::from_str(threadbear_core::reply_links::CHROME_BUNDLE_ID)) else { return false };
-    let Some(app) = app.path().map(|p| p.to_string()) else { return false };
-    std::process::Command::new("/usr/bin/open").args(["-na", &app, "--args", &format!("--profile-directory={directory}"), web]).spawn().is_ok()
+const GOOGLE_CHROME: &str = "anchor apple generic and identifier \"com.google.Chrome\" and certificate leaf[subject.OU] = \"EQHXZ8M8AV\"";
+
+#[cfg(target_os = "macos")]
+fn start_chrome_profile(path: &str, web: &str, directory: &str) -> Result<(), String> {
+    let real = signed_as(path, GOOGLE_CHROME).map_err(|_| "The Chrome that's running isn't Google's Chrome, so Threadbear didn't open the page in it.".to_owned())?;
+    std::process::Command::new("/usr/bin/open").arg("-na").arg(&real).args(["--args", &format!("--profile-directory={directory}"), web]).spawn().map(|_| ()).map_err(|e| format!("Chrome didn't open: {e}"))
 }
 
-#[cfg(not(target_os = "macos"))]
-fn start_chrome_profile(_web: &str, _directory: &str) -> bool {
-    false
+/// The application at `path`, symlinks followed, if it's installed where
+/// apps are (`INSTALLED_APPS`) and its code signature is valid and meets
+/// `requirement` (`codesign -R`), so a fixed button or menu never starts a
+/// bundle that only borrowed another app's id. The place matters too: the
+/// check and `open` each read the bundle at its path, so a signed copy in a
+/// project folder could be swapped between them by whatever writes there
+/// (Codex's review of the Daybreak 112 fix).
+#[cfg(target_os = "macos")]
+fn signed_as(path: &str, requirement: &str) -> Result<std::path::PathBuf, ()> {
+    let real = policy::real_path(Path::new(path)).map_err(|_| ())?;
+    if !INSTALLED_APPS.iter().any(|root| real.starts_with(root)) { return Err(()); }
+    let signed = std::process::Command::new("/usr/bin/codesign")
+        .args(["--verify", "--strict", &format!("-R={requirement}")])
+        .arg(&real).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
+    if signed.is_ok_and(|s| s.success()) { Ok(real) } else { Err(()) }
 }
 
 /// The picture panel's fixed destination, as in Swift's ImagePanel. Nothing
@@ -200,14 +256,12 @@ pub(crate) fn open_simulator(cx: &mut App) {
 
 #[cfg(target_os = "macos")]
 fn apple_simulator(path: &str) -> Result<String, String> {
-    let real = policy::real_path(Path::new(path)).map_err(|_| "Simulator isn't there any more.".to_owned())?;
-    // Reading an agent's .app icon can register that bundle with Launch
-    // Services. A copied bundle id must never turn this fixed button into
-    // a way to run that application without the gate's usual question.
-    let signed = std::process::Command::new("/usr/bin/codesign")
-        .args(["--verify", "--strict", "-R=anchor apple and identifier \"com.apple.iphonesimulator\""])
-        .arg(&real).stdin(std::process::Stdio::null()).stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null()).status();
-    if !signed.is_ok_and(|s| s.success()) { return Err("The registered Simulator isn't Apple's Simulator, so Threadbear didn't open it.".into()); }
+    if policy::real_path(Path::new(path)).is_err() { return Err("Simulator isn't there any more.".to_owned()); }
+    // Any .app on this Mac can be registered with Launch Services (Finder
+    // and Spotlight do it on sight). A copied bundle id must never turn this
+    // fixed button into a way to run that application without the gate's
+    // usual question.
+    let real = signed_as(path, "anchor apple and identifier \"com.apple.iphonesimulator\"").map_err(|_| "The registered Simulator isn't Apple's Simulator, so Threadbear didn't open it.".to_owned())?;
     Ok(real.to_string_lossy().into_owned())
 }
 
@@ -378,16 +432,11 @@ pub(crate) fn media_thumbnail(_path: &str, _origin: Origin, _expected: Option<po
 
 // ---------------------------------------------------------------- shown in the app
 
-/// The gate's checked icon input. File descriptors stay on a worker; only
-/// an application's resolved path is handed to AppKit on the main thread.
+/// The gate's checked icon input: an icns or PDF file, open, with its length.
+/// An application's icon is its own icns file, found and read like any other
+/// (`application_icon`).
 #[cfg(target_os = "macos")]
-pub(crate) struct CheckedIcon(IconFile);
-#[cfg(target_os = "macos")]
-enum IconFile { Application(std::path::PathBuf), File(std::fs::File, u64) }
-#[cfg(target_os = "macos")]
-impl CheckedIcon {
-    pub(crate) fn is_application(&self) -> bool { matches!(self.0, IconFile::Application(_)) }
-}
+pub(crate) struct CheckedIcon(std::fs::File, u64);
 
 /// Resolve and read only on a worker, including for application bundles on
 /// a disk that may be slow. Remote paths never name a file on this Mac.
@@ -404,9 +453,46 @@ pub(crate) fn read_icon(path: &Path, origin: Origin) -> Result<CheckedIcon, std:
     }
     if wanted == "app" {
         if !real.is_dir() { return Err(std::io::Error::other("That isn't an application bundle")); }
-        return Ok(CheckedIcon(IconFile::Application(real)));
+        return application_icon(&real);
     }
-    let file = policy::local_open(&real)?;
+    checked_icon_file(&real, &wanted)
+}
+
+/// An application's icon, read as a file from inside its bundle: the icns
+/// its Info.plist names (CFBundleIconFile) in Contents/Resources. Never
+/// NSWorkspace's icon for it, which can register the bundle with Launch
+/// Services, so a folder's .app claiming Chrome's id could be the one a
+/// launch by that id starts (Daybreak 112, 13 Nov 2026). An app whose icon
+/// is only in an asset catalog shows its patch's symbol instead.
+#[cfg(target_os = "macos")]
+fn application_icon(bundle: &Path) -> Result<CheckedIcon, std::io::Error> {
+    extern "C" {
+        fn tb_bundle_icon_file(plist: *const u8, length: usize, output: *mut u8, capacity: usize) -> isize;
+    }
+    let inside = |p: &Path| -> Result<std::path::PathBuf, std::io::Error> {
+        let real = policy::real_path(p)?;
+        if real.starts_with(bundle) && real != bundle { Ok(real) } else { Err(std::io::Error::other("That application's icon is outside it")) }
+    };
+    const PLIST_BYTES: usize = 1024 * 1024;
+    let plist = policy::local_read(&inside(&bundle.join("Contents/Info.plist"))?, PLIST_BYTES + 1)?;
+    if plist.len() > PLIST_BYTES { return Err(std::io::Error::other("That application's Info.plist is too big")); }
+    let mut name = [0u8; 256];
+    let length = unsafe { tb_bundle_icon_file(plist.as_ptr(), plist.len(), name.as_mut_ptr(), name.len()) };
+    let name = usize::try_from(length).ok().and_then(|n| std::str::from_utf8(&name[..n]).ok()).unwrap_or_default();
+    // A file name in Resources, nothing that climbs or names a folder.
+    if name.is_empty() || name.starts_with('.') || name.contains(['/', '\\', '\0']) {
+        return Err(std::io::Error::other("That application names no icon file"));
+    }
+    let file = if name.to_ascii_lowercase().ends_with(".icns") { name.to_owned() } else { format!("{name}.icns") };
+    let real = inside(&bundle.join("Contents/Resources").join(file))?;
+    checked_icon_file(&real, "icns")
+}
+
+/// `real`, opened, if it's a small regular file of the kind `wanted` says
+/// (`pdf` or `icns`) by its first bytes.
+#[cfg(target_os = "macos")]
+fn checked_icon_file(real: &Path, wanted: &str) -> Result<CheckedIcon, std::io::Error> {
+    let file = policy::local_open(real)?;
     let meta = file.metadata()?;
     if !meta.is_file() || meta.len() > 32 * 1024 * 1024 {
         return Err(std::io::Error::other("That icon isn't a small regular file"));
@@ -419,28 +505,21 @@ pub(crate) fn read_icon(path: &Path, origin: Origin) -> Result<CheckedIcon, std:
         got == 8 && head.starts_with(b"icns") && u32::from_be_bytes(head[4..8].try_into().unwrap()) as u64 == meta.len()
     };
     if !matches { return Err(std::io::Error::other("That file isn't the icon it names")); }
-    Ok(CheckedIcon(IconFile::File(file, meta.len())))
+    Ok(CheckedIcon(file, meta.len()))
 }
 
-/// PNG bytes for a checked patch icon. AppKit never opens the application.
-/// The app branch is main-thread only; ImageIO/CoreGraphics use a worker.
+/// PNG bytes for a checked patch icon, on a worker (ImageIO and
+/// CoreGraphics). AppKit never sees the application.
 #[cfg(target_os = "macos")]
 pub(crate) fn icon_png(icon: CheckedIcon) -> Result<Vec<u8>, std::io::Error> {
     use std::os::fd::AsRawFd as _;
     extern "C" {
-        fn tb_file_icon_png(fd: i32, length: i64, application_icon: *mut std::ffi::c_void, output: *mut *mut std::ffi::c_void) -> i32;
+        fn tb_file_icon_png(fd: i32, length: i64, output: *mut *mut std::ffi::c_void) -> i32;
         fn free(data: *mut std::ffi::c_void);
     }
     let mut output = std::ptr::null_mut();
-    let length = match icon.0 {
-        IconFile::Application(real) => {
-            if objc2::MainThreadMarker::new().is_none() { return Err(std::io::Error::other("Application icons must be read on the main thread")); }
-            let image = objc2_app_kit::NSWorkspace::sharedWorkspace().iconForFile(&objc2_foundation::NSString::from_str(&real.to_string_lossy()));
-            let native = (&*image as *const objc2_app_kit::NSImage).cast_mut().cast();
-            unsafe { tb_file_icon_png(-1, 0, native, &mut output) }
-        }
-        IconFile::File(file, length) => unsafe { tb_file_icon_png(file.as_raw_fd(), length as i64, std::ptr::null_mut(), &mut output) },
-    };
+    let CheckedIcon(file, length) = icon;
+    let length = unsafe { tb_file_icon_png(file.as_raw_fd(), length as i64, &mut output) };
     if output.is_null() || length <= 0 { return Err(std::io::Error::other("That icon couldn't be decoded")); }
     // AppKit hands over a malloc copy, so Rust owns neither an Objective-C
     // object nor the allocation after this copy and free.

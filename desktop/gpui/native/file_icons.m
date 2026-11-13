@@ -7,19 +7,34 @@ static uint32_t tb_big32(const uint8_t *p) {
   return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3];
 }
 
-// Called only by open_gate.rs. File icons use ImageIO/CoreGraphics on a
-// worker; the gate hands over an application's NSImage on the main thread.
-int tb_file_icon_png(int fd, long long length, void *applicationIcon, void **output) {
+// Called only by open_gate.rs: an application's Info.plist (bytes the gate
+// read from inside the bundle) to the icon file it names, as UTF-8 in
+// `output`, or -1. Parsing data never asks Launch Services about the bundle,
+// as NSWorkspace's icon for it could (Daybreak 112).
+long tb_bundle_icon_file(const void *plist, size_t length, char *output, size_t capacity) {
+  @autoreleasepool {
+    if (!plist || !output || capacity == 0) return -1;
+    NSData *data = [NSData dataWithBytesNoCopy:(void *)plist length:length freeWhenDone:NO];
+    id info = [NSPropertyListSerialization propertyListWithData:data options:NSPropertyListImmutable format:NULL error:NULL];
+    if (![info isKindOfClass:NSDictionary.class]) return -1;
+    id name = ((NSDictionary *)info)[@"CFBundleIconFile"];
+    if (![name isKindOfClass:NSString.class]) return -1;
+    const char *utf8 = [(NSString *)name UTF8String];
+    size_t count = utf8 ? strlen(utf8) : 0;
+    if (count == 0 || count >= capacity) return -1;
+    memcpy(output, utf8, count);
+    return (long)count;
+  }
+}
+
+// Called only by open_gate.rs, on a worker: an icns or PDF the gate opened
+// and checked, drawn with ImageIO/CoreGraphics. AppKit never sees an app.
+int tb_file_icon_png(int fd, long long length, void **output) {
   @autoreleasepool {
     *output = NULL;
     CGImageRef image = NULL;
     CGPDFDocumentRef pdf = NULL;
-    if (applicationIcon) {
-      NSImage *icon = (__bridge NSImage *)applicationIcon;
-      NSRect rect = NSMakeRect(0, 0, 128, 128);
-      image = [icon CGImageForProposedRect:&rect context:nil hints:nil];
-      if (image) CGImageRetain(image);
-    } else if (fd >= 0 && length > 0 && length <= 32LL * 1024 * 1024) {
+    if (fd >= 0 && length > 0 && length <= 32LL * 1024 * 1024) {
       NSMutableData *bytes = [NSMutableData dataWithLength:(NSUInteger)length];
       long long at = 0;
       while (at < length) {

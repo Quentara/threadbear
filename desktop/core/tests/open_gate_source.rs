@@ -70,8 +70,12 @@ const ALLOWED_LINES: &[(&str, &str, usize)] = &[
     ("gpui/src/handover.rs", "let mut command = std::process::Command::new(\"/usr/bin/open\");", 1),
     ("gpui/src/app_update.rs", "let out = Command::new(\"/usr/bin/git\").args(rules::rev_parse_arguments(checkout)).stdin(Stdio::null()).output().ok()?;", 1),
     ("gpui/src/app_update.rs", "let child = Command::new(program).args(arguments).current_dir(installed::home_dir()).stdin(Stdio::null()).stdout(out).stderr(err).spawn();", 1),
-    // Encodes the gate's checked descriptor or already-read application icon.
-    ("gpui/native/file_icons.m", "int tb_file_icon_png(int fd, long long length, void *applicationIcon, void **output) {", 1),
+    // Encodes the gate's checked descriptor (an application's icon is its icns file).
+    ("gpui/native/file_icons.m", "int tb_file_icon_png(int fd, long long length, void **output) {", 1),
+    // A test that reads Launch Services' list for Chrome's id, to see an
+    // impostor's icon being drawn didn't register it (Daybreak 112). Opens nothing.
+    ("gpui/src/open_gate/icon_tests.rs", "use objc2_app_kit::NSWorkspace;", 1),
+    ("gpui/src/open_gate/icon_tests.rs", "let urls = NSWorkspace::sharedWorkspace().URLsForApplicationsWithBundleIdentifier(&id);", 1),
     // This standalone harness makes its own descriptors/media; it never renders runner data.
     ("gpui/tests/native/media_hover.m", "extern size_t tb_media_thumbnail(int fd,long long length,const char *name,bool pdf,const TBMediaVersion *expected,unsigned char *out,size_t capacity);", 1),
     ("gpui/tests/native/media_hover.m", "count=tb_media_thumbnail(fd,size,name,pdf,&expected,out.mutableBytes,capacity);", 1),
@@ -264,4 +268,32 @@ fn the_media_views_read_only_what_the_gate_checked() {
         }
     }
     assert!(found.is_empty(), "the media views must read only the gate's file and send their links back to it:\n{}", found.join("\n"));
+}
+
+/// Daybreak 112 (13 Nov 2026): any folder's .app can claim another app's
+/// bundle id with Launch Services, and asking NSWorkspace for a bundle's icon
+/// can register it. So the gate never asks it for one (an app's icon is its
+/// icns file, read like any other), and every application it starts by a
+/// fixed id (Chrome for a profile, Simulator) passes `signed_as`, the
+/// owner's signature check, before `/usr/bin/open` sees its path.
+#[test]
+fn fixed_apps_start_only_once_signed_and_icons_never_ask_launch_services() {
+    let desktop = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_owned();
+    let gate = std::fs::read_to_string(desktop.join("gpui/src/open_gate.rs")).unwrap();
+    assert!(!gate.contains("iconForFile"), "the gate asks NSWorkspace for an icon");
+    let mut native = Vec::new();
+    rust_files(&desktop.join("gpui"), &mut native);
+    for file in native.iter().filter(|f| f.extension().is_some_and(|e| e == "m")) {
+        let text = std::fs::read_to_string(file).unwrap();
+        assert!(!text.contains("iconForFile") && !text.contains("[NSWorkspace"), "{} asks NSWorkspace", file.display());
+    }
+    let chrome = gate.split("fn start_chrome_profile(").nth(1).unwrap().split("\n}\n").next().unwrap();
+    let check = chrome.find("signed_as(path, GOOGLE_CHROME)").expect("Chrome is checked");
+    assert!(check < chrome.find("Command::new(\"/usr/bin/open\")").unwrap(), "checked before it's started");
+    assert!(chrome.contains(".arg(&real)"), "the checked path is the one started");
+    assert!(gate.contains("certificate leaf[subject.OU] = \\\"EQHXZ8M8AV\\\""), "Google's team");
+    assert!(!gate.contains("URLForApplicationWithBundleIdentifier(&NSString::from_str(threadbear_core::reply_links::CHROME_BUNDLE_ID))"), "Chrome by id, not the running one");
+    let simulator = gate.split("fn apple_simulator(").nth(1).unwrap().split("\n}\n").next().unwrap();
+    assert!(simulator.contains("signed_as(path, \"anchor apple and identifier"));
+    assert_eq!(gate.matches("Command::new(\"/usr/bin/open\")").count(), 1, "one place starts an application by path");
 }

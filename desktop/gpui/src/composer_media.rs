@@ -791,3 +791,19 @@ mod tests {
         assert!(!path.exists());
     }
 }
+
+/// native/composer_media.m's imageURL, from draggingEntered on the main
+/// thread: whether a browser drag's HTML is an `<img>` of its own URL, read
+/// in one bounded pass (html_tags.rs; Daybreak 120). Never panics across
+/// the boundary: bad input is a plain no.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn tb_drag_html_shows_image(html: *const u8, html_length: usize, url: *const u8, url_length: usize) -> bool {
+    if html.is_null() || url.is_null() || html_length > threadbear_core::html_tags::DRAG_HTML_BYTES {
+        return false;
+    }
+    // SAFETY: the Objective-C caller hands NSData bytes it holds for the call.
+    let (html, url) = unsafe { (std::slice::from_raw_parts(html, html_length), std::slice::from_raw_parts(url, url_length)) };
+    let Ok(url) = std::str::from_utf8(url) else { return false };
+    threadbear_core::html_tags::drag_html_shows_image(html, url)
+}

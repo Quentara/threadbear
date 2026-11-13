@@ -1342,7 +1342,15 @@ private struct ImagePanel: View {
 
     static func openSimulator() {
         guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.iphonesimulator") else { return }
-        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+        // Any .app can claim Simulator's id: start it only if it's Apple's
+        // (Daybreak 112, as the GPUI app's apple_simulator).
+        Task.detached(priority: .userInitiated) {
+            guard let simulator = SignedApp.checked(url, SignedApp.appleSimulator) else {
+                await MainActor.run { OpenGate.refuse("The registered Simulator isn't Apple's Simulator, so Threadbear didn't open it.") }
+                return
+            }
+            await MainActor.run { NSWorkspace.shared.openApplication(at: simulator, configuration: NSWorkspace.OpenConfiguration()) }
+        }
     }
 }
 

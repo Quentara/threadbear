@@ -67,25 +67,11 @@ impl Asset for MacIcon {
     type Output = Result<std::sync::Arc<RenderImage>, ImageCacheError>;
     fn load(path: Self::Source, cx: &mut App) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
         let renderer = cx.svg_renderer();
-        // Only the AppKit call needs the main thread. Canonicalization,
-        // metadata and file reads run in the asset's worker future first.
-        let (request, receive) = futures::channel::oneshot::channel::<crate::open_gate::CheckedIcon>();
-        let (reply, application) = futures::channel::oneshot::channel();
-        cx.spawn(async move |cx| {
-            if let Ok(icon) = receive.await {
-                let result = cx.update(|_| crate::open_gate::icon_png(icon));
-                let _ = reply.send(result);
-            }
-        }).detach();
+        // All on the asset's worker: an application's icon is a file in its
+        // bundle, read like any other (open_gate::application_icon).
         async move {
             let icon = crate::open_gate::read_icon(&path, crate::open_gate::Origin::ThisMac)?;
-            let png = if icon.is_application() {
-                request.send(icon).map_err(|_| std::io::Error::other("The application icon read was cancelled"))?;
-                application.await.map_err(|_| std::io::Error::other("The application icon read was cancelled"))??
-            } else {
-                drop(request);
-                crate::open_gate::icon_png(icon)?
-            };
+            let png = crate::open_gate::icon_png(icon)?;
             Image::from_bytes(ImageFormat::Png, png).to_image_data(renderer).map_err(Into::into)
         }
     }
