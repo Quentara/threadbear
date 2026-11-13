@@ -581,7 +581,17 @@ impl Threadbear {
         use crate::app::Connection;
         let restart = self.client.restart();
         let restarting = restart.is_restarting(std::time::Instant::now());
-        let connection = self.connection();
+        let mut connection = self.connection();
+        // Back already, as the client has it, while this app hasn't yet
+        // taken in the news (Seen::Status comes on its next turn). The
+        // client ends the restart before it says it's connected, so in
+        // between this read "not restarting, still down" and, the drop's
+        // grace long gone, said "Can't reach the runner." at the very end
+        // of a restart: GitHub's slower machines caught it every time
+        // (connection.feature, "While the runner restarts...", 13 Nov).
+        if !matches!(connection, Connection::Connected) && matches!(self.client.status(), threadbear_client::runner::Status::Connected { .. }) {
+            connection = Connection::Connected;
+        }
         if let Connection::Connected = connection {
             // Mike's own click comes first: he's looking for it.
             if let Some((_, note)) = self.busy_notes.last() {
