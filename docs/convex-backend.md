@@ -465,7 +465,11 @@ while he's there marks the thread `pushHeldAt`; leaving the Mac sends it to
 the `away` phones if the thread still needs him. A runner that hasn't
 checked in for 3 minutes (a sleeping Mac) counts as away, and what it held
 goes then (`sync:sendStaleHeldPushes`, a cron every 2 minutes): a Mac whose
-lid closed with Mike at it never says he left.
+lid closed with Mike at it never says he left. The cron only hands each
+such runner to a mutation of its own (`sync:drainHeldPushes`), which sends
+16 at a time and schedules the next 16, so one runner's backlog (a
+secondary key may hold 3,000 large rows) can't read past a mutation's
+limit and stop another Mac's pushes (Daybreak 119, 13 Nov).
 
 **Keeping old and new working together.** For a while after any change,
 an older runner, a newer backend and an App Store phone app from weeks ago
