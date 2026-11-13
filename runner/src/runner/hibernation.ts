@@ -83,6 +83,8 @@ export const hibernationPart = {
     }
     st.rec.snoozedUntil = answer.until ?? NO_WAKE_TIME;
     st.rec.wakeWhen = { said, ...(answer.topic ? { topic: answer.topic } : {}), ...(by ? { by } : {}) };
+    // What it already checked counts only for the same words, from its agent.
+    if (st.rec.wakeChecked && (!by || st.rec.wakeChecked.said !== said)) delete st.rec.wakeChecked;
     this.emit(st, { type: 'system.note', text: hibernateNote(answer, said, timeZone, by) });
     this.armSnoozeTimer();
     this.log.info('hibernated in words', { threadId: st.rec.id, until: answer.until, topic: answer.topic });
@@ -108,11 +110,13 @@ export const hibernationPart = {
   // sleep until something happened gets a turn as well, to check it really
   // has (the librarian reads one thread, and can be wrong) and go back to
   // sleep if not, rather than sitting in the inbox with nothing done.
-  wakeForTopic(this: Runner, threadId: string, inThreadId: string): boolean {
+  wakeForTopic(this: Runner, threadId: string, inThreadId: string, shown?: { topic: string; happened: boolean }): boolean {
     const st = this.threads.get(threadId);
     const wakeWhen = st?.rec.wakeWhen;
     const topic = wakeWhen?.topic;
     if (!st || !wakeWhen || !topic || st.rt.deleted || st.rec.archivedAt || threadId === inThreadId || this.bucket(st.rec) !== 'snoozed') return false;
+    // Not the wait the librarian judged: set again while its model ran.
+    if (shown && (shown.topic !== topic || shown.happened !== (wakeWhen.by === 'agent'))) return false;
     const where = this.threads.get(inThreadId)?.rec.title;
     if (wakeWhen.by !== 'agent') {
       this.wake(st, { why: `you talked about ${topic}${where ? ` in "${where}"` : ' in another thread'}` });
@@ -120,6 +124,12 @@ export const hibernationPart = {
       this.log.info('woke for a topic', { threadId, inThreadId, topic });
       return true;
     }
+    // Already woken from this thread for these words, and it has said
+    // nothing since: the agent checked that claim and went back to sleep.
+    const seq = this.threads.get(inThreadId)?.rec.lastSeq ?? 0;
+    const checked = st.rec.wakeChecked?.said === wakeWhen.said ? st.rec.wakeChecked : undefined;
+    if (checked && (checked.from[inThreadId] ?? -1) >= seq) return false;
+    st.rec.wakeChecked = { said: wakeWhen.said, from: { ...checked?.from, [inThreadId]: seq } };
     this.wake(st, { why: `to check whether ${topic}${where ? `, from "${where}"` : ''}` });
     this.armSnoozeTimer();
     // Which thread, only where send_message would let it say so without a

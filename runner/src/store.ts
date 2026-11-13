@@ -178,6 +178,11 @@ export type ThreadRecord = {
   snoozedUntilRestart?: boolean; // snoozedUntil is UNTIL_RESTART; start() wakes it
   untilRelease?: string; // with snoozedUntilRestart: only a start on another release wakes it
   wakeWhen?: WakeWhen; // hibernated in Mike's words (wake-when.ts)
+  // An agent's wait for something to happen (WakeWhen.by) that woke it to
+  // check: which threads it woke from, at what seq. Kept through the wake so
+  // a snooze again with the same words isn't woken again by the same claim
+  // until that thread says more (Codex's review, 13 Nov 2026).
+  wakeChecked?: { said: string; from: Record<string, number> };
   // Hibernating until these threads finish (end_turn's waitFor,
   // runner/hibernation.ts): each counts once it has finished (with no new
   // work since), been archived or been deleted.

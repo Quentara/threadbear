@@ -225,6 +225,36 @@ test('end_turn snooze in words: an agent waiting for something wakes with a turn
   assert.ok(h.adapter.sessions.length > sessions, 'a turn started');
 });
 
+test('an agent that checks and goes back to sleep is not woken again by the same claim, only by more from that thread', async () => {
+  const { h, thread } = setup(() => ok({ until: null, topic: 'the GPUI app has replaced the Swift app', why: 'an event' }));
+  const said = 'until the GPUI app replaces the Swift app';
+  turnWithSnooze(h, thread.id, { needs: 'nothing', snooze: said });
+  await tick();
+  await tick();
+  const other = h.runner.create({ text: 'GPUI Port Coordinator', accountId: 'claude-3' }).thread;
+  const shown = { topic: 'the GPUI app has replaced the Swift app', happened: true };
+  // A look that judged another wait (Mike's kind, or other words) wakes nothing.
+  assert.equal(h.runner.wakeForTopic(thread.id, other.id, { topic: 'woodworking', happened: true }), false);
+  assert.equal(h.runner.wakeForTopic(thread.id, other.id, { ...shown, happened: false }), false);
+  assert.equal(h.runner.wakeForTopic(thread.id, other.id, shown), true);
+  await tick();
+  // The agent checks, finds it hasn't, and snoozes again with the same words.
+  const s = h.adapter.last;
+  s.init();
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'e2', name: END_TURN, kind: 'mcp', title: 'end_turn', input: { needs: 'nothing', snooze: said } } });
+  s.text('m2', 'Not yet: the Swift app is still the one installed.');
+  s.result('completed');
+  await tick();
+  await tick();
+  assert.deepEqual(h.runner.list(['snoozed']).map((t) => t.id).includes(thread.id), true);
+  // The same claim, with nothing new in that thread, doesn't wake it again.
+  assert.equal(h.runner.wakeForTopic(thread.id, other.id, shown), false);
+  // More from that thread is new evidence.
+  h.runner.send(other.id, 'The GPUI app is now the one we ship.');
+  await tick();
+  assert.equal(h.runner.wakeForTopic(thread.id, other.id, shown), true);
+});
+
 test("Mike's own Wake when… still only brings the thread back, with no turn", async () => {
   const { h, thread } = setup(() => ok({ until: null, topic: 'woodworking', why: 'topic' }));
   await h.runner.hibernateWhen({ threadId: thread.id, said: 'next time I talk about woodworking' });

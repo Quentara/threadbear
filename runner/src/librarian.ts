@@ -61,7 +61,8 @@ export type LibrarianHost = {
   // Threads hibernating until Mike next talks about something
   // (wake-when.ts), and waking one he just did.
   waitingTopics?(): { threadId: string; title: string; topic: string; happened?: true }[];
-  wakeForTopic?(threadId: string, inThreadId: string): boolean;
+  // `shown`: the wait the look judged; one changed since isn't woken.
+  wakeForTopic?(threadId: string, inThreadId: string, shown?: { topic: string; happened: boolean }): boolean;
   // Threads hibernating until this one has done something in particular
   // (end_turn's waitFor until), and saying one has.
   waitedOnFor?(threadId: string): { threadId: string; title: string; until: string }[];
@@ -180,6 +181,10 @@ export class Librarian {
   private projects: Projects;
   // The conditions each look was shown (prompt), for its met (apply).
   private shownWaiters = new Map<string, { threadId: string; title: string; until: string }[]>();
+  // The topics each look was shown, for its wake (apply): an answer counts
+  // only for the wait it judged, not one set since while the model ran
+  // (Codex's review, 13 Nov 2026).
+  private shownTopics = new Map<string, { threadId: string; title: string; topic: string; happened?: true }[]>();
   private models?: Pick<Models, 'generate'> & { unavailable?(opts?: { poolOnly?: boolean }): string | undefined; isPrivateFolder?(cwd: string): boolean };
   private clock: Clock;
   private log: Logger;
@@ -711,6 +716,7 @@ export class Librarian {
     const worked = [...(this.workedIn.get(rec.id) ?? [])].filter((r) => !this.edited.get(rec.id)?.has(r)).map((r) => this.tilde(r));
     if (worked.length) lines.push(`Ran commands in: ${worked.join(', ')}`);
     const waiting = this.waitingFor(rec);
+    this.shownTopics.set(rec.id, waiting);
     const talk = waiting.filter((w) => !w.happened);
     const happen = waiting.filter((w) => w.happened);
     if (talk.length) {
@@ -933,12 +939,13 @@ export class Librarian {
       }
     }
     // Hibernating threads whose topic Mike has just talked about here.
+    const shownTopics = this.shownTopics.get(rec.id) ?? [];
+    this.shownTopics.delete(rec.id);
     if (Array.isArray(a.wake)) {
-      const waiting = this.waitingFor(rec);
       const woke: string[] = [];
       for (const id of a.wake) {
-        const w = typeof id === 'string' && id.length >= 8 ? waiting.find((x) => x.threadId.startsWith(id)) : undefined;
-        if (w && !woke.includes(w.title) && this.host.wakeForTopic?.(w.threadId, rec.id)) woke.push(w.title);
+        const w = typeof id === 'string' && id.length >= 8 ? shownTopics.find((x) => x.threadId.startsWith(id)) : undefined;
+        if (w && !woke.includes(w.title) && this.host.wakeForTopic?.(w.threadId, rec.id, { topic: w.topic, happened: Boolean(w.happened) })) woke.push(w.title);
       }
       if (woke.length) {
         said.push(`Woke ${woke.join(' and ')}`);
