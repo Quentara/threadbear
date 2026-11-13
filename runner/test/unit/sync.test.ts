@@ -1393,18 +1393,25 @@ test('a message row says which turn it is from, once the backend takes it', asyn
 // of the login notes, 13 Nov).
 test("a login's note waits for a backend that takes it, and goes up then", async () => {
   let backend = LOGIN_NOTES_API_VERSION - 1;
-  const { sync, calls } = setup({ answer: (fn) => (fn === 'sync:heartbeat' ? { apiVersion: backend } : null) });
+  const { h, sync, calls } = setup({ answer: (fn) => (fn === 'sync:heartbeat' ? { apiVersion: backend } : null) });
+  const t = h.runner.create({ text: 'one', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread.id;
   sync.start();
-  await tick();
+  await sync.flushNow();
   const at = '2026-11-13T02:00:00.000Z';
-  const note: MessageDoc = { threadId: 't', seq: 10, role: 'note', text: 'Moved to mike@example.org: mike@example.net hit its 5-hour limit.', at };
+  const text = 'Moved to mike@example.org: mike@example.net hit its 5-hour limit.';
   const inner = sync as never as { appendMessages(m: MessageDoc[]): Promise<void>; sawBackend(r: unknown): void };
-  await inner.appendMessages([note, { threadId: 't', seq: 11, role: 'assistant', text: 'Carrying on.', at }]);
-  assert.deepEqual(messagesSent(calls).map((m) => m.seq), [11], 'the reply went, the note waited');
+  await inner.appendMessages([
+    { threadId: t, seq: 910, role: 'note', text, at },
+    { threadId: t, seq: 911, role: 'assistant', text: 'Carrying on.', at },
+    // A thread deleted before the backend caught up: its note isn't put back.
+    { threadId: 'gone', seq: 5, role: 'note', text, at },
+  ]);
+  assert.equal(messagesSent(calls).some((m) => m.role === 'note'), false, 'no note to a backend that refuses the role');
+  assert.ok(messagesSent(calls).some((m) => m.seq === 911), 'the reply after it went');
   backend = LOGIN_NOTES_API_VERSION;
   inner.sawBackend({ apiVersion: backend });
   await sync.flushNow();
-  assert.deepEqual(messagesSent(calls).filter((m) => m.role === 'note').map((m) => m.seq), [10]);
+  assert.deepEqual(messagesSent(calls).filter((m) => m.role === 'note').map((m) => `${m.threadId === t ? 't' : m.threadId}:${m.seq}`), ['t:910']);
   await sync.stop();
 });
 

@@ -856,3 +856,35 @@ test("cards another runner keeps putting on its row are held to the newest few h
   assert.ok(cards.length <= MAX_CARDS, `${cards.length} cards`);
   assert.ok(cards.some((e) => e.approvalId === 'ap1999'), 'the open one stays');
 });
+
+// A watch started in the moment before this runner's first heartbeat (its
+// cached backend version still the old one) asked for no login notes, and a
+// live query keeps the arguments it was started with: the thread would go on
+// showing none until it was closed and opened again (Codex's review, 13 Nov).
+test('a watch from before the backend had login notes asks for them once it does', async () => {
+  const opts: HarnessOpts = { apiVersion: 77 };
+  const h = harness(opts);
+  await h.relay.call(T, 'threads.subscribe', { threadId: T, afterSeq: 0 });
+  const tails = () => h.subs.get('relay:remoteTail')!;
+  assert.equal(tails().length, 1);
+  assert.equal('notes' in tails()[0]!.args, false, 'an older backend refuses an argument it does not know');
+  const page = await h.relay.call(T, 'threads.events', { threadId: T });
+  assert.ok(page);
+  assert.ok(h.calls.filter((c) => c.fn === 'relay:remoteMessages').every((c) => !('notes' in c.args)));
+  opts.apiVersion = 78;
+  tails()[0]!.onUpdate({ messages: rows.slice(-2), hasMore: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(tails().length, 2, 'watched again');
+  assert.equal(tails()[0]!.closed, true);
+  assert.equal(tails()[1]!.args.notes, true);
+  assert.equal(h.subs.get('relay:remoteThread')!.at(-1)!.closed, false);
+  // The note in the new watch's tail shows, and nothing watches a third time.
+  const moved: RelayRow = { seq: 15, role: 'note', text: 'Moved to mike@example.org: mike@example.net hit its 5-hour limit.', at: at(30) };
+  tails()[1]!.onUpdate({ messages: [...rows.slice(-2), moved], hasMore: true });
+  await new Promise((r) => setImmediate(r));
+  assert.equal(tails().length, 2);
+  const { events } = (await h.relay.call(T, 'threads.events', { threadId: T })) as { events: { type: string; text?: string; login?: boolean }[] };
+  const note = events.find((e) => e.type === 'system.note');
+  assert.equal(note?.text, moved.text);
+  assert.equal(note?.login, true);
+});

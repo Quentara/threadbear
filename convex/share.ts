@@ -159,7 +159,15 @@ export const view = query({
     for await (const m of rows.order('desc')) {
       // A login's note (API 78) names the owner's logins: never on a page
       // anyone with the link can read, and not counted as one of its rows.
-      if (m.role === 'note') continue;
+      // Its bytes are: a runner key can write notes of any size, and a run
+      // of them would take the read past what a query may (Codex's review).
+      if (m.role === 'note') {
+        if ((bytes += docBytes(m)) > PAGE_BYTES) {
+          hasMore = true;
+          break;
+        }
+        continue;
+      }
       if (out.length >= want || (bytes += docBytes(m)) > PAGE_BYTES) {
         hasMore = true;
         break;

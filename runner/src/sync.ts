@@ -1357,7 +1357,10 @@ export class ConvexSync {
   private missingTimer?: TimerHandle;
   private messages: MessageDoc[] = [];
   // Login notes a backend from before API 78 (or one not heard from yet)
-  // couldn't take, newest HELD_NOTES, sent once it can.
+  // couldn't take, newest HELD_NOTES, sent once it can. In memory only: the
+  // backend is deployed before the runner, so this is the moment before a
+  // start's first heartbeat, and a note lost to a restart in a longer gap
+  // than that is one line saying a login changed.
   private heldNotes: MessageDoc[] = [];
   private woke = new WokeRows();
   // "<threadId> <buttonId>" -> the row that links it, as last sent, so a press
@@ -1692,8 +1695,12 @@ export class ConvexSync {
     }
     if (v >= INDEX_STARTED_BY_API_VERSION) this.index?.refresh();
     if (v >= LOGIN_NOTES_API_VERSION && this.heldNotes.length) {
-      this.messages.push(...this.heldNotes.splice(0));
-      if (this.running) this.scheduleFlush();
+      // Not one whose thread has gone since, or whose place in it an edit
+      // cut away: the owner's key would put a row back for it.
+      const live = new Set(this.deps.runner.list(ALL).map((t) => t.id));
+      const kept = this.heldNotes.splice(0).filter((m) => live.has(m.threadId) && !(this.deps.runner.cuts?.(m.threadId) ?? []).some((c) => m.seq >= c.from && m.seq <= c.to));
+      this.messages.push(...kept);
+      if (kept.length && this.running) this.scheduleFlush();
     }
     // Only a runner key's were dropped; the owner's always stayed.
     if (v >= ARCHIVED_INDEX_API_VERSION && this.deps.key?.startsWith('tbr_')) this.index?.resendArchived();

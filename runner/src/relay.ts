@@ -183,6 +183,9 @@ type Watch = {
   // Seqs already given to the app, in pages or live.
   given: Set<number>;
   unsub: (() => void)[];
+  // The tail was asked for with login notes (withNotes). A watch from before
+  // this runner knew its backend had them is started again when it does.
+  notes?: boolean;
   idleSince?: number;
   usedAt: number;
   filling?: Promise<void>;
@@ -823,8 +826,10 @@ export class Relay {
     const src = this.deps.source();
     if (w.unsub.length || !src?.subscribe) return;
     const failed = (e: Error) => this.deps.log.warn('relay watch failed', { threadId: w.threadId, error: String(e) });
+    const notes = this.withNotes();
+    w.notes = notes.notes === true;
     w.unsub.push(
-      src.subscribe('relay:remoteTail', { key: src.key, threadId: w.threadId, limit: TAIL, ...this.withNotes() }, (v) => void this.onTail(w, v as Page), failed),
+      src.subscribe('relay:remoteTail', { key: src.key, threadId: w.threadId, limit: TAIL, ...notes }, (v) => void this.onTail(w, v as Page), failed),
       src.subscribe('relay:remoteThread', { key: src.key, threadId: w.threadId }, (v) => {
         this.reads++;
         this.bytes += JSON.stringify(v ?? null).length;
@@ -845,6 +850,16 @@ export class Relay {
   private async onTail(w: Watch, tail: Page): Promise<void> {
     this.reads++;
     this.bytes += JSON.stringify(tail).length;
+    // A watch started before this runner had heard its backend takes login
+    // notes (a start, before the first heartbeat) asked for none and would
+    // go on getting none: watched again, asking. The new watch's first
+    // tail has these rows too (Codex's review, 13 Nov).
+    if (!w.notes && this.withNotes().notes && w.unsub.length) {
+      for (const u of w.unsub) u();
+      w.unsub = [];
+      this.live(w);
+      return;
+    }
     const { gapAfter } = mergeTail(w.rows, tail);
     trimHeld(w);
     if (gapAfter !== undefined) {
