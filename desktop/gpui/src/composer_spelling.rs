@@ -350,6 +350,7 @@ pub(crate) fn menu_command(composer: &Entity<Composer>, cmd: &serde_json::Value,
     let action = menu.action_for(choose).ok_or_else(|| format!("no item {choose:?} to choose"))?;
     let handle = input.read(cx).focus_handle(cx);
     window.focus(&handle, cx);
+    crate::web_panels::keyboard_to_app(window);
     window.dispatch_action(action, cx);
     Ok(serde_json::json!("ok"))
 }
