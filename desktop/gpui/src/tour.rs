@@ -63,15 +63,17 @@ fn record(target: Target, rect: Rect, window: &mut Window) {
         }
     });
     // The overlay is drawn before the marks are measured: once more, with them.
-    if changed {
+    if changed && ON.with(Cell::get) {
         window.refresh();
     }
 }
 
 /// Measures the part of the window it's put in (as a child, filling it) as
-/// `target`, while the tour's up; nothing otherwise.
+/// `target`.
 pub(crate) fn mark(target: Target) -> Option<AnyElement> {
-    ON.with(Cell::get).then(|| canvas(move |bounds, window, _| record(target.clone(), rect_of(bounds), window), |_, _, _, _| {}).absolute().top_0().left_0().size_full().into_any_element())
+    // Always measured, so the tour knows at its start what's on screen; the
+    // window's only drawn again for a change while it's up.
+    Some(canvas(move |bounds, window, _| record(target.clone(), rect_of(bounds), window), |_, _, _, _| {}).absolute().top_0().left_0().size_full().into_any_element())
 }
 
 /// The composer's mark: only the main panel's (`thread` None is the
@@ -479,17 +481,21 @@ impl Threadbear {
                 // 30 Oct: the card alone didn't say what it meant), breathing
                 // in and out (still with Reduce Motion).
                 let accent = style::accent(cx);
+                // GPUI fills a shadow under the whole box, which would cover
+                // the lit part, so the glow is a second ring outside the
+                // first that brightens and fades.
                 let ring = div().absolute().left(raw(h.x)).top(raw(h.y)).w(raw(h.w)).h(raw(h.h)).rounded(raw(CORNER)).border(raw(2.)).border_color(accent);
-                let glow = move |t: f32| vec![BoxShadow { color: accent.opacity(0.35 + 0.55 * t), offset: point(raw(0.), raw(0.)), blur_radius: raw(5. + 7. * t), spread_radius: raw(0.), inset: false }];
-                let ring: AnyElement = if cx.reduce_motion() {
-                    ring.shadow(glow(0.)).into_any_element()
+                let halo = move |t: f32| div().absolute().left(raw(h.x - 4.)).top(raw(h.y - 4.)).w(raw(h.w + 8.)).h(raw(h.h + 8.)).rounded(raw(CORNER + 4.)).border(raw(3.)).border_color(accent.opacity(0.15 + 0.35 * t));
+                let halo: AnyElement = if cx.reduce_motion() {
+                    halo(0.4).into_any_element()
                 } else {
-                    ring.with_animation(ElementId::Name(format!("tour-glow-{index}").into()), Animation::new(Duration::from_millis(2200)).repeat(), move |r, t| {
+                    div().absolute().top_0().left_0().size_full().child(halo(0.)).with_animation(ElementId::Name(format!("tour-glow-{index}").into()), Animation::new(Duration::from_millis(2200)).repeat(), move |_, t| {
                         let t = (t * std::f32::consts::PI).sin();
-                        r.shadow(glow(t))
+                        div().absolute().top_0().left_0().size_full().child(halo(t))
                     })
                     .into_any_element()
                 };
+                layer = layer.child(halo);
                 layer = layer.child(ring);
             }
             None => layer = layer.child(block("tour-block", bounds)),
