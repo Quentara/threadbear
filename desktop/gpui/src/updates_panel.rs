@@ -349,13 +349,22 @@ impl Threadbear {
         }
     }
 
-    /// `UpdatesPanel`: App, Runner, From Mike when there's a release to say
-    /// anything about, and the CLIs.
+    /// `UpdatesPanel`: a fork's own Swift changes when it has any, App,
+    /// Runner, From Mike when there's a release to say anything about, and
+    /// the CLIs.
     pub(crate) fn render_updates_panel(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let fg = style::label_text(cx);
         let line = |text: String| text_line(text, 12., fg).into_any_element();
         let app = self.render_app_update(cx);
-        let mut sections = vec![section("App", app, cx)];
+        // A fork's own Swift changes, to rebuild here, first: the one part
+        // that asks for something doing, and its buttons stay in reach in a
+        // short window (GitHub's Mac, 1024x768, missed the second row's).
+        let mut sections = Vec::new();
+        let swift = self.updates_panel.runner.as_ref().map(|r| r.swift_changes.clone()).unwrap_or_default();
+        if !swift.is_empty() {
+            sections.push(section("Not in the new app yet", self.render_swift_changes(&swift, cx), cx));
+        }
+        sections.push(section("App", app, cx));
         sections.push(section("Runner", self.render_runner_updates(cx), cx));
         let upstream = self.updates_panel.runner.as_ref().and_then(|r| r.upstream.clone());
         if let Some(text) = rules::upstream_line(upstream.as_ref()) {
@@ -364,11 +373,6 @@ impl Threadbear {
                 content.extend(self.render_release(&release, cx));
             }
             sections.push(section("From Mike", content, cx));
-        }
-        // A fork's own Swift changes, to rebuild here.
-        let swift = self.updates_panel.runner.as_ref().map(|r| r.swift_changes.clone()).unwrap_or_default();
-        if !swift.is_empty() {
-            sections.push(section("Not in the new app yet", self.render_swift_changes(&swift, cx), cx));
         }
         // The CLIs' versions and whether they update by themselves. In Usage
         // until 28 Oct; they're updates, not room.
@@ -687,7 +691,21 @@ impl Threadbear {
 
     /// What the panel says, a line each, in the Swift app's dump shape.
     pub(crate) fn updates_dump(&self, cx: &App) -> Value {
-        let mut lines = vec!["# App".to_owned(), rules::app_line(&self.app_side()), "# Runner".to_owned()];
+        let mut lines = Vec::new();
+        let swift = self.updates_panel.runner.as_ref().map(|r| r.swift_changes.as_slice()).unwrap_or_default();
+        if !swift.is_empty() {
+            lines.push("# Not in the new app yet".to_owned());
+            lines.push(rules::swift_changes_line(swift.len()));
+            for c in swift {
+                lines.push(format!("  {} ({})", c.subject, rules::swift_change_detail(c)));
+                lines.push(match &c.thread_id {
+                    Some(id) => format!("  > Being rebuilt in {}", self.thread_title(id)),
+                    None if self.updates_panel.porting.contains(&c.commit) => "  [Port this: starting] [Dismiss]".to_owned(),
+                    None => "  [Port this] [Dismiss]".to_owned(),
+                });
+            }
+        }
+        lines.extend(["# App".to_owned(), rules::app_line(&self.app_side()), "# Runner".to_owned()]);
         match &self.updates_panel.runner {
             Some(runner) => {
                 let (build, old, launcher) = (rules::build_line(runner), rules::old_runners_line(runner), rules::launcher_line(runner));
@@ -719,19 +737,6 @@ impl Threadbear {
                     lines.extend(group.into_iter().map(|l| format!("  {l}")));
                 }
                 lines.push("[Bring Them In] [Let's Discuss]".to_owned());
-            }
-        }
-        let swift = self.updates_panel.runner.as_ref().map(|r| r.swift_changes.as_slice()).unwrap_or_default();
-        if !swift.is_empty() {
-            lines.push("# Not in the new app yet".to_owned());
-            lines.push(rules::swift_changes_line(swift.len()));
-            for c in swift {
-                lines.push(format!("  {} ({})", c.subject, rules::swift_change_detail(c)));
-                lines.push(match &c.thread_id {
-                    Some(id) => format!("  > Being rebuilt in {}", self.thread_title(id)),
-                    None if self.updates_panel.porting.contains(&c.commit) => "  [Port this: starting] [Dismiss]".to_owned(),
-                    None => "  [Port this] [Dismiss]".to_owned(),
-                });
             }
         }
         lines.push("# CLIs".to_owned());
