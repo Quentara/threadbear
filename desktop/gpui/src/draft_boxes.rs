@@ -420,7 +420,8 @@ pub(crate) fn drag_select(row: &str, words: &str, window: &mut Window, cx: &mut 
     let found = PAINTED.with(|p| p.borrow().iter().find(|(name, (text, _))| name.contains(&prefix) && text.contains(words)).map(|(_, found)| found.clone()));
     let (text, layout) = found.ok_or_else(|| format!("no draft box in {row} shows {words:?}"))?;
     let start = text.find(words).unwrap_or(0);
-    let (Some(first), Some(last)) = (layout.position_for_index(start), layout.position_for_index(start + words.len())) else {
+    // Words starting a wrapped row start that row, not the end of the one above.
+    let (Some(first), Some(last)) = (gpui_kit::base::selection_start_position(&layout, start), layout.position_for_index(start + words.len())) else {
         return Err(format!("{words:?} isn't laid out in {row}'s draft"));
     };
     // Into the first letter and short of the end of the last, on their line.
@@ -439,7 +440,9 @@ pub(crate) fn drag_select(row: &str, words: &str, window: &mut Window, cx: &mut 
 /// The selected part of the text, on its lines: the first from where it
 /// starts, any between whole, the last to where it ends.
 fn paint_selection(layout: &TextLayout, range: Range<usize>, color: Hsla, window: &mut Window) {
-    let (Some(start), Some(end)) = (layout.position_for_index(range.start), layout.position_for_index(range.end)) else { return };
+    // From where the first character is drawn: a selection starting a
+    // wrapped row starts that row, not the end of the row above.
+    let (Some(start), Some(end)) = (gpui_kit::base::selection_start_position(layout, range.start), layout.position_for_index(range.end)) else { return };
     let (area, line) = (layout.bounds(), layout.line_height());
     let mut quads = Vec::new();
     if start.y == end.y {

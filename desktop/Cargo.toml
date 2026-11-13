@@ -17,7 +17,10 @@ exclude = ["vendor"]
 # gpui-kit's base, the same way: the first commit under vendor/gpui-base is
 # 0.9.0 as published. Ours on top: a TextViewStyle switch for the hairline
 # the kit draws under every link, which Swift's replies don't have (Mike,
-# 12 Nov: "the links are underlined in the GPUI version").
+# 12 Nov: "the links are underlined in the GPUI version"). And a selection
+# takes in a soft-wrapped row's first character, which GPUI places at the end
+# of the row above (`wrapped_row_starts`, `drawn_position`; Mike, 13 Nov:
+# "can't select all the way to the start of the line").
 [patch.crates-io]
 gpui-component = { path = "vendor/gpui-component" }
 gpui-base = { path = "vendor/gpui-base" }
