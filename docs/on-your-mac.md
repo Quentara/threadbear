@@ -163,7 +163,7 @@ File references are where to look.
   clone that takes no space where the disk can make one, cleared after a
   day);
   `~/Library/Caches/Threadbear/previews` (private, read-only snapshots of
-  Office and iWork documents, so Quick Look reads the file the open gate
+  Office and iWork documents and PDF link hovers, so Quick Look reads the file the open gate
   checked; removed after the thumbnail is made, with interrupted copies
   cleared after a day when another preview is made);
   `~/Library/Caches/Threadbear/rich` (pictures of the ```` ```mermaid ```` and

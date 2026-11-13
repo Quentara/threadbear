@@ -249,7 +249,9 @@ scroll inside the reply, and list items have space between their lines.
 
 Inside a thread, rest the pointer on a link for a moment, in a reply or on a
 Needs you card's buttons, to see where it goes: a picture of the file, or
-the page's address. Click it to open it (the middle mouse button works
+the page's address. On a Mac a local PDF shows its first page and a video
+its first frame. A PDF over 16 MB or a file that can't be previewed keeps
+its file symbol. Click it to open it (the middle mouse button works
 too). If an agent already has that page
 open in Chrome through [BrowserBear](https://github.com/mikecann/browserbear)
 (say, a sign-in page it wants you to use), the click brings the agent's tab

@@ -274,9 +274,10 @@ pub extern "C" fn tb_media_snapshot(fd: i32, name: *const std::ffi::c_char, out:
 /// removed after thumbnail generation; interrupted copies expire in a day.
 #[cfg(target_os = "macos")]
 #[no_mangle]
-pub extern "C" fn tb_preview_snapshot(fd: i32, name: *const std::ffi::c_char, out: *mut std::ffi::c_char, capacity: i32) -> i32 {
+pub extern "C" fn tb_preview_snapshot(fd: i32, name: *const std::ffi::c_char, out: *mut std::ffi::c_char, capacity: i32, limit: u64) -> i32 {
+    if limit == 0 || limit > 256 * 1024 * 1024 { return -1 }
     let Some(folder) = drag_folder().and_then(|p| p.parent().map(|p| p.join("previews"))) else { return 0 };
-    match snapshot_fd(fd, name, out, capacity, &folder, 256 * 1024 * 1024) {
+    match snapshot_fd(fd, name, out, capacity, &folder, limit) {
         Ok(()) => 1,
         Err(error) if error.kind() == std::io::ErrorKind::FileTooLarge => -1,
         Err(_) => 0,
@@ -627,6 +628,51 @@ mod tests {
             }
             _ => panic!("Open Link didn't go to the open gate"),
         }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn quicklook_snapshots_use_the_descriptor_and_each_callers_byte_cap() {
+        use std::{ffi::{CStr, CString}, os::{fd::AsRawFd, unix::{ffi::OsStrExt, fs::symlink}}};
+        let work=tempfile::tempdir().unwrap();
+        let source=work.path().join("source.pdf");
+        std::fs::write(&source,b"held document").unwrap();
+        let file=std::fs::File::open(&source).unwrap();
+        std::fs::remove_file(&source).unwrap();
+        symlink("/missing/replaced-source",&source).unwrap();
+        let name=CString::new("document.pdf").unwrap();
+        let mut path=[0 as std::ffi::c_char;4096];
+        let folder=work.path().join("previews");
+        super::snapshot_fd(file.as_raw_fd(),name.as_ptr(),path.as_mut_ptr(),path.len() as i32,&folder,16*1024*1024).unwrap();
+        let copied=std::path::Path::new(std::ffi::OsStr::from_bytes(unsafe{CStr::from_ptr(path.as_ptr())}.to_bytes()));
+        assert_eq!(std::fs::read(copied).unwrap(),b"held document");
+        assert!(file.metadata().is_ok(),"snapshot borrows the gate's descriptor");
+        let large=std::fs::File::create(work.path().join("large.pdf")).unwrap();
+        large.set_len(16*1024*1024+1).unwrap();
+        let error=super::snapshot_fd(large.as_raw_fd(),name.as_ptr(),path.as_mut_ptr(),path.len() as i32,&folder,16*1024*1024).unwrap_err();
+        assert_eq!(error.kind(),std::io::ErrorKind::FileTooLarge);
+        let large=std::fs::File::open(work.path().join("large.pdf")).unwrap();
+        super::snapshot_fd(large.as_raw_fd(),name.as_ptr(),path.as_mut_ptr(),path.len() as i32,&folder,256*1024*1024).unwrap();
+        let copied=std::path::Path::new(std::ffi::OsStr::from_bytes(unsafe{CStr::from_ptr(path.as_ptr())}.to_bytes()));
+        assert_eq!(std::fs::metadata(copied).unwrap().len(),16*1024*1024+1);
+        // Packages carry length zero through the pane; snapshot_fd still
+        // walks held directory descriptors and enforces the total byte cap.
+        let package=work.path().join("deck.key");
+        std::fs::create_dir(&package).unwrap();
+        std::fs::write(package.join("slide.bin"),b"held slide").unwrap();
+        let directory=std::fs::File::open(&package).unwrap();
+        let package_name=CString::new("deck.key").unwrap();
+        super::snapshot_fd(directory.as_raw_fd(),package_name.as_ptr(),path.as_mut_ptr(),path.len() as i32,&folder,256*1024*1024).unwrap();
+        let copied=std::path::Path::new(std::ffi::OsStr::from_bytes(unsafe{CStr::from_ptr(path.as_ptr())}.to_bytes()));
+        assert_eq!(std::fs::read(copied.join("slide.bin")).unwrap(),b"held slide");
+        let large_slide=std::fs::File::create(package.join("oversize.bin")).unwrap();
+        large_slide.set_len(16*1024*1024+1).unwrap();
+        assert_eq!(super::snapshot_fd(directory.as_raw_fd(),package_name.as_ptr(),path.as_mut_ptr(),path.len() as i32,&folder,16*1024*1024).unwrap_err().kind(),std::io::ErrorKind::FileTooLarge);
+        std::fs::remove_file(package.join("oversize.bin")).unwrap();
+        symlink("/missing/package-link",package.join("link")).unwrap();
+        assert!(super::snapshot_fd(directory.as_raw_fd(),package_name.as_ptr(),path.as_mut_ptr(),path.len() as i32,&folder,256*1024*1024).is_err());
+        assert_eq!(super::tb_preview_snapshot(-1,std::ptr::null(),std::ptr::null_mut(),0,0),-1);
+        assert_eq!(super::tb_preview_snapshot(-1,std::ptr::null(),std::ptr::null_mut(),0,256*1024*1024+1),-1);
     }
 
     /// Stepping from one clip to the next on the stage: the next starts at

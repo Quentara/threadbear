@@ -733,6 +733,28 @@ fn ftyp_is_a_films(read_at: &mut dyn FnMut(u64, &mut [u8]) -> usize, at: u64, si
     (16..body.len()).step_by(4).all(|i| !PICTURE_BRANDS.iter().any(|b| brand(i) == *b))
 }
 
+/// A native thumbnail's exact filesystem version. mtime alone can be put
+/// back after a write; inode and ctime also detect replacements and edits.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MediaVersion {
+    pub device: u64,
+    pub inode: u64,
+    pub length: u64,
+    pub modified: i64,
+    pub modified_ns: i64,
+    pub changed: i64,
+    pub changed_ns: i64,
+}
+
+pub fn media_version(meta: &std::fs::Metadata) -> Option<MediaVersion> {
+    #[cfg(unix)] {
+        use std::os::unix::fs::MetadataExt as _;
+        Some(MediaVersion { device:meta.dev(), inode:meta.ino(), length:meta.len(), modified:meta.mtime(), modified_ns:meta.mtime_nsec(), changed:meta.ctime(), changed_ns:meta.ctime_nsec() })
+    }
+    #[cfg(not(unix))] { let _=meta; None }
+}
+
 /// A file the rules have checked, held open: the view reads this, not the
 /// path again, so a file swapped in at the path afterwards (or a folder
 /// above it swapped for a link) is never what's shown.
@@ -875,6 +897,28 @@ pub fn is_own_scheme(url: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn media_versions_catch_same_length_writes_with_restored_mtime_and_replacements() {
+        use std::fs::{self, File, FileTimes};
+        let scratch=Scratch::new("media-version");
+        let path=scratch.path("held.pdf");
+        fs::write(&path,b"first").unwrap();
+        let metadata=fs::metadata(&path).unwrap();
+        let version=media_version(&metadata);
+        std::thread::sleep(std::time::Duration::from_millis(3));
+        fs::write(&path,b"other").unwrap();
+        File::open(&path).unwrap().set_times(FileTimes::new().set_modified(metadata.modified().unwrap())).unwrap();
+        let changed=fs::metadata(&path).unwrap();
+        assert_eq!(metadata.len(),changed.len());
+        assert_eq!(metadata.modified().unwrap(),changed.modified().unwrap());
+        assert_ne!(version,media_version(&changed));
+        fs::rename(&path,scratch.path("old.pdf")).unwrap();
+        fs::write(&path,b"first").unwrap();
+        File::open(&path).unwrap().set_times(FileTimes::new().set_modified(metadata.modified().unwrap())).unwrap();
+        assert_ne!(version,media_version(&fs::metadata(&path).unwrap()));
+    }
+
     use std::fs;
 
     fn none(_: &Path) -> Option<OpeningApp> {

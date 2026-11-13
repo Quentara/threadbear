@@ -29,6 +29,7 @@ const OPENERS: &[&str] = &[
     // The Mac's own video and PDF views (gpui/native/media_views.m): what
     // makes one reads the file, so only the gate's `show_media` does.
     "tb_media_open",
+    "tb_media_thumbnail",
     "tb_file_icon_png(",
     // And nothing in the Objective-C beside the app opens anything either.
     "openURL:",
@@ -71,6 +72,11 @@ const ALLOWED_LINES: &[(&str, &str, usize)] = &[
     ("gpui/src/app_update.rs", "let child = Command::new(program).args(arguments).current_dir(installed::home_dir()).stdin(Stdio::null()).stdout(out).stderr(err).spawn();", 1),
     // Encodes the gate's checked descriptor or already-read application icon.
     ("gpui/native/file_icons.m", "int tb_file_icon_png(int fd, long long length, void *applicationIcon, void **output) {", 1),
+    // This standalone harness makes its own descriptors/media; it never renders runner data.
+    ("gpui/tests/native/media_hover.m", "extern size_t tb_media_thumbnail(int fd,long long length,const char *name,bool pdf,const TBMediaVersion *expected,unsigned char *out,size_t capacity);", 1),
+    ("gpui/tests/native/media_hover.m", "count=tb_media_thumbnail(fd,size,name,pdf,&expected,out.mutableBytes,capacity);", 1),
+    // The raster helper also receives only the gate's checked descriptor.
+    ("gpui/native/media_views.m", "size_t tb_media_thumbnail(int fd, long long length, const char *name, bool pdf, const TBMediaVersion *expected, unsigned char *out, size_t capacity) {", 1),
     // Where the video and PDF views are made, called only from the gate.
     ("gpui/native/media_views.m", "void *tb_media_open(void *nativeParent, int fd, long long length, const char *path, int kind, bool muted, float volume) {", 1),
     ("gpui/src/swift_import.rs", "let out = Command::new(\"/usr/bin/defaults\").args([\"export\", \"com.mikerosoft.threadbear\", \"-\"]).stderr(Stdio::null()).output().map_err(|e| format!(\"couldn't run defaults: {e}\"))?;", 1),

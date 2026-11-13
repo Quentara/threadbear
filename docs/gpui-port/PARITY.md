@@ -1172,8 +1172,10 @@ Fixes from Codex's review of the slice before:
   carry `@windows-pending @linux-pending`, which `cucumber.mjs` and
   `parity.mjs` now understand. The Swift dump gives a video's size too, and
   both apps take `preview` `play`.
-- Next: a video from another Mac (the Swift app fetches a copy), pages in the
-  review window and the pane (`file.htmlpreview`).
+- Another Mac’s files stay there over Convex in both apps today
+  (`RemoteFiles.swift`); the older direct-link video-copy note no longer
+  describes that route. GPUI’s direct runner connections remain unported.
+  Local pages in the review window and pane are now ported (`file.htmlpreview`).
 - Files: `desktop/gpui/native/media_views.m`, `desktop/gpui/build.rs`,
   `desktop/gpui/src/media_view.rs`, `desktop/gpui/src/open_gate.rs`,
   `desktop/gpui/src/files.rs`, `desktop/gpui/src/shell.rs`,
@@ -4975,3 +4977,18 @@ Fixes from Codex's review of the slice before:
 - Verification: the two painted-layout tests pass on the Mac, and the two
   scripted GPUI scenarios pass on cloud (18 steps), measuring painted cells
   and list lines rather than matching style settings.
+
+### 2026-11-13 PDF and film pictures on link cards (`rich.linkpeek`)
+
+- Local Mac PDF/video links show a bounded first-page/frame raster, shared
+  by reply links and Needs you link buttons. Decode failures keep the file symbol.
+- Pane documents and PDF hovers share one Quick Look job and private descriptor
+  snapshot helper. The pane keeps its 256 MB/1600×1200 limits; hover uses
+  16 MB/552×340 and at most 2 MB of PNG output. Only hover requests time out after five seconds; pane previews keep waiting until completion or view removal.
+- A full file-version stamp joins the asset key to the gate’s checked descriptor.
+  Video decoders forbid external references and retain their descriptor through
+  a late callback. Quick Look retains only its private snapshot until cancellation
+  completes. Other Mac paths are refused before reading local metadata; other
+  systems keep the file symbol.
+- Native regression tests synthesize their own film and PDF, including path
+  replacement, size/output caps, version mismatch and delayed callbacks.

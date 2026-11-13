@@ -346,6 +346,36 @@ pub(crate) fn open_file(path: &str, origin: Origin, cx: &mut App) {
     }
 }
 
+/// A small, read-only raster for a local PDF or video hover card. Called on
+/// the background executor; the asset loader serializes decoders. Failure keeps the kind icon.
+#[cfg(target_os = "macos")]
+pub(crate) fn media_thumbnail(path: &str, origin: Origin, expected: Option<policy::MediaVersion>) -> Option<Vec<u8>> {
+    use std::os::fd::IntoRawFd as _;
+    use std::os::unix::ffi::OsStrExt as _;
+    let expected = expected?;
+    let kind = policy::media_kind(path)?;
+    if !matches!(kind, policy::Media::Pdf | policy::Media::Video) { return None }
+    let pdf = kind == policy::Media::Pdf;
+    let policy::MediaVerdict::Show(checked) = policy::decide_media(path, origin) else { return None };
+    if policy::media_version(&checked.file.metadata().ok()?) != Some(expected) { return None }
+    if pdf && checked.len > 16 * 1024 * 1024 { return None }
+    let name = std::ffi::CString::new(checked.real.as_os_str().as_bytes()).ok()?;
+    let length = i64::try_from(checked.len).ok()?;
+    extern "C" {
+        fn tb_media_thumbnail(file: i32, length: i64, name: *const std::ffi::c_char, pdf: bool, expected: *const policy::MediaVersion, out: *mut u8, capacity: usize) -> usize;
+    }
+    let mut png = vec![0; 2 * 1024 * 1024];
+    // The native function owns the descriptor on every path, reopens no original path,
+    // caps its raster at 552×340 and its system thumbnail request at five seconds.
+    let count = unsafe { tb_media_thumbnail(checked.file.into_raw_fd(), length, name.as_ptr(), pdf, &expected, png.as_mut_ptr(), png.len()) };
+    if count == 0 || count > png.len() { return None }
+    png.truncate(count);
+    Some(png)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn media_thumbnail(_path: &str, _origin: Origin, _expected: Option<policy::MediaVersion>) -> Option<Vec<u8>> { None }
+
 // ---------------------------------------------------------------- shown in the app
 
 /// The gate's checked icon input. File descriptors stay on a worker; only

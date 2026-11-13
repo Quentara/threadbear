@@ -27,7 +27,7 @@ fn main() {
         media.file("native/composer_media.m").flag("-fobjc-arc").flag("-Wno-deprecated-declarations");
         if std::env::var_os("CARGO_FEATURE_AUTOMATION").is_some() { media.define("TB_COMPOSER_AUTOMATION", None); }
         media.compile("threadbear_composer_media");
-        for framework in ["AppKit", "Foundation", "AVFoundation", "AVKit", "PDFKit", "ImageIO", "CoreGraphics", "QuickLookThumbnailing", "UniformTypeIdentifiers"] {
+        for framework in ["AppKit", "Foundation", "AVFoundation", "CoreMedia", "QuickLookThumbnailing", "AVKit", "PDFKit", "ImageIO", "CoreGraphics", "QuickLookThumbnailing", "UniformTypeIdentifiers"] {
             println!("cargo:rustc-link-lib=framework={framework}");
         }
     }

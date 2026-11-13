@@ -150,6 +150,11 @@ whether here or on another Mac. Failed builds keep the full log.
 with each menu's item titles. It reads the rendered menus rather than
 calling a menu builder, so a test can catch two menus opening for one click.
 
+`peek` with `picture: true` reports the PDF/video hover card’s actual cached
+image dimensions or its loading/failure state. On a Mac,
+`bash desktop/scripts/test-media-hover.sh` checks descriptor ownership, bounds,
+private snapshots and late decoder callbacks with generated media.
+
 ## Seeing it on a server
 
 `scripts/shot.sh OUT_DIR [--home DIR] [--click X,Y | --type TEXT | --key KEY]...`
