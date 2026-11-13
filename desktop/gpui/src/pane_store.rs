@@ -33,6 +33,9 @@ pub(crate) struct Open {
     pub title: String,
     /// The section it was opened from, which Back goes to.
     pub from: String,
+    /// The folders and files Mike came through to it in the browser, which
+    /// Back goes through first, last one nearest.
+    pub back: Vec<Open>,
 }
 
 fn path() -> PathBuf {
@@ -72,14 +75,17 @@ mod tests {
     use super::*;
 
     fn place(at: u64, path: &str) -> Place {
-        Place { section: Some("threadbear.highlights".into()), open: Some(Open { path: path.into(), folder: false, title: "post.md".into(), from: "threadbear.highlights".into() }), at }
+        Place { section: Some("threadbear.highlights".into()), open: Some(Open { path: path.into(), folder: false, title: "post.md".into(), from: "threadbear.highlights".into(), back: vec![] }), at }
     }
 
     #[test]
     fn a_place_comes_back_as_it_was_left() {
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("desktop-pane.json");
-        let places = HashMap::from([("t1".to_owned(), place(5, "/blog/post.md")), ("t2".to_owned(), Place { section: Some("threadbear.files".into()), open: None, at: 6 })]);
+        let mut deep = place(7, "/blog/drafts/post.md");
+        let folder = Open { path: "/blog/drafts".into(), folder: true, title: "drafts".into(), from: "threadbear.files".into(), back: vec![] };
+        deep.open.as_mut().unwrap().back = vec![folder];
+        let places = HashMap::from([("t1".to_owned(), place(5, "/blog/post.md")), ("t3".to_owned(), deep), ("t2".to_owned(), Place { section: Some("threadbear.files".into()), open: None, at: 6 })]);
         save_to(&file, &places);
         assert_eq!(load_from(&file), places);
     }

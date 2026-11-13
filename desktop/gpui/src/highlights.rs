@@ -88,6 +88,27 @@ impl PanePreview {
     }
 }
 
+/// What's kept of a preview across launches, with the folders and files Back
+/// goes through. A web page has gone to the browser by now (files.rs
+/// `begin_preview`), so it counts as nothing open.
+fn remembered_open(p: &PanePreview) -> Option<crate::pane_store::Open> {
+    let (path, folder) = match &p.target {
+        Target::File(path) => (path.clone(), false),
+        Target::Folder(path) => (path.clone(), true),
+        Target::Page(_) => return None,
+    };
+    let back = p.back.iter().filter_map(remembered_open).collect();
+    Some(crate::pane_store::Open { path, folder, title: p.title.clone(), from: p.from.clone(), back })
+}
+
+/// A remembered preview opened again over `from`, Back's steps included.
+fn restored_preview(open: &crate::pane_store::Open, from: &str) -> PanePreview {
+    let target = if open.folder { Target::Folder(open.path.clone()) } else { Target::File(open.path.clone()) };
+    let mut preview = PanePreview::new(target, open.title.clone(), from.to_owned());
+    preview.back = open.back.iter().map(|b| restored_preview(b, from)).collect();
+    preview
+}
+
 /// "Show all" on the long groups and the edited files open, for the thread on
 /// show (`HighlightsFlags`).
 #[derive(Clone, Copy, Debug, Default)]
@@ -502,19 +523,7 @@ impl SidePane {
 
     /// Saves where `thread_id`'s pane is, if that changed (pane_store.rs).
     fn remember(&mut self, thread_id: &str) {
-        let preview = self.previews.get(thread_id);
-        // A web page only passes through on its way to the browser
-        // (`begin_preview`), so what was open before it stays remembered.
-        if preview.is_some_and(|p| matches!(p.target, Target::Page(_))) {
-            return;
-        }
-        let open = preview.map(|p| {
-            let (path, folder) = match &p.target {
-                Target::Folder(path) => (path.clone(), true),
-                Target::File(path) | Target::Page(path) => (path.clone(), false),
-            };
-            crate::pane_store::Open { path, folder, title: p.title.clone(), from: p.from.clone() }
-        });
+        let open = self.previews.get(thread_id).and_then(remembered_open);
         let section = self.chosen.get(thread_id).cloned();
         if self.places.get(thread_id).is_some_and(|p| p.section == section && p.open == open) {
             return;
@@ -524,18 +533,35 @@ impl SidePane {
     }
 
     /// The file the thread had open when the app last quit, opened again the
-    /// first time the thread shows. Once in a launch: anything done in the
-    /// pane since is what's remembered from then on.
+    /// first time the thread shows, the selected one or a project page's.
+    /// Once in a launch: anything done in the pane since is what's
+    /// remembered from then on.
     fn restore_preview(&mut self, thread_id: &str, cx: &mut Context<Self>) {
-        if self.previews.contains_key(thread_id) || !self.restored.insert(thread_id.to_owned()) {
+        if self.restored.contains(thread_id) {
+            return;
+        }
+        // Not on show yet: its first section drawn tries again.
+        let Some(thread) = self.thread(cx).filter(|t| t.id == thread_id) else { return };
+        self.restored.insert(thread_id.to_owned());
+        if self.previews.contains_key(thread_id) {
             return;
         }
         let Some(open) = self.places.get(thread_id).and_then(|p| p.open.clone()) else { return };
-        let target = if open.folder { Target::Folder(open.path) } else { Target::File(open.path) };
-        self.show_preview(PanePreview::new(target, open.title, open.from), thread_id, cx);
+        // Opened over a panel the thread no longer has: over Highlights, where
+        // the pane falls back to, or it would sit unseen behind it.
+        let from = if Self::section_ids(&thread).contains(&open.from) { open.from.clone() } else { HIGHLIGHTS.to_owned() };
+        // Mike has since picked another section to look at (a click on a
+        // project page's section before this ran): leave it be.
+        if self.section_for(&thread) != from {
+            return;
+        }
+        self.show_preview(restored_preview(&open, &from), thread_id, cx);
     }
 
     pub(crate) fn section_shown(&mut self, id: &str, thread_id: &str, cx: &mut Context<Self>) {
+        // A project page's pane shows a thread that's never selected, so its
+        // first section drawn is where its file comes back (side_sections.rs).
+        self.restore_preview(thread_id, cx);
         if id == FILES {
             self.load_folder_for_files(thread_id, cx);
         } else if id != HIGHLIGHTS && id != PATCHES {
@@ -1622,6 +1648,7 @@ impl SidePane {
     pub(crate) fn section_pressed(&mut self, thread_id: &str, section: &str, cx: &mut Context<Self>) {
         if self.chosen.get(thread_id).map(String::as_str) != Some(section) {
             self.chosen.insert(thread_id.to_owned(), section.to_owned());
+            self.remember(thread_id);
             if let Some(width) = self.widths.get(section) {
                 self.width = *width;
             }
