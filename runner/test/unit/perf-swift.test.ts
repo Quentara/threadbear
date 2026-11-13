@@ -41,6 +41,11 @@ exec "$app/Contents/MacOS/Threadbear", @ARGV;
   for (const file of ['features/support/swift.ts', 'features/support/driver.ts', 'scripts/perf-children.pl', 'scripts/perf-swift.pl']) {
     fs.copyFileSync(path.join(root, file), path.join(repo, file));
   }
+  // Also redirect the adapter's absolute fallback, so even a scope regression
+  // can only reach our fake LaunchServices, never the host's real open.
+  const adapter = path.join(repo, 'scripts/perf-swift.pl');
+  const fakeOpen = path.join(repo, 'bin/open').replaceAll('\\', '\\\\').replaceAll("'", "\\'");
+  fs.writeFileSync(adapter, fs.readFileSync(adapter, 'utf8').replace("'/usr/bin/open'", `'${fakeOpen}'`));
   for (const name of ['open', 'node']) fs.symlinkSync(fs.readlinkSync(path.join(root, 'scripts/perf-swift-bin', name)), path.join(repo, 'scripts/perf-swift-bin', name));
   const entry = path.join(home, 'worker.mjs');
   const verify = path.join(home, 'verify.mjs');
@@ -57,7 +62,9 @@ exec /bin/ps "$@"
 set -eu
 id=''
 for ((i=1;i<=$#;i++)); do if [ "\u0024{!i}" = --id ]; then j=$((i+1)); id="\u0024{!j}"; fi; done
-dir="$TMPDIR/threadbear-dev-app/$id"
+mkdir -p "$TMPDIR/threadbear-dev-app"
+state_root="$(cd "$TMPDIR/threadbear-dev-app" && pwd -P)"
+dir="$state_root/$id"
 case " $* " in
   *' stop '*) kill "$(cat "$HOME/app.pid")" "$(cat "$HOME/mock.pid")" 2>/dev/null || true; exit 0 ;;
   *' dump '*) echo '{"connection":"connected","sidebar":{"sections":[]},"transcript":{"rows":[]}}'; exit 0 ;;
@@ -195,6 +202,17 @@ test('without a perf registry Swift still calls the ordinary launcher', async (t
   assert.equal(await first.done, 0, first.output);
   assert.ok(fs.existsSync(h.file('ordinary-open')));
   assert.doesNotMatch(first.output, /direct private-bundle launch/);
+});
+
+test('a symlinked Swift instance root still uses the owned launch adapters', async (t) => {
+  const h = fixture(t);
+  fs.mkdirSync(h.file('real-instances'));
+  fs.symlinkSync(h.file('real-instances'), h.file('threadbear-dev-app'));
+  const first = h.run({ NORMAL_STOP: '1' });
+  assert.equal(await first.done, 0, first.output);
+  assert.ok(!fs.existsSync(h.file('ordinary-open')), 'canonical bundle mismatch bypassed the app gate');
+  const next = h.run({}, h.verify);
+  assert.equal(await next.done, 0, next.output);
 });
 
 test('late Swift startup and detached mock exec cannot cross registry retirement', async (t) => {

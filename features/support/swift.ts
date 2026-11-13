@@ -23,7 +23,14 @@ export class SwiftDriver implements Driver {
     const registry = (args[0] === 'start' || args[2] === 'rebuild') ? process.env.THREADBEAR_PERF_CHILDREN : undefined;
     // A shared host lease gates the frozen launcher's detached mock and app.
     // Ordinary debug launches still use LS, including its temp-folder setup.
-    const instance = registry ? path.join(fs.realpathSync(os.tmpdir()), 'threadbear-dev-app', this.id) : '';
+    let instance = '';
+    if (registry) {
+      const stateRoot = path.join(os.tmpdir(), 'threadbear-dev-app');
+      fs.mkdirSync(stateRoot, { recursive: true });
+      // dev-app.sh canonicalizes the instance root too, which can itself be
+      // a symlink. A mismatched path would miss the private-app adapter.
+      instance = path.join(fs.realpathSync(stateRoot), this.id);
+    }
     const { stdout } = await run(registry ? 'perl' : script, registry
       ? [path.join(root, 'scripts/perf-swift.pl'), '--run', registry,
         process.env.THREADBEAR_NODE || process.env.THREADBARE_NODE || process.execPath, instance, script, ...args]
