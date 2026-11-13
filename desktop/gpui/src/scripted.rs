@@ -42,6 +42,21 @@ pub(crate) fn guard() {
             std::env::set_var("THREADBEAR_WEB_RUNTIME_DIR", dir);
         }
     }
+    // And neither that nor its automation file (beside which go its log
+    // and crash reports) may be in the real data folder, however it's
+    // named (Codex's second look).
+    if !allowed {
+        let resolved = |p: &std::path::Path| std::fs::canonicalize(p).ok().or_else(|| Some(std::fs::canonicalize(p.parent()?).ok()?.join(p.file_name()?))).unwrap_or_else(|| p.to_path_buf());
+        let real = resolved(&default_home());
+        for var in ["THREADBEAR_WEB_RUNTIME_DIR", "THREADBEAR_AUTOMATION"] {
+            if let Some(path) = std::env::var_os(var) {
+                if resolved(std::path::Path::new(&path)).starts_with(&real) {
+                    eprintln!("A scripted app won't keep {var} in the real data folder ({}). Give it a folder of its own (desktop/scripts/dev-app.sh does).", real.display());
+                    std::process::exit(2);
+                }
+            }
+        }
+    }
     #[cfg(target_os = "macos")]
     pasteboard::install();
 }

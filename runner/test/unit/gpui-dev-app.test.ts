@@ -163,6 +163,8 @@ test('start, do, dump, stop, and the idle quit, with a stand-in app on the mock'
     assert.equal(run(env, 'start', '--mock', '--id', 'mine2').status, 0);
     const mockPids = spawnSync('pgrep', ['-f', path.join(fs.realpathSync(env.TMPDIR), 'threadbear-gpui-dev-app', 'mine2', 'home')], { encoding: 'utf8' }).stdout.trim();
     assert.ok(mockPids, 'its mock is running');
+    // Even one that won't stop when asked (suspended: SIGTERM waits) is gone once stop says so.
+    for (const pid of mockPids.split('\n')) process.kill(Number(pid), 'SIGSTOP');
     assert.equal(run(env, 'stop').out, 'stopped mine2');
     for (const pid of mockPids.split('\n')) assert.equal(since(Number(pid)), '', `mock ${pid} stopped`);
     assert.ok(!fs.existsSync(path.join(fs.realpathSync(env.TMPDIR), 'threadbear-gpui-dev-app', 'mine2')));

@@ -336,20 +336,33 @@ async function supervise(id: string): Promise<void> {
       fs.appendFileSync(path.join(dir, 'supervisor.log'), `${new Date().toISOString()} ${line}\n`);
     } catch {}
   };
-  const end = (why: string) => {
-    for (const c of [app, mock]) {
-      if (c?.pid && c.exitCode === null) {
+  let ending = false;
+  // Waits for the app and the mock to be gone (a KILL after 5 s), so a stop
+  // that waits for this has really stopped them (Codex's second look).
+  const end = async (why: string) => {
+    if (ending) return;
+    ending = true;
+    const live = [app, mock].filter((c): c is ChildProcess => !!c?.pid && c.exitCode === null && c.signalCode === null);
+    const gone = live.map((c) => new Promise<void>((r) => c.once('exit', () => r())));
+    const signal = (sig: NodeJS.Signals) => {
+      for (const c of live) {
         try {
-          process.kill(-c.pid, 'SIGTERM');
+          process.kill(-c.pid!, sig);
         } catch {
-          c.kill();
+          c.kill(sig);
         }
       }
+    };
+    signal('SIGTERM');
+    const done = Promise.all(gone);
+    if ((await Promise.race([done.then(() => true), sleep(5000).then(() => false)])) === false) {
+      signal('SIGKILL');
+      await Promise.race([done, sleep(2000)]);
     }
     log(`stopped: ${why}`);
     process.exit(0);
   };
-  process.on('SIGTERM', () => end('asked'));
+  process.on('SIGTERM', () => void end('asked'));
   process.on('SIGHUP', () => {});
   if (i.mock) {
     const ready = path.join(dir, 'mock-ready');
@@ -357,8 +370,8 @@ async function supervise(id: string): Promise<void> {
     const fixtures = i.fixtures.flatMap((f) => ['--fixtures', f]);
     mock = spawn(process.execPath, [path.join(CHECKOUT, 'app/Tools/mock-runner/server.mjs'), '--data-dir', i.home, '--port', '0', '--ready-file', ready, ...fixtures], { stdio: ['ignore', out, out], detached: true, env: { ...process.env, TB_MOCK_NO_REMOTE: process.env.TB_MOCK_NO_REMOTE ?? '1' } });
     kids.push(mock);
-    mock.on('exit', (code) => end(`the mock runner exited (${code})`));
-    if (!(await waitForFile(ready, 20_000, () => mock?.exitCode === null))) end("the mock runner didn't start");
+    mock.on('exit', (code) => void end(`the mock runner exited (${code})`));
+    if (!(await waitForFile(ready, 20_000, () => mock?.exitCode === null))) return end("the mock runner didn't start");
   }
   const launch = () => {
     const current = readInstance(id) ?? i;
@@ -392,7 +405,7 @@ async function supervise(id: string): Promise<void> {
         launch();
         return;
       }
-      end(`the app exited (${signal ?? code})`);
+      void end(`the app exited (${signal ?? code})`);
     });
   };
   launch();
@@ -403,7 +416,7 @@ async function supervise(id: string): Promise<void> {
       try {
         last = Number(fs.readFileSync(path.join(dir, 'last-command'), 'utf8')) || last;
       } catch {}
-      if (Date.now() - last > IDLE_QUIT_SECONDS * 1000) end(`no command for ${IDLE_QUIT_SECONDS} s`);
+      if (Date.now() - last > IDLE_QUIT_SECONDS * 1000) void end(`no command for ${IDLE_QUIT_SECONDS} s`);
     },
     Math.min(15_000, IDLE_QUIT_SECONDS * 250),
   );
@@ -434,7 +447,7 @@ async function stopOne(i: Instance): Promise<void> {
       process.kill(i.supervisor!, 'SIGTERM');
     } catch {}
     // It stops the app and the mock; the folder goes once it has.
-    const until = Date.now() + 8000;
+    const until = Date.now() + 10_000;
     while (running(i) && Date.now() < until) await sleep(100);
   }
   // The app's own group too, if the supervisor went first.
@@ -447,17 +460,29 @@ async function stopOne(i: Instance): Promise<void> {
 }
 
 /** Instances whose supervisor has gone: theirs after 30 minutes quiet (their log may be wanted), ours at once. */
+/** A start still under way there: its dev-app.sh is running (the folder's `starting` says which). */
+function starting(id: string): boolean {
+  try {
+    const { pid, since: started } = JSON.parse(fs.readFileSync(path.join(dirOf(id), 'starting'), 'utf8')) as { pid: number; since: string };
+    return alive(pid, started);
+  } catch {
+    return false;
+  }
+}
+
 function reap(): void {
   const who = me();
-  // A start's folder whose dev-app.sh has gone without finishing.
+  // A start's folder whose dev-app.sh has gone without finishing, unless it
+  // got as far as a supervisor that's running (Codex's second look).
   for (const name of fs.readdirSync(stateRoot())) {
-    try {
-      const { pid, since: started } = JSON.parse(fs.readFileSync(path.join(stateRoot(), name, 'starting'), 'utf8')) as { pid: number; since: string };
-      if (!alive(pid, started)) fs.rmSync(path.join(stateRoot(), name), { recursive: true, force: true });
-    } catch {}
+    if (!fs.existsSync(path.join(stateRoot(), name, 'starting')) || starting(name)) continue;
+    const i = readInstance(name);
+    if (i && running(i)) fs.rmSync(path.join(stateRoot(), name, 'starting'), { force: true });
+    else fs.rmSync(path.join(stateRoot(), name), { recursive: true, force: true });
   }
   for (const i of allInstances()) {
-    if (running(i)) continue;
+    // A start between writing instance.json and recording its supervisor.
+    if (running(i) || starting(i.id)) continue;
     let quiet = Date.now() - i.created;
     try {
       quiet = Date.now() - fs.statSync(path.join(dirOf(i.id), 'supervisor.log')).mtimeMs;
