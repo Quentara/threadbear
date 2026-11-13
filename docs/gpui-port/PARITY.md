@@ -533,6 +533,9 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
 - A scripted app never reaches the real BrowserBear: without
   `BROWSERBEAR_HOME` it has none. The specs run against a stand-in
   (`features/support/browserbear.ts`).
+- All six are `@windows-pending`: BrowserBear is a Mac tool on a Unix
+  socket, which the GPUI app only opens on Unix, and the stand-in can't
+  listen on a file path on Windows (GitHub's run 43399468986).
 - The Swift app's dump has no Browser button or pane and it's frozen, so
   the pane's scenarios are `@swift-pending`; the two link scenarios aren't,
   but weren't run against it, nor on Windows.
