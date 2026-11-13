@@ -6173,7 +6173,7 @@ the mirror back as state. The Mac app doesn't use it.
   aren't scrubbed. `src/withhold.ts` says which tool calls' output must never
   upload.
 - **Full sync** (API 52, docs/full-convex.md step 4). `sync.full: true` in
-  `runner.json`, off by default; off, none of this runs. Each finished tool goes up
+  `runner.json`, off by default (the main runner offers it once, when a phone or browser is paired or another runner turns up: docs/full-convex.md step 6); off, none of this runs. Each finished tool goes up
   as one `eventBodies` row under its call's seq, the same seq as its `messages` row
   (`sync:appendBodies`, at most 50 rows or about 512 KB a mutation, behind the
   mirror's own writes): `text`, `ok`, `truncated`, `input` and `diffs` as JSON text,

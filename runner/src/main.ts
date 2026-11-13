@@ -41,9 +41,11 @@ import { ClaudeAdapter } from './adapters/claude/adapter.ts';
 import { ProcessRegistry } from './proc.ts';
 import { Runner } from './runner.ts';
 import { startOwnThread } from './own-threads.ts';
-import { askBrief, ConvexUseTally, shouldAskFullSync } from './convex-use.ts';
-// How long after starting the runner asks about full sync (convex-use.ts).
+import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncReason } from './convex-use.ts';
+// How long after starting the runner looks for a reason to ask about full sync,
+// and how long after a pairing or a new machine it asks (convex-use.ts).
 const ASK_FULL_SYNC_AFTER_MS = 5 * 60_000;
+const ASK_FULL_SYNC_EVENT_MS = 30_000;
 import { CodexAdapter } from './adapters/codex/adapter.ts';
 import { AcpAdapter } from './adapters/acp/adapter.ts';
 import { ACP_AGENTS, ACP_PROVIDERS, type AcpProvider } from './adapters/acp/agents.ts';
@@ -515,6 +517,9 @@ async function main(): Promise<void> {
     if (scheduler.list(id).some((sc) => sc.threadId === id && !sc.finishedAt && sc.check)) leftBehind.push("its schedules' shell checks");
     return { ...info, leftBehind };
   };
+  // Made further down, once there's a runner to start its thread on; the
+  // backend's remote-runner updates reach it through this (convex-use.ts).
+  let fullSyncOfferRef: FullSyncOffer | undefined;
   const sync = new ConvexSync({
     config: { ...cfg.sync, runnerId: syncRunnerId, icon: runnerIcon },
     use: new ConvexUseTally({ home: cfg.home }),
@@ -568,7 +573,11 @@ async function main(): Promise<void> {
     publish: (n) => {
       runner.publish(n.method === 'remoteThreads.updated' ? { ...n, params: dressRemote(n.params) } : n);
       // Another runner's followProblem comes in with these rows.
-      if (n.method === 'remoteThreads.updated') publishUpdates();
+      if (n.method === 'remoteThreads.updated') {
+        publishUpdates();
+        // Another machine has turned up on this backend: full sync would help.
+        if ((n.params as { runners?: unknown[] } | undefined)?.runners?.length) fullSyncOfferRef?.trigger('machine');
+      }
     },
     home: cfg.home,
     // A key the backend turns down (sync.ts KEY_REJECTED): said in the app,
@@ -689,34 +698,40 @@ async function main(): Promise<void> {
     // The app's Bring Them In and Let's Discuss titles (UpdatesPanel).
     openByHand: () => runner.list(['inbox', 'snoozed']).find((t) => /^(Bring in|Discuss) Mike's release /.test(t.title))?.id,
   });
-  // An install from before full sync was the default is asked once whether to
-  // turn it on, in a thread of its own (convex-use.ts); a new one's setup wrote
-  // the answer already. Noted first, so a crash before the thread starts doesn't
-  // ask twice, and a few minutes in, so a release that's about to roll back
-  // doesn't ask either.
-  if (shouldAskFullSync({ syncOn: Boolean(cfg.sync.enabled && cfg.sync.url && syncKey), key: syncKey, full: cfg.sync.full, asked: cfg.sync.fullAsked })) {
-    setTimeout(() => {
-      const before = readRunnerJson(cfg.home);
-      if (before.sync?.full !== undefined || before.sync?.fullAsked) return;
-      // The thread first, then the note: a runner that's handing over refuses
-      // new threads, and then the next one asks. A crash between the two asks
-      // twice, which is better than never.
+  // Full sync starts off, and the main runner asks once whether to turn it on,
+  // when it would help: a phone or browser paired, or another machine here
+  // (convex-use.ts FullSyncOffer). An install with sync.full set either way is
+  // never asked. Noted in runner.json once the thread is open, so it's once.
+  const fullSyncOffer = new FullSyncOffer({
+    read: () => {
+      const j = readRunnerJson(cfg.home);
+      return { syncOn: Boolean(cfg.sync.enabled && cfg.sync.url && syncKey), key: syncKey, full: j.sync?.full, asked: j.sync?.fullAsked };
+    },
+    start: (reason) => {
       // The checkout's tb, as this release's folder is pruned after a few more.
       const tbPath = thisRelease?.checkout ? path.join(thisRelease.checkout, 'runner', 'bin', 'tb') : path.join(import.meta.dirname, '..', 'bin', 'tb');
       const tb = `'${tbPath.replace(/'/g, `'\\''`)}'`;
-      let threadId: string;
-      try {
-        threadId = startOwnThread(runner, askBrief(tb), thisRelease?.checkout);
-      } catch (e) {
-        log.warn('could not ask about full sync', { error: String(e) });
-        return;
-      }
+      return startOwnThread(runner, askBrief(tb, reason, process.platform === 'darwin' ? 'Mac' : 'machine'), thisRelease?.checkout);
+    },
+    note: (threadId) => {
       const json = readRunnerJson(cfg.home);
       json.sync = { ...json.sync, fullAsked: new Date().toISOString(), fullAskedThread: threadId };
       writeRunnerJson(cfg.home, json);
-      log.info('asked about full sync', { threadId });
-    }, ASK_FULL_SYNC_AFTER_MS).unref?.();
-  }
+    },
+    later: (fn, ms) => void setTimeout(fn, ms).unref?.(),
+    delayMs: ASK_FULL_SYNC_EVENT_MS,
+    log: (msg, meta) => log.info(msg, meta),
+  });
+  fullSyncOfferRef = fullSyncOffer;
+  // A few minutes in, so a release that's about to roll back doesn't ask: a
+  // phone, browser or other machine that's already there.
+  setTimeout(() => {
+    if (!fullSyncOffer.open) return;
+    void sync
+      .listTokens()
+      .catch(() => [])
+      .then((devices) => fullSyncOffer.trigger(fullSyncReason({ devices, otherRunners: sync.remoteThreads().runners.length })));
+  }, ASK_FULL_SYNC_AFTER_MS).unref?.();
   const upstream = new Upstream({
     home: cfg.home,
     checkout: thisRelease?.checkout,
@@ -773,7 +788,7 @@ async function main(): Promise<void> {
   updaterReady = true;
 
   runner.attachClis(updates);
-  const methods = { ...restartMethods(restarter), ...scheduleMethods(scheduler), ...projectMethods(projects), ...drainProjectMethods(projects), ...librarianMethods(librarian), ...connectorsMethods(connectors), ...settingsMethods(settings), ...instructionsMethods(instructions), ...modelMethods(models), ...devicesMethods(sync), ...usageStatsMethods({ tally, history: usageHistory, clock: realClock }) };
+  const methods = { ...restartMethods(restarter), ...scheduleMethods(scheduler), ...projectMethods(projects), ...drainProjectMethods(projects), ...librarianMethods(librarian), ...connectorsMethods(connectors), ...settingsMethods(settings), ...instructionsMethods(instructions), ...modelMethods(models), ...devicesMethods(sync, (kind) => fullSyncOffer.trigger(kind)), ...usageStatsMethods({ tally, history: usageHistory, clock: realClock }) };
   // runner.status carries the CLI statuses too (protocol, "runner.status").
   const restartStatus = methods['runner.status'];
   methods['runner.status'] = (p) => {

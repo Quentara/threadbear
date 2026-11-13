@@ -157,31 +157,107 @@ function dayKey(ms: number): string {
 // ---- The question for installs from before full sync was the default.
 
 /**
- * Whether this runner should ask, once, if full sync should go on. Only the
- * main Mac's runner asks (a runner key is a second machine's, and its owner
- * answers there): with sync on, no `sync.full` in runner.json either way, and
- * not asked before. A new install's setup writes `sync.full: true`, so it never
- * gets here; an older one has no key at all, and is asked rather than switched.
+ * Whether this runner may ask, once, if full sync should go on. Only the main
+ * Mac's runner asks (a runner key is a second machine's): with sync on, no
+ * `sync.full` in runner.json either way, and not asked before. Full sync starts
+ * off (Mike, 13 Nov: a one-Mac user gets the costs and none of the benefits),
+ * so this is asked only once it's useful: see fullSyncReason. An install with
+ * the key set, either way, is never asked or changed.
  */
 export function shouldAskFullSync(o: { syncOn: boolean; key: string | undefined; full: boolean | undefined; asked: string | undefined }): boolean {
   if (!o.syncOn || !o.key || o.key.startsWith('tbr_')) return false;
   return o.full === undefined && !o.asked;
 }
 
+// What made full sync useful: a phone or browser paired to this backend, or
+// another machine on it. Every benefit of full sync is reading a thread
+// somewhere other than the machine that ran it, so these are the moments to ask.
+export type FullSyncReason = 'phone' | 'browser' | 'machine';
+
+/** Why it'd help now, from the backend's live phone and browser tokens and the other runners this one has heard of. */
+export function fullSyncReason(o: { devices: { kind: string; expired?: boolean }[]; otherRunners: number }): FullSyncReason | undefined {
+  const live = o.devices.filter((d) => !d.expired);
+  if (live.some((d) => d.kind === 'phone')) return 'phone';
+  if (live.some((d) => d.kind === 'browser')) return 'browser';
+  return o.otherRunners > 0 ? 'machine' : undefined;
+}
+
+/** The question, naming what just made it useful. `machine` is "Mac" on a Mac. */
+export function fullSyncQuestion(reason: FullSyncReason | undefined, machine: string): string {
+  const when = machine === 'Mac' ? "even when the Mac's asleep" : `even when the ${machine}'s off`;
+  const what = `this ${machine}'s tool output and diffs too, ${when}?`;
+  if (reason === 'phone') return `You've paired your phone. Want it to show ${what}`;
+  if (reason === 'browser') return `You've signed in on the website. Want it to show ${what}`;
+  if (reason === 'machine') return `You've added another machine. Want it to show ${what}`;
+  return `Want your phone, the website and your other machines to show ${what}`;
+}
+
 // The brief for the thread that asks. It goes to the install's own agent,
 // which asks with its end-of-turn card and sets the answer with tb.
-export function askBrief(tb: string): { title: string; why: string; text: string } {
+export function askBrief(tb: string, reason?: FullSyncReason, machine = 'Mac'): { title: string; why: string; text: string } {
+  const question = fullSyncQuestion(reason, machine);
   return {
-    title: 'Send tool output to Convex too?',
+    title: 'Show tool output on your other devices?',
     why: 'asks once about full sync',
     text: [
       "You're starting this on the runner's behalf (docs/full-convex.md step 6). Ask the user one question, then set the answer. Don't do anything else.",
       '',
-      'End your turn at once with end_turn: needs "you", one ask, the question "Send tool output to your Convex deployment too?", options "Turn it on" (does: "Tool output, tool input and diffs go up too, kept 30 days") and "Leave it off" (does: "Only messages and one line per tool, as now"), suggested 0.',
-      'Your reply, in plain words and short: Threadbear can also put each tool\'s output, its input and diffs in your Convex deployment, so your phone, the website and your other machines can open them. Secrets are scrubbed out first, but that isn\'t a guarantee. Output from files and commands that usually hold secrets stays on this Mac, and so do screenshots. It\'s kept 30 days. It only matters on the Free plan if you use Threadbear a lot, and tb status warns you if you get close.',
+      `End your turn at once with end_turn: needs "you", one ask, the question "${question}", options "Turn it on" (does: "Tool output, input and diffs go up too, scrubbed, kept 30 days") and "Leave it off" (does: "Only messages and a line per tool, as now"), suggested none.`,
+      `Your reply, in plain words and short: with this on, the phone, the website and other machines can open a thread's tool output and diffs, not just its messages and a line per tool, even when this ${machine} isn't there to ask. They go to the user's own Convex deployment, kept 30 days, with secrets scrubbed out first, but that isn't a guarantee; screenshots and files that hold secrets stay on this ${machine}.`,
       '',
       `When they answer: for "Turn it on", run \`${tb} settings full on\`; for "Leave it off", run \`${tb} settings full off\`. Say in one line what you set and that it takes effect when the runner next starts, then end_turn with needs "nothing" and archive true.`,
-      'If they write something else, answer it briefly and ask again. If they never answer, nothing changes: it stays off and this isn\'t asked again.',
+      "If they write something else, answer it briefly and ask again. If they never answer, nothing changes: it stays off and this isn't asked again.",
     ].join('\n'),
   };
+}
+
+/**
+ * Asks at most once, whatever sets it off: the runner's start (a phone, a
+ * browser or another machine already there), a phone or browser being paired
+ * here, or another runner turning up. The note in runner.json is what makes it
+ * once; `busy` stops two triggers starting two threads in the meantime.
+ */
+type FullSyncOfferDeps = {
+  read(): { syncOn: boolean; key: string | undefined; full: boolean | undefined; asked: string | undefined };
+  start(reason: FullSyncReason): string;
+  note(threadId: string): void;
+  later(fn: () => void, ms: number): void;
+  delayMs: number;
+  log?: (msg: string, meta: Record<string, unknown>) => void;
+};
+
+export class FullSyncOffer {
+  private busy = false;
+  private deps: FullSyncOfferDeps;
+  constructor(deps: FullSyncOfferDeps) {
+    this.deps = deps;
+  }
+
+  /** Whether it could still ask, so a caller can skip a lookup. */
+  get open(): boolean {
+    return !this.busy && shouldAskFullSync(this.deps.read());
+  }
+
+  trigger(reason: FullSyncReason | undefined): void {
+    if (!reason || !this.open) return;
+    this.busy = true;
+    this.deps.later(() => {
+      try {
+        // Answered, or asked by an earlier release, in the meantime: nothing.
+        if (!shouldAskFullSync(this.deps.read())) return;
+        let threadId: string;
+        try {
+          threadId = this.deps.start(reason);
+        } catch (e) {
+          // A runner handing over refuses new threads: the next trigger, or the next start, asks.
+          this.deps.log?.('could not ask about full sync', { error: String(e) });
+          return;
+        }
+        this.deps.note(threadId);
+        this.deps.log?.('asked about full sync', { threadId, reason });
+      } finally {
+        this.busy = false;
+      }
+    }, this.deps.delayMs);
+  }
 }

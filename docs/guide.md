@@ -1529,7 +1529,7 @@ machine is, with an orange dot on its tile while it's low on memory or disk.
 Other changes are done on the Mac or by asking an agent. The gear
 has the appearance and Sign out. Pictures you paste show there too: they go to
 your Convex deployment as they are, so nothing can scrub a secret from one, and
-`"sync": { "pastedPictures": false }` in `runner.json` keeps them on the Mac. A tool line opens to what the tool did if its runner has full sync on (on for a new install; `tb settings full on|off` changes it, and docs/on-your-mac.md says what it sends), and its screenshots show when you tap them. The pencil beside the search starts a new
+`"sync": { "pastedPictures": false }` in `runner.json` keeps them on the Mac. A tool line opens to what the tool did if its runner has full sync on (it starts off and is offered once you pair a phone or add a machine; `tb settings full on|off` changes it, and docs/on-your-mac.md says what it sends), and its screenshots show when you tap them. The pencil beside the search starts a new
 thread on a runner's default folder and login. On your Mac,
 `threadbear://thread/<id>` opens a thread in the app instead (the Open
 thread button on a tab BrowserBear has marked for an agent uses it). With
@@ -1961,12 +1961,14 @@ Your threads are mirrored to a Convex deployment in your own Convex account,
 which setup made: the thread list, the text of each message, one line for
 each thing an agent did, and your logins' emails and usage. Anything that
 looks like a secret is scrubbed out of the text on the way up, which helps
-but isn't a guarantee. With full sync on, which it is for a new install, each
-tool's output, its input and diffs go up too, after the same scrubbing, and are
-kept 30 days; output from files and commands that usually hold secrets stays on
-your Mac, and so do tool screenshots. `tb settings full off`, or turning off
-Send tool output to Convex in Settings (⌘,) > General > Full sync, keeps all tool
-output on your Mac from the runner's next start. `tb status` estimates how much of Convex's Free plan you're using and
+but isn't a guarantee. Full sync is off to start. Turned on,
+your phone, the website and your other machines can show each tool's output and
+diffs too, even when your Mac's asleep: its output, its input and diffs go up, after
+the same scrubbing, and are kept 30 days; output from files and commands that
+usually hold secrets stays on your Mac, and so do tool screenshots. Threadbear asks
+once, when you pair a phone or add a machine; Send tool output to Convex in Settings
+(⌘,) > General > Full sync, or `tb settings full on|off`, sets it any time, from the
+runner's next start. `tb status` estimates how much of Convex's Free plan you're using and
 warns before you get near its limits. Pictures you paste into
 a message go up as they are, so your website can show them, and nothing can
 scrub a secret out of a picture: `"sync": { "pastedPictures": false }` in

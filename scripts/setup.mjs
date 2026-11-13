@@ -754,18 +754,15 @@ async function runnerJson(url, site) {
   // blocks each action (Claude only; on Codex it's Ask before edits).
   // Picking Full access in the composer, or "full" here, changes it.
   const mode = fresh ? { permissionMode: 'auto' } : {};
-  // A new install sends tool output to its Convex deployment too, scrubbed
-  // first (docs/full-convex.md). An install from before keeps what it had: its
-  // runner asks once instead (runner/src/convex-use.ts).
-  // A new machine, joining an install or not: its runner.json is new, so
-  // nothing that was off is switched on.
-  const full = fresh ? { full: true } : {};
-  const next = { ...json, sync: { ...json.sync, ...(url ? { url } : {}), ...(site ? { site } : {}), name, ...full }, defaults: { ...mode, ...json.defaults, cwd } };
+  // Full sync starts off (docs/full-convex.md step 6): setup leaves sync.full
+  // unset, and the runner offers it once a phone, the website or another
+  // machine would show what it sends (runner/src/convex-use.ts).
+  const next = { ...json, sync: { ...json.sync, ...(url ? { url } : {}), ...(site ? { site } : {}), name }, defaults: { ...mode, ...json.defaults, cwd } };
   if (JSON.stringify(next) === JSON.stringify(json)) return ok(`${runnerJsonPath} as it was`);
-  if (dry) return todo(`write ${runnerJsonPath}: sync.url ${url ?? '(the new deployment)'}${site ? `, sync.site ${site}` : ''}, sync.name ${name},${fresh ? ' sync.full true,' : ''} defaults.cwd ${cwd}${fresh ? ', defaults.permissionMode auto' : ''}`);
+  if (dry) return todo(`write ${runnerJsonPath}: sync.url ${url ?? '(the new deployment)'}${site ? `, sync.site ${site}` : ''}, sync.name ${name}, defaults.cwd ${cwd}${fresh ? ', defaults.permissionMode auto' : ''}`);
   writeJson(runnerJsonPath, next);
   ok(`mirrors to ${url} as ${name}; new threads start in ${cwd}${fresh ? ', on Auto' : ''}`);
-  if (fresh) note('Tool output, its input and diffs go to your Convex deployment too, so the phone, the website and your other Macs can open them. Secrets are scrubbed out first, but that isn\'t a guarantee, and pictures can\'t be scrubbed. To keep tool output on this Mac, set "sync": { "full": false } in runner.json.');
+  if (fresh) note("Full sync is off: turned on, your phone, the website and your other machines can show each thread's tool output and diffs, even when this Mac's asleep. Threadbear offers it once you pair a phone or add a machine, or turn it on with tb settings full on.");
 }
 
 function backend() {

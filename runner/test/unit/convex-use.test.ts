@@ -4,12 +4,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { askBrief, ConvexUseTally, estimate, FREE_IO_BYTES, FREE_STORAGE_BYTES, shouldAskFullSync, WARN_AT } from '../../src/convex-use.ts';
+import { askBrief, ConvexUseTally, estimate, FREE_IO_BYTES, FREE_STORAGE_BYTES, FullSyncOffer, fullSyncQuestion, fullSyncReason, shouldAskFullSync, WARN_AT, type FullSyncReason } from '../../src/convex-use.ts';
 
 const DAY = 24 * 60 * 60_000;
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'convex-use-'));
 
-test('an install from before full sync was the default is asked once, on its main runner only', () => {
+test('only a main runner with no answer yet may be asked, once', () => {
   const key = 'k';
   assert.equal(shouldAskFullSync({ syncOn: true, key, full: undefined, asked: undefined }), true);
   // Setup wrote it (a new install), or it was answered: never asked.
@@ -80,4 +80,92 @@ test('nothing sent leaves no file, and a broken file starts the count again', ()
     fs.writeFileSync(path.join(home, 'convex-use.json'), broken);
     assert.equal(new ConvexUseTally({ home }).use().sent, 0, broken);
   }
+});
+
+test('what makes full sync useful: a live phone, then a browser, then another machine', () => {
+  assert.equal(fullSyncReason({ devices: [], otherRunners: 0 }), undefined, 'one Mac on its own: nothing to gain');
+  assert.equal(fullSyncReason({ devices: [{ kind: 'phone' }], otherRunners: 0 }), 'phone');
+  assert.equal(fullSyncReason({ devices: [{ kind: 'browser' }], otherRunners: 0 }), 'browser');
+  assert.equal(fullSyncReason({ devices: [], otherRunners: 1 }), 'machine');
+  assert.equal(fullSyncReason({ devices: [{ kind: 'phone', expired: true }], otherRunners: 0 }), undefined, 'an expired token pairs nothing');
+  assert.equal(fullSyncReason({ devices: [{ kind: 'browser' }, { kind: 'phone' }], otherRunners: 2 }), 'phone');
+});
+
+test('the question names what made it useful, with the benefit first', () => {
+  assert.equal(fullSyncQuestion('phone', 'Mac'), "You've paired your phone. Want it to show this Mac's tool output and diffs too, even when the Mac's asleep?");
+  assert.match(fullSyncQuestion('browser', 'Mac'), /^You've signed in on the website\./);
+  assert.match(fullSyncQuestion('machine', 'machine'), /^You've added another machine\. .*this machine's tool output .*even when the machine's off\?$/);
+  const b = askBrief("'/x/tb'", 'phone');
+  assert.match(b.text, /You've paired your phone/);
+  assert.match(b.text, /kept 30 days/);
+});
+
+function offer(start: { full?: boolean; asked?: string; key?: string } = {}) {
+  const state = { full: start.full, asked: start.asked };
+  const started: FullSyncReason[] = [];
+  const queued: (() => void)[] = [];
+  let failNext = false;
+  const o = new FullSyncOffer({
+    read: () => ({ syncOn: true, key: start.key ?? 'k', full: state.full, asked: state.asked }),
+    start: (reason) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error('handing over');
+      }
+      started.push(reason);
+      return `t${started.length}`;
+    },
+    note: () => {
+      state.asked = '2026-11-13T00:00:00.000Z';
+    },
+    later: (fn) => void queued.push(fn),
+    delayMs: 1,
+  });
+  return { o, state, started, run: () => queued.splice(0).forEach((f) => f()), failOnce: () => (failNext = true) };
+}
+
+test('each trigger asks, and only the first: a second pairing or machine asks nothing', () => {
+  for (const reason of ['phone', 'browser', 'machine'] as const) {
+    const t = offer();
+    t.o.trigger(reason);
+    t.o.trigger('machine');
+    t.run();
+    t.o.trigger('phone');
+    t.run();
+    assert.deepEqual(t.started, [reason], `${reason} asks once`);
+  }
+});
+
+test('nothing to gain asks nothing, and an install with the setting either way is never asked', () => {
+  const none = offer();
+  none.o.trigger(undefined);
+  none.run();
+  assert.deepEqual(none.started, []);
+  for (const full of [true, false]) {
+    const t = offer({ full });
+    t.o.trigger('phone');
+    t.run();
+    assert.deepEqual(t.started, [], `sync.full ${full} is left as it is`);
+    assert.equal(t.state.full, full);
+  }
+  const keyed = offer({ key: `tbr_${'ab'.repeat(16)}` });
+  keyed.o.trigger('machine');
+  keyed.run();
+  assert.deepEqual(keyed.started, [], "a second machine's runner key never asks");
+});
+
+test("answered while it waited, it doesn't ask; a refused thread lets a later trigger ask", () => {
+  const t = offer();
+  t.o.trigger('phone');
+  t.state.full = false;
+  t.run();
+  assert.deepEqual(t.started, []);
+  const r = offer();
+  r.failOnce();
+  r.o.trigger('phone');
+  r.run();
+  assert.deepEqual(r.started, [], 'a runner handing over refuses the thread');
+  r.o.trigger('browser');
+  r.run();
+  assert.deepEqual(r.started, ['browser']);
 });

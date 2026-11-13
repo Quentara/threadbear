@@ -40,7 +40,9 @@ export function signInLink(site: string, token: string): string {
   return `${site}/#token=${token}`;
 }
 
-export function devicesMethods(sync: ConvexSync): Record<string, (p: Record<string, unknown>) => unknown> {
+// `onPaired`: a phone or browser token was issued here, the moment full sync
+// starts to help (convex-use.ts FullSyncOffer).
+export function devicesMethods(sync: ConvexSync, onPaired?: (kind: DeviceKind) => void): Record<string, (p: Record<string, unknown>) => unknown> {
   return {
     'devices.list': async (): Promise<DeviceList> => {
       const reason = sync.offReason();
@@ -73,6 +75,7 @@ export function devicesMethods(sync: ConvexSync): Record<string, (p: Record<stri
       } catch (e) {
         throw new RpcError(ErrorCode.other, (e as Error).message);
       }
+      onPaired?.(kind as DeviceKind);
       const device: Device = { id: issued.id, kind: kind as DeviceKind, name: name.trim(), createdAt: new Date().toISOString(), expiresAt: issued.expiresAt, expired: false };
       return kind === 'phone' ? { device, pairingLink: pairingLink(url, issued.token, sync.pairingKeys()) } : { device, signInLink: signInLink(site!, issued.token) };
     },
