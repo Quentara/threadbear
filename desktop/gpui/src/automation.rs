@@ -231,6 +231,24 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
     } else {
         window
     };
+    // Until what the window shows holds every condition given (or with
+    // "not", none), as the Swift command: read from the same `dump` a
+    // script reads next (threadbear_core::wait_for), every 50 ms.
+    if cmd["cmd"] == "waitFor" {
+        let wait = threadbear_core::wait_for::WaitFor::from_command(cmd)?;
+        let started = std::time::Instant::now();
+        let dump = json!({ "cmd": "dump" });
+        loop {
+            let shown = cx.update_window(window, |_, window, cx| step(&app, &dump, window, cx)).map_err(|e| e.to_string())??;
+            if wait.holds(&shown) {
+                return Ok(json!(format!("ok {} ms", started.elapsed().as_millis())));
+            }
+            if started.elapsed().as_secs_f64() >= wait.timeout_seconds {
+                return Err(format!("timed out after {} s waiting for {}", wait.timeout_seconds, wait.describe()));
+            }
+            cx.background_executor().timer(std::time::Duration::from_millis(50)).await;
+        }
+    }
     // Its clicks and keys are the script's, not Mike being at the window.
     let out = cx.update_window(window, |_, window, cx| crate::thread::scripted_input(|| step(&app, cmd, window, cx))).map_err(|e| e.to_string())??;
     if !from_new {
@@ -664,6 +682,30 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             window.pointer_down(at, MouseButton::Left, cx);
             window.pointer_up(at, MouseButton::Left, cx);
             Ok(json!("click ok"))
+        }
+        // A click at a point in the window, in points from its top left,
+        // through its hit testing as a real one goes, without moving the
+        // pointer: for what has no label to find it by (the Swift command).
+        // `"right": true` for the right button, `count` 2 for a double-click.
+        "click-at" => {
+            let (Some(x), Some(y)) = (cmd["x"].as_f64(), cmd["y"].as_f64()) else { return Err("needs x and y".into()) };
+            window.render_frame(cx);
+            let at = point(px(x as f32), px(y as f32));
+            let size = window.viewport_size();
+            if at.x < px(0.) || at.y < px(0.) || at.x > size.width || at.y > size.height {
+                return Err(format!("({x}, {y}) is outside the window ({} by {})", f32::from(size.width), f32::from(size.height)));
+            }
+            let button = if cmd["right"].as_bool() == Some(true) { MouseButton::Right } else { MouseButton::Left };
+            window.pointer_move(at, None, cx);
+            // Each press carries its count, as a real double-click's second does.
+            for click_count in 1..=cmd["count"].as_u64().unwrap_or(1).clamp(1, 3) as usize {
+                let modifiers = window.modifiers();
+                window.dispatch_event(MouseDownEvent { button, position: at, modifiers, click_count, first_mouse: false }.to_platform_input(), cx);
+                window.render_frame(cx);
+                window.dispatch_event(MouseUpEvent { button, position: at, modifiers, click_count }.to_platform_input(), cx);
+                window.render_frame(cx);
+            }
+            Ok(json!("click-at ok"))
         }
         "expand" | "collapse" => {
             let open = text(cmd, "cmd") == "expand";

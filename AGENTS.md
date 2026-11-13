@@ -474,23 +474,27 @@ if `tb` isn't found (an older runner, or outside a thread), use
 
 ## Seeing and driving the app
 
-`app/Tools/dev-app.sh` runs a debug build in a temp bundle, against the
-mock runner or a dev runner, with its window kept behind Mike's. Never use
-`~/Applications/Threadbear.app` for this. Instances belong to the thread
-and checkout that started them: without `--id`, a command means your
-newest one, never another thread's, and `stop --all` stops only yours.
-`start` prints the id; pass `--id` to every command once you have more
-than one, and use `status` to see whose is whose.
+`desktop/scripts/dev-app.sh` runs a debug GPUI build with the scripted
+control, against the mock runner or a dev runner, its window behind Mike's
+and out of the Dock (`--help` for the rest). It builds on an
+`updateBuildHosts` Mac and brings the binary back, or here through
+one-build.sh if none answers. The app refuses the real data folder and live
+runner (`--live` only if Mike says), and copies to a pasteboard of its own.
+Instances belong to the thread and checkout that started them: without
+`--id`, a command means your newest one, never another thread's, and
+`stop --all` stops only yours; `status` says whose is whose. An instance
+quits after an hour with no command. `app/Tools/dev-app.sh` is the same for
+the frozen Swift app.
 
-- A UI change: `app/Tools/dev-app.sh start --mock` (the demo threads; add
-  `--appearance light` for the other look), then drive it with
-  `do '{"cmd":"open","id":"demo_upload"}' '{"cmd":"expand","row":"g:"}'`,
-  read it with `dump` (rows with ids, kinds and heights, the composer and
-  what a send would run on, the banner) and look at it with
-  `shot <file.png>`. After an edit, `rebuild` restarts it on the new build
-  with the same thread open. Look at the images before saying it works,
-  then `stop`. An instance quits after an hour with no command. The
-  commands are in `app/README.md` ("Seeing and driving it from a script").
+- A UI change: `desktop/scripts/dev-app.sh start --mock` (the demo threads;
+  `--appearance dark` for pictures), then drive it with
+  `do '{"cmd":"open","id":"demo_upload"}' '{"cmd":"waitFor","loaded":true}'`
+  (`click-at` with `x`, `y` for what has no label), read it with `dump`
+  and look at it with `shot <file.png>`. After an edit, `rebuild` restarts
+  it on the new build with the same thread open. Look at the images before
+  saying it works, then `stop`. The commands are in `app/README.md`
+  ("Seeing and driving it from a script") and
+  `desktop/gpui/src/automation.rs`.
 - A cursor bug only shows with the real pointer: unit tests, `dump` and
   `shot` can't see it, and two fixes for the done card's "?" passed them
   and changed nothing Mike could see. Read `NSCursor.currentSystem` from a
@@ -502,14 +506,11 @@ than one, and use `status` to see whose is whose.
   moving: a tip coming up makes AppKit work the cursor out again, and
   SwiftUI's view behind AppKit content answers with the arrow. Run it with
   the fix taken out too, to see it fail.
-- `shot` runs screencapture from your shell. If it says the image was drawn
-  in-process (the screen is locked, or your shell has no Screen Recording
-  permission), the sidebar's glass is a flat fill; the rest is right.
 - A scripted app is never in front, so opening a thread doesn't mark it
   read until you send `{"cmd":"focus"}`.
 - A bug in one of Mike's real threads: `tb export <id>`, then
-  `app/Tools/dev-app.sh start --mock --fixtures app/.fixtures/threads/<id>`
-  and `open` it. Exports are his private conversations: keep shots of them
+  `dev-app.sh start --mock --fixtures app/.fixtures/threads/<id>` and
+  `open` it. Exports are his private conversations: keep shots of them
   out of git and delete them when done.
 - A runner change seen in the app: start `runner/scripts/dev-runner.sh`,
   then `dev-app.sh start --home <dev home>` (it prints that line). A

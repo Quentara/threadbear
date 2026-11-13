@@ -63,6 +63,7 @@ pub mod thread_panels;
 pub mod transcript;
 pub mod updates;
 pub mod usage;
+pub mod wait_for;
 pub mod web_runtime;
 pub mod zoom;
 pub mod local_files;

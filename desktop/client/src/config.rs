@@ -53,6 +53,28 @@ pub fn default_home() -> PathBuf {
     home.join("Library").join("Application Support").join("Threadbear")
 }
 
+/// Why a scripted app (one with THREADBEAR_AUTOMATION set) mustn't start
+/// against `home`: it's the real data folder, so its runner is the live one
+/// and every command a script sends would act on Mike's real threads, write
+/// his drafts and settings, and start real turns. That's what an app with no
+/// THREADBEAR_HOME gets (the parity audit, 13 Nov). `allowed` is
+/// THREADBEAR_AUTOMATION_LIVE=1, for when the person whose runner it is says
+/// so, as the Swift app's `--automation-allow-live`.
+pub fn scripted_refusal(home: &Path, real: &Path, allowed: bool) -> Option<String> {
+    if allowed {
+        return None;
+    }
+    // Compared with links resolved, so ~/x/../Library/... or a link to the
+    // real folder is the real folder too.
+    let resolved = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
+    (resolved(home) == resolved(real)).then(|| {
+        format!(
+            "A scripted app won't use the real data folder ({}): its runner is the live one, with real threads. Set THREADBEAR_HOME to the mock's or a dev runner's (desktop/scripts/dev-app.sh does), or THREADBEAR_AUTOMATION_LIVE=1 if the person whose runner it is has said so.",
+            real.display()
+        )
+    })
+}
+
 fn expand_home(p: &str) -> PathBuf {
     if p == "~" {
         return dirs::home_dir().unwrap_or_default();
@@ -83,6 +105,29 @@ mod tests {
         std::fs::write(dir.join("runner.json"), r#"{"port": 0}"#).unwrap();
         assert_eq!(port_from_runner_json(&dir), None);
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_scripted_app_refuses_the_real_data_folder() {
+        let base = std::env::temp_dir().join(format!("tb-desktop-refuse-{}", std::process::id()));
+        let real = base.join("real");
+        let other = base.join("mock");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        assert!(scripted_refusal(&real, &real, false).is_some());
+        // The same folder by another way there.
+        assert!(scripted_refusal(&base.join("mock/../real"), &real, false).is_some());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(&real, base.join("link")).unwrap();
+            assert!(scripted_refusal(&base.join("link"), &real, false).is_some());
+        }
+        // The real folder not made yet still counts.
+        assert!(scripted_refusal(&base.join("none"), &base.join("none"), false).is_some());
+        assert_eq!(scripted_refusal(&other, &real, false), None);
+        // Told it may.
+        assert_eq!(scripted_refusal(&real, &real, true), None);
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]

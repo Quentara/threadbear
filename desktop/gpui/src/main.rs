@@ -79,6 +79,7 @@ mod rich_window;
 mod row_motion;
 mod row_swipe;
 mod rows;
+mod scripted;
 mod runner_launcher;
 mod runners_panel;
 mod schedule_editor;
@@ -200,6 +201,10 @@ fn initial_bounds(settings: &Settings, cx: &App) -> Bounds<Pixels> {
 }
 
 fn main() {
+    // A scripted app against the real data folder stops here, and one that
+    // goes on gets a pasteboard of its own, before the platform reads it
+    // (scripted.rs).
+    scripted::guard();
     // A build staged while the app last ran, put in place and the new app
     // opened once this one's gone: before anything else (app_update.rs).
     if app_update::apply_staged_at_launch() {
@@ -215,7 +220,7 @@ fn main() {
     app_log::start();
     // All of Lucide (about 1 MB), so `icons.rs` can name any icon; the default
     // `Assets` has only gpui-kit's own hundred.
-    let application = gpui_kit::application().with_assets(gpui_kit::assets::AllAssets);
+    let application = scripted::application(gpui_kit::application().with_assets(gpui_kit::assets::AllAssets));
     // threadbear://thread/<id> links from outside (deep_links.rs), queued from
     // now: macOS can hand one over before the window's made.
     let links = deep_links::receive(&application);
@@ -241,7 +246,8 @@ fn main() {
         let bounds = initial_bounds(&settings, cx);
         // Back from an update's restart made while another app was in front:
         // the window comes back behind it, not taking the keys (app_update.rs).
-        let focus = settings.saved.update_restore.as_ref().is_none_or(|r| r["front"].as_bool() != Some(false));
+        // A dev-app.sh instance never takes the keys (scripted.rs).
+        let focus = !scripted::keep_behind() && settings.saved.update_restore.as_ref().is_none_or(|r| r["front"].as_bool() != Some(false));
         let (window, app) = gpui_kit::open_window(
             WindowOptions {
                 window_bounds: Some(WindowBounds::Windowed(bounds)),
@@ -263,6 +269,9 @@ fn main() {
         // Its close quits, and File's and Window's commands reach whichever
         // window is in front (window_menu.rs).
         window.update(cx, |_, w, cx| window_menu::install(w, cx)).ok();
+        if scripted::keep_behind() {
+            window.update(cx, |_, w, _| scripted::send_behind(w)).ok();
+        }
         deep_links::listen(links, app.downgrade(), window, cx);
         if let Some(note) = brought {
             app.update(cx, |t, cx| t.show_import_note(note, cx));
