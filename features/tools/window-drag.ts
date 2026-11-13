@@ -3,10 +3,9 @@
 // real mouse event. Takes over the pointer, so only on a machine nobody's using:
 //
 //   desktop/scripts/remote.sh tinker-desk --desk -- node features/tools/window-drag.ts
-import { execFileSync } from 'node:child_process';
 import { GpuiDriver } from '../support/gpui.ts';
 import { sleep } from '../support/driver.ts';
-import { guardInput, guardWindowMove, movePointer, pointer, swiftTool, windowFrame, type Point } from './real-screen.ts';
+import { movePointer, pointer, realDrag, realGripDrag, swiftTool, windowFrame, type Point } from './real-screen.ts';
 import { ensurePerfLock } from './perf-lock.ts';
 
 await ensurePerfLock();
@@ -15,14 +14,12 @@ const dragger = swiftTool('realdrag');
 
 /** A click, checked just before it's posted. */
 function click(at: Point): void {
-  guardInput(app.pid!, [at]);
-  execFileSync(dragger, [String(at[0]), String(at[1]), String(at[0]), String(at[1]), '0', '']);
+  realDrag(dragger, at, at, 0, { pid: app.pid! });
 }
 /** A drag by a grip on the window, which may move it: checked just before it's posted. */
 function gripDrag(from: Point, to: Point): void {
-  guardWindowMove(app.pid!, from, to);
   // Moving straight away, as a hand does: a press held still is a panel drag.
-  execFileSync(dragger, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), '0.1', ''], { env: { ...process.env, RD_PRESS: '0.02' } });
+  realGripDrag(dragger, from, to, 0.1, { pid: app.pid!, env: { RD_PRESS: '0.02' } });
 }
 
 const app = new GpuiDriver();
@@ -82,11 +79,14 @@ try {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 } finally {
-  await app.stop();
   try {
-    movePointer(pointerWas);
-  } catch {
-    // Putting it back is a courtesy; the run's result stands.
+    await app.stop();
+  } finally {
+    try {
+      movePointer(pointerWas);
+    } catch {
+      // Putting it back is a courtesy; the run's result stands.
+    }
+    process.exit();
   }
-  process.exit();
 }

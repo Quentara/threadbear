@@ -6,20 +6,26 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { EDGE, guardInput, guardWindowMove, type Screen } from '../../../features/tools/real-screen.ts';
+import { EDGE, guardInput, guardPath, guardWindowMove, realDrag, realGripDrag, type Post, type Screen } from '../../../features/tools/real-screen.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const APP = 100, ALERT = 200, OTHER = 300;
-type Win = { pid: number; owner: string; frame: number[] };
+type Win = { pid: number; owner: string; frame: number[]; id?: number };
+const covers = ({ frame: [fx, fy, fw, fh] }: Win, x: number, y: number) => x >= fx && x < fx + fw && y >= fy && y < fy + fh;
 
 /** A 1920 x 1080 display with windows listed front to back. */
 function screen(windows: Win[], opts: { recording?: string; displays?: number[][] } = {}): Screen {
   return {
     windowAt: (x, y) => {
-      const w = windows.find(({ frame: [fx, fy, fw, fh] }) => x >= fx && x < fx + fw && y >= fy && y < fy + fh);
+      const w = windows.find((w) => covers(w, x, y));
       return w ? { pid: w.pid, owner: w.owner } : null;
     },
     windowFrame: (pid) => windows.find((w) => w.pid === pid)!.frame,
+    windowsAbove: (pid, x, y) => {
+      const at = windows.findIndex((w) => w.pid === pid);
+      if (at < 0) return null;
+      return windows.slice(0, at).filter((w) => covers(w, x, y)).map((w) => `${w.id ?? windows.indexOf(w)} ${w.owner}`);
+    },
     displays: () => opts.displays ?? [[0, 0, 1920, 1080]],
     recording: () => opts.recording ?? '',
   };
@@ -83,17 +89,98 @@ test('a grip drag is refused near an edge or when it would take the window off i
   assert.throws(() => guardWindowMove(APP, [324, 114], [394, 164], screen([app], { recording: 'ffmpeg' })), /recording/);
 });
 
-// Every real event in these tools has its guard right before it, so a window
-// that turns up mid-run, or a drag that moved the app, stops the next event.
-test('the drag tools check just before every real event', () => {
+test('a return drag ending off the window is refused when something is over its place there', () => {
+  // The window moved right and down; the drag back ends left of it, where an
+  // alert has come up over where the window was.
+  const moved: Win = { ...app, frame: [370, 150, 1240, 820] };
+  const alert: Win = { pid: ALERT, owner: 'Crash Reporter', frame: [300, 100, 60, 60] };
+  assert.throws(() => guardWindowMove(APP, [394, 164], [324, 114], screen([alert, moved])), /Something is over the window's place at \(324, 114\): Crash Reporter/);
+  // Another app's window behind ours there is fine: ours slides over it.
+  guardWindowMove(APP, [394, 164], [324, 114], screen([moved, { pid: OTHER, owner: 'Finder', frame: [0, 0, 600, 600] }]));
+  // A see-through overlay over the whole screen, let through at the grip
+  // (the Dock's, which window-at proves), doesn't count at the drop either.
+  const dock: Win = { pid: OTHER, owner: 'Dock', frame: [0, 0, 1920, 1080], id: 9 };
+  const s = screen([dock, moved]);
+  s.windowAt = (x, y) => (covers(moved, x, y) ? { pid: APP, owner: 'Threadbear' } : { pid: OTHER, owner: 'Dock' });
+  guardWindowMove(APP, [394, 164], [324, 114], s);
+  const both = screen([alert, dock, moved]);
+  both.windowAt = s.windowAt;
+  assert.throws(() => guardWindowMove(APP, [394, 164], [324, 114], both), /Crash Reporter/);
+});
+
+test('a drag path over someone else\'s window, or off screen, is refused', () => {
+  const panel: Win = { pid: OTHER, owner: 'Slack', frame: [700, 300, 100, 100] };
+  assert.throws(() => guardPath([APP], [400, 350], [1000, 350], screen([panel, app])), /passes over Slack/);
+  guardPath([APP], [400, 350], [1000, 350], screen([app]));
+  // Two displays side by side but staggered: endpoints on each, path through the gap.
+  const two = { displays: [[0, 0, 1000, 600], [1000, 500, 1000, 600]] };
+  const a: Win = { ...app, frame: [0, 0, 2000, 1100] };
+  assert.throws(() => guardPath([APP], [900, 100], [1100, 1000], screen([a], two)), /off screen or within 24/);
+});
+
+/** The fake post, keeping what would have gone out. */
+function sink(): { post: Post; sent: { tool: string; args: string[]; env: Record<string, string> }[] } {
+  const sent: { tool: string; args: string[]; env: Record<string, string> }[] = [];
+  return { post: (tool, args, env) => sent.push({ tool, args, env }), sent };
+}
+
+test('each drag looks at the screen as it is then, not as it was for the last one', () => {
+  const windows: Win[] = [app];
+  const s = screen(windows);
+  const { post, sent } = sink();
+  realDrag('realdrag', [400, 300], [400, 300], 0, { pid: APP, screen: s, post });
+  assert.equal(sent.length, 1);
+  // A window comes up over the drop of the next drag: nothing is posted.
+  windows.unshift({ pid: ALERT, owner: 'Crash Reporter', frame: [700, 500, 200, 200] });
+  assert.throws(() => realDrag('realdrag', [400, 300], [800, 600], 0.2, { pid: APP, screen: s, post }), /Crash Reporter/);
+  // Or over the middle of its path.
+  assert.throws(() => realDrag('realdrag', [400, 300], [1200, 900], 0.2, { pid: APP, screen: s, post }), /passes over Crash Reporter/);
+  assert.equal(sent.length, 1);
+  // Recording starts: nothing either.
+  windows.shift();
+  const rec = { ...s, recording: () => '9 ffmpeg' };
+  assert.throws(() => realDrag('realdrag', [400, 300], [800, 600], 0, { pid: APP, screen: rec, post }), /recording/);
+  assert.equal(sent.length, 1);
+});
+
+test('a drag hands realdrag who must be at the press and the drop, to look again itself', () => {
+  const target: Win = { pid: 555, owner: 'droptarget', frame: [1540, 250, 240, 240] };
+  const { post, sent } = sink();
+  realDrag('realdrag', [1400, 360], [1660, 370], 0.4, { pid: APP, dropPid: 555, screen: screen([target, app]), post });
+  assert.deepEqual(sent[0].args, ['1400', '360', '1660', '370', '0.4', '']);
+  assert.equal(sent[0].env.RD_PRESS_PID, String(APP));
+  assert.equal(sent[0].env.RD_DROP_PID, '555');
+  assert.ok(sent[0].env.RD_GUARD);
+  // A drop on our target, but the target dropped onto the app's: refused.
+  assert.throws(() => realDrag('realdrag', [1400, 360], [1000, 370], 0.4, { pid: APP, dropPid: 555, screen: screen([target, app]), post }), /Threadbear is there/);
+  // A grip drag looks again at the grip, not the drop, as the window moves with it.
+  realGripDrag('realdrag', [324, 114], [394, 164], 0.1, { pid: APP, env: { RD_PRESS: '0.02' }, screen: screen([app]), post });
+  assert.equal(sent[1].env.RD_PRESS_PID, String(APP));
+  assert.equal(sent[1].env.RD_DROP_PID, undefined);
+  assert.equal(sent[1].env.RD_PRESS, '0.02');
+});
+
+// The tools post every mouse event through realDrag or realGripDrag, and
+// every swipe with a fresh guard and post-gesture's own look (gestureGuard).
+test('the drag tools post nothing but through the guarded helpers', () => {
   for (const file of ['features/tools/real-gestures.ts', 'features/tools/window-drag.ts']) {
-    const lines = fs.readFileSync(path.join(root, file), 'utf8').split('\n');
-    const posts = lines.flatMap((line, i) => (/(execFileSync|spawn)\((dragger|gesture)\b/.test(line) ? [i] : []));
-    assert.ok(posts.length > 0, `${file} posts no events?`);
-    for (const i of posts) {
-      const before = lines.slice(Math.max(0, i - 3), i).join('\n');
-      assert.match(before, /guard(Input|WindowMove)\(/, `${file}:${i + 1} posts an event without a guard just before it`);
+    const text = fs.readFileSync(path.join(root, file), 'utf8');
+    assert.doesNotMatch(text, /(execFileSync|spawn)\(dragger\b/, `${file} runs realdrag directly`);
+    assert.doesNotMatch(text, /assertInFront/, `${file} should check before each event, not once up front`);
+    const lines = text.split('\n');
+    for (const [i, line] of lines.entries()) {
+      if (!/(execFileSync|spawn)\(gesture\b/.test(line)) continue;
+      assert.match(line, /gestureGuard\(/, `${file}:${i + 1} runs post-gesture without its own look`);
+      assert.match(lines.slice(Math.max(0, i - 3), i).join('\n'), /guardInput\(/, `${file}:${i + 1} runs post-gesture without a guard just before it`);
     }
-    assert.doesNotMatch(lines.join('\n'), /assertInFront/, `${file} should check with guardInput before each event, not once up front`);
   }
+});
+
+test('realdrag and post-gesture look again before pressing and letting go', () => {
+  const drag = fs.readFileSync(path.join(root, 'app/Tools/realdrag.swift'), 'utf8');
+  // The look comes after the hover and before the press, and before the release.
+  assert.ok(drag.indexOf('ours(from, "RD_PRESS_PID")') < drag.indexOf('post(.leftMouseDown'), 'press check before any press');
+  assert.ok(drag.indexOf('ours(to, "RD_DROP_PID")') < drag.lastIndexOf('post(.leftMouseUp, to); wait(0.6)'), 'drop check before the release');
+  const gesture = fs.readFileSync(path.join(root, 'app/Tools/post-gesture.swift'), 'utf8');
+  assert.ok(gesture.indexOf('PG_GUARD') < gesture.indexOf('post(0, 0, phase: 128)'), 'gesture check before the fingers touch');
 });

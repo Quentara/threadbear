@@ -96,15 +96,58 @@ export function recording(): string {
   }
 }
 
+const stacker = path.join(work, 'windows-above');
+
+/**
+ * The windows over `pid`'s own window at a point, front to back, as
+ * `<window number> <owner>`: those a click there would reach first. Null if
+ * `pid` has no ordinary window on screen. The same filter as window-at.
+ */
+export function windowsAbove(pid: number, x: number, y: number): string[] | null {
+  if (!fs.existsSync(stacker)) {
+    fs.writeFileSync(`${stacker}.swift`, `import CoreGraphics
+import Foundation
+let a = CommandLine.arguments
+let pid = Int32(a[1])!, x = Double(a[2])!, y = Double(a[3])!
+let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as! [[String: Any]]
+var above: [String] = []
+for w in list {
+  if (w[kCGWindowOwnerPID as String] as? Int32) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
+    for line in above { print(line) }
+    print("ok")
+    exit(0)
+  }
+  guard let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
+  if (w[kCGWindowName as String] as? String) == "Notification Center" { continue }
+  if x >= b["X"]! && x < b["X"]! + b["Width"]! && y >= b["Y"]! && y < b["Y"]! + b["Height"]! {
+    above.append("\\(w[kCGWindowNumber as String] as? Int ?? -1) \\(w[kCGWindowOwnerName as String] as? String ?? "?")")
+  }
+}
+print("missing")
+`);
+    execFileSync('swiftc', ['-O', `${stacker}.swift`, '-o', stacker]);
+  }
+  const lines = execFileSync(stacker, [String(pid), String(x), String(y)]).toString().trim().split('\n').filter(Boolean);
+  if (lines.at(-1) !== 'ok') return null;
+  return lines.slice(0, -1);
+}
+
+/** The compiled window-at, for the helpers to look again just before they press (realdrag's RD_GUARD). */
+export function windowAtTool(): string {
+  if (!fs.existsSync(finder)) windowAt(-100000, -100000);
+  return finder;
+}
+
 export type Point = [number, number];
 /** What the guards read from the screen, so tests can hand them a made-up one. */
 export interface Screen {
   windowAt(x: number, y: number): { pid: number; owner: string } | null;
   windowFrame(pid: number): number[];
+  windowsAbove(pid: number, x: number, y: number): string[] | null;
   displays(): number[][];
   recording(): string;
 }
-export const realScreen: Screen = { windowAt, windowFrame, displays, recording };
+export const realScreen: Screen = { windowAt, windowFrame, windowsAbove, displays, recording };
 
 /**
  * How far in from a display's edge a point an event lands on must be: the
@@ -153,7 +196,81 @@ export function guardWindowMove(pid: number, from: Point, to: Point, screen: Scr
   const moved = [x + to[0] - from[0], y + to[1] - from[1], w, h];
   const onOne = shown.some(([dx, dy, dw, dh]) => moved[0] >= dx && moved[1] >= dy && moved[0] + w <= dx + dw && moved[1] + h <= dy + dh);
   if (!onOne) throw new Error(`Moving the window to (${moved[0]}, ${moved[1]}) would take it off its display. No events were posted.`);
-  if (inside(to, [x, y, w, h])) guardInput(pid, [to], screen);
+  if (inside(to, [x, y, w, h])) {
+    guardInput(pid, [to], screen);
+    return;
+  }
+  // Off the window now: nothing may be stacked over the window there (an
+  // alert, a panel, another app brought forward) but what's also over the
+  // grip, which window-at has just let through there (the Dock's
+  // see-through overlay, which covers the whole screen).
+  const atDrop = screen.windowsAbove(pid, to[0], to[1]);
+  const atGrip = screen.windowsAbove(pid, from[0], from[1]);
+  if (!atDrop || !atGrip) throw new Error(`The window has gone from the screen. No events were posted.`);
+  const over = atDrop.filter((wn) => !atGrip.includes(wn));
+  if (over.length) throw new Error(`Something is over the window's place at (${to[0]}, ${to[1]}): ${over[0].replace(/^\S+ /, '')}. No events were posted.`);
+}
+
+/**
+ * Points along the straight line a drag takes, every 16 points: realdrag
+ * posts 40 moves along it, and one over a window that isn't `pids` would
+ * hand that window the drag (a drag-and-drop's enter and update at least).
+ */
+export function guardPath(pids: number[], from: Point, to: Point, screen: Screen = realScreen): void {
+  const steps = Math.max(1, Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / 16));
+  const shown = screen.displays();
+  for (let i = 1; i < steps; i += 1) {
+    const p: Point = [Math.round(from[0] + ((to[0] - from[0]) * i) / steps), Math.round(from[1] + ((to[1] - from[1]) * i) / steps)];
+    if (!shown.some((d) => inside(p, d, EDGE))) throw new Error(`The drag passes (${p[0]}, ${p[1]}), off screen or within ${EDGE} points of its edge. No events were posted.`);
+    const top = screen.windowAt(p[0], p[1]);
+    if (!top || !pids.includes(top.pid)) throw new Error(`The drag passes over ${top ? top.owner : 'nothing'} at (${p[0]}, ${p[1]}). No events were posted.`);
+  }
+}
+
+/** Runs a helper that posts real events; tests hand in their own to see what would have been posted. */
+export type Post = (tool: string, args: string[], env: Record<string, string>) => void;
+const execPost: Post = (tool, args, env) => {
+  execFileSync(tool, args, { env: { ...process.env, ...env } });
+};
+
+/**
+ * A real mouse drag from `from` to `to` (a click when they're the same),
+ * checked just before it's posted: the press on `pid`'s window, the drop on
+ * `dropPid`'s (the app's own unless a drop target of ours), and every point
+ * between on one of the two. realdrag looks again at the press after its
+ * hover and at the drop before letting go (RD_GUARD).
+ */
+export function realDrag(tool: string, from: Point, to: Point, hold: number, opts: { pid: number; dropPid?: number; env?: Record<string, string>; screen?: Screen; post?: Post }): void {
+  const { pid, dropPid = pid, screen = realScreen, post = execPost } = opts;
+  guardInput(pid, [from], screen);
+  guardInput(dropPid, [to], screen);
+  guardPath([pid, dropPid], from, to, screen);
+  post(tool, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), String(hold), ''], {
+    ...opts.env,
+    RD_GUARD: screen === realScreen ? windowAtTool() : 'window-at',
+    RD_PRESS_PID: String(pid),
+    RD_DROP_PID: String(dropPid),
+  });
+}
+
+/**
+ * A drag by a grip on `pid`'s window, which may move the window: checked by
+ * guardWindowMove just before it's posted, and realdrag looks again at the
+ * grip after its hover. Not at the drop: the window's moved there with the pointer.
+ */
+export function realGripDrag(tool: string, from: Point, to: Point, hold: number, opts: { pid: number; env?: Record<string, string>; screen?: Screen; post?: Post }): void {
+  const { pid, screen = realScreen, post = execPost } = opts;
+  guardWindowMove(pid, from, to, screen);
+  post(tool, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), String(hold), ''], {
+    ...opts.env,
+    RD_GUARD: screen === realScreen ? windowAtTool() : 'window-at',
+    RD_PRESS_PID: String(pid),
+  });
+}
+
+/** What post-gesture needs to look again under the fingers after its hover. */
+export function gestureGuard(pid: number): Record<string, string> {
+  return { PG_GUARD: windowAtTool(), PG_PID: String(pid) };
 }
 
 const pointerTool = path.join(work, 'pointer');

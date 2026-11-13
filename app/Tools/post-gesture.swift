@@ -22,6 +22,21 @@ CGAssociateMouseAndMouseCursorPosition(1)
 // A warp alone sends no move, and a row's hover needs one.
 CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: p, mouseButton: .left)?.post(tap: .cghidEventTap)
 usleep(350_000)
+// With PG_GUARD (a program printing the pid of the window on top at `<x> <y>`)
+// and PG_PID, look again after the hover and touch nothing (exit 3) if that
+// pid's window isn't the one under the fingers any more.
+if let guardTool = ProcessInfo.processInfo.environment["PG_GUARD"], let want = ProcessInfo.processInfo.environment["PG_PID"] {
+    let run = Process(), out = Pipe()
+    run.executableURL = URL(fileURLWithPath: guardTool)
+    run.arguments = [String(Int(p.x.rounded())), String(Int(p.y.rounded()))]
+    run.standardOutput = out
+    try? run.run(); run.waitUntilExit()
+    let said = String(data: out.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+    if said.split(separator: " ").first.map(String.init) != want {
+        fputs("post-gesture: the window at (\(Int(p.x)), \(Int(p.y))) isn't \(want)'s any more; nothing posted\n", stderr)
+        exit(3)
+    }
+}
 func post(_ dx: Double, _ dy: Double, phase: Int64, momentum: Int64 = 0) {
     let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 2, wheel1: 0, wheel2: 0, wheel3: 0)!
     cg.setIntegerValueField(.scrollWheelEventIsContinuous, value: 1)

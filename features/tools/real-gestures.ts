@@ -11,7 +11,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { GpuiDriver } from '../support/gpui.ts';
 import { sleep, type Dump } from '../support/driver.ts';
-import { guardInput, movePointer, pointer, swiftTool, windowFrame, type Point } from './real-screen.ts';
+import { displays, EDGE, gestureGuard, guardInput, movePointer, pointer, realDrag, swiftTool, windowFrame, type Point } from './real-screen.ts';
 import { ensurePerfLock } from './perf-lock.ts';
 
 await ensurePerfLock();
@@ -33,18 +33,13 @@ const fingers = (contentDx: number) => (natural ? contentDx : -contentDx);
 function swipe(x: number, y: number, moves: [number, number][], momentum = false): void {
   guardInput(app.pid!, [[x, y]]);
   const tokens = moves.map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`);
-  execFileSync(gesture, [String(x), String(y), '0', ...tokens, ...(momentum ? ['M'] : [])]);
+  execFileSync(gesture, [String(x), String(y), '0', ...tokens, ...(momentum ? ['M'] : [])], { env: { ...process.env, ...gestureGuard(app.pid!) } });
 }
 const steps = (total: number, count: number): [number, number][] => Array.from({ length: count }, () => [total / count, 0]);
 
-/**
- * A real mouse drag (or a click, when the two are the same), checked just
- * before it's posted: the press and the drop both on this app's window.
- */
-function drag(from: Point, to: Point, hold: number, pid = app.pid!): void {
-  guardInput(app.pid!, [from]);
-  guardInput(pid, [to]);
-  execFileSync(dragger, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), String(hold), '']);
+/** A real mouse drag (or a click), checked just before and while it's posted (realDrag). */
+function drag(from: Point, to: Point, hold: number, dropPid = app.pid!): void {
+  realDrag(dragger, from, to, hold, { pid: app.pid!, dropPid });
 }
 
 const app = new GpuiDriver();
@@ -106,7 +101,7 @@ try {
 
   // A row: the fingers held part way, it's that far along...
   guardInput(app.pid!, [row]);
-  const held = spawn(gesture, [String(row[0]), String(row[1]), '1500', ...steps(-40, 8).map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`)]);
+  const held = spawn(gesture, [String(row[0]), String(row[1]), '1500', ...steps(-40, 8).map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`)], { env: { ...process.env, ...gestureGuard(app.pid!) } });
   await sleep(1100);
   const along = await app.do({ cmd: 'row-swipe' });
   await new Promise((done) => held.on('exit', done));
@@ -178,8 +173,10 @@ try {
   // Files dragged out of the window go as the files themselves, to a window
   // of our own beside it (app/Tools/droptarget.swift), as a drop on the
   // Finder would copy into whatever folder someone has open there. Right of
-  // the window if there's room, else left of it.
-  const target: [number, number, number, number] = wx + ww + 260 < 1900 ? [wx + ww + 20, wy + 150, 240, 240] : [Math.max(0, wx - 260), wy + 150, 240, 240];
+  // the window if there's room, else left of it, touching it so the drag
+  // never crosses anyone else's window on the way (realDrag checks the path).
+  const fits = (x: number) => displays().some(([dx, , dw]) => x >= dx + EDGE && x + 240 <= dx + dw - EDGE);
+  const target: [number, number, number, number] = fits(wx + ww) ? [wx + ww, wy + 150, 240, 240] : [wx - 240, wy + 150, 240, 240];
   async function dragOut(what: string, from: [number, number], name: string): Promise<void> {
     const to: [number, number] = [target[0] + 120, target[1] + 120];
     const drops = spawn(dropTarget, [...target.map(String), '12']);
@@ -234,11 +231,14 @@ try {
   console.log(results.join('\n'));
   console.log(failed === 0 && !process.exitCode ? 'PASS' : 'FAIL');
   if (failed) process.exitCode = 1;
-  await app.stop();
   try {
-    movePointer(pointerWas);
-  } catch {
-    // Putting it back is a courtesy; the run's result stands.
+    await app.stop();
+  } finally {
+    try {
+      movePointer(pointerWas);
+    } catch {
+      // Putting it back is a courtesy; the run's result stands.
+    }
+    process.exit();
   }
-  process.exit();
 }
