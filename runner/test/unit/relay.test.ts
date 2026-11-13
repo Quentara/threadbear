@@ -272,6 +272,24 @@ test('a failed gap fill leaves the thread readable and a read retries it without
   assert.ok(!got.includes(119));
 });
 
+test('another tail during a gap fill cannot publish boundaries inside the merged holes', async () => {
+  let release!: (value: unknown) => void;
+  const gap = new Promise((resolve) => { release = resolve; });
+  const h = harness({ row: () => ({ runnerId: 'bruce', status: 'running' }), readMessages: (args) => args.afterSeq === undefined ? { messages: rows, hasMore: false } : gap });
+  await h.relay.call(T, 'threads.subscribe', { afterSeq: 0 });
+  const tail = h.subs.get('relay:remoteTail')![0]!;
+  tail.onUpdate({ messages: [{ seq: 20, role: 'user', text: 'Second turn', turn: 'c', at: at(30) }], hasMore: true });
+  tail.onUpdate({ messages: [{ seq: 50, role: 'user', text: 'Third turn', turn: 'd', at: at(50) }], hasMore: true });
+  const page = await h.relay.call(T, 'threads.events', {}) as { events: { seq: number; type: string }[] };
+  assert.ok(page.events.some((e) => e.seq === 401));
+  assert.ok(!page.events.some((e) => e.seq >= 112 && e.seq <= 400 && ['turn.started', 'turn.completed'].includes(e.type)));
+  release({ messages: [{ seq: 18, role: 'assistant', text: 'End', turn: 'bbbb2222', at: at(29) }, { seq: 30, role: 'assistant', text: 'End', turn: 'c', at: at(49) }], hasMore: false });
+  await new Promise((r) => setImmediate(r));
+  const events = h.published.map((n) => (n as { params: { event: { seq: number; type: string } } }).params.event);
+  assert.ok(!events.some((e) => e.seq === 119 || e.seq === 167));
+  assert.ok(events.some((e) => e.seq === 247));
+});
+
 test("a turn ends a moment after the row says it stopped, so its last messages come first", async () => {
   const h = harness();
   await h.relay.call(T, 'threads.events', { threadId: T });

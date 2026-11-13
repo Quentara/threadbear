@@ -738,9 +738,11 @@ export class Relay {
     const settled = w.stoppedAt === undefined || this.deps.clock.now() - w.stoppedAt >= SETTLE_MS;
     const events = relayEvents(w.threadId, [...w.rows.values()], w.row, [...w.cards.values()], w.olderMore, this.runnerName(w.runnerId), settled, w.bodies);
     // A hole might contain the rest of this turn, or the start of the next.
-    // Its two boundary markers aren't known yet. Keep reading and following
-    // the real messages; these markers can arrive late once the gap fills.
-    return w.hole ? events.filter((e) => e.seq !== w.hole!.after * SCALE + 7 && e.seq !== w.hole!.until * SCALE) : events;
+    // Further tails can merge more gaps into it, so no turn marker inside
+    // the whole uncertain interval is known yet. Real messages stay readable
+    // and the true markers arrive late once the missing rows are known.
+    const hole = w.hole;
+    return hole ? events.filter((e) => !['turn.started', 'turn.completed'].includes(e.type) || e.seq < hole.after * SCALE || e.seq > hole.until * SCALE) : events;
   }
 
   // The row's open card, kept so it stays in the transcript once answered;
