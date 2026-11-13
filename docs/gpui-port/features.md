@@ -176,7 +176,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `transcript.woke` | Woke-up note | Sleeping bear gets up on first view | Plain note: Mike passed over the waking bear on 13 Nov. | build | M | `InkLayers` (`WokenBearView`) |
 | `transcript.error` | Error row | Failure text by kind | Drawn. | build | S | `RowRenderer` |
 | `transcript.workedfor` | Worked-for group | One line, opens to its items indented, live while working | Drawn group that inserts rows into the list. | build | M | `Cells` (`GroupRowCell`), `WorkGroups` |
-| `transcript.working` | Working line | Bear plus elapsed time | The paw and elapsed time (`rows/work.rs`); Mike passed over the bear on 13 Nov, and how the paw moves is being picked from mockups. | build | M | `Cells` (`WorkingRowCell`), `WavingBearView` |
+| `transcript.working` | Working line | Bear plus elapsed time | The paw and elapsed time (`rows/work.rs` `working_paw`): Mike passed over the bear on 13 Nov and asked for the paw to move instead, picking one of five at random every 2.4 s (flip, spin, knead, wave, pawprints; core's `juice::paw_pose`). Still under Reduce Motion. | build | M | `Cells` (`WorkingRowCell`), `WavingBearView` |
 | `transcript.background` | Background line | N sub-agents or jobs still going | Drawn. | build | S | `Cells` (`BackgroundRowCell`), `BackgroundWork` |
 | `transcript.gap` | Gap divider | "6 min later · X finished" | Drawn. | build | S | `Cells` (`GapRowCell`) |
 | `transcript.changes` | Changes card | Edited N files, each opens its diff | Drawn card. | build | M | `Cells` (`ChangesRowCell`), `RowRenderer` (`changesRender`) |
@@ -457,7 +457,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `juice.opening` | Threads coming in | A thread eases in as it opens, from the way the arrows walked; the new-thread page fades up; its box drops to the bottom on the first send; a new name fades in | The port's own, from mockups Mike picked on 13 Nov (`open_motion.rs`): the transcript is drawn in place from the first frame, a little faint and a few points off, easing in over 0.13 s; the box is painted where its drop has got to, as the sidebar's glides are. Off with Reduce Motion. | build | S | none |
 | `juice.inboxzero` | Inbox zero bear | Rises and waves, asleep after bedtime | Not porting: Mike passed over the bears on 13 Nov (GPUI shows "Nothing in the inbox." alone). | build | M | `Juice`, `InkLayers` |
 | `juice.panebear` | Pane bear | Waves over new thread page | Not porting: Mike passed over the bears on 13 Nov. | build | S | `Juice` (`PaneBear`) |
-| `juice.workingbear` | Working bear secrets | Waves back on hover, hops on click | Not porting the bear: Mike passed over it on 13 Nov and prefers the paw. An animated paw instead is being picked from mockups. | build | S | `WavingBearView` |
+| `juice.workingbear` | Working bear secrets | Waves back on hover, hops on click | Not porting the bear: Mike passed over it on 13 Nov and prefers the paw, which moves instead (`transcript.working`). | build | S | `WavingBearView` |
 
 ## Planned features
 

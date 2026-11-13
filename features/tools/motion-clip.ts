@@ -189,15 +189,15 @@ const scenes: Record<string, Scene> = {
     },
     seconds: 7,
   },
-  // The working bear through a long turn: it pops up, waves, breathes and
-  // blinks (the Swift app has no scripted hover for it, so its wink and hop
-  // aren't filmed).
+  // The working line through a long turn: Swift's bear pops up, waves,
+  // breathes and blinks; GPUI's paw moves every couple of seconds.
   'bear-hover': {
     setup: async (app) => scenes.archive.setup(app),
     act: async (app) => {
       await app.do({ cmd: 'mock', method: 'stream', params: { threadId: 'demo_reply_buttons', seconds: 30, hz: 1 } });
     },
-    seconds: 8,
+    // TB_CLIP_SECONDS for longer, to see more of the GPUI paw's moves.
+    seconds: Number(process.env.TB_CLIP_SECONDS) || 8,
   },
   // A thread woken by its background jobs, opened: the bear getting up.
   woke: {

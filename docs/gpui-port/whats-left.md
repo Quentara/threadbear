@@ -166,8 +166,9 @@ you go.
   bear, the working, waking and sitting bears, the milestone toast's wave),
   a finished row's wash and drawn-on tick, and the unread dot's pop
   (`transcript.sendlift`, `librarian.picture`, `rail.activity`, `card.done`)
-- [ ] The working line's paw moving: he'd rather the paw than the bear, and
-  is picking how it moves from mockups (`transcript.working`)
+- [x] The working line's paw moving, in place of the bear: every 2.4 s it
+  flips, spins, kneads, waves or leaves a few prints, one at random each
+  time, as Mike asked on 13 Nov (`transcript.working`)
 - [ ] A row pressing in while the mouse is down: GPUI can't scale a row
 - [x] The Mac's accent colour is followed, and Reduce Motion is read by the
   kit at launch and again when the app comes back to the front
