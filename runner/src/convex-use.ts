@@ -223,8 +223,10 @@ type CardAsk = { action: string; options?: string[]; optionNotes?: string[]; why
  * that (Codex's review). Any other card sets nothing.
  */
 export function fullSyncAnswer(answers: { action: string; answer: string }[] | undefined, card: CardAsk[] | undefined, question: string | undefined): boolean | undefined {
-  if (!question) return undefined;
-  const ask = card?.find(
+  // One ask on the card, so a second with the same words but other notes
+  // can't take his pick (answers name an ask by its words; Codex's review).
+  if (!question || card?.length !== 1) return undefined;
+  const ask = card.find(
     (a) =>
       a.action === question &&
       a.options?.length === 2 &&

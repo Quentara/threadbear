@@ -77,6 +77,10 @@ test('the card pick is read only from answers on the card the runner worded', ()
     { ...ASK, options: [FULL_SYNC_ON, FULL_SYNC_OFF, 'Delete it all'] },
   ];
   for (const d of decoys) assert.equal(pick(FULL_SYNC_ON, [d]), undefined, JSON.stringify(d));
+  // Two asks with the same words, one with other notes: his pick names an
+  // ask by its words, so it could be the decoy's (Codex's second review).
+  assert.equal(pick(FULL_SYNC_ON, [ASK, { ...ASK, optionNotes: ['Only local diagnostics', FULL_SYNC_OFF_DOES] }]), undefined);
+  assert.equal(pick(FULL_SYNC_ON, [ASK, { action: 'Anything else?' }]), undefined);
   // The noted question binds it, whatever made the runner ask.
   assert.equal(pick(FULL_SYNC_ON, [{ ...ASK, action: fullSyncQuestion('machine', 'Mac') }]), undefined);
 });

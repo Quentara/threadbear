@@ -453,7 +453,7 @@ test('looseEnds: a running job cut short never sends part of a key the runner kn
     ];
     for (const description of cases) {
       const [end] = runningLooseEnds([{ kind: 'shell', description }]);
-      assert.ok(end.text.endsWith('. Archiving stops it.') || end.text.startsWith('Still running (archiving stops it): '), end.text);
+      assert.ok(end.text.endsWith(' Archiving stops it.') || end.text.startsWith('Still running (archiving stops it): '), end.text);
       const sent = scrubber.doc({ looseEnds: [{ kind: end.kind, text: end.text }] }).looseEnds[0].text;
       assert.ok(!leaks(sent, key), sent);
       assert.ok(!leaks(sent, dotted.replace(/\.+$/, '')), sent);
@@ -475,4 +475,20 @@ test('looseEnds: a running job cut short never sends part of a key the runner kn
   late.known.add(lateKey);
   const out = late.doc({ text: made.text }).text;
   for (let i = 0; i + 8 <= lateKey.length; i++) assert.ok(!out.includes(lateKey.slice(i, i + 8)), out);
+  // Codex's second review. A key ending in dots, learned later, in a short
+  // line: whole, so the whole-value match still finds it.
+  const dots = new Scrubber({ env: {}, folders: false });
+  const dotKey = 'Zq8Wx3Lk9Vm2Pn7Rt4Ys6Hd1Jf5Gc0Bv...';
+  const [short] = runningLooseEnds([{ kind: 'shell', description: `deploy --token ${dotKey}` }]);
+  assert.equal(short.text, `Still running: deploy --token ${dotKey} Archiving stops it.`);
+  dots.known.add(dotKey);
+  assert.ok(!dots.doc({ t: short.text }).t.includes('Zq8Wx3Lk'), dots.doc({ t: short.text }).t);
+  // Two late values, one the start of the other, the longer cut off.
+  const both = new Scrubber({ env: {}, folders: false });
+  const longKey = 'kP3vN8qR2xL7mT4wZ9bH6cJ1fD5gS0aYkP3vN8qR2xL7mT4wZ9bH6cJ1fD5gS0aY';
+  const [cut] = runningLooseEnds([{ kind: 'shell', description: `${'r'.repeat(39)} ${longKey} --and-more` }]);
+  both.known.add(longKey);
+  both.known.add(longKey.slice(0, 20));
+  const sentBoth = both.doc({ t: cut.text }).t;
+  for (let i = 0; i + 8 <= longKey.length; i++) assert.ok(!sentBoth.includes(longKey.slice(i, i + 8)), sentBoth);
 });

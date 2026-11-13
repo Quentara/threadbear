@@ -459,7 +459,11 @@ export class KnownValues {
 
   mask(text: string): string {
     const re = this.compiled();
-    return re ? this.maskCutOff(text.replace(re, '[REDACTED]')) : text;
+    // A cut-off value is looked for before whole ones are taken out as well
+    // as after: a shorter value that's the start of a longer one cut off at
+    // the end would otherwise be taken out of it, and the rest of the longer
+    // one no longer looks like its start (Codex's review, 13 Nov 2026).
+    return re ? this.maskCutOff(this.maskCutOff(text).replace(re, '[REDACTED]')) : text;
   }
 
   // A value cut off at the end of the text: a title, a tool line or a message
@@ -478,6 +482,10 @@ export class KnownValues {
       const candidates = this.starts.get(head.slice(at, at + MIN_CUT_OFF));
       if (!candidates) continue;
       const rest = head.slice(at);
+      // A whole value that ends the text is the whole-value match's to take
+      // out; a later place in it that looks like a value's start (a key
+      // whose end repeats its start) isn't a cut-off one.
+      if (candidates.some((v) => v === rest)) break;
       if (candidates.some((v) => rest.length < v.length && v.startsWith(rest))) return `${text.slice(0, from + at)}[REDACTED]${tail.slice(end)}`;
     }
     return text;

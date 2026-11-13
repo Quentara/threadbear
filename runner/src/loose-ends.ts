@@ -13,7 +13,7 @@ import path from 'node:path';
 import type { BackgroundTask, LooseEnd, Schedule } from './protocol.ts';
 import { MAIN, type WorktreeRecord } from './worktrees.ts';
 import { untrustedGit } from './safe-git.ts';
-import { cutSafely, isSafeSlice } from './safe-cut.ts';
+import { cutSafely } from './safe-cut.ts';
 
 // Any repo a thread touched can be anyone's (a clone it just made, a folder
 // from a zip with its own .git/config), and these run by themselves when a
@@ -276,16 +276,16 @@ export function runningLooseEnds(tasks: BackgroundTask[]): LooseEnd[] {
       // through a key sent all but its last character: the scrub knows a
       // cut-off key only at the very end of a text (Daybreak, 13 Nov 2026).
       // So the cut moves back to before anything the scrub would take out,
-      // and the dots come off the end only when they aren't part of one.
-      const flat = t.description.replace(/\s+/g, ' ').trim();
-      const undotted = flat.replace(/\.+$/, '');
-      const what = undotted.length < flat.length && !isSafeSlice(flat, 0, undotted.length) ? flat : undotted;
+      // Nothing comes off its end either: dots taken off a key the scrub
+      // only learns of later would leave it unrecognisable (Codex's review).
+      const what = t.description.replace(/\s+/g, ' ').trim();
       const short = cutSafely(what, MAX_JOB_CHARS, '…');
       // Cut, its words go last, ending in the "…": a key the scrub learns
       // of only after this line was made (a .env still being read) is then
       // a cut-off value at the very end, which it does take out (Codex's
       // review). Words after it hid it from that.
       if (short !== what) return { kind: 'running' as const, text: `Still running (archiving stops it): ${short}` };
+      if (/[.!?…]$/.test(what)) return { kind: 'running' as const, text: `Still running: ${what} Archiving stops it.` };
       return { kind: 'running' as const, text: `Still running: ${what || 'a background job'}. Archiving stops it.` };
     });
 }
