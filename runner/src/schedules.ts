@@ -784,7 +784,7 @@ export class Scheduler {
     if (res.outcome !== 'sent') throw new RpcError(ErrorCode.other, res.note ?? "Couldn't run it.");
     // A one-off run now has used its time: that slot isn't due again.
     const slot = rec.at ? rec.nextRunAt : undefined;
-    if (this.mode === 'local') this.completeLocal(rec, rec.nextRunAt, true);
+    if (this.mode === 'local') this.completeLocal(rec, rec.at ?? rec.nextRunAt, true);
     else if (rec.at) this.finish(rec);
     if (this.mode === 'backend') await this.recordRun(rec, true, undefined, slot);
     this.changed();
@@ -996,9 +996,12 @@ export class Scheduler {
     if (!live || live.createdAt !== rec.createdAt) return;
     live.lastRun = rec.lastRun;
     live.runs = Math.max(live.runs, rec.runs);
-    if (live.nextRunAt !== slot) return;
-    if (live.at) this.finish(live);
-    else if (!manual) this.plan(live);
+    if (live.at) {
+      // Pausing clears nextRunAt, but doesn't undo a send already accepted.
+      if (live.at === slot) this.finish(live);
+      return;
+    }
+    if (live.nextRunAt === slot && !manual) this.plan(live);
   }
 
   // The backend's version of tick: the same runs, each taken with a claim

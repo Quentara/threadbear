@@ -266,7 +266,7 @@ test('scheduled turns leave the quiet spell an old runner needs to hand over', a
   assert.equal(s.sent.length, 1);
 });
 
-for (const rescheduled of [false, true]) test(`editing a local schedule during a send preserves its result (${rescheduled ? 'new time' : 'rename'})`, async () => {
+for (const edit of ['rename', 'reschedule', 'pause']) test(`editing a local schedule during a send preserves its result (${edit})`, async () => {
   const h = makeHarness();
   const { thread } = idleThread(h);
   let finish!: () => void;
@@ -282,18 +282,33 @@ for (const rescheduled of [false, true]) test(`editing a local schedule during a
     h.clock.advance(MIN);
     await tick(6);
     const later = iso(h.clock.now() + 10 * MIN);
-    await sched.update({ scheduleId: sc.id, title: 'Renamed', ...(rescheduled ? { at: later } : {}) });
+    await sched.update({ scheduleId: sc.id, title: 'Renamed', ...(edit === 'reschedule' ? { at: later } : edit === 'pause' ? { paused: true } : {}) });
     finish();
     await tick(6);
     const edited = sched.find(sc.id);
     assert.equal(edited.title, 'Renamed');
     assert.equal(edited.runs, 1);
     assert.equal(edited.lastRun?.outcome, 'sent');
-    if (rescheduled) { assert.equal(edited.nextRunAt, later); assert.equal(edited.finishedAt, undefined); }
+    if (edit === 'reschedule') { assert.equal(edited.nextRunAt, later); assert.equal(edited.finishedAt, undefined); }
     else assert.ok(edited.finishedAt);
+    if (edit === 'pause') await sched.update({ scheduleId: sc.id, paused: false });
     h.clock.advance(2 * MIN);
     await tick(6);
     assert.equal(calls, 1, 'the old slot is not sent again');
+  } finally { sched.stop(); }
+});
+
+test('Run now on a paused local one-off finishes that slot before it is resumed', async () => {
+  const { h, sched } = setup();
+  const { thread, s } = idleThread(h);
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id, paused: true });
+    await sched.runNow(sc.id);
+    assert.ok(sched.find(sc.id).finishedAt);
+    await sched.update({ scheduleId: sc.id, paused: false });
+    h.clock.advance(2 * MIN);
+    await tick(6);
+    assert.equal(s.sent.length, 2);
   } finally { sched.stop(); }
 });
 
