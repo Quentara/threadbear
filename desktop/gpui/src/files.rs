@@ -79,11 +79,14 @@ pub(crate) struct OpenFile {
     _file_watch: Option<FolderWatch>,
     /// The read that follows a change, once its burst settles.
     _reread: Option<Task<()>>,
+    /// Its folder heard it change while another thread was showing, so the
+    /// read was put off: coming back reads it again (`load_file`).
+    pub changed_away: bool,
 }
 
 impl OpenFile {
     fn new(path: String, opened: u64, body: FileBody) -> Self {
-        OpenFile { path, opened, body, truncated: false, size: 0, find: None, edit: None, page_scroll: ScrollHandle::new(), _page_watch: None, _file_watch: None, _reread: None }
+        OpenFile { path, opened, body, truncated: false, size: 0, find: None, edit: None, page_scroll: ScrollHandle::new(), _page_watch: None, _file_watch: None, _reread: None, changed_away: false }
     }
 
     /// The raw text's editor, while it's showing.
@@ -464,9 +467,13 @@ impl SidePane {
 
     fn load_file(&mut self, thread: &ThreadSummary, path: String, opened: u64, cx: &mut Context<Self>) {
         // The same open again (a repaint, a re-select) reads nothing new;
-        // opening it again from a row does (`opened` moved).
-        if self.files.open.get(&thread.id).is_some_and(|f| f.path == path && f.opened == opened) {
-            return;
+        // opening it again from a row does (`opened` moved), and so does
+        // coming back to a thread whose file changed while it was away.
+        if let Some(open) = self.files.open.get_mut(&thread.id).filter(|f| f.path == path && f.opened == opened) {
+            if !open.changed_away {
+                return;
+            }
+            open.changed_away = false;
         }
         self.read_file(thread, path, opened, cx);
     }
@@ -474,7 +481,15 @@ impl SidePane {
     /// The file showing, read again where it is: its folder heard it change,
     /// or its own text was put away (Done).
     pub(crate) fn reread_file(&mut self, thread_id: &str, cx: &mut Context<Self>) {
-        let Some(thread) = self.thread(cx).filter(|t| t.id == thread_id) else { return };
+        // Another thread is showing: read it when this one's back, rather
+        // than never (13 Nov 2026, the implicit state machines scan: the
+        // preview kept an agent's rewrite out until it was opened again).
+        let Some(thread) = self.thread(cx).filter(|t| t.id == thread_id) else {
+            if let Some(open) = self.files.open.get_mut(thread_id) {
+                open.changed_away = true;
+            }
+            return;
+        };
         let Some((path, opened)) = self.files.open.get(thread_id).map(|f| (f.path.clone(), f.opened)) else { return };
         if self.previews.get(thread_id).and_then(|p| p.file_path()) != Some(path.as_str()) {
             return;
