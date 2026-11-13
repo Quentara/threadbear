@@ -75,10 +75,14 @@ async fn listen(file: String, tx: mpsc::UnboundedSender<Request>) {
                 let cmd: Value = serde_json::from_str(&line).unwrap_or(Value::Null);
                 let reply = if cmd["token"].as_str() == Some(token.as_str()) {
                     let (back, answer) = oneshot::channel();
+                    let name = cmd["cmd"].as_str().unwrap_or("").to_owned();
                     if tx.send((cmd, back)).is_err() {
+                        // The app's command loop is gone for good: say so
+                        // rather than close the connection with nothing.
+                        let _ = write.write_all(format!("{}\n", unanswered(&name, false)).as_bytes()).await;
                         break;
                     }
-                    answer.await.unwrap_or_else(|_| json!({ "error": "the app stopped" }))
+                    answer.await.unwrap_or_else(|_| unanswered(&name, true))
                 } else {
                     json!({ "error": "wrong token" })
                 };
@@ -88,6 +92,23 @@ async fn listen(file: String, tx: mpsc::UnboundedSender<Request>) {
             }
         });
     }
+}
+
+/// A command the app took and never answered. All the socket's side knows
+/// is that the app's thread let go of it: a panic there, or the app quitting,
+/// with the process perhaps still running. It used to say "the app stopped",
+/// which read as the process ending and hid the panic a spec on the cloud box
+/// needed (13 Nov). `unanswered` tells the spec driver (features/support/gpui.ts)
+/// to gather the process's state, kept panics and log, and the line goes in
+/// the app's log too, as its name only (never its words).
+fn unanswered(name: &str, taken: bool) -> Value {
+    let error = if taken {
+        format!("the app dropped `{name}` without answering: its command loop let go of it (a panic on the app's thread, or the app quitting); the process may still be running")
+    } else {
+        format!("the app's command loop has ended, so `{name}` never ran; the process may still be running")
+    };
+    threadbear_client::log::write("automation", &format!("{name} unanswered: {}", if taken { "dropped" } else { "loop ended" }));
+    json!({ "error": error, "unanswered": if taken { "dropped" } else { "loop ended" } })
 }
 
 // The port and token, written whole and readable only by this user: a spec
