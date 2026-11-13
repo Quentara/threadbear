@@ -188,6 +188,11 @@ export type ToolApprovalRequest = {
   queued?: QueuedCall[];
   // Why the CLI is asking, in a sentence for the card (askReason in the Claude adapter).
   reason?: string;
+  // Full access would have let it through with no card: switching the
+  // thread to Full answers it Allow (Runner.update), as a card that waits
+  // under a composer saying Full is the thing Ian hit (13 Nov). Never on
+  // a card every mode shows (delete_thread, a raise, a plan).
+  fullAllows?: boolean;
 };
 
 // mode: the permission mode to switch to as the call goes ahead (approving

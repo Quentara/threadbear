@@ -300,9 +300,7 @@ export type ApprovalsDeps = {
   fullAccess?(): boolean;
 };
 
-// `full`: the reply that answers it once the thread is on Full access, for
-// a card that was already showing when Mike switched to Full.
-type Pending = { id: RequestId; method: string; abort: AbortController; full?: unknown };
+type Pending = { method: string; abort: AbortController };
 
 export class CodexApprovals {
   private deps: ApprovalsDeps;
@@ -314,20 +312,6 @@ export class CodexApprovals {
 
   get pendingCount(): number {
     return this.pending.size;
-  }
-
-  // The thread went to Full access: the approval cards still showing are
-  // answered as Allow and taken down, as Full would have answered them
-  // (Codex's review, 13 Nov: otherwise the card that prompted the switch
-  // stays, under a composer that says Full). Questions stay: they're for
-  // Mike, whatever the mode.
-  enterFull(): void {
-    for (const [key, p] of [...this.pending]) {
-      if (p.full === undefined) continue;
-      this.pending.delete(key);
-      this.deps.reply(p.id, p.full);
-      p.abort.abort();
-    }
   }
 
   // Codex reports a patch's paths as written, maybe relative to the folder.
@@ -385,7 +369,7 @@ export class CodexApprovals {
   }
 
   private open(id: RequestId, method: string): Pending {
-    const p: Pending = { id, method, abort: new AbortController() };
+    const p = { method, abort: new AbortController() };
     this.pending.set(String(id), p);
     return p;
   }
@@ -398,11 +382,12 @@ export class CodexApprovals {
     this.deps.reply(id, result);
   }
 
-  private ask(id: RequestId, method: string, req: Omit<ToolApprovalRequest, 'signal'>, answer: (a: ToolApprovalAnswer) => unknown, full?: unknown): void {
+  // Every card here is one Full access answers itself (fullAccess), so a
+  // switch to Full while it shows allows it (ToolApprovalRequest.fullAllows).
+  private ask(id: RequestId, method: string, req: Omit<ToolApprovalRequest, 'signal'>, answer: (a: ToolApprovalAnswer) => unknown): void {
     const p = this.open(id, method);
-    if (full !== undefined) p.full = full;
     this.deps
-      .requestApproval({ ...req, signal: p.abort.signal })
+      .requestApproval({ ...req, signal: p.abort.signal, fullAllows: true })
       .catch((e: unknown): ToolApprovalAnswer => {
         this.deps.log.warn('approval request failed', { threadId: this.deps.label, method, error: String(e) });
         return { decision: 'expired' };
@@ -444,7 +429,6 @@ export class CodexApprovals {
         if (a.decision === 'allowAlways' && rule) this.deps.addRules([rule]);
         return { decision: commandDecision(a) };
       },
-      { decision: 'accept' },
     );
   }
 
@@ -470,7 +454,6 @@ export class CodexApprovals {
         if (a.decision === 'allowAlways' && !code) this.deps.addRules([FILE_CHANGE_RULE]);
         return { decision: commandDecision(a) };
       },
-      { decision: 'accept' },
     );
   }
 
@@ -500,7 +483,6 @@ export class CodexApprovals {
         canAlwaysAllow: false,
       },
       (a) => (a.decision === 'allow' || a.decision === 'allowAlways' ? { permissions: requested, scope: 'turn' } : { permissions: {}, scope: 'turn' }),
-      { permissions: requested, scope: 'turn' },
     );
   }
 
@@ -622,7 +604,6 @@ export class CodexApprovals {
         if (a.decision === 'allowAlways' && rule) this.deps.addRules([rule]);
         return { decision: legacyDecision(a) };
       },
-      { decision: 'approved' },
     );
   }
 
@@ -650,7 +631,6 @@ export class CodexApprovals {
         if (a.decision === 'allowAlways' && !code) this.deps.addRules([FILE_CHANGE_RULE]);
         return { decision: legacyDecision(a) };
       },
-      { decision: 'approved' },
     );
   }
 }

@@ -265,7 +265,7 @@ export type PendingApproval =
   // title: what it's asking, for telling the agent about a subagent's.
   // itemId and queued: the agent's call and the calls waiting behind it
   // on the same card (docs/protocol.md, "Queued calls"), by itemId.
-  | { approvalId: string; kind: 'tool'; main: boolean; title?: string; plan?: string; macOnly?: boolean; itemId?: string; queued?: Set<string>; resolve: (a: ToolApprovalAnswer) => void }
+  | { approvalId: string; kind: 'tool'; main: boolean; title?: string; plan?: string; macOnly?: boolean; itemId?: string; queued?: Set<string>; fullAllows?: boolean; resolve: (a: ToolApprovalAnswer) => void }
   | { approvalId: string; kind: 'question'; main: boolean; title?: string; questions: Question[]; resolve: (a: QuestionAnswer) => void }
   // An agent's ask_secret (docs/protocol.md, "Secrets"). The value never
   // passes through here: secrets.answer writes the file and hands this the
@@ -2991,9 +2991,9 @@ export class Runner {
         rt.releaseWhenIdle = true;
       }
       // A session on its way out (another login or folder in the same
-      // call) still hears a lowering: its turn runs on till the next
-      // message, and on Full a Codex one answers its own approvals.
-      if (rt.session && (!release || params.permissionMode !== 'full')) {
+      // call) still hears it: its turn runs on till the next message, and
+      // on Full a Codex one answers its own approvals.
+      if (rt.session) {
         rt.session.setPermissionMode(params.permissionMode).catch(() => {
           rt.releaseWhenIdle = true;
           if (!rt.turn) this.releaseSession(st);
@@ -3003,6 +3003,14 @@ export class Runner {
         // of Plan first, whose turn keeps planning till it ends.
         if (sayNextTurn() && (params.permissionMode !== 'full' || wasMode === 'plan')) {
           nextTurn.push(params.permissionMode === 'ask' ? 'Ask before edits' : params.permissionMode === 'auto' ? 'Auto' : params.permissionMode === 'plan' ? 'Plan first' : 'Full access');
+        }
+      }
+      // The cards showing that Full wouldn't have asked: allowed now, and
+      // said so on the card, rather than left waiting under a composer that
+      // says Full (Ian, 13 Nov).
+      if (params.permissionMode === 'full') {
+        for (const p of [...rt.approvals.values()]) {
+          if (p.kind === 'tool' && p.fullAllows) this.respondApproval({ threadId: rec.id, approvalId: p.approvalId, decision: 'allow', message: 'Allowed by Full access' });
         }
       }
     }

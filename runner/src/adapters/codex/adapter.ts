@@ -1211,7 +1211,6 @@ export class CodexSession implements AgentSession {
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {
     this.mode = mode;
-    if (mode === 'full') this.approvals.enterFull();
   }
 
   // The same Codex thread carries on in the new folder from the next turn:

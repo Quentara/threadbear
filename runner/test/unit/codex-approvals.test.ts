@@ -262,28 +262,20 @@ test('on Full access Codex never gets a card: commands, edits (code files too) a
   assert.deepEqual(h.replies.slice(1).map((r) => r.result), [{ decision: 'accept' }, { decision: 'accept' }, { permissions: { network: { enabled: true } }, scope: 'turn' }]);
 });
 
-test('switching to Full answers the cards already showing and takes them down; a question stays', async () => {
+test('every card here is one Full answers itself (fullAllows), and older request kinds ask nothing on Full either', async () => {
   let full = false;
   const h = harness([], { full: () => full });
   h.answerWith((r) => new Promise((res) => r.signal.addEventListener('abort', () => res({ decision: 'expired' }))));
-  h.answerQuestionsWith(() => new Promise(() => {}));
   h.a.handle(7, 'item/commandExecution/requestApproval', req('touch b.txt'), { fromChild: false });
   h.a.handle('x8', 'execCommandApproval', { conversationId: 't', callId: 'c1', command: ['touch', 'y'], cwd: '/w', reason: null }, { fromChild: false });
-  h.a.handle(9, 'item/tool/requestUserInput', { threadId: 't', turnId: 'u', itemId: 'q', questions: [{ id: 'a', header: 'H', question: 'Which?', isOther: false, isSecret: false, options: null }] }, { fromChild: false });
   await flush();
-  assert.equal(h.asked.length, 2);
+  assert.deepEqual(h.asked.map((r) => r.fullAllows), [true, true]);
   full = true;
-  h.a.enterFull();
-  await flush();
-  assert.deepEqual(h.replies.map((r) => [r.id, r.result]), [[7, { decision: 'accept' }], ['x8', { decision: 'approved' }]], 'once each, with the ids as Codex sent them');
-  assert.ok(h.asked.every((r) => r.signal.aborted), 'the cards come down');
-  assert.equal(h.a.pendingCount, 1, 'the question is still waiting');
-  // Older request kinds on Full ask nothing either.
   h.a.handle(10, 'execCommandApproval', { conversationId: 't', callId: 'c2', command: ['touch', 'z'], cwd: '/w', reason: null }, { fromChild: false });
   h.a.handle(11, 'applyPatchApproval', { conversationId: 't', callId: 'c3', fileChanges: { '/home/me/.threadbear/patches/mine.ts': {} }, reason: null }, { fromChild: false });
   await flush();
   assert.equal(h.asked.length, 2);
-  assert.deepEqual(h.replies.slice(2).map((r) => r.result), [{ decision: 'approved' }, { decision: 'approved' }]);
+  assert.deepEqual(h.replies.map((r) => r.result), [{ decision: 'approved' }, { decision: 'approved' }]);
 });
 
 test('"Always allow" keeps a runner rule, answers the next match itself, and asks again for anything chained', async () => {
