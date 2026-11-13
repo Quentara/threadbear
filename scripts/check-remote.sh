@@ -764,8 +764,11 @@ while :; do
     answering=""
     for h in "${HOSTS[@]}"; do
       case "$h" in -*|"") continue ;; esac
-      timed 20 "${PING[@]}" "$h" true </dev/null >/dev/null 2>&1
-      case $? in 255|124) ;; *) answering+="${answering:+, }$h" ;; esac
+      # A marker that came back proves a login, whatever the exit (a login
+      # shell can exit 124 itself; Codex's fourth review).
+      reply="$(timed 20 "${PING[@]}" "$h" echo tb-answers </dev/null 2>/dev/null)"
+      rc=$?
+      case "$reply:$rc" in *tb-answers*) answering+="${answering:+, }$h" ;; *:255|*:124) ;; *) answering+="${answering:+, }$h" ;; esac
     done
     if [ -n "$answering" ]; then
       echo "None of $HOST_LIST could take this check${CANT:+ ($CANT)}, but $answering still answers, so it doesn't run on this Mac instead. Run it again when that host is back to normal." >&2

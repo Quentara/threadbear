@@ -133,3 +133,12 @@ test("a host whose probe fails as ssh's own 255 but takes a fresh connection is 
   assert.equal(r.status, 1, r.stdout + r.stderr);
   assert.match(r.stderr, /but h1 still answers, so it doesn't run on this Mac instead/);
 });
+
+test('a login whose shell exits 124 still counts as answering, not as a timeout', () => {
+  const s = setup({ h1: { state: 'free' } });
+  fs.writeFileSync(path.join(s.fake, 'h1', 'probe-255'), '');
+  fs.writeFileSync(path.join(s.fake, 'h1', 'login-124'), '');
+  const r = s.run('h1', 3600);
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /but h1 still answers/);
+});

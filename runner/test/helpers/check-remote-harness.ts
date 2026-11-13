@@ -49,6 +49,9 @@ echo "$host $cmd" >>"$FAKE/ssh.log"
 [ -d "$d" ] || exit 255
 # The watch's ping: fails once the host's "dead" file is there.
 if [ "$cmd" = true ]; then [ -f "$d/dead" ] && exit 255; exit 0; fi
+# The last check's fresh connection: the same, with a marker, and a host's
+# "login-124" file has its shell exit 124 after printing it.
+if [ "$cmd" = "echo tb-answers" ]; then [ -f "$d/dead" ] && exit 255; echo tb-answers; [ ! -f "$d/login-124" ] || exit 124; exit 0; fi
 run_copy() {
   # A host's "hang" file: it stops answering as the check starts.
   if [ -f "$d/hang" ]; then : >"$d/dead"; sleep 300; exit 0; fi
