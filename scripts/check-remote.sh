@@ -674,7 +674,7 @@ rewrite_logs() {
 # waits in line on that host; after a quick one it chooses again, reusing
 # the copy if that's the same host. THREADBEAR_CHECK_STAY_SECS is for the
 # tests.
-copied_host="" copy_secs=0
+copied_host="" copy_secs=0 moves=""
 stay_secs="${THREADBEAR_CHECK_STAY_SECS:-60}"
 while :; do
   # A disk that's filled up since (the check that won may have done it) is no
@@ -698,7 +698,10 @@ while :; do
   else
     [ -z "$copied_host" ] || watched "$copied_host" "${SSH[@]}" "$copied_host" "rm -rf '$remote_run'" 2>/dev/null
     copied_host=""
-    id="$(date +%H%M%S)-$$-$tries"
+    # $moves (digits, empty until this check has left a line) keeps a new
+    # copy's id from ever being one it withdrew, whose waiter may still be
+    # in line there and would take the new copy for its own.
+    id="$(date +%H%M%S)$moves-$$-$tries"
     remote_run="$remote_base/runs/$id"
     start=$SECONDS
     # This checkout's mirror on the host: one per Mac and checkout, so two
@@ -806,6 +809,7 @@ while :; do
   if [ "$now" = 0 ] && [ "${#HOSTS[@]}" -gt 1 ] && [ "$copy_secs" -lt "$stay_secs" ] && leave_line "$waiter"; then
     rm -rf "$local_logs"
     copied_host=""
+    moves=$((${moves:-0} + 1))
     continue
   fi
   wait "$waiter"

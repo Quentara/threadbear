@@ -25,6 +25,8 @@ test('waiting in line on a busy host, it moves to another that frees up, and its
   assert.match(r.waits, /^h1 waiting/m);
   assert.match(r.stdout, /h2 is free now/);
   assert.match(r.stdout, /ran on h2 now/);
+  // A new id after a move, never one a withdrawn waiter could take for its own.
+  assert.match(r.stdout, /ran on h2 now from .*\/runs\/\d{6}1-\d+-0\/scripts/);
   assert.doesNotMatch(r.stdout, /ran on h1/);
   assert.deepEqual(r.copies, ['h1', 'h2']);
   // Withdrawn: if h1's line ever comes round, there's nothing there to run.
