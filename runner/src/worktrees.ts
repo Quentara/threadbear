@@ -957,6 +957,14 @@ async function landLocked(
       setRunning(common, { startedAt: Date.now(), branches: [t.branch, ...together] });
       const r = await runCheck(check, t.path, opts.shell);
       setRunning(common, undefined);
+      // Whether the check ran on the commit it's logged for: asked before the
+      // line is written, as the runner's updater takes a passing line as
+      // proof for that commit (update.ts, landChecked), and a check of files
+      // edited meanwhile proves nothing about it (Codex, 13 Nov). The same
+      // questions are asked again below, where they stop the landing.
+      const intact = r.ok &&
+        (await gitOut(t.path, ['rev-parse', 'HEAD'])) === checked &&
+        (await gitOut(t.path, ['status', '--porcelain', '--untracked-files=all'])) === '';
       logCheckTimes(times.file, {
         at: new Date().toISOString(),
         branch: t.branch,
@@ -968,6 +976,9 @@ async function landLocked(
         waitedSeconds: Math.round(times.waitedMs / 1000),
         ...(opts.dryRun ? { dryRun: true } : {}),
         ...parseCheckTimes(r.text),
+        // After what the check printed, so nothing it prints can be these.
+        check,
+        ...(intact ? { intact: true } : {}),
       });
       if (!r.ok && group.length) {
         // One of them (or two together) broke it. Halve the group and go

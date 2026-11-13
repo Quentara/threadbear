@@ -7,7 +7,7 @@ import { tmpDir } from '../helpers/fakes.ts';
 import { FakeClock } from '../../src/clock.ts';
 import type { UpdateFailure } from '../../src/fix-update.ts';
 import { nullLogger } from '../../src/log.ts';
-import { CHECK_INTERVAL_MS, FIRST_CHECK_MS, MACHINE_WAIT_MS, MAX_MACHINE_TRIES, MAX_SLEPT_TRIES, SOON_MS, RunnerUpdater, runDeploy, launcherDiffers, launchAgentBehind, launcherSourcesHash, appOfExecutable, updateDir, watchMainRef, decideUpdate, failedAlready, releaseTreeAt, syncClone, updateFilePath, buildTreeAt, landChecked, passedLandCheck, DEPLOY_TESTS_COVER, LAND_CHECK_STEPS, type UpdateDeps } from '../../src/update.ts';
+import { CHECK_INTERVAL_MS, FIRST_CHECK_MS, MACHINE_WAIT_MS, MAX_MACHINE_TRIES, MAX_SLEPT_TRIES, SOON_MS, RunnerUpdater, runDeploy, launcherDiffers, launchAgentBehind, launcherSourcesHash, appOfExecutable, updateDir, watchMainRef, decideUpdate, failedAlready, releaseTreeAt, syncClone, updateFilePath, buildTreeAt, landChecked, passedLandCheck, LAND_CHECK_COMMANDS, LAND_CHECK_STEPS, PACKAGE_FILES, type UpdateDeps } from '../../src/update.ts';
 import { LAND_TIMES_FILE } from '../../src/land-queue.ts';
 import type { ReleaseJson } from '../../src/release.ts';
 import { noFileWatches, patiently } from '../helpers/patience.ts';
@@ -931,31 +931,46 @@ function landLine(commit: string, extra: Record<string, unknown> = {}): string {
       { name: 'iphone kit tests', status: 'skip' },
     ],
     host: 'tinker-desk',
+    check: './check.sh --quick',
+    intact: true,
     ...extra,
   })}\n`;
 }
 
-test('passedLandCheck: only a real, passing check of that very commit that ran the typecheck and the unit tests', () => {
+test('passedLandCheck: only a real, passing check of that very commit, by check.sh, that ran the typecheck and the unit tests', () => {
   const dir = tmpDir();
   const file = path.join(dir, LAND_TIMES_FILE);
   const c = 'a'.repeat(40);
   const other = 'b'.repeat(40);
   const says = (text: string) => (fs.writeFileSync(file, text), passedLandCheck(file, c));
+  const typecheck = { name: 'runner typecheck', status: 'ok' };
+  const tests = { name: 'runner unit tests', status: 'ok' };
   assert.equal(passedLandCheck(file, c), undefined, 'no log');
   assert.deepEqual(says(landLine(c)), { at: '2026-11-13T00:39:34.974Z', host: 'tinker-desk' });
   assert.deepEqual(says(landLine(c, { host: undefined, at: undefined })), {}, 'a check run here, with no host');
   assert.ok(says(landLine(c, { together: ['thread/other'] })), 'the top of a group');
+  assert.ok(says(landLine(c, { check: './check.sh' })), 'the full check runs them too');
   assert.equal(says(landLine(other)), undefined, 'another commit');
   assert.equal(says(landLine(other, { branch: c })), undefined, 'the commit only somewhere else in the line');
   assert.equal(says(landLine(c, { ok: false, exit: 1 })), undefined, 'a failed check');
   assert.equal(says(landLine(c, { ok: 'true' })), undefined, 'ok has to be true itself');
   assert.equal(says(landLine(c, { dryRun: true })), undefined, 'a dry run');
-  assert.equal(says(landLine(c, { steps: [{ name: 'runner typecheck', status: 'ok' }, { name: 'runner unit tests', status: 'skip' }] })), undefined, 'tests skipped');
-  assert.equal(says(landLine(c, { steps: [{ name: 'runner unit tests', status: 'ok' }] })), undefined, 'no typecheck');
+  // The worktree had moved on or been edited by the check's end, or the
+  // line is from a tb that didn't ask: not a check of this commit.
+  assert.equal(says(landLine(c, { intact: undefined })), undefined, 'not known to be of that commit');
+  assert.equal(says(landLine(c, { intact: 'true' })), undefined);
+  // Any other command's lines are only words (land-times.test.ts logs an
+  // echo as a step), and so are a wrapper's or another mode's.
+  for (const check of [undefined, 'echo "ok    runner typecheck   0s"; echo "ok    runner unit tests   0s"', './check.sh --app', './check.sh --quick; true', 'true || ./check.sh --quick', ['./check.sh --quick']]) {
+    assert.equal(says(landLine(c, { check })), undefined, String(check));
+  }
+  assert.equal(says(landLine(c, { steps: [typecheck, { ...tests, status: 'skip' }] })), undefined, 'tests skipped');
+  assert.equal(says(landLine(c, { steps: [tests] })), undefined, 'no typecheck');
   assert.equal(says(landLine(c, { steps: [] })), undefined, "another repo's check has no steps");
   assert.equal(says(landLine(c, { steps: 'runner typecheck ok runner unit tests ok' })), undefined, 'steps that are not a list');
+  assert.equal(says(landLine(c, { steps: [typecheck, { ...tests, status: 'FAIL' }, tests] })), undefined, 'a FAIL and an ok for one step is not a pass');
   // A second run that passed is a pass, as it is for the landing.
-  assert.ok(says(landLine(c, { steps: [{ name: 'runner typecheck', status: 'ok' }, { name: 'runner unit tests', status: 'ok', secondRun: ['x'] }] })));
+  assert.ok(says(landLine(c, { steps: [typecheck, { ...tests, secondRun: ['x'] }] })));
   // The newest line for the commit that counts is the one read; lines cut
   // short or not JSON are passed over.
   assert.ok(says(`${landLine(c, { ok: false })}not json ${c}\n${landLine(c)}{"commit":"${c}","ok":tr`));
@@ -973,7 +988,7 @@ test('passedLandCheck: only a real, passing check of that very commit that ran t
   assert.equal(passedLandCheck(file, c), undefined, 'a fifo is not waited on');
 });
 
-test('landChecked: a commit a landing checked here needs no second check, unless what only a build tests has changed', async () => {
+test("landChecked: a commit a landing checked here needs no second check, unless the runner's packages have changed", async () => {
   const { repo, first, commit } = makeRepo();
   const dir = path.join(updateDir(tmpDir('tb-update-home-')), 'src');
   const log = path.join(repo, '.git', LAND_TIMES_FILE);
@@ -992,22 +1007,21 @@ test('landChecked: a commit a landing checked here needs no second check, unless
   assert.equal(await landChecked(tmpDir(), dir, 'runner/', src, first), undefined);
   assert.equal(await landChecked(repo, dir, 'runner/', 'HEAD', first), undefined, 'a commit id, not a name');
 
-  // Only a build runs the deploy tests, so a change to anything they cover
-  // since the running release is still checked, landed and passed or not...
+  // A worktree's check may have run on the main checkout's packages, the
+  // old ones, so a change to them since the running release is still
+  // checked by the build, which installs from the lock...
   let last = src;
   for (const [file, text] of [
-    ['runner/scripts/deploy.mjs', '1'],
-    ['runner/launch.mjs', '1'],
-    ['runner/launcher/main.swift', '1'],
-    ['runner/test/deploy/run.sh', '1'],
-    ['check.sh', '1'],
+    ['runner/package-lock.json', '{"name":"x","lockfileVersion":3,"v":9}\n'],
+    ['runner/package.json', '{"name":"x","v":9}\n'],
+    ['runner/.npmrc', 'x=1\n'],
   ] as const) {
-    fs.mkdirSync(path.dirname(path.join(repo, file)), { recursive: true });
+    assert.ok(PACKAGE_FILES.test(file));
     const c = commit(`changes ${file}`, file, text);
     fs.appendFileSync(log, landLine(c));
     await syncClone(repo, 'runner/', dir);
     assert.equal(await landChecked(repo, dir, 'runner/', c, last), undefined, file);
-    // ...and so is the next landing, until a release with it is running.
+    // ...and so is the next landing, until a release with them is running.
     const next = commit(`after ${file}`, 'runner/src/main.ts', `console.log(${JSON.stringify(file)})\n`);
     fs.appendFileSync(log, landLine(next));
     await syncClone(repo, 'runner/', dir);
@@ -1015,27 +1029,51 @@ test('landChecked: a commit a landing checked here needs no second check, unless
     assert.ok(await landChecked(repo, dir, 'runner/', next, c), `after ${file}, with it running`);
     last = next;
   }
-  // Other scripts, tests and docs are what the landing's check ran against.
+  // Everything else, the deploy scripts and check.sh included, is what the
+  // landing's check ran with: a build's own checks are the same two steps.
   fs.mkdirSync(path.join(repo, 'scripts'));
+  fs.mkdirSync(path.join(repo, 'runner', 'scripts'));
   fs.mkdirSync(path.join(repo, 'runner', 'test', 'unit'), { recursive: true });
   commit('a script', 'scripts/check-remote.sh', '1');
+  commit('the deploy', 'runner/scripts/deploy.mjs', '1');
+  commit('the check', 'check.sh', '1');
+  commit('another package file', 'package.json', '{}\n');
   const test1 = commit('a test', 'runner/test/unit/x.test.ts', '1');
   fs.appendFileSync(log, landLine(test1));
   await syncClone(repo, 'runner/', dir);
   assert.ok(await landChecked(repo, dir, 'runner/', test1, last));
 });
 
-test("check.sh still has the steps and the deploy tests' paths landChecked goes by", () => {
+// landChecked rests on a landing's check running everything a build's own
+// checks do. These hold the two together.
+test("a build's own checks are no more than tb land's: the same steps, command and test run", () => {
   const sh = fs.readFileSync(new URL('../../../check.sh', import.meta.url), 'utf8');
-  // The steps a build's own checks run, by the names a landing's log has them under.
-  assert.match(sh, /^\s*step "runner typecheck" /m);
+  // The steps, by the names a landing's log has them under.
+  assert.match(sh, /^\s*step "runner typecheck" "\$ROOT\/runner" npm run typecheck$/m);
   assert.match(sh, /^\s*local name="runner unit tests" /m);
   assert.deepEqual(LAND_CHECK_STEPS, ['runner typecheck', 'runner unit tests']);
-  // The one step --runner runs that --quick doesn't, and when it's needed.
-  const m = /if needed '\^runner\/\(([^']*)\)'; then\n\s*step "runner deploy tests" /.exec(sh);
-  assert.ok(m, 'the deploy tests step and its needed line');
-  assert.match(sh, /printf '%s\\n' "\$CHANGED" \| grep -qE "\$1\|\^check\\\.sh\$"/, 'needed also says yes to check.sh');
-  assert.equal(DEPLOY_TESTS_COVER.source, `^(runner\\/(${m[1].replace(/\//g, '\\/')})|check\\.sh$)`);
+  // --runner (a build's, on a check host) is --quick with less, so the deploy
+  // tests, which --quick leaves out, aren't something only a build runs.
+  assert.match(sh, /^\s*--runner\) QUICK=1; RUNNER_ONLY=1 ;;$/m);
+  assert.match(sh, /if \[ "\$QUICK" = 0 \]; then\n\s*if needed '[^']*'; then\n\s*step "runner deploy tests" /);
+  // This repo's landings run one of the commands that counts.
+  const patch = fs.readFileSync(new URL('../../../.threadbear/patches/checks.ts', import.meta.url), 'utf8');
+  const check = /^\s*check: "([^"]+)",$/m.exec(patch)?.[1];
+  assert.ok(check && LAND_CHECK_COMMANDS.includes(check), `checks.ts's check (${check}) is one landChecked takes`);
+  // With no check host a build runs `npm run typecheck` and `npm test`
+  // (deploy.mjs, deploy-steps.mjs): the same test run as check.sh's, with
+  // nothing before or after it that a landing wouldn't have run.
+  const pkg = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { scripts: Record<string, string> };
+  for (const hook of ['pretest', 'posttest', 'pretypecheck', 'posttypecheck']) assert.equal(pkg.scripts[hook], undefined, `${hook} would run in a build and not in a landing`);
+  const run = /^\s*local run=\((node [^)]*)\)$/m.exec(sh)?.[1];
+  assert.ok(run, "check.sh's test run");
+  const words = (cmd: string) => cmd.replace(/"/g, '').split(/\s+/).filter(Boolean).sort();
+  assert.deepEqual(words(`${run} test/unit/**/*.test.ts`), words(pkg.scripts.test), "check.sh's run and package.json's test script");
+  const deploySteps = fs.readFileSync(new URL('../../scripts/deploy-steps.mjs', import.meta.url), 'utf8');
+  const deploy = fs.readFileSync(new URL('../../scripts/deploy.mjs', import.meta.url), 'utf8');
+  assert.match(deploySteps, /step\(name, checkSh, \['--runner'\]/);
+  assert.match(deploySteps, /step\('Unit tests', c\.npm, \['test'\]/);
+  assert.match(deploy, /step\('Typecheck', c\.npm, \['run', 'typecheck'\]/);
 });
 
 test('runDeploy leaves the checks out only when asked to', async () => {

@@ -352,19 +352,27 @@ export async function buildTreeAt(dir: string, prefix: string): Promise<string> 
 
 // The steps of check.sh a landing's check has to have run and passed for a
 // build of the same commit to leave its own checks out: all that deploy.mjs's
-// step 1 runs, by the names check.sh prints them under.
+// step 1 runs (check.sh --runner on a check host, the same two with npm
+// here), by the names check.sh prints them under.
 export const LAND_CHECK_STEPS = ['runner typecheck', 'runner unit tests'];
-// What check.sh's "runner deploy tests" step is for (its `needed` line, and
-// `needed` always says yes to check.sh itself; update.test.ts holds the two
-// together). `tb land`'s --quick never runs that step and a build's --runner
-// does, so a build that changes any of this still runs its checks.
-export const DEPLOY_TESTS_COVER = /^(runner\/(scripts\/|launch\.mjs$|launcher\/|test\/deploy\/)|check\.sh$)/;
+// The landing checks that run those steps: this repo's own, as its patch
+// names it, and the full one. Any other command's output is only words: on
+// 13 Nov a test's `echo "ok    runner typecheck"` was logged as that step.
+export const LAND_CHECK_COMMANDS = ['./check.sh --quick', './check.sh'];
+// The runner's packages. A build's checks install them afresh from the lock
+// (syncClone drops node_modules when it changes), where a landing checked in
+// its worktree, with no check host, runs against node_modules linked from
+// the main checkout (worktree-setup.sh), which may still be the old ones.
+export const PACKAGE_FILES = /^runner\/(package\.json|package-lock\.json|\.npmrc)$/;
 const LAND_TIMES_READ_MAX = 4 * 1024 * 1024;
 
-// The newest line of a landing log that says this exact commit passed a
-// real check (not a dry run) with every one of LAND_CHECK_STEPS run and
-// passed, not skipped. Read as the landing writes it: no link followed and
-// no fifo waited on, and anything odd is just no line.
+// The newest line of a landing log that is proof this exact commit passed
+// the runner's typecheck and unit tests: a real check (not a dry run) by
+// one of LAND_CHECK_COMMANDS, passing, with the worktree still at that
+// commit and unchanged when it ended (`intact`), and every line it printed
+// for each of LAND_CHECK_STEPS an ok, with at least one. Read as the
+// landing writes it: no link followed and no fifo waited on, and anything
+// odd is just no line.
 export function passedLandCheck(file: string, commit: string): { at?: string; host?: string } | undefined {
   let text: string;
   try {
@@ -384,10 +392,12 @@ export function passedLandCheck(file: string, commit: string): { at?: string; ho
   for (let i = lines.length - 1; i >= 0; i--) {
     if (!lines[i].includes(commit)) continue;
     try {
-      const e = JSON.parse(lines[i]) as { at?: unknown; host?: unknown; commit?: unknown; ok?: unknown; dryRun?: unknown; steps?: unknown };
-      if (e.commit !== commit || e.ok !== true || e.dryRun) continue;
+      const e = JSON.parse(lines[i]) as { at?: unknown; host?: unknown; commit?: unknown; ok?: unknown; dryRun?: unknown; intact?: unknown; check?: unknown; steps?: unknown };
+      if (e.commit !== commit || e.ok !== true || e.dryRun || e.intact !== true) continue;
+      if (typeof e.check !== 'string' || !LAND_CHECK_COMMANDS.includes(e.check.trim())) continue;
       const steps = Array.isArray(e.steps) ? (e.steps as { name?: unknown; status?: unknown }[]) : [];
-      if (!LAND_CHECK_STEPS.every((name) => steps.some((s) => s?.name === name && s?.status === 'ok'))) continue;
+      const ran = (name: string) => steps.filter((s) => s?.name === name);
+      if (!LAND_CHECK_STEPS.every((name) => ran(name).length > 0 && ran(name).every((s) => s.status === 'ok'))) continue;
       return { ...(typeof e.at === 'string' ? { at: e.at } : {}), ...(typeof e.host === 'string' ? { host: e.host } : {}) };
     } catch {
       // a line cut short, or not a landing's
@@ -398,23 +408,26 @@ export function passedLandCheck(file: string, commit: string): { at?: string; ho
 
 // Why a build of `commit` needn't run its typecheck and unit tests again, in
 // a few words, or undefined when it must. On 13 Nov every landing that
-// changed the runner had its tests run twice over on this Mac's account: by
-// `tb land` (check.sh --quick, 5 minutes on a check host), then by the
-// build of that same commit seconds later (check.sh --runner, the same
-// tests again), about two hours a day of the check hosts and five minutes
-// more before each runner change was live. On a fork with no check host
-// both runs are on the person's own Mac.
+// changed the runner had its tests run twice over: by `tb land` (check.sh
+// --quick, 5 minutes on a check host), then by the build of that same
+// commit seconds later (check.sh --runner: the same typecheck and unit
+// tests and nothing more), about two hours a day of the check hosts and
+// five minutes more before each runner change was live. On a fork with no
+// check host both runs are on the person's own Mac.
 //
 // Main only moves to a commit a landing's check passed, and the landing
-// leaves a line for it (worktrees.ts, logCheckTimes), so when the commit
-// to build is exactly one a real check passed here, with the runner's
-// typecheck and unit tests run and not skipped, the build leaves them out
-// (deploy.mjs --skip-checks; the snapshot, the smoke test and the crash
-// rollback are as before). Not when anything the deploy tests cover has
-// changed since the release that's running, as only a build's checks run
-// those; not for a release built with local changes or a runner that isn't
-// in runner/, where that can't be told; and never on a machine that follows
-// GitHub's main (the caller's rule), which lands nothing itself.
+// leaves a line for it (worktrees.ts, logCheckTimes), so when the commit to
+// build has one that's proof (passedLandCheck), the build leaves its checks
+// out (deploy.mjs --skip-checks; the snapshot, the smoke test and the crash
+// rollback are as before). Not when the runner's packages have changed
+// since the release that's running, as only a build's checks are sure to
+// run on the ones its lock names; not for a release built with local
+// changes or a runner that isn't in runner/, where that can't be told; and
+// never on a machine that follows GitHub's main (the caller's rule), which
+// lands nothing itself.
+//
+// What a worktree's check here still can't rule out, and a build's check in
+// its clean clone did: a test that passes only for a file git ignores there.
 export async function landChecked(checkout: string, clone: string, prefix: string, commit: string, runningCommit: string | undefined): Promise<string | undefined> {
   if (prefix !== 'runner/' || !runningCommit || !/^[0-9a-f]{40,64}$/.test(commit) || !/^[0-9a-f]{7,64}$/.test(runningCommit)) return undefined;
   let common: string;
@@ -425,7 +438,7 @@ export async function landChecked(checkout: string, clone: string, prefix: strin
   } catch {
     return undefined; // no such commit in the clone, say: can't tell, so check
   }
-  if (changed.split('\n').some((f) => DEPLOY_TESTS_COVER.test(f))) return undefined;
+  if (changed.split('\n').some((f) => PACKAGE_FILES.test(f))) return undefined;
   const line = passedLandCheck(path.join(common, LAND_TIMES_FILE), commit);
   if (!line) return undefined;
   return `tb land's check passed them at this commit${line.host ? ` on ${line.host}` : ''}${line.at ? ` at ${line.at}` : ''}`;

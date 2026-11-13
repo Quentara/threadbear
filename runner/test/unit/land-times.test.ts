@@ -74,6 +74,32 @@ test('a landing logs its check, and what it prints is unchanged', async () => {
   assert.deepEqual(e.steps, [{ name: 'runner typecheck', status: 'ok', seconds: 3 }]);
   assert.ok(!Number.isNaN(Date.parse(e.at)));
   assert.equal(e.dryRun, undefined);
+  // What the runner's updater goes by (update.ts, passedLandCheck): which
+  // command it was, and that the worktree was still at that commit,
+  // unchanged, when it ended.
+  assert.equal(e.check, 'echo "ok    runner typecheck        3s"');
+  assert.equal(e.intact, true);
+});
+
+// The updater takes a passing line as proof for its commit, so a check
+// that ran on edited files mustn't leave one that says so (Codex, 13 Nov:
+// the line was written before the landing found the edit and refused).
+test('a check that passed on files changed meanwhile is logged, but not as a check of that commit', async () => {
+  for (const meanwhile of ['echo edited >> b', 'echo new > c', 'git commit -q --allow-empty -m moved']) {
+    const { main, t, log } = repo();
+    const before = sh(main, 'git rev-parse main');
+    const c = capture();
+    assert.equal(await land({ ...t, check: `${meanwhile}; echo "ok    runner typecheck   1s"; echo "ok    runner unit tests   1s"` }, c.opts), 1, meanwhile);
+    assert.match(c.err.join('\n'), /changed while the check ran/);
+    assert.equal(sh(main, 'git rev-parse main'), before);
+    const [e] = entries(log);
+    assert.equal(e.ok, true, meanwhile);
+    assert.equal(e.intact, undefined, meanwhile);
+  }
+  // A failed check and nothing a check prints can say it either.
+  const { t, log } = repo();
+  assert.equal(await land({ ...t, check: 'echo \'{"intact":true}\'; exit 1' }, capture().opts), 1);
+  assert.equal(entries(log)[0].intact, undefined);
 });
 
 test('a failed check is logged too, with its exit code, and a dry run says so', async () => {

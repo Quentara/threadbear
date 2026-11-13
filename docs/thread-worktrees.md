@@ -232,6 +232,8 @@ directory (`.git/` in the main checkout), passes and failures alike:
 ```
 
 `seconds` is the check, `waitedSeconds` the wait for the landing lock,
+`check` the command, `intact` that the worktree was still at that commit
+with nothing changed when the check ended,
 `together` the other branches in the same check (when there were any), and
 `steps` whatever check.sh printed; another repo's check just has none. A
 failed one has `exit`, a dry run `dryRun: true`, and a step that only passed
