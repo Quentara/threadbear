@@ -64,6 +64,9 @@ const ALLOWED_LINES: &[(&str, &str, usize)] = &[
     ("gpui/src/terminal.rs", "let pty = tty::new(&options, self.size.window_size(), 0)?;", 1),
     ("gpui/src/hang_watch.rs", "let mut sample = Command::new(\"/usr/bin/sandbox-exec\");", 1),
     ("gpui/src/app_update.rs", "let started = Command::new(\"/bin/sh\").arg(\"-c\").arg(wait).arg(\"sh\").args(open).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();", 1),
+    // A handover opens the app's own installed bundle as its second copy,
+    // never anything from a thread (handover.rs).
+    ("gpui/src/handover.rs", "let mut command = std::process::Command::new(\"/usr/bin/open\");", 1),
     ("gpui/src/app_update.rs", "let out = Command::new(\"/usr/bin/git\").args(rules::rev_parse_arguments(checkout)).stdin(Stdio::null()).output().ok()?;", 1),
     ("gpui/src/app_update.rs", "let child = Command::new(program).args(arguments).current_dir(installed::home_dir()).stdin(Stdio::null()).stdout(out).stderr(err).spawn();", 1),
     // Encodes the gate's checked descriptor or already-read application icon.
