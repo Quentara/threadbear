@@ -213,9 +213,13 @@ their own.
   one worktree take turns (`threadbear-land-worktree.lock` in its git dir).
 - If a group's check fails, nothing lands and the group is halved: the
   holder goes again with itself and the first half, and the rest wait with
-  their limit halved too. Nobody's told their check failed until it fails
-  in a check of its own, so the one that broke it is found in a few checks,
-  and the rest land.
+  their limit halved too. Before retrying, the holder prints the exit code
+  and last 40 lines of the failed check's output (up to 8,000 characters),
+  including any retained log paths there. Wait for `tb land` to finish before
+  editing the holder's worktree, which it still uses for retries.
+  That is the group's result; an individual landing is
+  only refused if its own check fails, so the one that broke it is found
+  in a few checks, and the rest land.
 - While it waits, a landing says where it is: whose check is running and
   for how long, how many are waiting ahead of it, and roughly how long it
   has to go, from the last 20 checks in the times log below. If it is

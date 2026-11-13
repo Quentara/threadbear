@@ -999,16 +999,24 @@ async function landLocked(
         ...(intact ? { intact: true } : {}),
       });
       if (!r.ok && group.length) {
+        // Show the group's failure now: finding the individual landing can
+        // take several more checks, and its logs are already available.
+        out([
+          `The check failed with ${group.length + 1} landings together${r.code !== undefined ? ` (exit ${r.code})` : ''}, so ${MAIN} wasn't touched. The last lines of its output:`,
+          'Wait for tb land to finish before editing this worktree.',
+          '',
+          r.text.trimEnd().split('\n').slice(-CHECK_TAIL_LINES).join('\n').slice(-8000),
+        ].join('\n'));
         // One of them (or two together) broke it. Halve the group and go
         // again, this one with the first half; the rest wait their turn.
-        // Nothing's told it failed until it fails in a check of its own.
+        // No individual landing is refused until its own check fails.
         if (!(await back())) return fail(`The check failed with ${group.length + 1} landings together, so nothing landed. ${stuck}`);
         limit = Math.ceil((group.length + 1) / 2);
         for (const g of group) {
           const now = readEntry(common, g.entry.id);
           if (now && !now.result) writeEntry(common, { ...now, limit: Math.min(now.limit ?? Infinity, limit) });
         }
-        out(`The check failed with ${group.length + 1} landings together, so ${MAIN} wasn't touched. Checking them in smaller groups to find which.`);
+        out('Checking them in smaller groups to find which.');
         continue;
       }
       if (!r.ok) {

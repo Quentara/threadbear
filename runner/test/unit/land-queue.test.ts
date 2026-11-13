@@ -74,14 +74,35 @@ test('a group check that fails is narrowed down, and only the one that broke it 
   const { root, main } = makeRepo();
   const [a, b, c, d] = branches(main, ['a', 'b', 'c', 'd']);
   commit(c.path, { 'bad.txt': 'bad\n' }, 'Break it');
-  const check = slowCheck(root, 'bad.txt');
+  const check = `${slowCheck(root)}; if test -f bad.txt; then ` +
+    `{ for i in $(seq 1 80); do echo "passing output $i"; done; ` +
+    `printf '%12000s\\n' '' | tr ' ' x; ` +
+    `echo 'FAIL desktop core tests /retained/group/desktop-core-tests.log'; ` +
+    `echo 'open_gate_source: hostname URI format failed'; } >&2; exit 3; fi`;
   const { first, codes, caps } = await queuedBehindA(root, main, [b, c, d], a, check);
   assert.equal(first, 0);
   assert.deepEqual(codes, [0, 1, 0], caps.map((x) => x.out.concat(x.err).join('\n')).join('\n---\n'));
-  assert.match(caps[1].err.join('\n'), /^The check failed \(exit 1\), so main wasn't touched/);
+  assert.match(caps[1].err.join('\n'), /^The check failed \(exit 3\), so main wasn't touched/);
   assert.ok(!fs.existsSync(path.join(main, 'bad.txt')));
   for (const n of ['a', 'b', 'd']) assert.ok(fs.existsSync(path.join(main, `${n}.txt`)));
   assert.ok(caps.some((x) => x.out.some((l) => /Checking them in smaller groups/.test(l))));
+  // The group holder reports what failed before starting a smaller check,
+  // while each landing still gets its own eventual result.
+  for (const cap of caps) {
+    for (const [i, line] of cap.out.entries()) {
+      if (!line.startsWith('The check failed with')) continue;
+      const retry = cap.out.findIndex((l, j) => j > i && l.startsWith('Running the check'));
+      assert.ok(retry > i, 'the holder retries after reporting the grouped failure');
+      const beforeRetry = cap.out.slice(i, retry).join('\n');
+      assert.match(beforeRetry, /exit 3/);
+      assert.match(beforeRetry, /FAIL desktop core tests \/retained\/group\/desktop-core-tests.log/);
+      assert.match(beforeRetry, /open_gate_source: hostname URI format failed/);
+      assert.doesNotMatch(beforeRetry, /passing output 1\n/);
+      assert.ok(beforeRetry.length < 8500, 'long lines cannot flood the grouped diagnostic');
+      assert.ok(line.split('\n').length <= 43, 'header, edit precaution, blank line, and at most 40 output lines');
+      assert.match(beforeRetry, /Wait for tb land to finish before editing this worktree/);
+    }
+  }
   // Every check that passed had no bad.txt in it: main only moved to those.
   const checks = fs.readFileSync(path.join(root, 'checks'), 'utf8').trim().split('\n');
   assert.ok(checks.length <= 6, checks.join('\n'));

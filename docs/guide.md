@@ -1780,6 +1780,11 @@ The landing's progress message says when it is already being checked with
 its group, with a rough estimate of the time left in that check or a note
 that it is taking longer than usual.
 
+If a check of several landings fails, the command that ran it shows the end
+of its output straight away, then checks smaller groups to find the cause.
+The agent can read any logs named there while those checks run, but must wait
+for the command to finish before editing the worktree it's using.
+
 The same goes for settings. The Settings window (⌘,) shows what's set and has
 controls for only a few common things, and the ⓘ beside each section says
 what it is and what to ask your agent. Click it to read it, or hover for a

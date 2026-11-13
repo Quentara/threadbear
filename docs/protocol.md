@@ -4793,8 +4793,12 @@ Other landings of that repo wait, even from
 other CLI processes; exiting releases it. Those waiting are queued in
 `threadbear-land-queue/` there, and the next holder checks them all
 together with its own and lands them at once (docs/thread-worktrees.md,
-"Landing together"). A patch load error, or a check
-that changes the branch or leaves changed or untracked files, stops the landing.
+"Landing together"). A failed grouped check prints its exit code and the
+last 40 lines of output (up to 8,000 characters) before retrying smaller
+groups; it only refuses an individual landing if that landing's own check
+fails. A patch load error,
+or a check that changes the branch or leaves changed or untracked files,
+stops the landing.
 The Land command action has an hour for its wait and check, rather than
 the usual ten-minute command limit. The fast-forward names the checked
 commit, so it cannot pick up a later, unchecked branch tip.
