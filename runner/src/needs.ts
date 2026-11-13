@@ -995,9 +995,19 @@ export class WakeRead {
 // message was in the events before the call. Refused, the call costs one
 // more, and the card that follows covers the message too. Only Claude's CLI
 // says when it hands a message over (adapter.ts, unreadMessage).
+// A sub-agent's end_turn mustn't use the refusal up, so only a call that
+// has reached the thread's events is checked (threadbear-mcp.ts).
 export const UNREAD_MESSAGE = 'Not ended: the user sent a message while you were writing this call, and you have not read it yet.';
 export function unreadMessageRefusal(): string {
-  return `${UNREAD_MESSAGE} It comes with this result. Answer it or do what it asks, then call end_turn again for the turn as a whole.`;
+  // Not "answer it": with one reply the answer comes after end_turn, and
+  // one written before it is hidden with the work (from Codex's review).
+  return `${UNREAD_MESSAGE} It comes with this result. Read it and do any work it asks for, then call end_turn again as you normally would, for the turn as a whole.`;
+}
+
+// That refusal, read back: the call's card was written without the message,
+// so the runner doesn't keep it for a turn that ends with no other (runner.ts).
+export function endTurnRefusedUnread(result: { text: string }): boolean {
+  return result.text.startsWith(UNREAD_MESSAGE);
 }
 
 export function endedThisTurn(events: PersistedEvent[], serverName = 'threadbear'): boolean {

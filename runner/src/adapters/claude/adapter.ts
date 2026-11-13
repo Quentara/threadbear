@@ -76,6 +76,13 @@ export function sdkPermissionMode(mode: PermissionMode): 'bypassPermissions' | '
   return mode === 'full' ? 'bypassPermissions' : 'default';
 }
 
+// How many end_turn calls are refused for one message the CLI hasn't handed
+// over. The CLI hands every waiting message over with the first refusal's
+// result (two sent together both started then, 13 Nov 2026), so the second is
+// for one it kept back anyway (from Codex's review), and the limit is so a
+// frame that never comes can't keep a turn from ending.
+const UNREAD_REFUSALS = 2;
+
 // Streaming input for query(): the runner pushes one user message per turn
 // and ends it to let the CLI exit.
 class InputQueue implements AsyncIterable<SDKUserMessage> {
@@ -424,10 +431,10 @@ class ClaudeSession implements AgentSession {
   // Messages sent that the CLI hasn't handed to the agent yet, by uuid: one
   // sent while a response is being written waits in the CLI's queue until
   // that response's tools have run, and the CLI's command_lifecycle frame
-  // "started" says when it goes over (unreadMessage). `told` are the ones
-  // end_turn has refused a call for, so each is refused for once.
-  private notStarted = new Set<string>();
-  private toldUnread = new Set<string>();
+  // "started" says when it goes over (unreadMessage), with how many calls
+  // end_turn has refused for each: a refusal is what hands it over, so a
+  // second is only for one the CLI kept back, and there is never a third.
+  private notStarted = new Map<string, number>();
   private lifecycle = false;
 
   constructor(opts: StartSessionOptions, sink: SessionSink, deps: ClaudeAdapterDeps) {
@@ -801,7 +808,6 @@ class ClaudeSession implements AgentSession {
 
   private handedOver(uuid: string): void {
     this.notStarted.delete(uuid);
-    this.toldUnread.delete(uuid);
   }
 
   // Whether a message was sent that the agent can't have read: the call
@@ -810,9 +816,9 @@ class ClaudeSession implements AgentSession {
   unreadMessage(): boolean {
     if (!this.lifecycle) return false;
     let unread = false;
-    for (const id of this.notStarted) {
-      if (this.toldUnread.has(id)) continue;
-      this.toldUnread.add(id);
+    for (const [id, refused] of this.notStarted) {
+      if (refused >= UNREAD_REFUSALS) continue;
+      this.notStarted.set(id, refused + 1);
       unread = true;
     }
     return unread;
@@ -991,8 +997,8 @@ class ClaudeSession implements AgentSession {
     const uuid = input.id ?? crypto.randomUUID();
     // Not the agent's to read until the CLI says it has started on it. A
     // frame that never comes mustn't keep them for ever.
-    this.notStarted.add(uuid);
-    while (this.notStarted.size > 50) this.handedOver(this.notStarted.values().next().value!);
+    this.notStarted.set(uuid, 0);
+    while (this.notStarted.size > 50) this.handedOver(this.notStarted.keys().next().value!);
     this.input.push({
       type: 'user',
       message: { role: 'user', content: content.length === 1 && content[0].type === 'text' ? input.text : (content as never) },

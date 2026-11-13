@@ -2913,9 +2913,11 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   came back accepted counts, since the agent can't have read it), so that
   message's `end_turn` is taken and its card replaces the last. The other
   way round, an `end_turn` the agent wrote before it could have read a
-  message sent into the turn is refused once ("Not ended: the user sent a
+  message sent into the turn is refused ("Not ended: the user sent a
   message while you were writing this call"), so the call after it covers
   the message too: a done card once sat under a reply asking "say go". The
+  refused call's card is dropped, a sub-agent's call (never in the thread's
+  events) isn't checked, and a message is refused for twice at most. The
   runner knows from Claude's CLI, which holds such a message until the
   response being written has run its tools and says `started` for it in a
   `command_lifecycle` frame when it hands it over; Codex doesn't say, so

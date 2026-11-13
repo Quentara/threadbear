@@ -63,7 +63,7 @@ export type ThreadControl = {
   showPanel?: (threadId: string, ask: Parameters<Runner['showPanel']>[1]) => ReturnType<Runner['showPanel']>;
   endTurnNudged?: (threadId: string) => boolean;
   // A message the agent can't have read when it wrote this end_turn
-  // (needs.ts, UNREAD_MESSAGE). True once for each.
+  // (needs.ts, UNREAD_MESSAGE). Asking counts as a refusal for it.
   unreadMessage?: (threadId: string) => boolean;
   // What this thread's subagents are parked on (approvals.ts).
   openSubagentCards?: (threadId: string) => string[];
@@ -1361,6 +1361,15 @@ export function buildThreadbearTools(
     return endTurnTaken({ ok: true, text }) ? text + openCardsNote(control.openSubagentCards?.(selfId) ?? []) : text;
   };
 
+  // A call written before the agent could read a message sent into the turn
+  // (needs.ts, UNREAD_MESSAGE). Only the thread's own call, which is in its
+  // events by now: a sub-agent's never is, and asking for it would use up
+  // the refusal its parent's call needs (from Codex's review).
+  const refuseUnread = async (): Promise<void> => {
+    if (codex || !control.unreadMessage) return;
+    if ((await replied()).landed && control.unreadMessage(selfId)) throw new Error(unreadMessageRefusal());
+  };
+
   const repeatEndTurn = (events: PersistedEvent[], input: { needs?: unknown; archive?: unknown; snooze?: unknown }): string | undefined => {
     const taken = takenEndTurn(events, SERVER_NAME);
     if (!taken) return undefined;
@@ -1492,7 +1501,7 @@ export function buildThreadbearTools(
         const events = await turnEvents();
         // Before anything that could take the call: a refusal of any kind
         // hands the message over, so only an accepted one needs this.
-        if (control.unreadMessage?.(selfId)) throw new Error(unreadMessageRefusal());
+        await refuseUnread();
         const repeat = repeatEndTurn(events, input);
         if (repeat) return repeat;
         checkFindings(input, needs, events);
@@ -1610,7 +1619,7 @@ export function buildThreadbearTools(
         // runner knows, so it keeps a message that follows anyway
         // (needs.ts, BULLETS_ONLY).
         const owed = Boolean(!needsMessage && reply && (!reply.replied || reply.narrationOnly));
-        if (control.unreadMessage?.(selfId)) throw new Error(unreadMessageRefusal());
+        await refuseUnread();
         const repeat = repeatEndTurn(await turnEvents(), { ...args, needs });
         if (repeat) return repeat;
         // A connector that needs Mike to sign in again (a gateway service

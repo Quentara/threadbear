@@ -101,7 +101,7 @@ import { parseWhen } from './when.ts';
 import { emptyHighlights, observe as observeHighlights, pinItem, remove as removeHighlight, unpin as unpinHighlight, upsert as upsertHighlight, view as highlightsView, absolute, type ThreadHighlights } from './highlights.ts';
 import { SERVER_NAME, approvalTitle } from './threadbear-mcp.ts';
 import { PANEL_ACK_WAIT_MS, PANEL_PLACES, resolvePanel } from './panel-requests.ts';
-import { archiveFromTool, bylineFromTool, END_TURN_TOOL, endTurnAccepted, endTurnAddedArchive, endTurnAddedSnooze, snoozeFromTool, waitForFromTool, endTurnAsksForMessage, endTurnIsOneReply, endTurnOwesReply, endTurnRefusedRepeat, endTurnTaken, endTurnWantsReply, needsFromText, needsFromTool, replyWithoutRepeat, splitReplySection, summaryFromTool, summaryMarkdown, WakeRead } from './needs.ts';
+import { archiveFromTool, bylineFromTool, END_TURN_TOOL, endTurnAccepted, endTurnAddedArchive, endTurnAddedSnooze, snoozeFromTool, waitForFromTool, endTurnAsksForMessage, endTurnIsOneReply, endTurnOwesReply, endTurnRefusedRepeat, endTurnRefusedUnread, endTurnTaken, endTurnWantsReply, needsFromText, needsFromTool, replyWithoutRepeat, splitReplySection, summaryFromTool, summaryMarkdown, WakeRead } from './needs.ts';
 import type { Needs } from './needs.ts';
 import { asksForAppRestart } from './app-restarts.ts';
 import type { ConnectorsStatus } from './connectors.ts';
@@ -1375,7 +1375,7 @@ export class Runner {
 
   // For end_turn's handler: whether a message sent into the running turn is
   // one the agent can't have read when it wrote the call (needs.ts,
-  // UNREAD_MESSAGE). True once for each such message.
+  // UNREAD_MESSAGE). It counts as a refusal for each (adapters/types.ts).
   unreadMessage(threadId: string): boolean {
     return this.threads.get(threadId)?.rt.session?.unreadMessage?.() === true;
   }
@@ -2047,7 +2047,11 @@ export class Runner {
           if (ev.type === 'tool.result' && ev.itemId === rt.turn.endTurnCall) {
             // Any refusal after one it took, not just ALREADY_ENDED: a bad
             // snooze or waitFor on a repeat once turned an ask into Done.
-            if (endTurnRefusedRepeat(ev) || (!ev.ok && (rt.turn.ended || rt.turn.tookEndTurn))) rt.turn.endTurn = rt.turn.endTurnBefore;
+            // ...nor does one refused for a message it was written without
+            // (needs.ts, UNREAD_MESSAGE): a first call's arguments otherwise
+            // stand as the card of a turn that ends with no other, and this
+            // one's are about the turn before that message.
+            if (endTurnRefusedRepeat(ev) || endTurnRefusedUnread(ev) || (!ev.ok && (rt.turn.ended || rt.turn.tookEndTurn))) rt.turn.endTurn = rt.turn.endTurnBefore;
             else if (endTurnTaken(ev)) {
               rt.turn.tookEndTurn = true;
               // Every taken one, Codex's older "Noted." too: one that isn't

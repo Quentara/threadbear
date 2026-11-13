@@ -191,7 +191,7 @@ test('Stop hook: a message sent after end_turn does not make it forget the call'
 // end_turn for his last one, which was taken with needs "nothing". The CLI's
 // "started" frame is when a message goes to the agent, so until then a call
 // was written without it.
-test('unreadMessage: a message sent into a turn is unread until the CLI starts on it, and said once', async () => {
+test('unreadMessage: a message sent into a turn is unread until the CLI starts on it, and refused for twice at most', async () => {
   const { session, state } = start([], {}, { mcpServersFor: () => ({ threadbear: { type: 'sdk', name: 'threadbear' } }) });
   const life = (s: string, uuid: string) => state.frame!({ type: 'command_lifecycle', command_uuid: uuid, state: s });
   session.send({ id: 'u1', text: 'Not yet', images: [] });
@@ -204,11 +204,15 @@ test('unreadMessage: a message sent into a turn is unread until the CLI starts o
   session.send({ id: 'u2', text: 'Should we get it into production?', images: [] });
   await life('queued', 'u2');
   assert.equal(session.unreadMessage!(), true);
-  assert.equal(session.unreadMessage!(), false, 'end_turn refuses once for a message');
-  // A second one behind it is its own refusal.
+  // The refusal hands it over; one the CLI kept back anyway is refused for
+  // once more (from Codex's review), and never a third time.
+  assert.equal(session.unreadMessage!(), true);
+  assert.equal(session.unreadMessage!(), false, 'a frame that never comes cannot keep the turn from ending');
+  // A second one behind it has refusals of its own.
   session.send({ id: 'u3', text: 'And the redirects?', images: [] });
   assert.equal(session.unreadMessage!(), true);
   await life('started', 'u2');
+  assert.equal(session.unreadMessage!(), true, 'u3 is still waiting');
   await life('started', 'u3');
   assert.equal(session.unreadMessage!(), false);
   // One the CLI folded in without a frame of its own: the result names it.

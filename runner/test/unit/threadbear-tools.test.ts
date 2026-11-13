@@ -596,6 +596,7 @@ test('end_turn written before the agent could read a new message is refused, and
     const first = await send('e1', oneReply ? { headline: 'Not released yet', needs: 'nothing' } : { needs: 'nothing', summary: ['Left it on main.'] });
     assert.equal(first.error, true, `${oneReply}: ${first.text}`);
     assert.match(first.text, /^Not ended: the user sent a message while you were writing this call/);
+    assert.doesNotMatch(first.text, /answer it/i, 'with one reply the answer comes after end_turn');
     // It reads the message with that refusal, and asks.
     s.text('m2', 'Yes, I think it is ready to go live.');
     const ask = oneReply
@@ -611,6 +612,53 @@ test('end_turn written before the agent could read a new message is refused, and
     await tick();
     assert.equal(h.runner.get(thread.id).needs, 'you', `${oneReply}: the card is the second call's`);
   }
+});
+
+// From Codex's review of that fix. A sub-agent shares the handler, and its
+// call never reaches the thread's events: it mustn't use up the refusal.
+test("a sub-agent's end_turn does not use up the refusal for a message its parent has not read", async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  let asked = 0;
+  s.unreadMessage = () => {
+    asked++;
+    return true;
+  };
+  h.runner.send(thread.id, 'One more thing');
+  // No tool.call for it in the thread: the sub-agent's.
+  const sub = await call('end_turn', { headline: 'Sub-agent done', needs: 'nothing' });
+  assert.equal(asked, 0);
+  assert.doesNotMatch(sub.text, /the user sent a message/);
+  toolCall(s, 'e1', END_TURN, { headline: 'Done', needs: 'nothing' });
+  const own = await call('end_turn', { headline: 'Done', needs: 'nothing' });
+  assert.equal(asked, 1);
+  assert.match(own.text, /^Not ended: the user sent a message/);
+});
+
+// And a first call's arguments stand as the card of a turn that ends with no
+// other (a refused one that had no reply yet, say). Not this one's: they are
+// about the turn before the message.
+test('an end_turn refused for an unread message does not leave its card behind', async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  s.text('m1', 'Noted, not releasing yet.');
+  h.runner.send(thread.id, 'Should we get it into production?');
+  s.unreadMessage = () => true;
+  const input = { headline: 'Not released yet', needs: 'nothing', archive: true };
+  toolCall(s, 'e1', END_TURN, input);
+  const r = await call('end_turn', input);
+  assert.equal(r.error, true);
+  s.out({ kind: 'event', event: { type: 'tool.result', itemId: 'e1', ok: false, text: r.text, truncated: false, images: [] } });
+  // It answers, asking in words, and stops without another end_turn.
+  s.text('m2', 'Yes, it is ready.\n\n**What I need from you**\n1. Say go and I will merge main into prod.');
+  const ids = s.sent.map((m) => m.id!);
+  s.result('completed', undefined, undefined, { answered: ids, answers: ids[1], queuedTurns: 0 });
+  await tick();
+  const t = h.runner.get(thread.id);
+  assert.equal(t.needs, 'you', "the reply's own ask, not the refused call's done card");
+  assert.equal(t.archivedAt, undefined, 'nor its archive');
 });
 
 // Thread 46de9389 (7 Nov 2026): a `tb land` sent to the background finished
