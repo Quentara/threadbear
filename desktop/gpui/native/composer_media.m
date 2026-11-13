@@ -7,6 +7,14 @@
 #include <stdbool.h>
 
 typedef bool (*TBMediaSink)(void *, int, const char *, const void *, size_t);
+// Only valid during the synchronous sink call. Rust copies these bytes
+// before returning, so a later file-open failure never rereads a pasteboard.
+typedef struct {
+  const char *extension;
+  const void *bytes;
+  size_t length;
+  const void *promise;
+} TBImageFallback;
 static NSPasteboard *dropBoard;
 static bool dropRead;
 #ifdef TB_COMPOSER_AUTOMATION
@@ -27,6 +35,20 @@ static NSString *extensionForType(NSString *type) {
   if ([type isEqual:@"com.compuserve.gif"]) return @"gif";
   if ([type isEqual:@"org.webmproject.webp"]) return @"webp";
   return @"png";
+}
+static NSData *imageBytes(NSPasteboardItem *item, bool allowTIFF, NSString **extension) {
+  for (NSString *type in imageTypes()) {
+    if (![item.types containsObject:type]) continue;
+    // Finder's TIFF beside a file URL may just be its icon. Photos' TIFF
+    // is the copied photo; a standalone TIFF paste is also an image.
+    if (!allowTIFF && [type isEqual:NSPasteboardTypeTIFF]) continue;
+    NSData *data = [item dataForType:type];
+    if ([type isEqual:NSPasteboardTypeTIFF]) {
+      data = [[NSBitmapImageRep imageRepWithData:data] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    }
+    if (data.length) { *extension = extensionForType(type); return data; }
+  }
+  return nil;
 }
 static bool pictureName(NSString *name) {
   return [@[@"png", @"jpg", @"jpeg", @"gif", @"webp", @"heic", @"heif", @"tif", @"tiff", @"bmp"] containsObject:name.pathExtension.lowercaseString];
@@ -99,28 +121,26 @@ static bool readBoard(NSPasteboard *board, bool drag, TBMediaSink sink, void *co
     // access(2) may say yes even though TCC denies an actual open.
     denied = [file.path isEqual:fixtureProtectedPath];
 #endif
-    // A file's TIFF representation may be its icon or a preview. Keep the
-    // real image first, opening with this app's grant to keep its bytes. Photos
-    // offers its image beside the library path, as in the Swift app.
-    if (file.isFileURL && !photos && !denied && sink(context, 5, file.path.UTF8String, NULL, 0)) {
+    NSString *imageExtension = nil;
+    // Intentionally obtain provider bytes before the drop ends, even when
+    // a file URL is offered. A lazy provider can delay this pasteboard call;
+    // retaining only its item would lose the fallback if it clears the board.
+    // The following C struct borrows NSData's interior buffer through sink.
+    __attribute__((objc_precise_lifetime)) NSData *imageData = imageBytes(item, !file.isFileURL || photos, &imageExtension);
+    // Keep the canonical file's bytes, not its icon/preview. Only temporary
+    // sources need an immediate snapshot; ordinary opens run on a worker.
+    // Capture alternate image data now, in case the app's later open fails.
+    // Rust begins any fallback promise now, during the native callback.
+    // Its owned receiver can wait beside the file's background open.
+    TBImageFallback fallback = {imageExtension.UTF8String, imageData.bytes, imageData.length, picturePromise(promise) ? (__bridge const void *)promise : NULL};
+    if (file.isFileURL && !photos && !denied && sink(context, 5, file.path.UTF8String, &fallback, sizeof(fallback))) {
       taken = true;
       continue;
     }
     bool saved = false;
-    // If opening the original failed, the bytes beside it can still work.
-    for (NSString *type in imageTypes()) {
-      if (![item.types containsObject:type]) continue;
-      // Finder also supplies a file icon as TIFF, even for a missing or
-      // protected original. Photos' TIFF is the copied photo itself.
-      if (file.isFileURL && !photos && [type isEqual:NSPasteboardTypeTIFF]) continue;
-      NSData *data = [item dataForType:type];
-      if ([type isEqual:NSPasteboardTypeTIFF]) {
-        data = [[NSBitmapImageRep imageRepWithData:data] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-      }
-      if (!data.length) continue;
-      sink(context, 1, extensionForType(type).UTF8String, data.bytes, data.length);
+    if (imageData.length) {
+      sink(context, 1, imageExtension.UTF8String, imageData.bytes, imageData.length);
       saved = taken = true;
-      break;
     }
     if (!saved && picturePromise(promise)) {
       sink(context, 3, NULL, (__bridge const void *)promise, 0);
@@ -128,8 +148,8 @@ static bool readBoard(NSPasteboard *board, bool drag, TBMediaSink sink, void *co
       continue;
     }
     if (!saved && file.isFileURL && !photos) {
-      // Preserve the runner's useful missing/permission/size error instead
-      // of silently substituting a file icon or dropping this bundle item.
+      // If private import could not start, let the runner report the file's
+      // error instead of substituting an icon or dropping this bundle item.
       sink(context, 0, file.path.UTF8String, NULL, 0);
       taken = true;
       continue;
@@ -357,9 +377,9 @@ void tb_composer_fixture_begin(const char *kindText, const char *pathText, void 
   NSString *kind = @(kindText), *path = @(pathText);
   NSData *data = [NSData dataWithContentsOfFile:path];
   NSPasteboardItem *item = [NSPasteboardItem new];
-  if ([kind isEqual:@"paired-file-promise"]) {
-    TBLegacyPictures *promise = [TBLegacyPictures new]; promise.data = data; fixtureLegacy = promise; fixturePairedPromise = true;
-    [item setString:@"file:///missing/promised.png" forType:NSPasteboardTypeFileURL];
+  if ([kind isEqual:@"paired-file-promise"] || [kind isEqual:@"paired-withdrawn-promise"]) {
+    TBLegacyPictures *promise = [TBLegacyPictures new]; promise.data = data; promise.withdrawn = [kind isEqual:@"paired-withdrawn-promise"]; fixtureLegacy = promise; fixturePairedPromise = true;
+    [item setString:promise.withdrawn ? [NSURL fileURLWithPath:path].absoluteString : @"file:///missing/promised.png" forType:NSPasteboardTypeFileURL];
   } else if ([kind isEqual:@"legacy"] || [kind isEqual:@"legacy-error"] || [kind isEqual:@"withdrawn"]) {
     TBLegacyPictures *promise = [TBLegacyPictures new]; promise.data = data; promise.failFirst = [kind isEqual:@"legacy-error"]; promise.withdrawn = [kind isEqual:@"withdrawn"]; fixtureLegacy = promise;
     [item setString:[NSURL fileURLWithPath:path].absoluteString forType:NSPasteboardTypeFileURL];
@@ -382,8 +402,9 @@ void tb_composer_fixture_begin(const char *kindText, const char *pathText, void 
   } else if ([kind isEqual:@"photos"]) {
     [item setString:@"file:///Users/test/Pictures/Photos.photoslibrary/originals/locked.heic" forType:NSPasteboardTypeFileURL];
     [item setData:data forType:NSPasteboardTypePNG];
-  } else if ([kind isEqual:@"file"]) {
+  } else if ([kind isEqual:@"file"] || [kind isEqual:@"slow-file"] || [kind isEqual:@"slow-file-bytes"]) {
     [item setString:[NSURL fileURLWithPath:path].absoluteString forType:NSPasteboardTypeFileURL];
+    if ([kind isEqual:@"slow-file-bytes"]) [item setData:data forType:NSPasteboardTypePNG];
   } else {
     [item setData:data forType:NSPasteboardTypePNG];
     [item setString:@"https://example.invalid/photo.png" forType:NSPasteboardTypeURL];

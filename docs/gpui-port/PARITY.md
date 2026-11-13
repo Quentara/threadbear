@@ -18,11 +18,15 @@ scenario covers its source-file lifetime. Windows and Linux still use their own
 clipboard representations and the existing file-drop scenarios.
 The Mac promise check uses a real source app on Tinker Desk's desktop, with
 `TB_REAL_SCREEN=1`; the bundle cases exercise the legacy receiver contract.
-On 13 November, all 20 picture scenarios that do not move the pointer passed,
-including a busy turn with a loading picture, a protected file's image bytes,
+On 13 November, all 24 picture scenarios that do not move the pointer passed,
+including a busy turn with words and a loading picture, Stop while only a
+picture is loading, a delayed file open that leaves typing responsive and
+uses already captured image bytes,
+a protected file's image bytes,
 original file bytes beside a TIFF preview, a missing file's icon,
 private-network URLs and redirects,
-a withdrawn promise, a working promise beside a missing path and HEIC in a
+a withdrawn promise, a working promise beside a missing path, a readable file
+beside a withdrawn promise and HEIC in a
 card's answer box. Rust tests cover cancellation after partial promise receipt,
 late callbacks and filtering the socket addresses used for downloads. The real
 cross-app promise drag also passed separately. The message-chip scenario waits

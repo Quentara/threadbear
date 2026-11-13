@@ -477,10 +477,14 @@ it's sent. Click a chip or a thumbnail, in the composer or in the thread,
 to open the picture, with the arrows to step through the others.
 On the Mac, screenshots dragged from the floating thumbnail, pictures dragged
 from a browser, HEIC pastes and photos copied from Photos work here too.
-Threadbear keeps its own private copy before the source can take the picture
-back. A picture being copied from another app or fetched from a web URL shows
-a dim chip while it arrives; Send spins until the picture is ready, including
-while the agent is working. The Stop keyboard shortcut still works. A web URL
+Threadbear keeps image data and temporary screenshots before the source can
+take them back. It opens and copies ordinary files in the background, showing
+a loading chip while it waits. Keep those files in place until their
+pictures finish loading.
+A picture being copied from another app or fetched from a web URL shows a dim
+chip while it arrives. Send spins until the picture is ready. If a running
+thread's draft contains only a loading picture, Stop stays available instead.
+The Stop keyboard shortcut still works. A web URL
 is fetched by Threadbear without the browser's cookies or sign-in, using public
 internet addresses only. For a picture on a local or private-network server,
 copy the picture itself.

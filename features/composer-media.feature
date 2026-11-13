@@ -116,6 +116,23 @@ Feature: Pictures from other Mac apps
     When I stop the turn
     Then the thread isn't running any more
 
+  @composer.picturechips @composer.send @picture-loading @swift-pending @windows-pending @linux-pending
+  Scenario: Stop remains available when the only draft content is a loading picture
+    When I start a long turn for the picture check
+    And I drop a browser picture whose response is delayed
+    Then I can click Stop while the only picture is loading
+    And the thread isn't running any more
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: A slow file open leaves the composer responsive
+    When I paste a picture whose file open is delayed
+    Then the composer holds 1 picture
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: A slow file open uses the image bytes already on the pasteboard
+    When I paste image bytes beside a file whose open is delayed
+    Then the imported picture contains the pasted bytes
+
   @composer.picturechips @swift-pending @windows-pending @linux-pending
   Scenario: A protected file uses the image bytes beside it
     When I paste image bytes beside a protected file containing different bytes
@@ -135,6 +152,11 @@ Feature: Pictures from other Mac apps
   Scenario: An unavailable file URL uses the working picture promise beside it
     When I paste a working picture promise beside an unavailable file URL
     Then the composer holds 2 pictures
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: A readable file still works if the promise beside it is withdrawn
+    When I paste a readable image beside a withdrawn promise
+    Then the imported picture contains the original file bytes
 
   @composer.filedrop @swift-pending @windows-pending @linux-pending
   Scenario: A browser image cannot fetch a service on this Mac

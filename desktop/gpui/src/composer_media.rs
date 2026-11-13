@@ -1,6 +1,7 @@
 //! macOS representations that GPUI's clipboard and filename-only drops omit.
-//! The app captures temporary bytes during the drop and opens ordinary
-//! files while its grant is live. Copies, promises and URL-only browser
+//! The app captures temporary bytes during the drop. Ordinary file opens
+//! and copies run in this app's worker; fallback bytes are kept before the
+//! drop returns. Promises and URL-only browser
 //! images get a dim chip while they are loading.
 use std::path::PathBuf;
 use futures::channel::oneshot;
@@ -18,15 +19,85 @@ struct Pending {
     rx: oneshot::Receiver<Result<PreparedPictures, String>>,
     #[cfg(target_os = "macos")]
     _promise: Option<PromiseLease>,
+    #[cfg(target_os = "macos")]
+    alternative: Option<PromiseAlternative>,
+    #[cfg(target_os = "macos")]
+    image: Option<ImageFallback>,
+    #[cfg(target_os = "macos")]
+    opened: Option<oneshot::Receiver<()>>,
+}
+#[cfg(target_os = "macos")]
+struct PromiseAlternative {
+    path: PathBuf,
+    rx: oneshot::Receiver<Result<PreparedPictures, String>>,
+    _promise: Option<PromiseLease>,
+}
+#[cfg(target_os = "macos")]
+impl PromiseAlternative {
+    fn new(path: PathBuf, pending: Pending) -> Self { Self { path, rx: pending.rx, _promise: pending._promise } }
+}
+#[cfg(target_os = "macos")]
+impl Drop for PromiseAlternative {
+    fn drop(&mut self) { crate::composer::unstage(&self.path); }
 }
 static PENDING: LazyLock<Mutex<HashMap<PathBuf, Pending>>> = LazyLock::new(Default::default);
 
-pub(crate) async fn ready(path: &std::path::Path) -> Result<PreparedPictures, String> {
+pub(crate) async fn ready(path: &std::path::Path, grace: impl std::future::Future<Output = ()>) -> Result<PreparedPictures, String> {
     let pending = PENDING.lock().unwrap_or_else(|e| e.into_inner()).remove(path);
-    match pending {
-        Some(mut pending) => (&mut pending.rx).await.unwrap_or_else(|_| Err("The picture source closed before it finished".into())),
-        None => Ok(PreparedPictures { paths: vec![path.to_owned()] }),
+    let Some(mut pending) = pending else { return Ok(PreparedPictures { paths: vec![path.to_owned()] }) };
+    #[cfg(target_os = "macos")]
+    if pending.image.is_some() || pending.alternative.is_some() {
+        let mut grace = Some(grace);
+        if let Some(opened) = pending.opened.take() {
+            let open = async { opened.await.is_ok() };
+            let deadline = grace.take().unwrap();
+            futures::pin_mut!(open, deadline);
+            if let futures::future::Either::Left((true, _)) = futures::future::select(open, deadline).await {
+                // Once the file is open, let its full-quality copy finish.
+                // A slow copy mustn't silently select a smaller preview.
+                return match receipt(&mut pending.rx).await {
+                    Ok(pictures) => Ok(pictures),
+                    Err(error) => read_alternative(&mut pending.image, pending.alternative.as_mut(), futures::future::ready(())).await.or(Err(error)),
+                };
+            }
+        }
+        let file = receipt(&mut pending.rx);
+        let alternative = read_alternative(&mut pending.image, pending.alternative.as_mut(), async { if let Some(grace) = grace { grace.await; } });
+        futures::pin_mut!(file, alternative);
+        // Prefer the original file briefly. A stalled volume mustn't hide
+        // bytes or a promise already captured during the drop. If both fail,
+        // retain the file's named error instead of a generic promise error.
+        return match futures::future::select(file, alternative).await {
+            futures::future::Either::Left((Ok(pictures), _)) => Ok(pictures),
+            futures::future::Either::Left((Err(error), alternative)) => alternative.await.or(Err(error)),
+            futures::future::Either::Right((Ok(pictures), _)) => Ok(pictures),
+            futures::future::Either::Right((Err(_), file)) => file.await,
+        };
     }
+    let _ = grace;
+    receipt(&mut pending.rx).await
+}
+
+async fn receipt(rx: &mut oneshot::Receiver<Result<PreparedPictures, String>>) -> Result<PreparedPictures, String> {
+    rx.await.unwrap_or_else(|_| Err("The picture source closed before it finished".into()))
+}
+
+#[cfg(target_os = "macos")]
+async fn read_alternative(image: &mut Option<ImageFallback>, promise: Option<&mut PromiseAlternative>, grace: impl std::future::Future<Output = ()>) -> Result<PreparedPictures, String> {
+    grace.await;
+    let mut image_error = None;
+    if let Some(image) = image.take() {
+        let result = receipt(&mut copy_in_background(move || save_image(image))).await;
+        match result {
+            Ok(pictures) => return Ok(pictures),
+            Err(error) => image_error = Some(error),
+        }
+    }
+    if let Some(promise) = promise {
+        let result = receipt(&mut promise.rx).await;
+        return match image_error { Some(error) => result.or(Err(error)), None => result };
+    }
+    Err(image_error.unwrap_or_else(|| "Couldn't read the picture".into()))
 }
 
 pub(crate) fn install(cx: &mut gpui_kit::App) {
@@ -79,14 +150,50 @@ struct Captured {
 #[cfg(target_os = "macos")]
 extern "C" fn collect(context: *mut std::ffi::c_void, kind: i32, name: *const std::ffi::c_char, bytes: *const std::ffi::c_void, len: usize) -> bool {
     use crate::composer::{keep_picture, paste_base, stage_private};
-    use std::ffi::{CStr, CString};
+    use std::ffi::CStr;
     // SAFETY: read owns Captured for this synchronous call. AppKit supplies
     // valid UTF-8 strings and byte buffers for the duration of the callback.
     let captured = unsafe { &mut *context.cast::<Captured>() };
     let name = if name.is_null() { String::new() } else { unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned() };
     let path = match kind {
         0 => Some(keep_picture(PathBuf::from(name))),
-        5 => load_file(std::path::Path::new(&name)),
+        5 => {
+            // SAFETY: AppKit keeps this struct and its strings/data alive
+            // through this call only. Copy the fallback before spawning IO.
+            let raw = if !bytes.is_null() && len == std::mem::size_of::<RawImageFallback>() {
+                Some(unsafe { &*bytes.cast::<RawImageFallback>() })
+            } else { None };
+            let fallback = raw.and_then(|raw| {
+                if raw.length > 0 && raw.length <= 100 * 1024 * 1024 && !raw.bytes.is_null() && !raw.extension.is_null() {
+                    Some(ImageFallback {
+                        extension: unsafe { CStr::from_ptr(raw.extension) }.to_string_lossy().into_owned(),
+                        bytes: unsafe { std::slice::from_raw_parts(raw.bytes.cast::<u8>(), raw.length) }.into(),
+                    })
+                } else { None }
+            });
+            let original = std::path::Path::new(&name);
+            let path = load_file(original, fallback);
+            if let Some(object) = raw.map(|raw| raw.promise).filter(|p| !p.is_null()) {
+                // Receipt must begin during this native callback. Keep the
+                // receiver as an owned alternative, never an AppKit pointer
+                // on the file worker. A good file wins even if its promise
+                // is withdrawn; a failed open can still use the promise.
+                if path.is_none() { return start_promise(captured, object).is_some_and(|path| { captured.paths.push(path); true }); }
+                if !crate::composer::transient_picture(original) {
+                    if let Some(promised) = start_promise(captured, object) {
+                        let receiver = PENDING.lock().unwrap_or_else(|e| e.into_inner()).remove(&promised);
+                        let mut alternative = receiver.map(|pending| PromiseAlternative::new(promised, pending));
+                        let mut pending = PENDING.lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(file) = path.as_ref().and_then(|path| pending.get_mut(path)) {
+                            file.alternative = alternative.take();
+                        }
+                        drop(pending);
+                        drop(alternative); // clean an unused receiver outside the lock
+                    }
+                }
+            }
+            path
+        },
         1 if len > 0 => {
             let ext = match name.to_ascii_lowercase().as_str() {
                 "png" => "png", "jpeg" | "jpg" => "jpeg", "heic" => "heic", "heif" => "heif", "gif" => "gif", "webp" => "webp", _ => "png",
@@ -95,49 +202,111 @@ extern "C" fn collect(context: *mut std::ffi::c_void, kind: i32, name: *const st
             stage_private(&paste_base(), &format!("pasted.{ext}"), data)
         }
         2 => load_url(name),
-        3 => {
-            if captured.promise_folder.is_none() {
-                captured.promise_folder = crate::composer::private_folder(&paste_base()).map(std::sync::Arc::new);
-            }
-            let Some(source) = captured.promise_folder.clone() else { return false };
-            if let Some(path) = stage_private(&paste_base(), "promised.png", b"") {
-                let (id, pending) = register_promise(path.clone(), source.clone());
-                PENDING.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), pending);
-                let folder = CString::new(source.path().to_string_lossy().as_bytes()).unwrap();
-                unsafe { tb_composer_promise(bytes, folder.as_ptr(), promised, id as *mut _); }
-                Some(path)
-            } else { None }
-        }
+        3 => start_promise(captured, bytes),
         _ => None,
     };
     if let Some(path) = path { captured.paths.push(path); true } else { false }
 }
 
 #[cfg(target_os = "macos")]
-fn load_file(path: &std::path::Path) -> Option<PathBuf> {
-    // Open while AppKit's grant is live. Only a temporary source needs its
-    // snapshot completed before the drop returns; ordinary files may live
-    // on a slow share, so retain the descriptor and copy behind a dim chip.
-    let file = threadbear_core::open_policy::local_open(path).ok()?;
-    if !file.metadata().ok()?.is_file() { return None; }
-    if crate::composer::transient_picture(path) {
-        return crate::composer::snapshot_picture(&file, path).ok();
+fn start_promise(captured: &mut Captured, object: *const std::ffi::c_void) -> Option<PathBuf> {
+    if captured.promise_folder.is_none() {
+        captured.promise_folder = crate::composer::private_folder(&crate::composer::paste_base()).map(std::sync::Arc::new);
     }
-    snapshot_later(file, path.to_owned())
+    let source = captured.promise_folder.clone()?;
+    let path = crate::composer::stage_private(&crate::composer::paste_base(), "promised.png", b"")?;
+    let (id, pending) = register_promise(path.clone(), source.clone());
+    PENDING.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), pending);
+    let folder = std::ffi::CString::new(source.path().to_string_lossy().as_bytes()).unwrap();
+    // SAFETY: collect's synchronous native callback keeps the object live.
+    unsafe { tb_composer_promise(object, folder.as_ptr(), promised, id as *mut _); }
+    Some(path)
 }
 
 #[cfg(target_os = "macos")]
-fn snapshot_later(file: std::fs::File, original: PathBuf) -> Option<PathBuf> {
-    let path = crate::composer::stage_private(&crate::composer::paste_base(), "file.png", b"")?;
+#[repr(C)]
+struct RawImageFallback {
+    extension: *const std::ffi::c_char,
+    bytes: *const std::ffi::c_void,
+    length: usize,
+    promise: *const std::ffi::c_void,
+}
+#[cfg(target_os = "macos")]
+struct ImageFallback { extension: String, bytes: std::sync::Arc<[u8]> }
+
+#[cfg(target_os = "macos")]
+fn load_file(path: &std::path::Path, fallback: Option<ImageFallback>) -> Option<PathBuf> {
+    // A screenshot's source can disappear as the drop returns. Other files
+    // may be on an unavailable share: even canonicalize/open must run off
+    // the UI thread. Both opens still happen in this app, not the runner.
+    if crate::composer::transient_picture(path) {
+        return prepare_file(path, fallback, None).ok();
+    }
+    #[cfg(feature = "automation")]
+    let slow = FIXTURE_SLOW_FILE.lock().unwrap().as_deref() == Some(path);
+    let original = path.to_owned();
+    let (opened, opened_rx) = oneshot::channel();
+    let path = file_later(move || {
+        #[cfg(feature = "automation")]
+        if slow { std::thread::sleep(std::time::Duration::from_secs(8)); }
+        prepare_file(&original, None, Some(opened))
+    })?;
+    // A blocked open only owns a path. Cancellation can release these bytes
+    // immediately, and the ready future can use them before the open returns.
+    if let Some(pending) = PENDING.lock().unwrap_or_else(|e| e.into_inner()).get_mut(&path) {
+        pending.image = fallback;
+        pending.opened = Some(opened_rx);
+    }
+    Some(path)
+}
+
+#[cfg(target_os = "macos")]
+fn prepare_file(path: &std::path::Path, fallback: Option<ImageFallback>, opened: Option<oneshot::Sender<()>>) -> Result<PathBuf, String> {
+    match threadbear_core::open_policy::local_open(path) {
+        Ok(file) => {
+            if !file.metadata().map_err(|e| file_read_error(path, e))?.is_file() { return Err(format!("Not a file: {}", path.file_name().unwrap_or_default().to_string_lossy())); }
+            if let Some(opened) = opened { let _ = opened.send(()); }
+            crate::composer::snapshot_picture(&file, path).map_err(|e| e.to_string())
+        }
+        Err(error) => match fallback {
+            Some(image) => save_image(image),
+            None => Err(file_read_error(path, error)),
+        },
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn file_read_error(path: &std::path::Path, error: std::io::Error) -> String {
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
+    match error.kind() {
+        std::io::ErrorKind::NotFound => format!("The file went away before it could be added: {name}"),
+        std::io::ErrorKind::PermissionDenied => format!("Threadbear isn't allowed to read {name}"),
+        _ => format!("Couldn't read {name}: {error}"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn save_image(image: ImageFallback) -> Result<PathBuf, String> {
+    crate::composer::stage_private(&crate::composer::paste_base(), &format!("pasted.{}", image.extension), &image.bytes)
+        .ok_or_else(|| "Couldn't keep the pasted picture".into())
+}
+
+#[cfg(target_os = "macos")]
+fn copy_in_background(copy: impl FnOnce() -> Result<PathBuf, String> + Send + 'static) -> oneshot::Receiver<Result<PreparedPictures, String>> {
     let (tx, rx) = oneshot::channel();
-    PENDING.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), Pending { rx, _promise: None });
     std::thread::spawn(move || {
-        let result = crate::composer::snapshot_picture(&file, &original)
-            .map(|kept| PreparedPictures { paths: vec![kept] })
-            .map_err(|error| error.to_string());
+        let result = copy().map(|kept| PreparedPictures { paths: vec![kept] });
         // An unread reply owns its snapshot too, including after a timeout.
         let _ = tx.send(result);
     });
+    rx
+}
+
+#[cfg(target_os = "macos")]
+fn file_later(copy: impl FnOnce() -> Result<PathBuf, String> + Send + 'static) -> Option<PathBuf> {
+    let path = crate::composer::stage_private(&crate::composer::paste_base(), "file.png", b"")?;
+    let rx = copy_in_background(copy);
+    PENDING.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), Pending { rx, _promise: None, alternative: None, image: None, opened: None });
     Some(path)
 }
 
@@ -170,7 +339,7 @@ fn register_promise(path: PathBuf, source: std::sync::Arc<tempfile::TempDir>) ->
     let id = NEXT_PROMISE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let (tx, rx) = oneshot::channel();
     PROMISES.lock().unwrap_or_else(|e| e.into_inner()).insert(id, Promise { path, prepared: PreparedPictures::default(), tx: Some(tx), _source: source });
-    (id, Pending { rx, _promise: Some(PromiseLease(id)) })
+    (id, Pending { rx, _promise: Some(PromiseLease(id)), alternative: None, image: None, opened: None })
 }
 
 #[cfg(target_os = "macos")]
@@ -219,7 +388,7 @@ fn load_url(url: String) -> Option<PathBuf> {
     use crate::composer::{paste_base, stage_private};
     let path = stage_private(&paste_base(), "browser.png", b"")?;
     let (tx, rx) = oneshot::channel();
-    PENDING.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), Pending { rx, _promise: None });
+    PENDING.lock().unwrap_or_else(|e| e.into_inner()).insert(path.clone(), Pending { rx, _promise: None, alternative: None, image: None, opened: None });
     let destination = path.clone();
     #[cfg(feature = "automation")]
     let fixture = fixture_address(&url);
@@ -247,16 +416,21 @@ pub(crate) fn fixture_begin(kind: &str, path: &std::path::Path) -> Result<(), St
     extern "C" { fn tb_composer_fixture_begin(kind: *const std::ffi::c_char, path: *const std::ffi::c_char, ended: extern "C" fn()); }
     fixture_finished();
     let permitted = (kind == "url-fixture").then(|| path.to_string_lossy().into_owned());
+    let slow = matches!(kind, "slow-file" | "slow-file-bytes").then(|| path.to_owned());
     let (kind, path) = (CString::new(kind).map_err(|e| e.to_string())?, CString::new(path.to_string_lossy().as_bytes()).map_err(|e| e.to_string())?);
     unsafe { tb_composer_fixture_begin(kind.as_ptr(), path.as_ptr(), fixture_finished); }
     *FIXTURE_URL.lock().unwrap() = permitted;
+    *FIXTURE_SLOW_FILE.lock().unwrap() = slow;
     Ok(())
 }
 #[cfg(all(feature = "automation", target_os = "macos"))]
 static FIXTURE_URL: Mutex<Option<String>> = Mutex::new(None);
 #[cfg(all(feature = "automation", target_os = "macos"))]
+static FIXTURE_SLOW_FILE: Mutex<Option<PathBuf>> = Mutex::new(None);
+#[cfg(all(feature = "automation", target_os = "macos"))]
 extern "C" fn fixture_finished() {
     *FIXTURE_URL.lock().unwrap() = None;
+    *FIXTURE_SLOW_FILE.lock().unwrap() = None;
 }
 #[cfg(all(feature = "automation", target_os = "macos"))]
 fn fixture_address(url: &str) -> Option<std::net::SocketAddr> {
@@ -284,12 +458,218 @@ pub(crate) fn fixture_drag(window: &gpui_kit::Window, phase: i32, vanish: Option
 
 #[cfg(test)]
 mod tests {
+    async fn wait_ready(path: &std::path::Path) -> Result<super::PreparedPictures, String> {
+        super::ready(path, futures::future::pending()).await
+    }
+
+    #[cfg(target_os = "macos")]
+    fn completed_alternative() -> (super::PromiseAlternative, std::path::PathBuf) {
+        let source = std::sync::Arc::new(crate::composer::private_folder(&crate::composer::paste_base()).unwrap());
+        let original = source.path().join("photo.png");
+        std::fs::write(&original, b"promised picture").unwrap();
+        let path = crate::composer::stage_private(&crate::composer::paste_base(), "promise.png", b"").unwrap();
+        let (id, pending) = super::register_promise(path.clone(), source);
+        assert!(super::retain_promised(id, original, crate::composer::keep_picture));
+        let kept = super::PROMISES.lock().unwrap()[&id].prepared.paths[0].clone();
+        super::promised(id as *mut _, 4, std::ptr::null(), std::ptr::null(), 0);
+        (super::PromiseAlternative::new(path, pending), kept)
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_readable_file_releases_the_unused_promises_copies() {
+        let (alternative, promised) = completed_alternative();
+        let placeholder = alternative.path.clone();
+        let canonical = crate::composer::stage_private(&crate::composer::paste_base(), "canonical.png", b"canonical bytes").unwrap();
+        let path = super::file_later(move || Ok(canonical)).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().alternative = Some(alternative);
+        let pictures = futures::executor::block_on(wait_ready(&path)).unwrap();
+        assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"canonical bytes");
+        assert!(!promised.exists() && !placeholder.exists());
+        drop(pictures);
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_failed_file_can_use_its_owned_promise() {
+        let (alternative, promised) = completed_alternative();
+        let placeholder = alternative.path.clone();
+        let path = super::file_later(|| Err("file open failed".into())).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().alternative = Some(alternative);
+        let pictures = futures::executor::block_on(super::ready(&path, futures::future::ready(()))).unwrap();
+        assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"promised picture");
+        assert!(!placeholder.exists());
+        drop(pictures);
+        assert!(!promised.exists());
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cancelling_a_file_open_also_cancels_its_promise_alternative() {
+        use futures::FutureExt;
+        let source = std::sync::Arc::new(crate::composer::private_folder(&crate::composer::paste_base()).unwrap());
+        let source_path = source.path().to_owned();
+        let promised = crate::composer::stage_private(&crate::composer::paste_base(), "promise.png", b"").unwrap();
+        let (id, pending) = super::register_promise(promised.clone(), source);
+        let (release, wait) = std::sync::mpsc::channel();
+        let path = super::file_later(move || { wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap(); Err("file unavailable".into()) }).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().alternative = Some(super::PromiseAlternative::new(promised.clone(), pending));
+        let mut ready = Box::pin(wait_ready(&path));
+        assert!(ready.as_mut().now_or_never().is_none());
+        drop(ready);
+        assert!(!super::PROMISES.lock().unwrap().contains_key(&id));
+        assert!(!promised.exists() && !source_path.exists());
+        release.send(()).unwrap();
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_waiting_open_can_use_its_captured_bytes_after_grace() {
+        let (release, wait) = std::sync::mpsc::channel();
+        let path = super::file_later(move || { wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap(); Err("file unavailable".into()) }).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().image = Some(super::ImageFallback { extension: "png".into(), bytes: std::sync::Arc::from(&b"pasted bytes"[..]) });
+        let pictures = futures::executor::block_on(super::ready(&path, futures::future::ready(()))).unwrap();
+        assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"pasted bytes");
+        release.send(()).unwrap();
+        drop(pictures);
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_open_file_keeps_its_original_bytes_even_if_the_copy_is_slow() {
+        use futures::FutureExt;
+        let (opened, opened_rx) = futures::channel::oneshot::channel();
+        let (started, started_rx) = std::sync::mpsc::channel();
+        let (release, wait) = std::sync::mpsc::channel();
+        let path = super::file_later(move || {
+            opened.send(()).unwrap();
+            started.send(()).unwrap();
+            wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            crate::composer::stage_private(&crate::composer::paste_base(), "original.png", b"full resolution").ok_or_else(|| "couldn't copy".into())
+        }).unwrap();
+        started_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        {
+            let mut pending = super::PENDING.lock().unwrap();
+            let pending = pending.get_mut(&path).unwrap();
+            pending.opened = Some(opened_rx);
+            pending.image = Some(super::ImageFallback { extension: "png".into(), bytes: std::sync::Arc::from(&b"smaller preview"[..]) });
+        }
+        let mut ready = Box::pin(super::ready(&path, futures::future::ready(())));
+        assert!(ready.as_mut().now_or_never().is_none(), "the preview replaced a file whose open had succeeded");
+        release.send(()).unwrap();
+        let pictures = futures::executor::block_on(ready).unwrap();
+        assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"full resolution");
+        drop(pictures);
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_failed_copy_can_still_use_captured_bytes_after_open_succeeds() {
+        let (opened, opened_rx) = futures::channel::oneshot::channel();
+        let path = super::file_later(move || { let _ = opened.send(()); Err("copy failed".into()) }).unwrap();
+        {
+            let mut pending = super::PENDING.lock().unwrap();
+            let pending = pending.get_mut(&path).unwrap();
+            pending.opened = Some(opened_rx);
+            pending.image = Some(super::ImageFallback { extension: "png".into(), bytes: std::sync::Arc::from(&b"captured bytes"[..]) });
+        }
+        let pictures = futures::executor::block_on(wait_ready(&path)).unwrap();
+        assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"captured bytes");
+        drop(pictures);
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_waiting_open_can_use_its_ready_promise_after_grace() {
+        let (alternative, _) = completed_alternative();
+        let (release, wait) = std::sync::mpsc::channel();
+        let path = super::file_later(move || { wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap(); Err("file unavailable".into()) }).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().alternative = Some(alternative);
+        let pictures = futures::executor::block_on(super::ready(&path, futures::future::ready(()))).unwrap();
+        assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"promised picture");
+        release.send(()).unwrap();
+        drop(pictures);
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn cancelling_a_waiting_open_releases_its_captured_image_bytes() {
+        use futures::FutureExt;
+        let bytes: std::sync::Arc<[u8]> = std::sync::Arc::from(&b"owned image bytes"[..]);
+        let observed = std::sync::Arc::downgrade(&bytes);
+        let (release, wait) = std::sync::mpsc::channel();
+        let path = super::file_later(move || { wait.recv_timeout(std::time::Duration::from_secs(5)).unwrap(); Err("file unavailable".into()) }).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().image = Some(super::ImageFallback { extension: "png".into(), bytes });
+        let mut ready = Box::pin(wait_ready(&path));
+        assert!(ready.as_mut().now_or_never().is_none());
+        drop(ready);
+        assert!(observed.upgrade().is_none(), "a blocked open kept its image bytes after cancellation");
+        release.send(()).unwrap();
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn two_failed_sources_keep_the_files_named_error() {
+        let source = std::sync::Arc::new(crate::composer::private_folder(&crate::composer::paste_base()).unwrap());
+        let promised = crate::composer::stage_private(&crate::composer::paste_base(), "promise.png", b"").unwrap();
+        let (id, pending) = super::register_promise(promised.clone(), source);
+        super::promised(id as *mut _, 4, std::ptr::null(), std::ptr::null(), 0);
+        let path = super::file_later(|| Err("The file went away before it could be added: photo.png".into())).unwrap();
+        super::PENDING.lock().unwrap().get_mut(&path).unwrap().alternative = Some(super::PromiseAlternative::new(promised, pending));
+        let error = futures::executor::block_on(super::ready(&path, futures::future::ready(()))).err().unwrap();
+        assert_eq!(error, "The file went away before it could be added: photo.png");
+        crate::composer::unstage(&path);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn an_unavailable_files_error_keeps_its_name() {
+        let path = std::path::Path::new("/missing/photo.png");
+        assert_eq!(super::file_read_error(path, std::io::Error::from_raw_os_error(2)), "The file went away before it could be added: photo.png");
+        for code in [1, 13] {
+            assert_eq!(super::file_read_error(path, std::io::Error::from_raw_os_error(code)), "Threadbear isn't allowed to read photo.png");
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_waiting_file_reader_keeps_its_fallback_off_the_caller_thread() {
+        let folder = tempfile::tempdir().unwrap();
+        let original = folder.path().join("unavailable.png");
+        let (started, started_rx) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let path = super::file_later(move || {
+            started.send(std::thread::current().id()).unwrap();
+            release_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            super::prepare_file(&original, Some(super::ImageFallback { extension: "png".into(), bytes: std::sync::Arc::from(&b"owned pasteboard bytes"[..]) }), None)
+        }).unwrap();
+        assert_ne!(started_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap(), std::thread::current().id());
+        use futures::FutureExt;
+        let mut ready = Box::pin(wait_ready(&path));
+        assert!(ready.as_mut().now_or_never().is_none());
+        release.send(()).unwrap();
+        let pictures = futures::executor::block_on(ready).unwrap();
+        let kept = pictures.paths[0].clone();
+        assert_eq!(std::fs::read(&kept).unwrap(), b"owned pasteboard bytes");
+        drop(pictures);
+        assert!(!kept.exists());
+        crate::composer::unstage(&path);
+    }
+
     #[cfg(target_os = "macos")]
     #[test]
     fn an_open_file_copy_preserves_its_error() {
         let file = tempfile::tempfile().unwrap();
-        let path = super::snapshot_later(file, std::path::PathBuf::new()).unwrap();
-        let error = futures::executor::block_on(super::ready(&path)).err().unwrap();
+        let path = super::file_later(move || crate::composer::snapshot_picture(&file, std::path::Path::new("")).map_err(|e| e.to_string())).unwrap();
+        let error = futures::executor::block_on(wait_ready(&path)).err().unwrap();
         assert!(error.contains("filename"), "{error}");
         crate::composer::unstage(&path);
     }
@@ -302,8 +682,8 @@ mod tests {
         std::fs::write(&original, b"the original image bytes").unwrap();
         let file = threadbear_core::open_policy::local_open(&original).unwrap();
         std::fs::remove_file(&original).unwrap();
-        let path = super::snapshot_later(file, original).unwrap();
-        let pictures = futures::executor::block_on(super::ready(&path)).unwrap();
+        let path = super::file_later(move || crate::composer::snapshot_picture(&file, &original).map_err(|e| e.to_string())).unwrap();
+        let pictures = futures::executor::block_on(wait_ready(&path)).unwrap();
         assert_eq!(std::fs::read(&pictures.paths[0]).unwrap(), b"the original image bytes");
         drop(pictures);
         crate::composer::unstage(&path);
@@ -365,7 +745,7 @@ mod tests {
             false
         });
         let path = super::load_url(url).unwrap();
-        let result = futures::executor::block_on(super::ready(&path));
+        let result = futures::executor::block_on(wait_ready(&path));
         let fetched = server.join().unwrap();
         drop(result);
         crate::composer::unstage(&path);
@@ -389,7 +769,7 @@ mod tests {
         super::promised(id as *mut _, 6, name.as_ptr(), std::ptr::null(), 0);
         let snapshots = super::PROMISES.lock().unwrap()[&id].prepared.paths.clone();
         assert_eq!(snapshots.len(), 1);
-        let mut ready = Box::pin(super::ready(&path));
+        let mut ready = Box::pin(wait_ready(&path));
         assert!(ready.as_mut().now_or_never().is_none());
         drop(ready); // the composer's timer wins, or its window closes
         let removed = !folder.exists() && snapshots.iter().all(|p| !p.exists());

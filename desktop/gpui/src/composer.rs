@@ -491,7 +491,10 @@ impl Composer {
 
     /// Whether there's anything to send (ComposerView.canSend).
     fn can_send(&self, cx: &App) -> bool {
-        if self.loading_pictures(cx) { return false; }
+        !self.loading_pictures(cx) && self.has_send_content(cx)
+    }
+
+    fn has_send_content(&self, cx: &App) -> bool {
         let (text, images) = self.draft(cx);
         composer::can_send(&text, images.len()) || !self.card.picks.is_empty() || !self.card.next_picks.is_empty() || !self.card.explain.is_empty()
     }
@@ -916,7 +919,8 @@ impl Composer {
         let client = self.client.clone();
         cx.spawn_in(window, async move |this, cx| {
             let mut imported = path.clone();
-            let ready = crate::composer_media::ready(&path);
+            let grace = cx.background_executor().timer(std::time::Duration::from_millis(500));
+            let ready = crate::composer_media::ready(&path, grace);
             let timeout = cx.background_executor().timer(std::time::Duration::from_secs(60));
             futures::pin_mut!(ready, timeout);
             let prepared = match futures::future::select(ready, timeout).await {
@@ -1289,7 +1293,7 @@ impl Composer {
         let can_send = self.can_send(cx);
         let side = px(style::size::SEND_BUTTON);
         let circle = || div().flex().items_center().justify_center().size(side).rounded_full();
-        if self.loading_pictures(cx) {
+        if self.loading_pictures(cx) && (!running || self.has_send_content(cx)) {
             return circle().id("composer-loading-picture").test_support().aria_label("Loading picture")
                 .bg(style::send_faint_fill(cx)).child(Spinner::new().color(style::quiet_text(cx)).with_size(px(14.)))
                 .tip("Loading picture").into_any_element();

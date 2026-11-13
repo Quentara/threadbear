@@ -77,6 +77,32 @@ Then('the picture-loading button does not stop the turn', async function (this: 
   }
 });
 
+Then('I can click Stop while the only picture is loading', async function (this: ThreadbearWorld) {
+  assert.equal((await this.app.dump()).composer.images, 0);
+  const point = await this.app.do({ cmd: 'label-point', label: 'Stop' });
+  const [, x, y] = point.trim().split(/\s+/);
+  assert.ok(x && y, point);
+  if (process.env.TB_MEDIA_STOP_PROOF) await this.app.shot(process.env.TB_MEDIA_STOP_PROOF);
+  await this.app.do({ cmd: 'click-at', x: Number(x), y: Number(y) });
+});
+
+When('I paste a picture whose file open is delayed', async function (this: ThreadbearWorld) {
+  const start = Date.now();
+  await this.app.do({ cmd: 'picture-input', kind: 'slow-file', path: sample });
+  await this.app.do({ cmd: 'type', text: 'I can keep typing' });
+  const dump = await this.app.dump();
+  assert.ok(Date.now() - start < 5000, 'file open blocked the composer until it finished');
+  assert.equal(dump.composer.images, 0, 'the delayed open finished before the responsiveness check');
+  assert.match(dump.composer.text, /I can keep typing/);
+});
+
+When('I paste image bytes beside a file whose open is delayed', async function (this: ThreadbearWorld) {
+  const start = Date.now();
+  await this.app.do({ cmd: 'picture-input', kind: 'slow-file-bytes', path: sample });
+  await this.until('the captured fallback picture', (d) => d.composer.images === 1);
+  assert.ok(Date.now() - start < 5000, 'the captured bytes waited for the eight-second file open');
+});
+
 When('I paste image bytes beside a protected file containing different bytes', async function (this: ThreadbearWorld) {
   const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'threadbear-paste-alternates-'));
   const picture = path.join(folder, 'bytes.png');
@@ -122,6 +148,9 @@ When('I paste a withdrawn promise beside a normal picture', async function (this
 });
 When('I paste a working picture promise beside an unavailable file URL', async function (this: ThreadbearWorld) {
   await this.app.do({ cmd: 'picture-input', kind: 'paired-file-promise', path: sample });
+});
+When('I paste a readable image beside a withdrawn promise', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'picture-input', kind: 'paired-withdrawn-promise', path: sample });
 });
 
 When('I paste a promised photo beside a normal picture', async function (this: ThreadbearWorld) {
