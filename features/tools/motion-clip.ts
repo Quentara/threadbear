@@ -8,8 +8,9 @@
 //     (cd desktop && cargo build --release -p threadbear-gpui --features automation | tail -1) &&
 //     TB_GPUI_PROFILE=release node features/tools/motion-clip.ts <out folder> <scene> [--busy <seconds>]'
 //
-// Scenes: archive, hibernate (archive-flight.feature), and the panel ones
-// (panel-motion.feature): terminal, terminal-close, highlights-close. `--busy` blocks each app's
+// Scenes: archive, hibernate (archive-flight.feature), the panel ones
+// (panel-motion.feature): terminal, terminal-close, highlights-close, and
+// threads opening (opening.feature): switch, arrows, new-thread. `--busy` blocks each app's
 // main thread for that long straight after the click (the automation's
 // `stall`), as opening a heavy next thread would. Writes <scene>.mp4 at full
 // speed and <scene>-slow.mp4 at a quarter of it, both apps in dark mode.
@@ -58,7 +59,7 @@ async function until<T>(app: Driver, what: string, test: (d: Dump) => T | undefi
 }
 
 /** What each scene does before recording, and the click it records. */
-const scenes: Record<string, { setup: (app: Driver) => Promise<void>; act: (app: Driver) => Promise<void> }> = {
+const scenes: Record<string, { setup: (app: Driver) => Promise<void>; act: (app: Driver) => Promise<void>; seconds?: number }> = {
   archive: {
     setup: async (app) => {
       const t = await until(app, 'Morning brief', (d) => titled(d, 'Morning brief'));
@@ -104,6 +105,43 @@ const scenes: Record<string, { setup: (app: Driver) => Promise<void>; act: (app:
       await app.do({ cmd: 'snooze', id: d.selection!.id, seconds: 3600 });
     },
   },
+  // Threads coming in as they open (opening.feature, open_motion.rs; the
+  // Swift app swaps them on the spot): clicking two rows, then the arrows.
+  switch: {
+    setup: async (app) => scenes.archive.setup(app),
+    act: async (app) => {
+      const d = await app.dump();
+      const rows = d.sidebar.sections.filter((s) => !s.collapsed).flatMap((s) => s.threads).filter((t) => t.id !== d.selection?.id).slice(0, 2);
+      for (const row of rows) {
+        await app.do({ cmd: 'click', tipPrefix: `${row.title}\n` });
+        await sleep(700);
+      }
+    },
+  },
+  arrows: {
+    setup: async (app) => {
+      const t = await until(app, 'Morning brief', (d) => titled(d, 'Morning brief'));
+      await app.do({ cmd: 'click', tipPrefix: 'Morning brief\n' });
+      await until(app, 'its transcript', (d) => d.transcript.threadId === t.id && d.transcript.state === 'loaded');
+    },
+    act: async (app) => {
+      for (const dir of ['down', 'down', 'up']) {
+        await app.do({ cmd: 'arrow', dir });
+        await sleep(600);
+      }
+    },
+  },
+  // ⌘N, then a message from the new-thread page: the page fades up, and the
+  // box drops to the bottom as the thread opens.
+  'new-thread': {
+    seconds: 4,
+    setup: async (app) => scenes.archive.setup(app),
+    act: async (app) => {
+      await app.do({ cmd: 'new' });
+      await sleep(700);
+      await app.do({ cmd: 'send', text: 'Check the landing copy' });
+    },
+  },
 };
 
 async function record(app: Driver, file: string): Promise<void> {
@@ -120,7 +158,7 @@ async function record(app: Driver, file: string): Promise<void> {
     const [x, y, w, h] = windowFrame(pidOf(app));
     if (!w) throw new Error(`${app.name}'s window isn't on screen`);
     fs.rmSync(file, { force: true });
-    const rec = spawn('screencapture', ['-v', '-V', '3', '-R', `${x},${y},${w},${h}`, file], { stdio: 'ignore' });
+    const rec = spawn('screencapture', ['-v', '-V', String(s.seconds ?? 3), '-R', `${x},${y},${w},${h}`, file], { stdio: 'ignore' });
     const done = new Promise<void>((resolve) => rec.once('exit', () => resolve()));
     await sleep(900);
     await s.act(app);

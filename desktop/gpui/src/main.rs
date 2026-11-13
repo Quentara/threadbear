@@ -61,6 +61,7 @@ mod new_thread;
 mod notify;
 mod open_anything;
 mod open_gate;
+mod open_motion;
 mod pane_cache;
 mod patch_icons;
 mod patches;

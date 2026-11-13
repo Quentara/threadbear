@@ -971,6 +971,8 @@ impl Threadbear {
         }
         // Brought into view, as the arrow keys do (`revealSelectionRequests`).
         self.reveal_row(&next, cx);
+        // Down the Inbox: in from below, as the down arrow (open_motion.rs).
+        self.opening.next = Some(crate::open_motion::Opening::Step(1));
         self.open(next, window, cx);
     }
 
@@ -1481,6 +1483,11 @@ impl Threadbear {
     pub(crate) fn render_main_panel(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let page = self.home_page();
         let banners = self.render_banners(window, cx);
+        // The new-thread page comes up afresh each time it's shown
+        // (open_motion.rs): anything else in its place resets its clock.
+        if self.pane.is_some() || page.is_some() || self.open_project().is_some() || self.open_elsewhere(cx).is_some() {
+            self.opening.page_shown = None;
+        }
         let main: AnyElement = match (&self.pane, page) {
             // A project's page takes the thread's place until a thread is
             // picked again (project_page.rs).

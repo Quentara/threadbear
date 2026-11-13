@@ -197,6 +197,11 @@ impl Threadbear {
         }
         let id = thread.id.clone();
         self.threads.insert(id.clone(), thread);
+        // The box drops from where it was on the page to its place under
+        // the new thread (open_motion.rs).
+        if let Some(box_top) = self.opening.box_top.get() {
+            self.opening.next = Some(crate::open_motion::Opening::FromNewPage { box_top });
+        }
         self.open(id, window, cx);
         self.apply_default_runner(cx);
         cx.notify();
@@ -404,14 +409,19 @@ impl Threadbear {
         // The composer's place: the box's top at 40% of the pane, less half
         // an empty box (ComposerPlacementMath.composerTop). The heading sits
         // 18 pt above the box and the note 2 pt below the box's frame.
+        // Coming up: a quick fade from a few points below (open_motion.rs).
+        // The box takes typing from the first frame.
+        let (opacity, rise) = self.opening.page(cx.reduce_motion(), window).unwrap_or((1., 0.));
+        let box_marker = self.opening.box_marker();
         div().relative().size_full().overflow_hidden().child(
             v_flex()
                 .absolute()
                 .left_0()
                 .right_0()
                 .top(relative(0.4))
-                .mt(px(-56.))
-                .child(div().relative().w_full().child(div().absolute().left_0().right_0().bottom_full().pb(px(18.)).child(heading)).child(composer))
+                .mt(px(-56. + rise))
+                .opacity(opacity)
+                .child(div().relative().w_full().child(div().absolute().left_0().right_0().bottom_full().pb(px(18.)).child(heading)).child(composer).child(box_marker))
                 .child(notes),
         )
         .into_any_element()

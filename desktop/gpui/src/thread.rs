@@ -213,6 +213,8 @@ enum SendStep {
 
 pub struct ThreadPane {
     client: Arc<Client>,
+    /// Its transcript and box on their way in as it opens (open_motion.rs).
+    pub(crate) entering: crate::open_motion::Entering,
     /// The app, from the composer as the pane's made: never read from the
     /// composer later, as a send comes from inside the composer's own update.
     pub(crate) app: WeakEntity<crate::app::Threadbear>,
@@ -298,6 +300,7 @@ impl ThreadPane {
             timing: LoadTiming::default(),
             stale: false,
             kept_zoom: None,
+            entering: Default::default(),
             _subs: vec![scrolled],
         };
         // Messages still on their way to it from before it was last open.
@@ -342,6 +345,7 @@ impl ThreadPane {
             timing: LoadTiming::default(),
             stale: false,
             kept_zoom: None,
+            entering: Default::default(),
             _subs: vec![],
         };
         pane._subs.extend(crate::rich_boxes::watch(cx));
@@ -1624,6 +1628,8 @@ impl Render for ThreadPane {
             });
         }
         let loading = !self.loaded && self.error.is_none() && self.load_failed.is_none();
+        // Coming in as it opens, once it has its rows (open_motion.rs).
+        let entering = self.entering.transcript(self.loaded, window);
         let theme = cx.theme();
         let (muted, danger, bg) = (theme.muted_foreground, theme.danger, theme.background);
         self.rows.list_width = f32::from(self.scroller.read(cx).viewport().size.width);
@@ -1724,11 +1730,10 @@ impl Render for ThreadPane {
                 Some(message) if !self.loaded && self.subagent_missing => s.child(div().flex_1().flex().items_center().justify_center().text_size(px(13.)).text_color(muted).child(message)),
                 Some(message) if !self.loaded => s.child(self.render_load_failure(message, cx)),
                 _ if self.loaded && self.subagent_id.is_some() && self.feed.model().rows().is_empty() => s.child(div().flex_1().flex().items_center().justify_center().text_size(px(13.)).text_color(muted).child("Nothing yet.")),
-                _ => s.child(
+                _ => s.child(crate::open_motion::transcript_frame(
                     div()
                         .relative()
-                        .flex_1()
-                        .min_h_0()
+                        .size_full()
                         .child(transcript_list(&self.scroller, bg, cx.processor(|this, ix: usize, window, cx| this.render_item(ix, window, cx)), cx))
                         // A small spinner in the middle of where the transcript
                         // will be, and no words, from the moment it's opened
@@ -1737,11 +1742,13 @@ impl Render for ThreadPane {
                         .when(loading, |s| s.child(div().absolute().inset_0().flex().items_center().justify_center().child(self.spinner(16., cx))))
                         // Where an archive's page starts from (archive_flight.rs); a sub-agent's never flies.
                         .when(self.subagent_id.is_none(), |s| s.child(crate::archive_flight::transcript_mark(cx.entity_id()))),
-                ),
+                    entering,
+                )),
             })
             // A sub-agent can't be written to: it takes its brief from the
             // agent that started it.
-            .when(self.subagent_id.is_none(), |s| s.child(self.composer.clone()))
+            // Dropping from the new-thread page, when it was started there.
+            .when(self.subagent_id.is_none(), |s| s.child(self.entering.wrap_box(self.composer.clone().into_any_element())))
             .children(drop_layer)
             // The card of a link the pointer's resting on (reply_links.rs), and
             // the bar over selected words (selection_bar.rs).

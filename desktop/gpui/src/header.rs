@@ -150,7 +150,8 @@ impl Threadbear {
                     this.start_renaming(id.clone(), window, cx);
                 }
             }))
-            .child(title)
+            // Fades over to a new name, as the agent names a new thread (open_motion.rs).
+            .child(crate::open_motion::title(&format!("header-{}", thread.id), title, cx.reduce_motion()))
             .into_any_element()
         };
         let worktree = thread.worktree.as_ref().and_then(|w| w["branch"].as_str()).map(String::from);

@@ -272,6 +272,8 @@ pub struct Threadbear {
     pub(crate) swipe_nav: crate::swipe_nav::SwipeNav,
     /// Pages on their way to the Archived and Hibernating headings (archive_flight.rs).
     pub(crate) flight: crate::archive_flight::Flights,
+    /// How the next thread opens, and the new-thread page coming up (open_motion.rs).
+    pub(crate) opening: crate::open_motion::Openings,
     _events: Task<()>,
     _subs: Vec<Subscription>,
 }
@@ -521,6 +523,7 @@ impl Threadbear {
             thread_panels: Default::default(),
             swipe_nav: Default::default(),
             flight: Default::default(),
+            opening: Default::default(),
             _events: events,
             _subs: vec![appearance, searching, frame, menus, looking, quitting, side_changed, main_context],
         };
@@ -1100,6 +1103,10 @@ impl Threadbear {
     /// `open`, with the pane of a thread brought back from a panel of its own
     /// (thread_panels.rs), which goes on reading it rather than reading it again.
     pub(crate) fn open_with(&mut self, id: String, moved: Option<Entity<ThreadPane>>, window: &mut Window, cx: &mut Context<Self>) {
+        // How it comes in (open_motion.rs): taken now, so an open that goes
+        // nowhere doesn't leave it for the next one. One brought back from a
+        // panel of its own was on screen a moment ago.
+        let opening = if moved.is_some() { crate::open_motion::Opening::Still } else { self.opening.take() };
         // A thread (its own row, say) in place of one of its sub-agents.
         self.close_subagent(cx);
         // A thread open in a panel of its own is shown there.
@@ -1146,6 +1153,9 @@ impl Threadbear {
             }
             (None, None) => cx.new(|cx| ThreadPane::new(client, summary, composer.clone(), cx)),
         };
+        let reduce = cx.reduce_motion();
+        pane.update(cx, |p, _| p.entering = crate::open_motion::Entering::new(opening, reduce));
+        self.opening.last = self.selected.clone().map(|id| (id, opening));
         composer.update(cx, |c, cx| {
             c.attach(pane.downgrade());
             c.focus(window, cx);
@@ -1453,6 +1463,12 @@ impl Threadbear {
         dump["flight"] = self.flight.dump();
         // Whether motion is reduced (automation.rs): no flights or glides then.
         dump["reduceMotion"] = json!(cx.reduce_motion());
+        // How the last thread opened, and from the new-thread page, how far
+        // its box dropped (open_motion.rs).
+        dump["opening"] = self.opening.last.as_ref().map_or(Value::Null, |(id, how)| {
+            let dropped = self.pane.as_ref().filter(|_| self.selected.as_deref() == Some(id.as_str())).and_then(|p| p.read(cx).entering.box_drop());
+            json!({ "thread": id, "how": how.name(), "boxDrop": dropped })
+        });
         // ⌘K's box, while it's up (open_anything.rs).
         dump["anything"] = self.open_anything_dump(cx);
         // The last time the panels moved (a panel opened or closed): where
@@ -1470,7 +1486,7 @@ impl Threadbear {
     /// (automation's `motion`).
     #[cfg(feature = "automation")]
     pub(crate) fn moving(&self, cx: &App) -> bool {
-        self.dock_view.read(cx).last_motion().is_some_and(|(_, _, moving)| moving) || self.flight.in_flight()
+        self.dock_view.read(cx).last_motion().is_some_and(|(_, _, moving)| moving) || self.flight.in_flight() || crate::open_motion::moving()
     }
 
     /// The composer's part of the dump (AppDump.composer).

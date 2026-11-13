@@ -126,6 +126,10 @@ export type Dump = {
   flight?: Flight | null;
   /** Whether motion is reduced, so flights and glides don't play (GPUI only). */
   reduceMotion?: boolean;
+  /** How the last thread opened ("click", "down", "up", "newPage" or
+   * "still", under the archive flight), and from the new-thread page, how
+   * far its box dropped, negative for down (GPUI only: open_motion.rs). */
+  opening?: { thread: string; how: string; boxDrop: number | null } | null;
   /** The last time the panels moved with their glide: where each panel was
    * drawn and where it is (or, in the GPUI app, is going), by panel
    * ("thread", "terminal"), and whether it's still moving (GPUI only). */

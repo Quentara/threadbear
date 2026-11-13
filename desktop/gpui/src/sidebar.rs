@@ -125,6 +125,8 @@ impl Threadbear {
             Some(i) => order.get((i as i32 + step).clamp(0, order.len() as i32 - 1) as usize),
         };
         let Some(next) = next.cloned().filter(|n| self.selected.as_ref() != Some(n)) else { return };
+        // It comes in from the way the list was walked (open_motion.rs).
+        self.opening.next = Some(crate::open_motion::Opening::Step(step.signum()));
         self.open(next.clone(), window, cx);
         // Opening puts the cursor in the thread's box; the arrows keep it here.
         window.focus(&self.sidebar.focus, cx);
@@ -549,7 +551,12 @@ impl Threadbear {
             return;
         }
         match next {
-            Some(next) => self.open(next, window, cx),
+            Some(next) => {
+                // The page flying to its heading fades this one in under it
+                // (archive_flight.rs): no motion of its own on top.
+                self.opening.next = Some(crate::open_motion::Opening::Still);
+                self.open(next, window, cx)
+            }
             None => {
                 self.selected = None;
                 self.leave_pane(cx);
@@ -1483,7 +1490,8 @@ impl Threadbear {
             .line_height(px(17.))
             .text_color(fg)
             .when(look.emphasised, |s| s.font_semibold())
-            .child(title);
+            // Fades over to a new name, as the agent names a new thread (open_motion.rs).
+            .child(crate::open_motion::title(&format!("row-{}-{section}", t.id), title.into(), cx.reduce_motion()));
 
         let second_line = h_flex()
             .items_baseline()
