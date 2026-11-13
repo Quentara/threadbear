@@ -317,7 +317,7 @@ export type ThreadSummary = {
 // remote's default branch. scheduled: a schedule that will message it
 // again (at: when), which doesn't stop an archive. Clients show any other
 // kind as its text.
-export type LooseEndKind = 'unlanded' | 'uncommitted' | 'unpushed' | 'unmerged' | 'thread' | 'open' | 'scheduled';
+export type LooseEndKind = 'unlanded' | 'uncommitted' | 'unpushed' | 'unmerged' | 'thread' | 'running' | 'scheduled';
 export type LooseEnd = { kind: LooseEndKind; text: string; threadId?: string; at?: string };
 
 export type ShareAccess = 'off' | 'link';

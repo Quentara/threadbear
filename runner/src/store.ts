@@ -251,8 +251,9 @@ export type ThreadRecord = {
   forceUnread?: boolean; // set when a snooze ends
   // What the last completed turn said it needs from Mike, with the seq of
   // its turn.completed and which of its asks he has ticked.
-  // open: what the agent said is still open (experiment looseEnds).
-  needs?: { seq: number; needs: NeedsWho; asks?: Ask[]; ticked?: number[]; open?: string[] };
+  // (A record from 11 to 13 Nov 2026 may also hold `open`, the agent's own
+  // lines for the done card: nothing reads it now.)
+  needs?: { seq: number; needs: NeedsWho; asks?: Ask[]; ticked?: number[] };
   // Set when the folder or account changes, or the record had to be
   // rebuilt; the next turn starts a new native session with a note.
   // lost: the session to resume couldn't be found (never saved; only set

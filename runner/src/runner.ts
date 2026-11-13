@@ -2193,6 +2193,8 @@ export class Runner {
         // pending restart waits on background work and re-checks on
         // thread.updated.
         this.markDirty(st);
+        // A done card that lists a job as still running (loose-ends.ts).
+        this.recheckLooseEnds(st);
         // Background work keeps the CLI live; once it's done the idle
         // countdown starts again.
         if (o.tasks.length) {
@@ -2401,7 +2403,7 @@ export class Runner {
     // Any completed turn replaces the last one's card; one that said
     // neither leaves no card, and counts as before.
     if (outcome === 'completed') {
-      if (said) rec.needs = { seq: ev.seq, needs: said.needs, ...(said.asks ? { asks: said.asks } : {}), ...(said.open?.length ? { open: said.open } : {}) };
+      if (said) rec.needs = { seq: ev.seq, needs: said.needs, ...(said.asks ? { asks: said.asks } : {}) };
       else delete rec.needs;
       // How it came out replaces why it was started, on the row of a thread
       // Mike didn't start. His own threads have no byline, so it's dropped.

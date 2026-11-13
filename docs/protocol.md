@@ -3373,18 +3373,28 @@ itself), the runner checks:
 - `scheduled`: a schedule that sends to it and will run again (`at`:
   `nextRunAt`), at most three. It doesn't stop an archive: an archived
   thread comes back when one runs;
-- `open`: what the agent said is still open, from end_turn's `open`
-  (up to three short lines; offered only while the experiment is on):
-  what the runner can't see and that waits on someone else or runs
-  elsewhere, like a colleague's decision or a job still running. `[]` is
-  the agent's word that nothing is. The check-in of 11 Nov found Mike's
-  typed "anything else?" asks were mostly about these, in threads without
-  a worktree. Never a step that's Mike's (an ask, with needs "you", which
-  he can answer and which then goes) or one the agent means to do itself
-  later (a `schedule_message` to itself, which runs it; `snooze` only
-  brings the thread back). Until 12 Nov the description's first example
-  was "a reply worth sending", and a "Reply to Gautam" line stayed on a
-  card after Mike had sent it, with nothing to click.
+- `running`: background work its CLI is still running (a shell, a
+  monitor, a sub-agent; the summary's `background`, less any that's
+  finished and waiting to be read), at most three: "Still running: Land
+  the fix on main. Archiving stops it.", as archiving stops the CLI and
+  its jobs with it. Checked again when the list of jobs changes.
+
+Until 13 Nov 2026 there was also `open`: up to three lines the agent wrote
+itself, through an `open` argument on end_turn (added 11 Nov, offered
+while the experiment was on), for what it was waiting on that the runner
+can't see. Mike asked of one ("Geoff putting the portal and lights pieces
+into the next newsletter"): "what can I action on with this?" Of the 14
+on his cards that day none gave him anything to do or click: nine were
+the thread's own job still going (seven "waiting in the landing queue"),
+which `running` now says from what the runner knows, four waited on
+another person, and one listed threads it had started. So the card lists
+only what the runner checked. What waits on someone else goes in the
+agent's reply; if there's more for it to do when they answer, it
+hibernates with end_turn's `snooze`. A session from before still has the
+argument: its lines are dropped, and its accepted end_turn is told so
+("Your "open" lines aren't shown any more: say them in your reply
+instead…"). A record's `needs.open` from those days is left where it is
+and not read.
 
 The result goes on `ThreadSummary.looseEnds`: `{ seq, ends, at }`, where
 `seq` is the done card's `turn.completed`. `ends: []` means it checked and
@@ -3450,8 +3460,7 @@ whether or not `looseEnds` is on, and then:
   from an agent's shell has no "Sent by the agent" line.
 
 Anything else stays in the inbox: a turn that asks, fails or is stopped,
-one with follow-ups, uncommitted or unlanded work, an open PR, an agent's
-`open` line. A message, an archive or a hibernate that arrives while git
+one with follow-ups, uncommitted or unlanded work, an open PR. A message, an archive or a hibernate that arrives while git
 runs wins, and a check that fails leaves the thread where it is. Threads a
 tool, a schedule, the librarian or the runner started are left alone: they
 are often what Mike wants to read, and no thread holds their result. A

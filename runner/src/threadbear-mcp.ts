@@ -25,7 +25,7 @@ import { SAID_MAX } from './wake-when.ts';
 
 export { parseWhen, relativeFuture, relativeTime };
 import { RUNNER_VERSION, expandHome } from './config.ts';
-import { runCommandProblem, ALREADY_ENDED, ARCHIVE_ADDED, MAX_UNTIL, MAX_WAIT_FOR, SNOOZE_ADDED, snoozeFromTool, endTurnDescription, endTurnForm, endTurnMisfit, endTurnTaken, openCardsNote, END_TURN_TOOL, BULLETS_ONLY, ENDED, takenEndTurn, MAX_BYLINE, NARRATION_ONLY, NO_REPLY, needsFromTool, oneReplyAccepted, offersToTakeItBack, oneReplyAlreadyWritten, summaryFromTool, triedFirstNudged, tryFirstNudge, turnReply, type TurnReply } from './needs.ts';
+import { runCommandProblem, droppedOpenLines, OPEN_GONE, ALREADY_ENDED, ARCHIVE_ADDED, MAX_UNTIL, MAX_WAIT_FOR, SNOOZE_ADDED, snoozeFromTool, endTurnDescription, endTurnForm, endTurnMisfit, endTurnTaken, openCardsNote, END_TURN_TOOL, BULLETS_ONLY, ENDED, takenEndTurn, MAX_BYLINE, NARRATION_ONLY, NO_REPLY, needsFromTool, oneReplyAccepted, offersToTakeItBack, oneReplyAlreadyWritten, summaryFromTool, triedFirstNudged, tryFirstNudge, turnReply, type TurnReply } from './needs.ts';
 
 // end_turn's needs, both forms: "done" meant this turn's step until 11 Nov
 // 2026, when thread 0222c475 said nothing with three draft PRs unmerged in
@@ -260,8 +260,6 @@ export function buildThreadbearTools(
     // The runAsks experiment: end_turn's asks[].run is only offered while
     // it's on.
     runAsks?: () => boolean;
-    // The looseEnds experiment: end_turn's open is only offered while it's on.
-    looseEnds?: () => boolean;
   } = {},
 ) {
   const codex = opts.provider === 'codex';
@@ -1461,16 +1459,6 @@ export function buildThreadbearTools(
           .max(3)
           .optional()
           .describe('With needs "nothing": follow-ups worth doing next, in the user\'s voice, which they read later with this thread forgotten: which app or thing, and what they\'d see change or get, in their words, 8 to 15 words. See the description. Only ones that really came up; usually none.'),
-        // The agent's own "anything else?" before Mike has to type it
-        // (experiment looseEnds; docs/protocol.md, "Loose ends"): the
-        // runner sees git and threads, not a decision waiting on someone.
-        // Not Mike's own steps, nor the agent's for later: a "Reply to
-        // Gautam" line sat on a card he couldn't click or clear, after
-        // he'd sent it, and "I'll rebuild at 5:27" came back to his inbox
-        // unrun (12 Nov 2026).
-        ...(opts.looseEnds?.() === true
-          ? { open: z.array(z.string()).max(3).optional().describe('With needs "nothing": what\'s still open that git and Threadbear can\'t see and that waits on someone else or runs elsewhere (a colleague\'s decision, a job still running), a short line each; [] when nothing is. Never a step for the user (that\'s an ask) or one you\'ll do yourself later (book it with schedule_message). The done card lists them.') }
-          : {}),
         byline: z
           .string()
           .optional()
@@ -1683,7 +1671,14 @@ export function buildThreadbearTools(
       const form = endTurnForm(args);
       return Boolean(form) && (form === 'oneReply') !== oneReply;
     };
-    if (codex) return Object.assign(today, { formFor: (args: unknown) => (otherForm(args) ? other : today) });
+    // A session from before 13 Nov 2026 still sends `open` (needs.ts,
+    // droppedOpenLines). No schema has it now, so it's gone by the time a
+    // handler runs: what the call is told is added here, from the call as
+    // it came, and only to a done turn that was taken.
+    const openGone = (r: Result): Result => (!r.isError && r.content[0]?.text.startsWith(`${ENDED} is done`) ? ok(r.content.map((c) => c.text).join('\n') + OPEN_GONE) : r);
+    const sayingOpenGone = (t: typeof today, args: unknown): typeof today =>
+      droppedOpenLines(args) ? ({ ...t, handler: (async (a: unknown, extra: unknown) => openGone(await (t.handler as (a: unknown, extra: unknown) => Promise<Result>)(a, extra))) as never }) : t;
+    if (codex) return Object.assign(today, { formFor: (args: unknown) => sayingOpenGone(otherForm(args) ? other : today, args) });
     // Unlike Codex, which runs the other form's handler, Claude's goes by
     // how its CLI was started: it ends the turn at an accepted end_turn only
     // with bullets (adapter.ts, terminalMcpTools), so only today's handler
@@ -1700,7 +1695,9 @@ export function buildThreadbearTools(
       inputSchema: z.looseObject(published) as never,
       handler: (async (args: unknown, extra: unknown) => {
         const fits = z.object((otherForm(args) ? shapes.other : shapes.today) as z.ZodRawShape).safeParse(args);
-        return fits.success ? run(fits.data, extra) : fail(endTurnMisfit(z.prettifyError(fits.error), oneReply));
+        if (!fits.success) return fail(endTurnMisfit(z.prettifyError(fits.error), oneReply));
+        const r = await run(fits.data, extra);
+        return droppedOpenLines(args) ? openGone(r) : r;
       }) as never,
     });
   };
@@ -2241,13 +2238,13 @@ export function serverInstructions(selfId: string, o: { one: boolean; bulletRepl
   );
 }
 
-export function threadbearMcpServer(control: ThreadControl, selfId: string, schedules?: ScheduleControl, projects?: ProjectControl, appRestarts?: AppRestartControl, bulletReplies: () => boolean = () => true, pocket?: () => PocketControl | undefined, oneReply: () => boolean = () => false, gateway?: () => string | undefined, gatewayHealth?: () => Promise<ConnectorService[] | undefined>, remote?: () => RemoteControl | undefined, runAsks?: () => boolean, looseEnds?: () => boolean): McpSdkServerConfigWithInstance {
+export function threadbearMcpServer(control: ThreadControl, selfId: string, schedules?: ScheduleControl, projects?: ProjectControl, appRestarts?: AppRestartControl, bulletReplies: () => boolean = () => true, pocket?: () => PocketControl | undefined, oneReply: () => boolean = () => false, gateway?: () => string | undefined, gatewayHealth?: () => Promise<ConnectorService[] | undefined>, remote?: () => RemoteControl | undefined, runAsks?: () => boolean): McpSdkServerConfigWithInstance {
   const one = oneReply();
   const server = createSdkMcpServer({
     name: SERVER_NAME,
     version: RUNNER_VERSION,
     instructions: serverInstructions(selfId, { one, bulletReplies: bulletReplies(), pocket: Boolean(pocket?.()), projects: Boolean(projects) }),
-    tools: buildThreadbearTools(control, selfId, Date.now, schedules, projects, appRestarts, { bulletReplies, pocket, oneReply: () => one, gateway, gatewayHealth, remote, runAsks, looseEnds }),
+    tools: buildThreadbearTools(control, selfId, Date.now, schedules, projects, appRestarts, { bulletReplies, pocket, oneReply: () => one, gateway, gatewayHealth, remote, runAsks }),
   });
   server.tools = [...ALWAYS_ASK_TOOLS].map((name) => ({ name: name.split('__').at(-1)!, permission_policy: 'always_ask' as const }));
   return server;

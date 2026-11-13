@@ -9,8 +9,8 @@ import { execFileSync } from 'node:child_process';
 import { makeHarness, tmpDir } from '../helpers/fakes.ts';
 import { checkSummary } from '../helpers/protocol-check.ts';
 import { PATIENCE_MS } from '../helpers/patience.ts';
-import { agentLooseEnds, anyOpen, childLooseEnds, editedLooseEnds, githubRepo, scheduleLooseEnds, worktreeLooseEnds, type Pr, type PrLookup } from '../../src/loose-ends.ts';
-import { needsFromTool } from '../../src/needs.ts';
+import { anyOpen, childLooseEnds, editedLooseEnds, githubRepo, runningLooseEnds, scheduleLooseEnds, worktreeLooseEnds, type Pr, type PrLookup } from '../../src/loose-ends.ts';
+import { droppedOpenLines, needsFromTool } from '../../src/needs.ts';
 import { buildThreadbearTools } from '../../src/threadbear-mcp.ts';
 import { EXPERIMENTS } from '../../src/experiments.ts';
 import type { Schedule } from '../../src/protocol.ts';
@@ -349,35 +349,74 @@ test('looseEnds: work pushed to a branch that main lacks is open until its PR is
   assert.equal(githubRepo('https://gitlab.com/a/b.git'), undefined);
 });
 
-test("looseEnds: end_turn's open is the agent's word, kept when empty, offered only while on", () => {
-  assert.deepEqual(needsFromTool({ needs: 'nothing', open: [] }), { needs: 'nothing', open: [] });
-  assert.deepEqual(needsFromTool({ needs: 'nothing' }), { needs: 'nothing' });
-  const said = needsFromTool({ needs: 'nothing', open: ['Yuriy asked for this on X: worth a reply', 'Yuriy asked for this on X: worth a reply', '', 'b', 'c', 'd'] });
-  assert.deepEqual(said?.open, ['Yuriy asked for this on X: worth a reply', 'b', 'c']);
-  assert.deepEqual(agentLooseEnds(said?.open).map((e) => e.kind), ['open', 'open', 'open']);
-  assert.equal(anyOpen(agentLooseEnds(['x'])), true);
-  const h = setup();
-  const { thread } = h.runner.create({ text: 'Fix it', accountId: 'claude-main' });
-  const shape = (on: boolean) => (buildThreadbearTools(h.runner, thread.id, Date.now, undefined, undefined, undefined, { oneReply: () => true, looseEnds: () => on }).find((x) => x.name === 'end_turn')!.inputSchema as unknown as { shape: Record<string, unknown> }).shape;
-  assert.ok('open' in shape(true));
-  assert.ok(!('open' in shape(false)));
-});
-
-test('looseEnds: what the agent said is open, and files it changed outside a worktree, go on the card', async () => {
+// 13 Nov 2026 (thread b7dd46fc): of the 14 lines agents had put on Mike's
+// done cards through end_turn's `open`, none gave him anything to do
+// ("Geoff putting the portal and lights pieces into the next newsletter"),
+// so the card lists only what the runner checked. A session from before
+// still sends them: they're taken and dropped.
+test("looseEnds: end_turn's open is gone: an older session's lines aren't kept, offered or put on the card", async () => {
+  assert.deepEqual(needsFromTool({ needs: 'nothing', open: ['Geoff putting the pieces into the next newsletter'] }), { needs: 'nothing' });
+  assert.deepEqual(needsFromTool({ needs: 'nothing', open: [] }), { needs: 'nothing' });
+  assert.equal(droppedOpenLines({ needs: 'nothing', open: ['Waiting on Geoff', ''] }), true);
+  assert.equal(droppedOpenLines({ needs: 'nothing', open: [] }), false);
+  assert.equal(droppedOpenLines({ needs: 'nothing' }), false);
   const h = setup();
   const repo = fs.realpathSync(tmpDir('tb-loose-misc-'));
   sh(repo, 'git init -q -b main && echo one > notes.md && git add -A && git commit -qm init');
   const { thread } = h.runner.create({ text: 'Fix it', accountId: 'claude-main', cwd: repo });
   const id = thread.id;
+  const tools = buildThreadbearTools(h.runner, id, Date.now, undefined, undefined, undefined, { oneReply: () => true, sleep: async () => {} });
+  const endTurn = tools.find((x) => x.name === 'end_turn')!;
+  assert.ok(!('open' in (endTurn.inputSchema as unknown as { shape: Record<string, unknown> }).shape));
   const s = h.adapter.sessions.filter((x) => x.opts.threadId === id).at(-1)!;
   s.init();
   s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'w1', name: 'Edit', kind: 'edit', title: 'Edit notes.md', input: { file_path: path.join(repo, 'notes.md') } } });
   sh(repo, 'echo two > notes.md');
-  finish(h, id, { needs: 'nothing', open: ['Yuriy asked for this on X: worth a reply'] });
+  // The older session's call is told where its lines go instead.
+  const input = { needs: 'nothing', headline: 'Draft is ready', open: ['Geoff putting the pieces into the next newsletter'] };
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: 'e1', name: END_TURN, kind: 'mcp', title: 'end_turn', input } });
+  const said = (await endTurn.handler(input as never, {})) as { content: { text: string }[]; isError?: boolean };
+  assert.ok(!said.isError);
+  assert.match(said.content[0].text, /^Noted: this thread/);
+  assert.match(said.content[0].text, /"open" lines aren't shown any more: say them in your reply/);
+  const plain = (await endTurn.handler({ needs: 'nothing', headline: 'Draft is ready' } as never, {})) as { content: { text: string }[] };
+  assert.doesNotMatch(plain.content[0].text, /"open" lines/);
+  // A Codex thread's tool list is fixed when it starts, so it sends them too.
+  const codexEnd = buildThreadbearTools(h.runner, id, Date.now, undefined, undefined, undefined, { provider: 'codex', oneReply: () => true, sleep: async () => {} }).find((x) => x.name === 'end_turn')! as unknown as { formFor: (args: unknown) => { handler: (a: unknown, e: unknown) => Promise<{ content: { text: string }[] }> } };
+  assert.match((await codexEnd.formFor(input).handler({ needs: 'nothing', headline: 'Draft is ready' }, {})).content[0].text, /"open" lines aren't shown any more/);
+  s.text('m1', 'Done.');
+  s.result('completed');
   await until(() => Boolean(h.runner.get(id).looseEnds), 'the check');
   const ends = h.runner.get(id).looseEnds!.ends;
-  assert.deepEqual(ends.map((e) => e.kind), ['uncommitted', 'open']);
+  assert.deepEqual(ends.map((e) => e.kind), ['uncommitted']);
   assert.match(ends[0].text, /1 file it changed in .* isn't committed/);
-  assert.equal(ends[1].text, 'Yuriy asked for this on X: worth a reply');
   assert.deepEqual(checkSummary(h.runner.get(id)), []);
+});
+
+// What seven of those 14 lines were saying ("waiting in the landing
+// queue"), from what the runner knows: archiving stops the thread's CLI
+// and its background jobs with it, so a job still going is on the card.
+test("looseEnds: a background job still running is on the card, says archiving stops it, and goes when it ends", async () => {
+  assert.deepEqual(runningLooseEnds([{ kind: 'shell', description: 'Land the fix on main' }, { kind: 'shell', description: 'npm test', finished: true }, { kind: 'agent', description: '' }]), [
+    { kind: 'running', text: 'Still running: Land the fix on main. Archiving stops it.' },
+    { kind: 'running', text: 'Still running: a background job. Archiving stops it.' },
+  ]);
+  assert.equal(runningLooseEnds([{ kind: 'shell', description: `${'x'.repeat(200)}.` }])[0].text.length < 160, true);
+  assert.equal(runningLooseEnds(Array.from({ length: 5 }, (_, i) => ({ kind: 'shell' as const, description: `job ${i}` }))).length, 3);
+  assert.equal(anyOpen(runningLooseEnds([{ kind: 'shell', description: 'x' }])), true);
+  const h = setup();
+  const { thread } = h.runner.create({ text: 'Fix it', accountId: 'claude-main', cwd: fs.realpathSync(tmpDir('tb-loose-job-')) });
+  const id = thread.id;
+  const s = h.adapter.sessions.filter((x) => x.opts.threadId === id).at(-1)!;
+  s.init();
+  s.out({ kind: 'tasks', tasks: [{ id: 'b1', type: 'local_bash', kind: 'shell', description: 'Land the fix on main' }] });
+  finish(h, id);
+  await until(() => Boolean(h.runner.get(id).looseEnds), 'the check');
+  assert.deepEqual(h.runner.get(id).looseEnds!.ends, [{ kind: 'running', text: 'Still running: Land the fix on main. Archiving stops it.' }]);
+  assert.deepEqual(checkSummary(h.runner.get(id)), []);
+  // Codex starts no turn to read a finished job's result, so the line has
+  // to go by itself.
+  (h.adapter as { wakesAfterTasks?: boolean }).wakesAfterTasks = false;
+  s.out({ kind: 'tasks', tasks: [] });
+  await until(() => h.runner.get(id).looseEnds?.ends.length === 0, 'the check after the job ended');
 });

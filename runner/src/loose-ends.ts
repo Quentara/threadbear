@@ -10,7 +10,7 @@ import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { LooseEnd, Schedule } from './protocol.ts';
+import type { BackgroundTask, LooseEnd, Schedule } from './protocol.ts';
 import { MAIN, type WorktreeRecord } from './worktrees.ts';
 import { untrustedGit } from './safe-git.ts';
 
@@ -256,11 +256,24 @@ export const githubPr: PrLookup = (repo, branch) => {
   return pr;
 };
 
-// What the agent said is still open (end_turn's open): things only it
-// knows that wait on someone else or run elsewhere, like a colleague's
-// decision. Never Mike's own step, which is an ask.
-export function agentLooseEnds(open: string[] | undefined): LooseEnd[] {
-  return (open ?? []).map((text) => ({ kind: 'open' as const, text }));
+// Background work the thread's CLI is still running (a shell, a monitor,
+// a sub-agent): archiving stops the CLI and that with it, so the line
+// says so. Seven of the 14 lines agents wrote for the card before 13 Nov
+// 2026 were this ("waiting in the landing queue"); the runner knows it
+// without being told. One that's finished and waiting to be read isn't
+// running any more.
+const MAX_RUNNING = 3;
+const MAX_JOB_CHARS = 100;
+
+export function runningLooseEnds(tasks: BackgroundTask[]): LooseEnd[] {
+  return tasks
+    .filter((t) => !t.finished)
+    .slice(0, MAX_RUNNING)
+    .map((t) => {
+      const what = t.description.replace(/\s+/g, ' ').trim().replace(/\.+$/, '');
+      const short = what.length > MAX_JOB_CHARS ? `${what.slice(0, MAX_JOB_CHARS - 1).trimEnd()}…` : what;
+      return { kind: 'running' as const, text: `Still running: ${short || 'a background job'}. Archiving stops it.` };
+    });
 }
 
 // A thread this one started that hasn't finished: still working, or

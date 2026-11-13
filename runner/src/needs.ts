@@ -7,10 +7,7 @@ import type { Ask, AskLink, NeedsWho, PersistedEvent } from './protocol.ts';
 import { hasLineBreak, replaceLinks } from './linear-text.ts';
 import { cutSafely, safeEnd } from './safe-cut.ts';
 
-// open: with needs "nothing", what the agent says is still open that the
-// runner can't see for itself (experiment looseEnds, docs/protocol.md
-// "Loose ends"); [] is its word that nothing is.
-export type Needs = { needs: NeedsWho; asks?: Ask[]; next?: string[]; open?: string[] };
+export type Needs = { needs: NeedsWho; asks?: Ask[]; next?: string[] };
 
 export const END_TURN_TOOL = 'end_turn';
 // As the CLIs name it: under threadbear-mcp.ts's SERVER_NAME, which lives
@@ -29,9 +26,6 @@ const MAX_URL = 2000;
 // Follow-ups on the done card: a few buttons, each a short message.
 const MAX_NEXT = 3;
 const MAX_NEXT_CHARS = 120;
-// What's still open, on the done card: a few short lines, as next.
-const MAX_OPEN = 3;
-const MAX_OPEN_CHARS = 160;
 // Web pages, paths on this Mac, and review:<id>, which opens one of the
 // thread's show_options reviews (Mike, 30 Oct: "Watch A" opened the video
 // but nothing opened the stills to compare). Anything else (javascript:,
@@ -76,7 +70,7 @@ export function needsFromTool(input: unknown): Needs | undefined {
   // Left out, it comes from the asks: agents filling in a summary forgot
   // it 2 times in 9 (29 Oct 2026). Anything else is a call to ignore.
   if (o.needs !== undefined && o.needs !== 'you' && o.needs !== 'nothing') return undefined;
-  if (o.needs === 'nothing') return done(o.next, o.open);
+  if (o.needs === 'nothing') return done(o.next);
   const asks: Ask[] = [];
   for (const a of Array.isArray(o.asks) ? o.asks : []) {
     if (!a || typeof a !== 'object') continue;
@@ -112,22 +106,33 @@ export function needsFromTool(input: unknown): Needs | undefined {
     asks.push(ask);
     if (asks.length === MAX_ASKS) break;
   }
-  if (o.needs === undefined) return asks.length ? { needs: 'you', asks } : done(o.next, o.open);
+  if (o.needs === undefined) return asks.length ? { needs: 'you', asks } : done(o.next);
   return asks.length ? { needs: 'you', asks } : { needs: 'you' };
 }
 
 // A turn that needs nothing, with any follow-ups it suggested: the done
 // card's buttons (docs/protocol.md, "Next steps"). Only here, as a card
 // of asks already has its own buttons.
-function done(v: unknown, left?: unknown): Needs {
-  const lines = (w: unknown, chars: number, max: number) => [...new Set((Array.isArray(w) ? w : []).map((n) => clipText(n, chars)).filter((n): n is string => !!n))].slice(0, max);
-  const next = lines(v, MAX_NEXT_CHARS, MAX_NEXT);
-  const out: Needs = next.length ? { needs: 'nothing', next } : { needs: 'nothing' };
-  // Kept even when empty: [] is the agent saying nothing's left, which a
-  // call without it (an older session's form) can't say.
-  if (Array.isArray(left)) out.open = lines(left, MAX_OPEN_CHARS, MAX_OPEN);
-  return out;
+function done(v: unknown): Needs {
+  const next = [...new Set((Array.isArray(v) ? v : []).map((n) => clipText(n, MAX_NEXT_CHARS)).filter((n): n is string => !!n))].slice(0, MAX_NEXT);
+  return next.length ? { needs: 'nothing', next } : { needs: 'nothing' };
 }
+
+// end_turn took `open` from 11 to 13 Nov 2026: lines the agent wrote for
+// the done card's "Still open" list, for what it was waiting on that the
+// runner can't see. Of the 14 on Mike's cards on 13 Nov none gave him
+// anything to do or click ("Geoff putting the portal and lights pieces
+// into the next newsletter"): nine were the thread's own job still going,
+// which the runner knows (loose-ends.ts, runningLooseEnds), and the rest
+// waited on other people. So the card lists only what the runner checked.
+// A session from before still has the argument: its lines are dropped,
+// and it's told where they go instead.
+export function droppedOpenLines(input: unknown): boolean {
+  const open = input && typeof input === 'object' ? (input as Record<string, unknown>).open : undefined;
+  return Array.isArray(open) && open.some((l) => typeof l === 'string' && l.trim() !== '');
+}
+
+export const OPEN_GONE = ' Your "open" lines aren\'t shown any more: say them in your reply instead. If there\'s more for you to do once someone answers, call end_turn again with snooze.';
 
 // Big enough for any turn's story; past this it's the working again.
 const MAX_SUMMARY = 8;
