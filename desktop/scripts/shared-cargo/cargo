@@ -70,7 +70,9 @@ command -v cargo >/dev/null 2>&1 || { echo "shared-cargo: no cargo on the PATH a
 
 base="${THREADBEAR_SHARED_CARGO_BASE:-}"
 copy="${THREADBEAR_SHARED_CARGO_SRC:-}"
-if [ -z "$base" ] || [ -z "$copy" ] || [ -n "${THREADBEAR_SHARED_CARGO_HELD:-}" ]; then
+# A --perf run (THREADBEAR_PERF_BUILD_KEY, from 9c00a5ed's perf-build.sh)
+# builds in its own stable target, which keeps benchmark builds comparable.
+if [ -z "$base" ] || [ -z "$copy" ] || [ -n "${THREADBEAR_SHARED_CARGO_HELD:-}" ] || [ -n "${THREADBEAR_PERF_BUILD_KEY:-}" ]; then
   exec cargo "$@"
 fi
 # Commands that read the sources but build nothing don't need a slot.

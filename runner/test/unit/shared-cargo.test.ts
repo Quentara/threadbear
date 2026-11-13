@@ -150,8 +150,9 @@ test('outside a remote run, or outside the copy, it is plain cargo', (t) => {
   delete (env as Record<string, string | undefined>).THREADBEAR_SHARED_CARGO_BASE;
   spawnSync('cargo', ['build'], { cwd: path.join(h.base, 'src-aaa', 'desktop'), env, encoding: 'utf8' });
   spawnSync('cargo', ['build'], { cwd: h.root, env: h.envFor('aaa'), encoding: 'utf8' });
+  spawnSync('cargo', ['build'], { cwd: path.join(h.base, 'src-aaa', 'desktop'), env: h.envFor('aaa', { THREADBEAR_PERF_BUILD_KEY: 'aaa' }), encoding: 'utf8' });
   spawnSync('cargo', ['--version'], { cwd: path.join(h.base, 'src-aaa', 'desktop'), env: h.envFor('aaa'), encoding: 'utf8' });
-  assert.equal(h.logLines().length, 3);
+  assert.equal(h.logLines().length, 4);
   assert.ok(h.logLines().every((l) => !/shared-\d/.test(l)), h.logLines().join('\n'));
   assert.equal(fs.existsSync(path.join(h.base, 'shared-1')), false);
 });
