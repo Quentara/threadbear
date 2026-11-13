@@ -1,3 +1,4 @@
+import './clean-env.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -161,6 +162,8 @@ export function testConfig(home: string, extra: Partial<Config> = {}): Config {
   fs.mkdirSync(cwd, { recursive: true });
   return {
     home,
+    userHome: home,
+    pathEnv: '',
     port: 0,
     host: '127.0.0.1',
     logFile: path.join(home, 'runner.log'),

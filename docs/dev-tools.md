@@ -232,6 +232,14 @@ the data dir (`<home>`, normally `~/Library/Application Support/Threadbear`):
   adds the runner's real-model e2e (cheapest model, temp dirs); `--shots`
   runs `app/Tools/screenshots.sh`. One line per step, nonzero exit if
   anything failed, on the Node `runner/scripts/find-node.sh` picks.
+  Unit tests preload `runner/test/helpers/clean-env.ts`: each process gets
+  a temporary HOME and XDG folders, and inherited account/data overrides
+  are cleared. `private-home.ts` rejects reads of real Claude, Codex,
+  Cursor, OpenCode, Token Stats and Threadbear account/data folders,
+  including through symlinks; a caught read error still fails the file.
+  The shared fake-runner helpers also load this setup for single-file
+  `node --test` runs. Discovery fixtures supply their own `userHome` and
+  `pathEnv`, so installed CLIs on the check host cannot add accounts.
 
 ### 5. Docs
 

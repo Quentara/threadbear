@@ -51,6 +51,10 @@ export const DEFAULT_CLI_UPDATES: CliUpdatesConfig = { claude: 'auto', codex: 'a
 // never touch ~/Library/Application Support/Threadbear.
 export type Config = {
   home: string; // data dir
+  // Account discovery uses the environment loadConfig was given, which may
+  // differ from this process's (a test or an embedded runner).
+  userHome?: string;
+  pathEnv?: string;
   port: number;
   host: string;
   logFile: string;
@@ -241,13 +245,13 @@ export function defaultModeOf(v: unknown): DefaultMode | undefined {
   return v === 'full' || v === 'ask' || v === 'auto' ? v : undefined;
 }
 
-export function defaultHome(): string {
-  return path.join(os.homedir(), 'Library', 'Application Support', 'Threadbear');
+export function defaultHome(userHome = os.homedir()): string {
+  return path.join(userHome, 'Library', 'Application Support', 'Threadbear');
 }
 
-export function expandHome(p: string): string {
-  if (p === '~') return os.homedir();
-  if (p.startsWith('~/')) return path.join(os.homedir(), p.slice(2));
+export function expandHome(p: string, userHome = os.homedir()): string {
+  if (p === '~') return userHome;
+  if (p.startsWith('~/')) return path.join(userHome, p.slice(2));
   return p;
 }
 
@@ -257,8 +261,8 @@ export function expandHome(p: string): string {
 // link is followed. With neither, the native path, which the runner's notice
 // then says is missing. Only ~/.local/bin counted until 13 Nov 2026, though
 // INSTALL.md said the PATH's would do (jayehzzz's fork).
-function findClaude(pathEnv: string): string {
-  const native = path.join(os.homedir(), '.local', 'bin', 'claude');
+function findClaude(pathEnv: string, userHome: string): string {
+  const native = path.join(userHome, '.local', 'bin', 'claude');
   if (onPath('claude', path.dirname(native))) return native;
   return onPath('claude', pathEnv) ?? native;
 }
@@ -396,8 +400,10 @@ adoptOldNames(process.env);
 // Nothing loaded that way may write runner.json.
 export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { readOnly?: boolean } = {}): Config {
   adoptOldNames(env);
+  const userHome = env.HOME || os.homedir();
+  const expand = (p: string) => expandHome(p, userHome);
   // THREADBEAR_DATA_DIR is the name the Mac app uses for the same override.
-  const home = path.resolve(expandHome(env.THREADBEAR_HOME || env.THREADBEAR_DATA_DIR || defaultHome()));
+  const home = path.resolve(expand(env.THREADBEAR_HOME || env.THREADBEAR_DATA_DIR || defaultHome(userHome)));
   const json = opts.readOnly ? peekRunnerJson(home) : readRunnerJson(home);
   const port = Number(env.THREADBEAR_PORT || json.port || DEFAULT_PORT);
   const idleMs = env.THREADBEAR_IDLE_MS
@@ -409,14 +415,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { readOnl
   const efforts = providerMap(json.defaults?.efforts, (v) => (isEffortLevel(v) ? v : undefined));
   return {
     home,
+    userHome,
+    pathEnv: env.PATH ?? '',
     port,
     host: '127.0.0.1',
     maxLive: Number.isFinite(maxLive) && maxLive >= 1 ? Math.floor(maxLive) : DEFAULT_MAX_LIVE,
-    logFile: expandHome(env.THREADBEAR_LOG || path.join(os.homedir(), 'Library', 'Logs', 'threadbear-runner.log')),
-    claudePath: expandHome(env.THREADBEAR_CLAUDE_PATH || json.claudePath || findClaude(env.PATH ?? '')),
+    logFile: expand(env.THREADBEAR_LOG || path.join(userHome, 'Library', 'Logs', 'threadbear-runner.log')),
+    claudePath: expand(env.THREADBEAR_CLAUDE_PATH || json.claudePath || findClaude(env.PATH ?? '', userHome)),
     idleMs,
     defaults: {
-      cwd: expandHome(json.defaults?.cwd || DEFAULT_CWD),
+      cwd: expand(json.defaults?.cwd || DEFAULT_CWD),
       accountId: json.defaults?.accountId,
       ...(nonEmpty(json.defaults?.poolId) ? { poolId: nonEmpty(json.defaults?.poolId) } : {}),
       model: nonEmpty(json.defaults?.model),
@@ -424,9 +432,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { readOnl
       ...(efforts ? { efforts } : {}),
       ...((m) => (m ? { permissionMode: m } : {}))(defaultModeOf(json.defaults?.permissionMode)),
     },
-    claudeMainDir: expandHome(env.THREADBEAR_CLAUDE_MAIN_DIR || '~/.claude'),
-    claudeMainJson: expandHome(env.THREADBEAR_CLAUDE_MAIN_JSON || '~/.claude.json'),
-    tokenStatsAccountsDir: expandHome(
+    claudeMainDir: expand(env.THREADBEAR_CLAUDE_MAIN_DIR || '~/.claude'),
+    claudeMainJson: expand(env.THREADBEAR_CLAUDE_MAIN_JSON || '~/.claude.json'),
+    tokenStatsAccountsDir: expand(
       env.THREADBEAR_ACCOUNTS_DIR || '~/Library/Application Support/Token Stats/Accounts',
     ),
     accountsDir: path.join(home, 'accounts'),
@@ -439,25 +447,25 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { readOnl
     // On for everyone since 10 Nov 2026, after a few days as an experiment
     // on Mike's Mac; Settings turns it off for anyone who'd rather.
     keepAwake: json.keepAwake !== false,
-    ...(json.releases?.publish === true ? { releases: { publish: true, ...(typeof json.releases.signingKey === 'string' ? { signingKey: expandHome(json.releases.signingKey) } : {}), ...(typeof json.releases.signingProvider === 'string' ? { signingProvider: expandHome(json.releases.signingProvider) } : {}) } } : {}),
+    ...(json.releases?.publish === true ? { releases: { publish: true, ...(typeof json.releases.signingKey === 'string' ? { signingKey: expand(json.releases.signingKey) } : {}), ...(typeof json.releases.signingProvider === 'string' ? { signingProvider: expand(json.releases.signingProvider) } : {}) } } : {}),
     models: modelSettingsFrom(json),
-    ...(codexPath ? { codexPath: expandHome(codexPath) } : {}),
-    ...(nonEmpty(json.cursorPath) ? { cursorPath: expandHome(nonEmpty(json.cursorPath)!) } : {}),
-    ...(nonEmpty(json.opencodePath) ? { opencodePath: expandHome(nonEmpty(json.opencodePath)!) } : {}),
+    ...(codexPath ? { codexPath: expand(codexPath) } : {}),
+    ...(nonEmpty(json.cursorPath) ? { cursorPath: expand(nonEmpty(json.cursorPath)!) } : {}),
+    ...(nonEmpty(json.opencodePath) ? { opencodePath: expand(nonEmpty(json.opencodePath)!) } : {}),
     codexArgs: Array.isArray(json.codexArgs) ? json.codexArgs.filter((a): a is string => typeof a === 'string') : [],
-    codexMainDir: expandHome(env.THREADBEAR_CODEX_MAIN_DIR || '~/.codex'),
-    tokenStatsLimitsFile: expandHome(
+    codexMainDir: expand(env.THREADBEAR_CODEX_MAIN_DIR || '~/.codex'),
+    tokenStatsLimitsFile: expand(
       env.THREADBEAR_TOKEN_STATS_LIMITS || '~/Library/Application Support/Token Stats/limits.json',
     ),
     cliUpdates: cliUpdatesConfig(json.cliUpdates, env.THREADBEAR_CLI_UPDATES),
     tokenTally: env.THREADBEAR_TOKEN_TALLY !== 'off',
     accountNotes: stringMap(json.accountNotes) ?? { ...DEFAULT_ACCOUNT_NOTES },
     poolFolders: folderMap(json.poolFolders) ?? { ...DEFAULT_POOL_FOLDERS },
-    ...((sb) => (sb ? { sandbox: sb } : {}))(readSandbox(json.sandbox, expandHome)),
+    ...((sb) => (sb ? { sandbox: sb } : {}))(readSandbox(json.sandbox, expand)),
     ...(Array.isArray(json.pools) && json.pools.length ? { pools: json.pools } : {}),
     sync: syncConfig(json.sync, env),
     secretCheck: json.secretCheck?.enabled === true,
-    ...connectorsConfig(json.connectors, env, expandHome(env.THREADBEAR_CLAUDE_MAIN_JSON || '~/.claude.json')),
+    ...connectorsConfig(json.connectors, env, expand(env.THREADBEAR_CLAUDE_MAIN_JSON || '~/.claude.json')),
   };
 }
 
