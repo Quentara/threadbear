@@ -8,7 +8,8 @@
 #
 # With several hosts (Mike's are Tinker Desk and the cloud box), each run
 # goes to the first one that's free and can run it, or waits for the first
-# that can. A Linux host only takes what needs no Mac: a --quick run that
+# that can, and leaves that line for another that frees up before its turn
+# comes (leave_line, below). A Linux host only takes what needs no Mac: a --quick run that
 # doesn't touch ios/, app/ or dock/ (each brings in Swift), with no --shots.
 # Mike asked on 6 Nov, when nine threads' checks queued at once.
 #
@@ -514,6 +515,62 @@ choose() {
   HOST="$first" HOST_OS="$first_os" remote_base="$first_base"
 }
 
+# Waiting in line on a busy host, the others are looked at every POLL_SECS,
+# and one that's free and can run this check is taken instead, so long as the
+# check hasn't started where it waits. On 13 Nov a landing's quick check found
+# both hosts busy, took the first (Tinker Desk) and waited there over half an
+# hour behind GPUI release builds, which hold the same lock (perf-lock.pl),
+# while the cloud box was free soon after; every landing behind it waited
+# too. free_elsewhere: true if a host other than the one waited on is free
+# and could run it, by the same rules as choose(), less giving back build
+# folders (that can take minutes, and the line is still there).
+POLL_SECS="${THREADBEAR_CHECK_POLL_SECS:-30}"
+free_elsewhere() {
+  local h out b os state kb
+  for h in "${HOSTS[@]}"; do
+    case "$h" in -*|""|"$HOST") continue ;; esac
+    case " $SKIP " in *" $h "*) continue ;; esac
+    out="$(timed 30 "${SSH[@]}" "$h" "$probe" 2>/dev/null </dev/null)" || continue
+    { read -r b; read -r os; read -r state; read -r kb; } <<<"$out"
+    plain_path "$b" || continue
+    case "$b" in */$BASE_REL) ;; *) continue ;; esac
+    case "$os" in Darwin) ;; Linux) [ "$linux_ok" = 1 ] || continue ;; *) continue ;; esac
+    low_on_room "$kb"
+    [ $? != 0 ] || continue
+    [ "$state" = free ] && { FREE_HOST="$h"; return 0; }
+  done
+  return 1
+}
+# leave_line <waiter>: while the check waits in line on $HOST (the waiter
+# being its ssh), look elsewhere; true once it has left that line for a free
+# host. Leaving is a rename of the run's copy there, which is atomic, and is
+# what --on-host does first once it has the lock (mv runs/<id> src): whichever
+# renames first wins, so a check that has started is never pulled, and one
+# that's withdrawn finds no copy when its turn comes and starts nothing. The
+# lock it would have held is never taken from anything running.
+leave_line() {
+  local waiter="$1" next=$((SECONDS + POLL_SECS)) where
+  while kill -0 "$waiter" 2>/dev/null; do
+    if [ "$SECONDS" -lt "$next" ]; then sleep 1; continue; fi
+    where="$(timed 15 "${SSH[@]}" "$HOST" "if [ -d '$remote_run' ]; then echo waiting; else echo started; fi" 2>/dev/null </dev/null)"
+    # Started there: it stays, however long it takes.
+    [ "$where" != started ] || return 1
+    # Not answering: the waiter's own watch deals with that.
+    if [ "$where" = waiting ] && free_elsewhere; then
+      if timed 15 "${SSH[@]}" "$HOST" "mv '$remote_run' '$remote_run.withdrawn' && rm -rf '$remote_run.withdrawn'" >/dev/null 2>&1 </dev/null; then
+        kill_tree "$waiter"
+        wait "$waiter" 2>/dev/null
+        echo "$FREE_HOST is free now; leaving the line on $HOST, where this check hadn't started."
+        return 0
+      fi
+      # The rename lost: it has just started there.
+      return 1
+    fi
+    next=$((SECONDS + POLL_SECS))
+  done
+  return 1
+}
+
 # The files check.sh would see, less what no check reads: the pictures in
 # docs/ and site/ (about 50 MB of the repo). TourTests reads site's JSON.
 # The site's build (site/scripts/build.mjs --check) checks every link lands
@@ -743,7 +800,15 @@ while :; do
   # taken at once (on_signal) rather than once the check ends: bash holds a
   # trap until a pipeline it's waiting on has finished (Codex's review).
   ( watched "$HOST" check_ssh 2>&1 | rewrite_logs "$remote_base/tmp-$id/threadbear-check." "$local_logs"; exit "${PIPESTATUS[0]}" ) &
-  wait $!
+  waiter=$!
+  # Waiting in line with other hosts to look at, and a copy quick enough to
+  # make again elsewhere (a slow one waits, as above).
+  if [ "$now" = 0 ] && [ "${#HOSTS[@]}" -gt 1 ] && [ "$copy_secs" -lt "$stay_secs" ] && leave_line "$waiter"; then
+    rm -rf "$local_logs"
+    copied_host=""
+    continue
+  fi
+  wait "$waiter"
   code=$?
   if [ "$code" = 125 ]; then
     rmdir "$local_logs" 2>/dev/null

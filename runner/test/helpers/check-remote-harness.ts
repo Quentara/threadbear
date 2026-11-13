@@ -58,6 +58,14 @@ run_copy() {
   [ ! -f "$d/drop" ] || exit 255
   script="$(printf '%s' "$cmd" | grep -oE "$d/home/[^ \\\\']*/scripts/check-remote.sh" | head -1)"
   if [ -n "$script" ] && [ -f "$script" ] && [ -f "$(dirname "$script")/../.check-changed" ]; then
+    # A host's "slow" file: the check takes that many seconds, its copy moved
+    # out of runs/ meanwhile, as --on-host does once it has the lock.
+    if [ -f "$d/slow" ]; then
+      run="$(cd "$(dirname "$script")/.." && pwd)"
+      mv "$run" "$run.started" || { echo "no copy on $host for: $cmd"; exit 1; }
+      sleep "$(cat "$d/slow")"
+      mv "$run.started" "$run"
+    fi
     echo "ran on $host $1 from $script"
     [ -z "$PEEK" ] || (cd "$(dirname "$script")/.." && bash -c "$PEEK") >"$FAKE/peek"
     # A failed step's log path, as check.sh prints it there, and one that
@@ -81,6 +89,13 @@ run_copy() {
     fi
   else echo "no copy on $host for: $cmd"; exit 1; fi
 }
+# A host's "queue" file: a check waiting in line there waits for the number
+# of seconds in it (another check, or a build, holding the lock).
+wait_line() {
+  [ -f "$d/queue" ] || return 0
+  echo "$host waiting" >>"$FAKE/waits.log"
+  sleep "$(cat "$d/queue")"
+}
 # The host's commands find a df that prints its "df-out" file; the real awk
 # reads that, from the script's own command.
 PATH="$d/bin:$PATH"
@@ -94,19 +109,24 @@ case "$cmd" in
     [ ! -f "$d/probe-fails" ] || exit 1
     # A host's "base" file says what folder it reports, if not its own.
     b="$d/home/.cache/threadbear-check"; [ -f "$d/base" ] && b="$(cat "$d/base")"
+    # A host's "free-after" file: busy for that many more probes, then free.
+    if [ -f "$d/free-after" ]; then
+      n="$(cat "$d/free-after")"
+      if [ "$n" -le 0 ]; then echo free >"$d/state"; else echo $((n - 1)) >"$d/free-after"; fi
+    fi
     # A host's "os" file says what system it is, if not a Mac.
     printf '%s\\n%s\\n%s\\n' "$b" "$(cat "$d/os" 2>/dev/null || echo Darwin)" "$(cat "$d/state")"
     # What the probe runs after the lock's "fi && ", for real.
     (cd "$d/home" && bash -c "\${cmd##*fi && }") ;;
   # A blocking run can start with a nonblocking -k probe too. Match its
   # actual blocking lock first, so that probe doesn't turn it into "now".
-  *"lockf -k"*) run_copy "after waiting" ;;
+  *"lockf -k"*) wait_line; run_copy "after waiting" ;;
   *"lockf -t 0 -k"*)
     n="$(cat "$d/lose" 2>/dev/null || echo 0)"
     if [ "$n" -gt 0 ]; then echo $((n - 1)) >"$d/lose"; [ ! -f "$d/df-after" ] || cp "$d/df-after" "$d/df-out"; [ -f "$d/looks-free" ] || echo busy >"$d/state"; exit 75; fi
     run_copy now ;;
   *"flock -n -E 75"*) run_copy now ;;
-  *"flock "*) run_copy "after waiting" ;;
+  *"flock "*) wait_line; run_copy "after waiting" ;;
   *) bash -c "$cmd" ;;
 esac
 `;
@@ -133,7 +153,7 @@ export const GiB = 1024 * 1024;
 
 // df: what the host's df prints (plenty free, if not given). dfAfter: what it
 // prints once a copy or a run has failed there. os: Linux, if not a Mac.
-type Host = { state: string; lose?: number; looksFree?: boolean; base?: string; df?: string; dfAfter?: string; os?: string; hang?: boolean; hangCopy?: boolean; drop?: boolean; stubborn?: boolean };
+type Host = { state: string; lose?: number; looksFree?: boolean; base?: string; df?: string; dfAfter?: string; os?: string; hang?: boolean; hangCopy?: boolean; drop?: boolean; stubborn?: boolean; queue?: number; freeAfter?: number; slow?: number };
 export function setup(hosts: Record<string, Host>, opts: { home?: string } = {}) {
   const tmp = tmpDir('check-remote-');
   const home = opts.home ?? shortHome();
@@ -157,6 +177,9 @@ export function setup(hosts: Record<string, Host>, opts: { home?: string } = {})
     if (s.hang) fs.writeFileSync(path.join(fake, h, 'hang'), '');
     if (s.stubborn) fs.writeFileSync(path.join(fake, h, 'stubborn'), '');
     if (s.drop) fs.writeFileSync(path.join(fake, h, 'drop'), '');
+    if (s.queue !== undefined) fs.writeFileSync(path.join(fake, h, 'queue'), String(s.queue));
+    if (s.freeAfter !== undefined) fs.writeFileSync(path.join(fake, h, 'free-after'), String(s.freeAfter));
+    if (s.slow !== undefined) fs.writeFileSync(path.join(fake, h, 'slow'), String(s.slow));
     if (s.hangCopy) fs.writeFileSync(path.join(fake, h, 'hang-copy'), '');
     if (s.dfAfter !== undefined) fs.writeFileSync(path.join(fake, h, 'df-after'), s.dfAfter);
     fs.writeFileSync(path.join(fake, h, 'df-out'), s.df ?? macDf(100 * GiB));
@@ -193,7 +216,7 @@ export function setup(hosts: Record<string, Host>, opts: { home?: string } = {})
         const runs = path.join(fake, h, 'home', '.cache', 'threadbear-check', 'runs');
         return fs.existsSync(runs) ? fs.readdirSync(runs) : [];
       };
-      return { ...r, ssh: read('ssh.log'), sshOpts: read('ssh-opts.log'), rsyncPeek: read('rsync-peek'), copies: read('copies.log').trim().split('\n').filter(Boolean), left, peek: read('peek') };
+      return { ...r, waits: read('waits.log'), ssh: read('ssh.log'), sshOpts: read('ssh-opts.log'), rsyncPeek: read('rsync-peek'), copies: read('copies.log').trim().split('\n').filter(Boolean), left, peek: read('peek') };
     },
   };
 }
