@@ -503,7 +503,7 @@ pub(crate) fn peek_command(app: &Entity<crate::app::Threadbear>, cmd: &serde_jso
         .ok_or_else(|| format!("the chip {words} isn't on screen"))?;
     if cmd["press"].as_bool() == Some(true) {
         let ChipKind::Picture(index) = kind else { return Err(format!("{words} isn't a picture's chip")) };
-        let at = element.bounds().center();
+        let at = element.visible_bounds().center();
         window.pointer_move(at, None, cx);
         window.pointer_down(at, MouseButton::Left, cx);
         window.pointer_up(at, MouseButton::Left, cx);
@@ -863,7 +863,7 @@ pub(crate) fn chip_command(app: &Entity<crate::app::Threadbear>, cmd: &serde_jso
         .find(|e| e.visible() && e.path().iter().any(|id| matches!(id, ElementId::Name(n) if mine.iter().any(|m| n.starts_with(m.as_str())))))
         .ok_or_else(|| format!("the chip {word} isn't on screen"))?;
     if cmd["click"].as_bool() == Some(true) {
-        let at = element.bounds().center();
+        let at = element.visible_bounds().center();
         window.pointer_move(at, None, cx);
         window.pointer_down(at, MouseButton::Left, cx);
         window.pointer_up(at, MouseButton::Left, cx);

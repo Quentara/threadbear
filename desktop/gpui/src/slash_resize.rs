@@ -319,7 +319,7 @@ pub(crate) fn drag_command(cmd: &serde_json::Value, window: &mut Window, cx: &mu
     };
     window.render_frame(cx);
     let Some(handle) = window.find_all_by_label(name).into_iter().find(|e| e.visible()) else { return Err("the palette isn't open".into()) };
-    let from = handle.bounds().center();
+    let from = handle.visible_bounds().center();
     let scale = style::zoomed(1.);
     let to = point(from.x + gpui_kit::px(cmd["dx"].as_f64().unwrap_or(0.) as f32 * scale), from.y + gpui_kit::px(cmd["dy"].as_f64().unwrap_or(0.) as f32 * scale));
     window.pointer_move(from, None, cx);

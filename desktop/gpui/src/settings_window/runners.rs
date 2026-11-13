@@ -243,7 +243,7 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, cx: &mut App) ->
     handle
         .update(cx, |_, window, cx| -> Result<(), String> {
             window.render_frame(cx);
-            let center = |id: &str, window: &Window| window.try_find(SharedString::from(format!("settings-runner-{id}"))).map(|e| e.bounds().center()).ok_or_else(|| format!("no row for {id} on screen"));
+            let center = |id: &str, window: &Window| window.try_find(SharedString::from(format!("settings-runner-{id}"))).and_then(|e| e.click_point()).ok_or_else(|| format!("no row for {id} on screen"));
             let (p, q) = (center(&a, window)?, center(&b, window)?);
             window.pointer_move(p, None, cx);
             window.pointer_down(p, MouseButton::Left, cx);

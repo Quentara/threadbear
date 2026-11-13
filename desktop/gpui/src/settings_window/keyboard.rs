@@ -510,7 +510,7 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, cx: &mut App) ->
             let click = |label: &str, prefix: bool, window: &mut Window, cx: &mut App| -> bool {
                 let found = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| if prefix { l.starts_with(label) } else { l == label })).last();
                 let Some(found) = found else { return false };
-                let at = found.bounds().center();
+                let at = found.visible_bounds().center();
                 window.pointer_move(at, None, cx);
                 window.pointer_down(at, MouseButton::Left, cx);
                 window.pointer_up(at, MouseButton::Left, cx);

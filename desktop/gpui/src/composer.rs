@@ -1172,18 +1172,21 @@ impl Composer {
         let at = match strip {
             Some(index) => {
                 let label = format!("Picture {}", index + 1);
-                let found = |label: &str, window: &Window| window.elements().into_iter().filter(|e| e.visible() && e.label() == Some(label)).last().map(|e| e.bounds());
-                let tile = found(&label, &*window).ok_or_else(|| format!("no thumbnail {} over the box", index + 1))?;
-                window.pointer_move(tile.center(), None, cx);
+                // Its whole bounds, for where the × sits on it, and what's
+                // drawn of it, for where the pointer goes: a thumbnail
+                // scrolled partly out of the strip has its middle outside.
+                let found = |label: &str, window: &Window| window.elements().into_iter().filter(|e| e.visible() && e.label() == Some(label)).last().map(|e| (e.bounds(), e.visible_bounds()));
+                let (tile, drawn) = found(&label, &*window).ok_or_else(|| format!("no thumbnail {} over the box", index + 1))?;
+                window.pointer_move(drawn.center(), None, cx);
                 window.render_frame(cx);
-                let x = found(REMOVE_LABEL, &*window).ok_or("no × on the thumbnail while it's hovered")?;
+                let (x, x_drawn) = found(REMOVE_LABEL, &*window).ok_or("no × on the thumbnail while it's hovered")?;
                 let corner = Bounds::from_corners(point(tile.center().x, tile.origin.y), point(tile.right(), tile.center().y));
                 if !(corner.contains(&x.origin) && corner.contains(&point(x.right() - gpui_kit::px(1.), x.bottom() - gpui_kit::px(1.)))) {
                     return Err(format!("the × is at {x:?}, not in the top right corner of the thumbnail at {tile:?}"));
                 }
                 if remove {
                     let before = this.read(cx).chips(cx).len();
-                    click(x.center(), window, cx);
+                    click(x_drawn.center(), window, cx);
                     let (after, opened) = (this.read(cx).chips(cx).len(), this.read(cx).debug_opened.clone());
                     if let Some((paths, _)) = opened {
                         return Err(format!("the × opened the viewer on {paths:?}"));
@@ -1191,7 +1194,7 @@ impl Composer {
                     return if after + 1 == before { Ok(json!("ok removed")) } else { Err(format!("{before} pictures before the × and {after} after")) };
                 }
                 // Away from the × in the corner.
-                point(tile.origin.x + tile.size.width / 4., tile.bottom() - tile.size.height / 4.)
+                point(drawn.origin.x + drawn.size.width / 4., drawn.bottom() - drawn.size.height / 4.)
             }
             None => {
                 let number = number.ok_or("press needs a number")?;

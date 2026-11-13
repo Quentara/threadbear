@@ -20,7 +20,10 @@ exclude = ["vendor"]
 # 12 Nov: "the links are underlined in the GPUI version"). And a selection
 # takes in a soft-wrapped row's first character, which GPUI places at the end
 # of the row above (`wrapped_row_starts`, `drawn_position`; Mike, 13 Nov:
-# "can't select all the way to the start of the line").
+# "can't select all the way to the start of the line"). And a test
+# snapshot's `visible_bounds`, what's drawn of an element inside its clips,
+# so scripted clicks land on it rather than its whole middle, which for one
+# scrolled half out of a pane is over its neighbour (13 Nov).
 [patch.crates-io]
 gpui-component = { path = "vendor/gpui-component" }
 gpui-base = { path = "vendor/gpui-base" }

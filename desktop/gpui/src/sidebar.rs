@@ -2142,7 +2142,7 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
                 }
             }
             let Some(target) = found.last() else { return Err(format!("no control with the tip {tip:?}")) };
-            let at = target.bounds().center();
+            let at = target.visible_bounds().center();
             window.pointer_move(at, None, cx);
             window.pointer_down(at, MouseButton::Left, cx);
             window.pointer_up(at, MouseButton::Left, cx);
@@ -2161,7 +2161,7 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
             let Some(row) = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| l.starts_with(prefix))).last() else {
                 return Err(format!("no row with the tip {prefix:?} on screen"));
             };
-            let at = row.bounds().center();
+            let at = row.visible_bounds().center();
             window.pointer_move(at, None, cx);
             window.pointer_down(at, button, cx);
             window.pointer_up(at, button, cx);

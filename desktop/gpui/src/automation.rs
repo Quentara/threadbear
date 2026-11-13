@@ -286,6 +286,27 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
     }
 }
 
+/// Where a scripted click lands on the last visible control labelled so
+/// (`prefix`: whose label starts so): the middle of what's drawn of it,
+/// inside every clip around it, never the middle of its whole bounds.
+fn label_point(window: &Window, label: &str, prefix: bool) -> Result<(i32, i32), String> {
+    let found = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| if prefix { l.starts_with(label) } else { l == label })).last();
+    found.and_then(|e| whole_point(e.visible_bounds())).ok_or_else(|| format!("nothing labelled {label:?} on screen"))
+}
+
+/// The middle of `drawn` in whole points, as the specs' tools read them,
+/// kept inside it: a sliver 299.6 to 300 wide has its middle at 299.8,
+/// which rounds to 300, just past it. `None` when no whole point is in it.
+pub(crate) fn whole_point(drawn: Bounds<Pixels>) -> Option<(i32, i32)> {
+    let axis = |start: Pixels, end: Pixels| {
+        let (start, end) = (f32::from(start), f32::from(end));
+        let (low, high) = (start.ceil(), (end - 1.).floor().max(start.ceil()));
+        // An end is outside, as GPUI's hit testing has it.
+        (low < end).then(|| ((start + end) / 2.).round().clamp(low, high) as i32)
+    };
+    Some((axis(drawn.left(), drawn.right())?, axis(drawn.top(), drawn.bottom())?))
+}
+
 fn text<'a>(cmd: &'a Value, key: &str) -> &'a str {
     cmd[key].as_str().unwrap_or("")
 }
@@ -440,14 +461,16 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         "row-swipe" => Ok(json!(format!("ok {}", app.read(cx).sidebar.gestures.along()))),
         // Where a control is on screen by its label (a Highlights row's is
         // its title): "ok x y". `prefix`: a label that starts so (a sidebar
-        // row's is its title, then a newline).
+        // row's is its title, then a newline). The point is the middle of
+        // what's drawn of it, not of its whole bounds: a Highlights card
+        // scrolled half out of its row had its middle over the transcript,
+        // and a right click there opened the transcript's menu (13 Nov).
         "label-point" => {
             window.render_frame(cx);
             let label = text(cmd, "label");
             let prefix = cmd["prefix"].as_bool() == Some(true);
-            let found = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| if prefix { l.starts_with(label) } else { l == label })).last().ok_or_else(|| format!("nothing labelled {label:?} on screen"))?;
-            let at = found.bounds().center();
-            Ok(json!(format!("ok {} {}", f32::from(at.x).round(), f32::from(at.y).round())))
+            let (x, y) = label_point(window, label, prefix)?;
+            Ok(json!(format!("ok {x} {y}")))
         }
         "tile-point" => crate::remote_pictures::tile_point_command(app, cmd, window, cx),
         // A picture tile of the transcript, as a click on it (`viewer` says what opened).
@@ -604,7 +627,7 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
                         window.render_frame(cx);
                         let tip = meter.tip();
                         let Some(ring) = window.find_all_by_label(&tip).into_iter().find(|e| e.visible()) else { return Err("no context ring on screen".into()) };
-                        let at = ring.bounds().center();
+                        let at = ring.visible_bounds().center();
                         window.pointer_move(at, None, cx);
                         window.pointer_down(at, MouseButton::Left, cx);
                         window.pointer_up(at, MouseButton::Left, cx);
@@ -633,7 +656,7 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
                     let title = crate::composer_chips::chip_title(&data, menu).ok_or("no chip like that here")?;
                     window.render_frame(cx);
                     let Some(chip) = window.find_all_by_label(&title).into_iter().find(|e| e.visible()) else { return Err(format!("no chip {title:?} on screen")) };
-                    let at = chip.bounds().center();
+                    let at = chip.visible_bounds().center();
                     window.pointer_move(at, None, cx);
                     window.pointer_down(at, MouseButton::Left, cx);
                     window.pointer_up(at, MouseButton::Left, cx);
@@ -744,7 +767,7 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             window.render_frame(cx);
             let target = window.find_all_by_label(title).into_iter().find(|e| e.visible());
             let Some(target) = target else { return Err(format!("no button called {title:?}")) };
-            let at = target.bounds().center();
+            let at = target.visible_bounds().center();
             window.pointer_move(at, None, cx);
             window.pointer_down(at, MouseButton::Left, cx);
             window.pointer_up(at, MouseButton::Left, cx);
@@ -1139,6 +1162,9 @@ fn shell_step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &m
                 pane.update(cx, |p, cx| p.scroll_command(None, Some(&row), 0., cx))?;
                 window.render_frame(cx);
                 let pencil = window.find_all(("edit-message", ix)).into_iter().next().ok_or("no pencil by that message")?;
+                // Its whole middle, not `click_point`: the pencil is drawn
+                // only while its row is hovered, so it isn't visible until
+                // this move reveals it.
                 let at = pencil.bounds().center();
                 window.pointer_move(at, None, cx);
                 window.render_frame(cx);
@@ -1211,4 +1237,81 @@ fn type_in_composer(app: &Entity<Threadbear>, words: &str, replace: bool, window
     window.render_frame(cx);
     window.input(words, cx);
     Ok(())
+}
+
+/// label-point against a Highlights card scrolled half out of its pane, with
+/// the transcript beside it: the card's whole-bounds middle is over the
+/// transcript, so a right click there opened the transcript's menu (13 Nov).
+#[cfg(test)]
+mod label_point_tests {
+    use super::label_point;
+    use gpui_kit::prelude::*;
+    use gpui_kit::test::{TestEventExt as _, TestQueryExt as _, TestWindowExt as _};
+    // By name: a glob of the kit would bring its `test` over the one the
+    // test macro's own expansion uses.
+    use gpui_kit::{div, px, size, Bounds, MouseButton, Point, TestAppContext, TestSupportExt as _, Window, WindowBounds, WindowOptions};
+    use std::cell::Cell;
+    use std::rc::Rc;
+
+    struct Board {
+        transcript: Rc<Cell<u32>>,
+        card: Rc<Cell<u32>>,
+    }
+
+    impl Render for Board {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            let (transcript, card) = (self.transcript.clone(), self.card.clone());
+            div()
+                .size_full()
+                .flex()
+                .flex_row()
+                // The transcript, 0 to 100.
+                .child(div().id("transcript").w(px(100.)).h_full().on_mouse_down(MouseButton::Right, move |_, _, _| transcript.set(transcript.get() + 1)))
+                // The pane, 100 to 300, clipping a card scrolled so it spans
+                // -50 to 150: 100 to 150 shows. And one scrolled wholly out.
+                .child(
+                    div()
+                        .id("pane")
+                        .relative()
+                        .w(px(200.))
+                        .h_full()
+                        .overflow_hidden()
+                        .child(div().id("card").test_support().aria_label("Card").absolute().left(px(-150.)).top(px(10.)).w(px(200.)).h(px(40.)).on_mouse_down(MouseButton::Right, move |_, _, _| card.set(card.get() + 1)))
+                        .child(div().id("gone").test_support().aria_label("Gone").absolute().left(px(-300.)).top(px(60.)).w(px(100.)).h(px(20.))),
+                )
+        }
+    }
+
+    #[gpui_kit::test]
+    fn a_partly_scrolled_out_card_is_clicked_where_it_shows(cx: &mut TestAppContext) {
+        cx.update(gpui_kit::init);
+        let transcript = Rc::new(Cell::new(0));
+        let card = Rc::new(Cell::new(0));
+        let (t, c) = (transcript.clone(), card.clone());
+        let window = cx.update(|cx| {
+            let bounds = Bounds { origin: Point::default(), size: size(px(300.), px(100.)) };
+            let options = WindowOptions { window_bounds: Some(WindowBounds::Windowed(bounds)), ..Default::default() };
+            gpui_kit::open_window(options, cx, move |_, cx| cx.new(|_| Board { transcript: t, card: c })).expect("a test window").0
+        });
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            let drawn = window.find_all_by_label("Card").into_iter().next().expect("the card");
+            assert!(drawn.visible());
+            assert!(drawn.bounds().center().x < px(100.), "the test needs the card's whole middle over the transcript: {:?}", drawn.bounds());
+            let (x, y) = label_point(window, "Card", false).expect("the card's point");
+            assert!(x > 100 && x < 150, "{x} isn't on the drawn part of the card");
+            let at = gpui_kit::point(px(x as f32), px(y as f32));
+            window.pointer_move(at, None, cx);
+            window.pointer_down(at, MouseButton::Right, cx);
+            window.pointer_up(at, MouseButton::Right, cx);
+            assert_eq!((card.get(), transcript.get()), (1, 0), "the right click went to the transcript, not the card");
+            assert!(label_point(window, "Gone", false).is_err(), "a card wholly out of sight has no point");
+            // A sliver at a pane's edge: its rounded middle stays in it.
+            let sliver = |left: f32, right: f32| super::whole_point(Bounds::from_corners(gpui_kit::point(px(left), px(0.)), gpui_kit::point(px(right), px(10.)))).map(|(x, _)| x);
+            assert_eq!(sliver(299.6, 300.), None, "no whole point is inside 299.6 to 300");
+            assert_eq!(sliver(298.6, 300.), Some(299));
+            assert_eq!(sliver(100., 150.), Some(125));
+        })
+        .expect("the test window");
+    }
 }

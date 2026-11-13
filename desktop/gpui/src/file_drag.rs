@@ -148,7 +148,7 @@ pub(crate) async fn file_drag_command(app: &WeakEntity<crate::app::Threadbear>, 
             } else {
                 return Err("file-drag takes tile, highlight or pane".into());
             };
-            let at = found.into_iter().filter(|e| e.visible()).last().map(|e| e.bounds().center()).ok_or("nothing like that on screen to drag")?;
+            let at = found.into_iter().filter(|e| e.visible()).last().map(|e| e.visible_bounds().center()).ok_or("nothing like that on screen to drag")?;
             crate::thread::scripted_input(|| {
                 window.pointer_move(at, None, cx);
                 window.pointer_down(at, MouseButton::Left, cx);

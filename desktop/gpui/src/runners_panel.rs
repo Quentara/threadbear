@@ -538,7 +538,7 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
         let center = |name: &str, window: &mut Window| -> Result<Point<Pixels>, String> {
             let tips = [format!("Show {name}'s CPU, memory and disk"), format!("Hide {name}'s details")];
             let found = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| tips.contains(&l.to_string()))).last();
-            found.map(|e| e.bounds().center()).ok_or_else(|| format!("no card for {name} on screen"))
+            found.map(|e| e.visible_bounds().center()).ok_or_else(|| format!("no card for {name} on screen"))
         };
         let (a, b) = (center(from, window)?, center(onto, window)?);
         window.pointer_move(a, None, cx);

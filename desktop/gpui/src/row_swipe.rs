@@ -702,7 +702,7 @@ fn row_middle(app: &Entity<Threadbear>, id: &str, window: &mut Window, cx: &mut 
     let title = app.read(cx).threads.get(id).map(|t| if t.title.is_empty() { "Untitled".to_owned() } else { t.title.clone() }).ok_or_else(|| format!("no thread {id}"))?;
     let label = format!("{title}\n");
     let row = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| l.starts_with(&label))).last();
-    row.map(|r| r.bounds().center()).ok_or_else(|| format!("the row {title:?} isn't on screen"))
+    row.map(|r| r.visible_bounds().center()).ok_or_else(|| format!("the row {title:?} isn't on screen"))
 }
 
 /// The row's middle once it's on screen and has stopped moving: a section
