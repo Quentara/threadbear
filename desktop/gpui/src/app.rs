@@ -205,6 +205,14 @@ pub struct Threadbear {
     /// (`DROP_GRACE`), and the redraw at its end.
     pub(crate) dropped_at: Option<std::time::Instant>,
     pub(crate) drop_grace_task: Option<Task<()>>,
+    /// When the restart this outage belongs to began, kept from the drop
+    /// until this app sees itself connected again. The client clears its
+    /// own restart as soon as the new runner says hello, a moment before
+    /// that Connected reaches the app; read live in between, the banner saw
+    /// no restart, a runner down past the grace, and said "Can't reach the
+    /// runner." mid-restart (the connection spec, red on all three CI
+    /// systems, 13 Nov).
+    pub(crate) restart_outage: Option<std::time::Instant>,
     /// Start runner is under way (runner_launcher.rs): its button spins.
     pub(crate) starting_runner: bool,
     /// The checkout the runner follows main in (`runner.status`'s
@@ -447,6 +455,7 @@ impl Threadbear {
             restart_expiry: None,
             dropped_at: Some(std::time::Instant::now()),
             drop_grace_task: None,
+            restart_outage: None,
             creating_investigation: false,
             renaming: None,
             rename_field: None,
@@ -726,14 +735,19 @@ impl Threadbear {
                         self.last_drop = None;
                         self.dropped_at = None;
                         self.drop_grace_task = None;
+                        self.restart_outage = None;
                         self.clear_connection_error();
                     }
                     Status::Disconnected { kind, reason, .. } => {
                         self.last_drop = Some((*kind, reason.clone()));
+                        self.note_restart_outage();
                         self.watch_restart_expiry(cx);
                         self.start_drop_grace(cx);
                     }
-                    Status::Connecting { .. } => self.start_drop_grace(cx),
+                    Status::Connecting { .. } => {
+                        self.note_restart_outage();
+                        self.start_drop_grace(cx);
+                    }
                 }
                 self.status = status;
                 // Each time it's connected, the whole list again, and the

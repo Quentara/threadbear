@@ -603,8 +603,11 @@ impl Threadbear {
             return self.cli_banner();
         }
         // While a restart is under way the runner is meant to be down for a
-        // moment: say so quietly, with no buttons to press.
-        if restarting {
+        // moment: say so quietly, with no buttons to press. Down because of
+        // one counts until this app has seen it connected again, whatever
+        // the client says meanwhile (`restart_outage`).
+        let outage = self.restart_outage.is_some_and(|since| since.elapsed() < threadbear_client::restart::PATIENCE);
+        if restarting || outage {
             return Some(Banner::quiet("The runner is restarting. Reconnecting…"));
         }
         // An unexpected drop says nothing for its first few seconds: this
@@ -623,6 +626,14 @@ impl Threadbear {
             Connection::Unauthorized(reason) => Banner::warning("lock", "The runner didn't accept the token in secrets/runner-token.", Some(reason)),
             Connection::Connecting | Connection::Connected => Banner::warning("bolt.horizontal", "Connecting to the runner…", None),
         })
+    }
+
+    /// Not connected: whether that's because of a restart, kept until the
+    /// app sees it connected again (`restart_outage`).
+    pub(crate) fn note_restart_outage(&mut self) {
+        if let Some(since) = self.client.restart().restarting_since() {
+            self.restart_outage.get_or_insert(since);
+        }
     }
 
     /// Not connected: from now, unless it already wasn't, and a redraw once
