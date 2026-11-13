@@ -454,7 +454,15 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   follows a new thread), a stalled connection kept its queue (a timeout now
   drops it, and the queue holds 64), the handoff's 4 s was per read (now one
   deadline, on a thread of its own), and a reply without `ok: true` or with
-  another id counted as handed off (now it opens the browser).
+  another id counted as handed off (now it opens the browser). Its second
+  look found the read still racy and unbounded (now off the main thread,
+  from a non-blocking handle, at most 4 MB read and pages past 2000 passed
+  over unbuilt), a dropped pipe's connect able to slip past Drop (now one
+  lock holds the stream and a closed flag, and nothing queued is written
+  after), stuck connects piling up (now one at a time, for the pane and
+  for links), and a return from a project page not reopening the pane.
+- Buttons are Swift's small size (`PushButton::small`), and a long title
+  ends with an ellipsis, beside the Swift app's pane in the same mock.
 - Verification: on Tinker Desk's desktop, browser-pane.feature with
   panel-requests, reply-links and rails: 26 scenarios, 26 passed. Core's
   browserbear and panel_requests tests, and the runner's thread-keys test.

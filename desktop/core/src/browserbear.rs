@@ -126,7 +126,32 @@ pub struct AgentState {
     pub socket: String,
     /// The browser it runs: Helium, or Google Chrome without it.
     pub browser: Option<String>,
+    #[serde(deserialize_with = "capped_tabs")]
     pub tabs: Vec<AgentTab>,
+}
+
+/// The first `MAX_TABS` pages, the rest passed over unbuilt: a few MB of
+/// `{}`s would otherwise be a million pages made and thrown away.
+fn capped_tabs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<AgentTab>, D::Error> {
+    struct Capped;
+    impl<'de> serde::de::Visitor<'de> for Capped {
+        type Value = Vec<AgentTab>;
+        fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.write_str("a list of pages")
+        }
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
+            let mut tabs = vec![];
+            while tabs.len() < MAX_TABS {
+                match seq.next_element::<AgentTab>()? {
+                    Some(tab) => tabs.push(tab),
+                    None => return Ok(tabs),
+                }
+            }
+            while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
+            Ok(tabs)
+        }
+    }
+    d.deserialize_seq(Capped)
 }
 
 /// The biggest tabs.json read: a few hundred pages is a few hundred KB.
@@ -135,15 +160,14 @@ pub const MAX_TABS_FILE: u64 = 4 * 1024 * 1024;
 pub const MAX_TABS: usize = 2000;
 
 pub fn agent_state(bytes: &[u8]) -> Option<AgentState> {
-    let mut state: AgentState = serde_json::from_slice(bytes).ok()?;
-    state.tabs.truncate(MAX_TABS);
-    Some(state)
+    serde_json::from_slice(bytes).ok()
 }
 
 /// `panelState`'s answer: the connected Chrome profiles and their pages.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct PanelState {
+    #[serde(deserialize_with = "capped_tabs")]
     pub tabs: Vec<AgentTab>,
 }
 
@@ -394,6 +418,16 @@ mod tests {
         let started = std::time::Instant::now();
         assert_eq!(merge(&many, &many).len(), MAX_TABS);
         assert!(started.elapsed() < std::time::Duration::from_secs(2));
+    }
+
+    #[test]
+    fn a_file_of_a_million_empty_pages_keeps_only_the_cap() {
+        let mut text = String::from(r#"{"port":1,"tabs":["#);
+        text.push_str(&vec!["{}"; 1_000_000].join(","));
+        text.push_str("]}");
+        let started = std::time::Instant::now();
+        assert_eq!(agent_state(text.as_bytes()).unwrap().tabs.len(), MAX_TABS);
+        assert!(started.elapsed() < std::time::Duration::from_secs(3));
     }
 
     #[test]

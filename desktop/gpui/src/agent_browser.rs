@@ -60,6 +60,28 @@ fn socket() -> Option<PathBuf> {
     HOME.as_deref().map(bear::socket).filter(|s| s.exists())
 }
 
+/// tabs.json's bytes and what they say, when they differ from `last`. Only a
+/// plain file, opened so a pipe put there can't hold the read, and only its
+/// first `MAX_TABS_FILE` bytes: a bigger one is passed over.
+fn read_tabs(file: &Path, last: Option<Arc<Vec<u8>>>) -> Option<(Arc<Vec<u8>>, Option<bear::AgentState>)> {
+    use std::io::Read as _;
+    let mut open = std::fs::OpenOptions::new();
+    open.read(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut open, libc::O_NONBLOCK);
+    let handle = open.open(file).ok()?;
+    if !handle.metadata().ok()?.is_file() {
+        return None;
+    }
+    let mut bytes = vec![];
+    handle.take(bear::MAX_TABS_FILE + 1).read_to_end(&mut bytes).ok()?;
+    if bytes.len() as u64 > bear::MAX_TABS_FILE || last.as_deref() == Some(&bytes) {
+        return None;
+    }
+    let state = bear::agent_state(&bytes);
+    Some((Arc::new(bytes), state))
+}
+
 // ---------------------------------------------------------------- the handoff
 
 /// The longest a clicked link waits on BrowserBear, all told.
@@ -78,13 +100,22 @@ pub(crate) fn handoff(url: &str) -> bool {
     let Some(path) = socket() else { return false };
     let line = bear::request_line(1, "handoff", json!({ "tab": url }), None);
     // On a thread of its own, so a connect that hangs (a full accept queue)
-    // can't hold the link past the deadline; that thread ends by itself.
+    // can't hold the link past the deadline. A connect can't be called off,
+    // so while an earlier one is still stuck no other is started: the link
+    // just opens in the browser, and stuck threads never pile up.
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static ASKING: AtomicBool = AtomicBool::new(false);
+    if ASKING.swap(true, Ordering::SeqCst) {
+        return false;
+    }
     let (tx, rx) = std::sync::mpsc::channel();
     let deadline = Instant::now() + HANDOFF_WITHIN;
     let started = std::thread::Builder::new().name("browserbear-handoff".into()).spawn(move || {
         let _ = tx.send(one_request(&path, &line, deadline));
+        ASKING.store(false, Ordering::SeqCst);
     });
     if started.is_err() {
+        ASKING.store(false, Ordering::SeqCst);
         return false;
     }
     let Ok(Some(reply)) = rx.recv_timeout(HANDOFF_WITHIN) else { return false };
@@ -141,10 +172,22 @@ struct Pipe {
     /// Why it closed, once it has.
     dead: Arc<Mutex<Option<String>>>,
     next: u64,
-    /// The connection, once the writer has made it: shut on drop, which
-    /// ends both threads whatever they're waiting on.
+    /// The connection, once the writer has made it, and whether the pipe
+    /// has been dropped: one lock for both, so Drop and a connect finishing
+    /// can't miss each other. Shutting it ends both threads whatever they're
+    /// waiting on.
     #[cfg(unix)]
-    stream: Arc<Mutex<Option<std::os::unix::net::UnixStream>>>,
+    stream: Arc<Mutex<Slot>>,
+    /// Still connecting: no second pipe is started until this one's connect
+    /// returns, as a connect can't be called off.
+    connecting: Arc<std::sync::atomic::AtomicBool>,
+}
+
+#[cfg(unix)]
+#[derive(Default)]
+struct Slot {
+    stream: Option<std::os::unix::net::UnixStream>,
+    closed: bool,
 }
 
 impl Pipe {
@@ -154,7 +197,9 @@ impl Pipe {
         use std::io::{Read as _, Write as _};
         let waiting: Arc<Mutex<HashMap<u64, oneshot::Sender<Answer>>>> = Arc::default();
         let dead: Arc<Mutex<Option<String>>> = Arc::default();
-        let stream: Arc<Mutex<Option<std::os::unix::net::UnixStream>>> = Arc::default();
+        let stream: Arc<Mutex<Slot>> = Arc::default();
+        let connecting = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let still_connecting = connecting.clone();
         let die = {
             let (waiting, dead) = (waiting.clone(), dead.clone());
             move |why: String| {
@@ -173,17 +218,19 @@ impl Pipe {
             .name("browserbear-write".into())
             .spawn(move || {
                 let connected = std::os::unix::net::UnixStream::connect(&path).and_then(|s| Ok((s.try_clone()?, s.try_clone()?, s)));
+                still_connecting.store(false, std::sync::atomic::Ordering::SeqCst);
                 let (mut writing, mut reader, kept) = match connected {
                     Ok(c) => c,
                     Err(e) => return die(format!("Couldn't reach BrowserBear: {e}")),
                 };
                 {
                     let mut slot = shared.lock().unwrap_or_else(|e| e.into_inner());
-                    // Dropped while connecting: nothing more to do.
-                    if Arc::strong_count(&shared) == 1 {
+                    // Dropped while connecting: nothing queued goes.
+                    if slot.closed {
+                        let _ = kept.shutdown(std::net::Shutdown::Both);
                         return;
                     }
-                    *slot = Some(kept);
+                    slot.stream = Some(kept);
                 }
                 let read = std::thread::Builder::new().name("browserbear-read".into()).spawn(move || {
                     let die = read_dead;
@@ -217,17 +264,22 @@ impl Pipe {
                     return die("Couldn't start reading BrowserBear's answers.".into());
                 }
                 for line in lines {
+                    // A request queued before the pipe was dropped (one that
+                    // timed out, say) is never sent after.
+                    if shared.lock().unwrap_or_else(|e| e.into_inner()).closed {
+                        break;
+                    }
                     if let Err(e) = writing.write_all(&line) {
                         return die(e.to_string());
                     }
                 }
                 // The pipe's gone: end the reader too, if Drop didn't.
-                if let Some(stream) = shared.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                if let Some(stream) = shared.lock().unwrap_or_else(|e| e.into_inner()).stream.take() {
                     let _ = stream.shutdown(std::net::Shutdown::Both);
                 }
             })
             .ok()?;
-        Some(Pipe { writer, waiting, dead, next: 1, stream })
+        Some(Pipe { writer, waiting, dead, next: 1, stream, connecting })
     }
 
     #[cfg(not(unix))]
@@ -263,8 +315,12 @@ impl Drop for Pipe {
         // Ends the reader and a writer stuck writing; one still connecting
         // sees it's alone and stops.
         #[cfg(unix)]
-        if let Some(stream) = self.stream.lock().unwrap_or_else(|e| e.into_inner()).take() {
-            let _ = stream.shutdown(std::net::Shutdown::Both);
+        {
+            let mut slot = self.stream.lock().unwrap_or_else(|e| e.into_inner());
+            slot.closed = true;
+            if let Some(stream) = slot.stream.take() {
+                let _ = stream.shutdown(std::net::Shutdown::Both);
+            }
         }
     }
 }
@@ -312,9 +368,11 @@ pub(crate) struct AgentBrowser {
     pipe: Option<Pipe>,
     /// Goes up with each new connection, so a late timeout drops only its own.
     pipe_serial: u64,
+    /// The last dropped pipe's connect, if it may still be stuck.
+    stuck_connect: Option<Arc<std::sync::atomic::AtomicBool>>,
     polling: bool,
-    /// tabs.json's size and time when last read.
-    last: Option<(u64, Option<std::time::SystemTime>)>,
+    /// tabs.json as last read.
+    last: Option<Arc<Vec<u8>>>,
     pub(crate) stills: HashMap<String, Still>,
     /// Goes up when the pages or whether BrowserBear is here change: what the
     /// window's rail draws, so a new still doesn't redraw the whole window.
@@ -352,8 +410,21 @@ pub(crate) fn pending_key(cmd: &str, tab: &AgentTab) -> String {
 impl AgentBrowser {
     fn new(cx: &mut Context<Self>) -> Self {
         let poll = cx.spawn(async move |this, cx| loop {
-            if this.update(cx, |b, cx| b.read(cx)).is_err() {
+            let Ok(last) = this.update(cx, |b, cx| {
+                b.read(cx);
+                b.last.clone()
+            }) else {
                 break;
+            };
+            // tabs.json is read and parsed off the main thread, only when
+            // its bytes changed.
+            if let Some(home) = HOME.clone() {
+                let read = cx.background_executor().spawn(async move { read_tabs(&bear::tabs_file(&home), last) }).await;
+                if let Some((bytes, state)) = read {
+                    if this.update(cx, |b, cx| b.took_tabs(bytes, state, cx)).is_err() {
+                        break;
+                    }
+                }
             }
             cx.background_executor().timer(POLL).await;
         });
@@ -371,6 +442,7 @@ impl AgentBrowser {
             next_request: 0,
             pipe: None,
             pipe_serial: 0,
+            stuck_connect: None,
             polling: false,
             last: None,
             stills: HashMap::new(),
@@ -408,20 +480,12 @@ impl AgentBrowser {
         }
         self.notice_closed(cx);
         self.poll_profiles(cx);
-        // Only a plain file of a sensible size, and only when it's changed:
-        // this runs on the main thread every 0.75 s.
-        let file = bear::tabs_file(&home);
-        let Ok(meta) = std::fs::metadata(&file) else { return };
-        if !meta.is_file() || meta.len() > bear::MAX_TABS_FILE {
-            return;
-        }
-        let stamp = (meta.len(), meta.modified().ok());
-        if self.last == Some(stamp) {
-            return;
-        }
-        self.last = Some(stamp);
-        let Ok(data) = std::fs::read(&file) else { return };
-        let Some(state) = bear::agent_state(&data) else { return };
+    }
+
+    /// What `read_tabs` found new in tabs.json.
+    fn took_tabs(&mut self, bytes: Arc<Vec<u8>>, state: Option<bear::AgentState>, cx: &mut Context<Self>) {
+        self.last = Some(bytes);
+        let Some(state) = state else { return };
         self.agent_tabs = state.tabs;
         if let Some(browser) = state.browser.filter(|b| !b.is_empty()) {
             self.browser_name = browser;
@@ -466,6 +530,10 @@ impl AgentBrowser {
 
     fn connection(&mut self) -> Option<&mut Pipe> {
         if self.pipe.is_none() {
+            // One dropped while its connect was stuck: wait for that to return.
+            if self.stuck_connect.as_ref().is_some_and(|c| c.load(std::sync::atomic::Ordering::SeqCst)) {
+                return None;
+            }
             let path = socket()?;
             self.pipe = Pipe::connect(path);
             self.pipe_serial += 1;
@@ -484,8 +552,10 @@ impl AgentBrowser {
                 // BrowserBear stopped answering on this connection: drop it,
                 // with whatever is still queued on it, so the next request
                 // starts afresh rather than behind a stalled one.
-                if timed_out && b.pipe_serial == serial && b.pipe.is_some() {
-                    b.pipe = None;
+                if timed_out && b.pipe_serial == serial {
+                    if let Some(pipe) = b.pipe.take() {
+                        b.stuck_connect = Some(pipe.connecting.clone());
+                    }
                     b.polling = false;
                 }
                 done(b, got, cx);
@@ -670,7 +740,7 @@ impl SidePane {
                 .items_center()
                 .gap(px(6.))
                 .when_some(dot, |s, c| s.child(div().flex_none().size(px(7.)).rounded_full().bg(c)))
-                .child(div().min_w_0().line_clamp(2).text_size(px(style::size::LABEL)).font_weight(FontWeight::MEDIUM).text_color(p.fg).child(tab.shown_title())),
+                .child(div().min_w_0().line_clamp(2).overflow_hidden().text_ellipsis().text_size(px(style::size::LABEL)).font_weight(FontWeight::MEDIUM).text_color(p.fg).child(tab.shown_title())),
         );
         words = words.child(div().truncate().text_size(px(style::size::LABEL)).text_color(p.secondary).child(tab.host()));
         if let (true, Some(action)) = (tab.working(), &tab.action) {
@@ -678,6 +748,7 @@ impl SidePane {
         }
         let (show_tab, show_thread, show_model) = (tab.clone(), thread.to_owned(), model.clone());
         let show = PushButton::new(SharedString::from(format!("browser-show-{}", tab.id())), "Show window", format!("Bring this page's window to the front, in {}", tab.place(browser_name)))
+            .small()
             .busy(b.pending.contains(&pending_key("panelShow", tab)))
             .render(cx, move |_, _, cx| show_model.update(cx, |b, cx| b.show(&show_tab, &show_thread, cx)));
         let mut buttons = h_flex().gap(px(6.)).child(show);
@@ -685,6 +756,7 @@ impl SidePane {
             let (done_tab, done_model) = (tab.clone(), model.clone());
             buttons = buttons.child(
                 PushButton::new(SharedString::from(format!("browser-done-{}", tab.id())), "Done", "Tell the agent you've finished here")
+                    .small()
                     .busy(b.pending.contains(&pending_key("markDone", tab)))
                     .render(cx, move |_, _, cx| done_model.update(cx, |b, cx| b.done(&done_tab, cx))),
             );
@@ -762,7 +834,13 @@ impl crate::app::Threadbear {
     /// again: the runner's one-shot show_panel can be cleared by a message,
     /// and the waiting tab is what counts (`PanelRail`'s onChange and onAppear).
     pub(crate) fn browser_changed(&mut self, cx: &mut Context<Self>) {
-        let Some(thread) = self.pane_thread().filter(|_| self.projects.open.is_none()) else { return };
+        // A project's page isn't a thread: coming back from it counts as
+        // coming back to the thread, as Swift's rail appearing again does.
+        if self.projects.open.is_some() {
+            self.browser_handoff_seen = None;
+            return;
+        }
+        let Some(thread) = self.pane_thread() else { return };
         let Some(model) = model(cx) else { return };
         let key = bear::handoff_key(&model.read(cx).tabs, &thread.id);
         if key == self.browser_handoff_seen {
