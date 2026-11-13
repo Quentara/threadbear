@@ -12,7 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { tmpDir } from '../helpers/fakes.ts';
-import { dumpText, pick, refuseHome, type Instance } from '../../../desktop/scripts/dev-app.ts';
+import { alive, dumpText, pick, refuseHome, since, type Instance } from '../../../desktop/scripts/dev-app.ts';
 
 const DEV_APP = path.join(import.meta.dirname, '..', '..', '..', 'desktop', 'scripts', 'dev-app.sh');
 
@@ -26,6 +26,14 @@ test('start refuses the real data folder, however it is named, unless told', () 
   assert.match(refuseHome(`${tmp}/x/../Threadbear`, real, false) ?? '', /real data folder/);
   assert.equal(refuseHome(path.join(tmp, 'dev'), real, false), null);
   assert.equal(refuseHome(real, real, true), null);
+});
+
+test('a pid counts as ours only while it is the process we started', () => {
+  assert.ok(alive(process.pid, since(process.pid)));
+  // The same pid, started at another time: macOS gave it to someone else.
+  assert.ok(!alive(process.pid, 'Thu Jan  1 00:00:00 1970'));
+  assert.ok(!alive(process.pid, ''));
+  assert.ok(!alive(undefined, since(process.pid)));
 });
 
 function instance(id: string, thread: string, created: number, checkout = '/repo'): Instance {
@@ -115,6 +123,8 @@ test('start, do, dump, stop, and the idle quit, with a stand-in app on the mock'
     assert.equal(seen.THREADBEAR_PASTEBOARD, 'com.mikerosoft.threadbear.automation.gpui-mine1');
     assert.equal(seen.THREADBEAR_HOME, path.join(dir, 'home'));
     assert.equal(seen.THREADBEAR_AUTOMATION_LIVE, undefined);
+    // Never the machine's web runtime, with Mike's Chromium profile.
+    assert.equal(seen.THREADBEAR_WEB_RUNTIME_DIR, path.join(fs.realpathSync(env.TMPDIR), 'threadbear-gpui-dev-app', 'web-runtime'));
     assert.ok(fs.existsSync(path.join(dir, 'home', 'secrets', 'runner-token')), "the mock's own token");
 
     const did = run(env, 'do', '{"cmd":"open","id":"demo_a"}', '{"cmd":"waitFor","ready":true}');
@@ -135,22 +145,26 @@ test('start, do, dump, stop, and the idle quit, with a stand-in app on the mock'
     assert.match(run(env, 'status').out, /mine1 {2}running {2}mock {2}yours/);
 
     // Quits by itself once nobody's sent a command for a while, mock and all.
-    const instance = JSON.parse(fs.readFileSync(path.join(dir, 'instance.json'), 'utf8')) as Instance;
+    const instance = { ...JSON.parse(fs.readFileSync(path.join(dir, 'instance.json'), 'utf8')), ...JSON.parse(fs.readFileSync(path.join(dir, 'app.json'), 'utf8')) } as Instance;
+    assert.ok(instance.supervisorSince && instance.appSince, 'start times recorded');
     const until = Date.now() + 20_000;
-    const alive = (pid?: number) => {
-      try {
-        return !!pid && process.kill(pid, 0);
-      } catch {
-        return false;
-      }
-    };
-    while ((alive(instance.supervisor) || alive(instance.app)) && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
-    assert.ok(!alive(instance.supervisor) && !alive(instance.app), 'quit after the idle time');
+    while ((alive(instance.supervisor, instance.supervisorSince) || alive(instance.app, instance.appSince)) && Date.now() < until) await new Promise((r) => setTimeout(r, 200));
+    assert.ok(!alive(instance.supervisor, instance.supervisorSince) && !alive(instance.app, instance.appSince), 'quit after the idle time');
     assert.match(fs.readFileSync(path.join(dir, 'supervisor.log'), 'utf8'), /no command for 4 s/);
 
-    // And a stop takes everything away.
+    // An id a start has taken can't be taken again while it builds.
+    const busy = path.join(fs.realpathSync(env.TMPDIR), 'threadbear-gpui-dev-app', 'busy');
+    fs.mkdirSync(busy);
+    fs.writeFileSync(path.join(busy, 'starting'), JSON.stringify({ pid: process.pid, since: since(process.pid) }));
+    assert.match(run(env, 'start', '--mock', '--id', 'busy').err, /being started by another/);
+    assert.ok(fs.existsSync(busy), "the other start's folder is left alone");
+
+    // And a stop takes everything away, the mock with it.
     assert.equal(run(env, 'start', '--mock', '--id', 'mine2').status, 0);
+    const mockPids = spawnSync('pgrep', ['-f', path.join(fs.realpathSync(env.TMPDIR), 'threadbear-gpui-dev-app', 'mine2', 'home')], { encoding: 'utf8' }).stdout.trim();
+    assert.ok(mockPids, 'its mock is running');
     assert.equal(run(env, 'stop').out, 'stopped mine2');
+    for (const pid of mockPids.split('\n')) assert.equal(since(Number(pid)), '', `mock ${pid} stopped`);
     assert.ok(!fs.existsSync(path.join(fs.realpathSync(env.TMPDIR), 'threadbear-gpui-dev-app', 'mine2')));
   } finally {
     run(env, 'stop', '--everyone');

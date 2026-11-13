@@ -89,6 +89,9 @@ export type Instance = {
   binary: string;
   supervisor?: number;
   app?: number;
+  /** Each one's start time as ps gives it, so a pid macOS has since given to another process is never signalled. */
+  supervisorSince?: string;
+  appSince?: string;
 };
 
 export type Me = { thread: string; checkout: string };
@@ -113,11 +116,16 @@ export function refuseHome(home: string, real: string, live: boolean): string | 
 const dirOf = (id: string) => path.join(stateRoot(), id);
 
 export function readInstance(id: string): Instance | null {
+  let i: Instance;
   try {
-    return JSON.parse(fs.readFileSync(path.join(dirOf(id), 'instance.json'), 'utf8')) as Instance;
+    i = JSON.parse(fs.readFileSync(path.join(dirOf(id), 'instance.json'), 'utf8')) as Instance;
   } catch {
     return null;
   }
+  try {
+    Object.assign(i, JSON.parse(fs.readFileSync(path.join(dirOf(id), 'app.json'), 'utf8')));
+  } catch {}
+  return i;
 }
 
 function writeInstance(i: Instance): void {
@@ -134,18 +142,18 @@ export function allInstances(): Instance[] {
     .sort((a, b) => b.created - a.created);
 }
 
-const alive = (pid?: number) => {
-  if (!pid) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
+/** When the process started, as ps says it (the same for the life of the process). */
+export function since(pid?: number): string {
+  if (!pid) return '';
+  const r = spawnSync('ps', ['-p', String(pid), '-o', 'lstart='], { encoding: 'utf8' });
+  return r.status === 0 ? r.stdout.trim() : '';
+}
+
+/** That process is still the one recorded, not another that has its pid now (Codex's review). */
+export const alive = (pid?: number, started?: string) => !!pid && !!started && since(pid) === started;
 
 /** The supervisor's running: it owns the app and the mock, and goes when they do. */
-export const running = (i: Instance) => alive(i.supervisor);
+export const running = (i: Instance) => alive(i.supervisor, i.supervisorSince);
 
 /**
  * The instance a command means: --id's, else the caller's newest running one.
@@ -164,7 +172,10 @@ export function pick(all: Instance[], who: Me, id?: string, isRunning: (i: Insta
   throw new Error(others.length ? `none of yours is running (${others.map((i) => `${i.id}: ${whose(i)}`).join('; ')}); start one, or pass --id` : 'no instance is running; start one');
 }
 
+// A start's reserved folder, given back if it fails before its app is up.
+let reserved = '';
 function die(message: string): never {
+  if (reserved) fs.rmSync(reserved, { recursive: true, force: true });
   console.error(`dev-app: ${message}`);
   process.exit(1);
 }
@@ -319,9 +330,13 @@ async function supervise(id: string): Promise<void> {
   const kids: ChildProcess[] = [];
   let mock: ChildProcess | undefined;
   let app: ChildProcess | undefined;
-  const log = (line: string) => fs.appendFileSync(path.join(dir, 'supervisor.log'), `${new Date().toISOString()} ${line}\n`);
+  // A stop deletes the folder as this goes, so a line that can't be written isn't a reason to stop short.
+  const log = (line: string) => {
+    try {
+      fs.appendFileSync(path.join(dir, 'supervisor.log'), `${new Date().toISOString()} ${line}\n`);
+    } catch {}
+  };
   const end = (why: string) => {
-    log(`stopping: ${why}`);
     for (const c of [app, mock]) {
       if (c?.pid && c.exitCode === null) {
         try {
@@ -331,6 +346,7 @@ async function supervise(id: string): Promise<void> {
         }
       }
     }
+    log(`stopped: ${why}`);
     process.exit(0);
   };
   process.on('SIGTERM', () => end('asked'));
@@ -358,10 +374,16 @@ async function supervise(id: string): Promise<void> {
         // Behind everything, out of the Dock and the app switcher (scripted.rs).
         THREADBEAR_KEEP_BEHIND: '1',
         THREADBEAR_PASTEBOARD: `com.mikerosoft.threadbear.automation.gpui-${id}`,
+        // Not the machine's web runtime in the real data folder, whose
+        // Chromium profile has Mike's sign-ins and whose helpers the installed
+        // app runs (Codex's review). One for every instance, so the 135 MB
+        // download happens once.
+        THREADBEAR_WEB_RUNTIME_DIR: process.env.THREADBEAR_WEB_RUNTIME_DIR || path.join(stateRoot(), 'web-runtime'),
         ...(current.live ? { THREADBEAR_AUTOMATION_LIVE: '1' } : {}),
       },
     });
-    writeInstance({ ...current, app: app.pid });
+    // A file of its own, so it never races start's write of instance.json.
+    fs.writeFileSync(path.join(dir, 'app.json'), JSON.stringify({ app: app.pid, appSince: since(app.pid) }));
     log(`app ${app.pid} from ${current.binary}`);
     app.on('exit', (code, signal) => {
       const again = path.join(dir, 'relaunch');
@@ -406,14 +428,17 @@ function parse(argv: string[], withValue: string[]): Args {
 const flag = (a: Args, name: string) => a.flags.get(name)?.[0];
 const has = (a: Args, name: string) => a.flags.has(name);
 
-function stopOne(i: Instance): void {
+async function stopOne(i: Instance): Promise<void> {
   if (running(i)) {
     try {
       process.kill(i.supervisor!, 'SIGTERM');
     } catch {}
+    // It stops the app and the mock; the folder goes once it has.
+    const until = Date.now() + 8000;
+    while (running(i) && Date.now() < until) await sleep(100);
   }
   // The app's own group too, if the supervisor went first.
-  if (alive(i.app)) {
+  if (alive(i.app, i.appSince)) {
     try {
       process.kill(-i.app!, 'SIGTERM');
     } catch {}
@@ -424,6 +449,13 @@ function stopOne(i: Instance): void {
 /** Instances whose supervisor has gone: theirs after 30 minutes quiet (their log may be wanted), ours at once. */
 function reap(): void {
   const who = me();
+  // A start's folder whose dev-app.sh has gone without finishing.
+  for (const name of fs.readdirSync(stateRoot())) {
+    try {
+      const { pid, since: started } = JSON.parse(fs.readFileSync(path.join(stateRoot(), name, 'starting'), 'utf8')) as { pid: number; since: string };
+      if (!alive(pid, started)) fs.rmSync(path.join(stateRoot(), name), { recursive: true, force: true });
+    } catch {}
+  }
   for (const i of allInstances()) {
     if (running(i)) continue;
     let quiet = Date.now() - i.created;
@@ -450,9 +482,17 @@ async function start(a: Args): Promise<void> {
   const existing = readInstance(id);
   if (existing && running(existing)) die(mine(existing, who) ? `${id} is already running (stop it first)` : `${id} is someone else's (${whose(existing)})`);
   if (existing) fs.rmSync(dirOf(id), { recursive: true, force: true });
-  const binary = build({ noBuild: has(a, '--no-build'), here: has(a, '--build-here'), logName: id });
   const dir = dirOf(id);
-  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  // Taken before the build, and only by one start: two at once with the same
+  // --id would otherwise both build, then share one folder (Codex's review).
+  try {
+    fs.mkdirSync(dir, { mode: 0o700 });
+  } catch {
+    die(`${id} is being started by another dev-app.sh (status lists it once it's up)`);
+  }
+  reserved = dir;
+  fs.writeFileSync(path.join(dir, 'starting'), JSON.stringify({ pid: process.pid, since: since(process.pid) }));
+  const binary = build({ noBuild: has(a, '--no-build'), here: has(a, '--build-here'), logName: id });
   const appearance = flag(a, '--appearance');
   if (appearance && !['light', 'dark'].includes(appearance)) die('--appearance is light or dark');
   const size = flag(a, '--size');
@@ -474,7 +514,10 @@ async function start(a: Args): Promise<void> {
   fs.writeFileSync(path.join(dir, 'last-command'), String(Date.now()));
   const sup = spawn(process.execPath, [fileURLToPath(import.meta.url), 'supervise', id], { detached: true, stdio: 'ignore' });
   sup.unref();
-  writeInstance({ ...i, supervisor: sup.pid });
+  writeInstance({ ...i, supervisor: sup.pid, supervisorSince: since(sup.pid) });
+  // From here a failed start is stopped by ready(), not just deleted.
+  reserved = '';
+  fs.rmSync(path.join(dir, 'starting'), { force: true });
   await ready(i, 'start');
   console.log(id);
 }
@@ -492,7 +535,7 @@ async function ready(i: Instance, what: string): Promise<void> {
         return '';
       }
     });
-    stopOne(fresh() ?? i);
+    await stopOne(fresh() ?? i);
     die(`the app didn't take commands at ${what}.\n${said.filter(Boolean).join('\n')}`);
   }
   const c = await connect(fresh() ?? i);
@@ -623,10 +666,9 @@ async function main(argv: string[]): Promise<void> {
       await c.ask({ cmd: 'quit' }, 10);
       c.close();
       // The supervisor starts it again once this one's gone.
-      const old = i.app;
       const until = Date.now() + 15_000;
-      while (alive(old) && Date.now() < until) await sleep(100);
-      if (alive(old)) process.kill(old!, 'SIGTERM');
+      while (alive(i.app, i.appSince) && Date.now() < until) await sleep(100);
+      if (alive(i.app, i.appSince)) process.kill(i.app!, 'SIGTERM');
       await ready(i, 'rebuild');
       if (open) {
         const c2 = await connect(readInstance(i.id)!);
@@ -647,7 +689,7 @@ async function main(argv: string[]): Promise<void> {
       const all = allInstances();
       const which = has(a, '--everyone') ? all : has(a, '--all') ? all.filter((i) => mine(i, who)) : [target()];
       for (const i of which) {
-        stopOne(i);
+        await stopOne(i);
         console.log(`stopped ${i.id}`);
       }
       if (!which.length) console.log('none of yours to stop');

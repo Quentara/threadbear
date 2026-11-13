@@ -4,7 +4,8 @@
 // start against the real data folder and its live runner, anything it copies
 // goes to a pasteboard of its own rather than their clipboard, and with
 // THREADBEAR_KEEP_BEHIND=1 its window stays behind their work, out of the Dock
-// and the app switcher. An agent's app found all three missing (the parity
+// and the app switcher. Not covered: a program run in its Terminal panel
+// (`pbcopy` there reaches the real clipboard, as from any shell). An agent's app found all three missing (the parity
 // audit, "Agents can't safely drive GPUI on this Mac", 13 Nov).
 use gpui_kit::*;
 
@@ -27,9 +28,19 @@ pub(crate) fn guard() {
     }
     use threadbear_client::config::{default_home, scripted_refusal, RunnerConfig};
     let allowed = std::env::var("THREADBEAR_AUTOMATION_LIVE").as_deref() == Ok("1");
-    if let Some(why) = scripted_refusal(&RunnerConfig::from_env().home, &default_home(), allowed) {
+    if let Some(why) = scripted_refusal(&RunnerConfig::from_env(), &default_home(), allowed) {
         eprintln!("{why}");
         std::process::exit(2);
+    }
+    // The web runtime is the machine's, in the real data folder, with the
+    // panels' Chromium profile (Mike's sign-ins) and helper bundles the
+    // installed app runs (threadbear_core::web_runtime). A scripted app
+    // given none keeps one beside its automation file instead.
+    if std::env::var_os("THREADBEAR_WEB_RUNTIME_DIR").is_none_or(|d| d.is_empty()) {
+        if let Some(dir) = std::env::var_os("THREADBEAR_AUTOMATION").and_then(|f| std::path::Path::new(&f).parent().map(|p| p.join("web-runtime"))) {
+            // Before any other thread starts: guard() is main's first line.
+            std::env::set_var("THREADBEAR_WEB_RUNTIME_DIR", dir);
+        }
     }
     #[cfg(target_os = "macos")]
     pasteboard::install();
