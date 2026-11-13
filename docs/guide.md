@@ -464,7 +464,7 @@ Return sends and Shift-Return adds a new line. In a list, Shift-Return
 starts the next item ("2. " after "1. milk", "- " after "- milk"), and
 Shift-Return on an empty item ends the list. You can paste or drop images
 into the composer, or add them with +. Each one goes in where the cursor
-is (or where you drop it) as a small chip, "Picture 1", "Picture 2", with
+is as a small chip, "Picture 1", "Picture 2", with
 its thumbnail, and the agent gets each picture right there in your words.
 You can let go of a file anywhere over the thread, not just on the box: the
 thread's outlined while it'll take it, and the file goes in where the cursor is.
@@ -473,6 +473,12 @@ is which. The thumbnails show over the text too; the cross on one takes it
 and its chip out. Hover a chip to see its picture, in the composer or once
 it's sent. Click a chip or a thumbnail, in the composer or in the thread,
 to open the picture, with the arrows to step through the others.
+On the Mac, screenshots dragged from the floating thumbnail, pictures dragged
+from a browser, HEIC pastes and photos copied from Photos work here too.
+Threadbear keeps its own private copy before the source can take the picture
+back. A picture being copied from another app or fetched from a web URL shows
+a dim chip while it arrives; Send spins until the picture is ready. A web URL is
+fetched by Threadbear without the browser's cookies or sign-in.
 Any other file you paste or drop in (a video, a PDF, a folder) goes in as
 its full path where you drop it, for the agent to open where it is.
 Nothing's copied, so a big one is fine.

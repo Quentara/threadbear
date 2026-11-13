@@ -494,6 +494,40 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         }
         // The Swift app's `paste-image` and `drop`: a file through the same
         // route a paste or a drop takes.
+        #[cfg(target_os = "macos")]
+        "picture-input" => {
+            let Some(composer) = app.read(cx).composer(cx) else { return Err("no thread open".into()) };
+            let path = std::path::PathBuf::from(text(cmd, "path"));
+            crate::composer_media::fixture_begin(text(cmd, "kind"), &path)?;
+            let result = (|| {
+                if cmd["drop"].as_bool().unwrap_or(false) {
+                    cx.activate(true);
+                    window.activate_window();
+                    window.render_frame(cx);
+                    let vanish = cmd["vanish"].as_bool().unwrap_or(false).then_some(path.as_path());
+                    crate::composer_media::fixture_drag(window, 0, vanish)?;
+                } else {
+                    let input = composer.read(cx).input.clone();
+                    if !cmd["keepFocus"].as_bool().unwrap_or(false) {
+                        window.focus(&input.read(cx).focus_handle(cx), cx);
+                        crate::web_panels::keyboard_to_app(window);
+                    }
+                    window.render_frame(cx);
+                    window.press("secondary-v", cx);
+                }
+                Ok::<_, String>(())
+            })();
+            if !cmd["drop"].as_bool().unwrap_or(false) || result.is_err() { crate::composer_media::fixture_end(); }
+            result?;
+            Ok(json!("ok"))
+        }
+        #[cfg(target_os = "macos")]
+        "picture-drop" => {
+            let path = std::path::PathBuf::from(text(cmd, "vanish"));
+            let vanish = (!path.as_os_str().is_empty()).then_some(path.as_path());
+            crate::composer_media::fixture_drag(window, cmd["phase"].as_i64().unwrap_or(2) as i32, vanish)?;
+            Ok(json!("ok"))
+        }
         "paste-image" => {
             let Some(composer) = app.read(cx).composer(cx) else { return Err("no thread open".into()) };
             let path = std::path::PathBuf::from(text(cmd, "path"));

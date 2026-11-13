@@ -17,6 +17,7 @@ mod automation;
 mod card_run;
 mod chips;
 mod colour_space;
+mod composer_media;
 mod composer;
 mod composer_card;
 mod composer_account;
@@ -230,6 +231,7 @@ fn main() {
         gpui_kit::init(cx);
         // Every window's colours as sRGB, before the first opens (colour_space.rs).
         colour_space::install(cx);
+        composer_media::install(cx);
         // The main thread watched for freezes from here on (hang_watch.rs).
         hang_watch::start(cx);
         // Whether the web runtime is installed; nothing starts until a page needs it.

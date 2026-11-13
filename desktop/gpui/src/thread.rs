@@ -5,6 +5,7 @@ use crate::composer::Composer;
 use crate::rows::list::{transcript_list, TranscriptList};
 use crate::{call, RT};
 use gpui_kit::component::{v_flex, ActiveTheme as _};
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 // The zoom-aware px (style.rs), in place of GPUI's.
@@ -1662,6 +1663,44 @@ impl Render for ThreadPane {
         v_flex()
             .relative()
             .size_full()
+            // This pane is cached. A platform drag changes App's drag state,
+            // not the pane, so typing could leave its drop layer unmounted
+            // for the whole drag. Hear the first move even over selectable
+            // text, and redraw only when the drag state changes.
+            .child(canvas(|_, _, _| {}, {
+                let pane = cx.weak_entity();
+                let composer = self.composer.downgrade();
+                let accepts_drop = self.subagent_id.is_none();
+                move |bounds, _, window, _| {
+                    let moved = pane.clone();
+                    window.on_mouse_event(move |_: &MouseMoveEvent, phase, _, cx| {
+                        if phase.capture() && cx.has_active_drag() != dragging_file {
+                            moved.update(cx, |_, cx| cx.notify()).ok();
+                        }
+                    });
+                    let released = pane.clone();
+                    let composer = composer.clone();
+                    window.on_mouse_event(move |event: &MouseUpEvent, phase, window, cx| {
+                        // A native drop belongs to the thread even when a
+                        // selectable text hitbox has taken the hover. Capture
+                        // its real pasteboard before GPUI's bubbling handlers,
+                        // while the source file and its access grant exist.
+                        if accepts_drop && phase.capture() && event.button == MouseButton::Left && bounds.contains(&event.position) && !window.has_active_dialog(cx) && !window.has_active_sheet(cx) {
+                            if let Some(composer) = composer.upgrade().filter(|composer| composer.read(cx).can_take_pictures(cx)) {
+                                if let Some(paths) = crate::composer_media::read(true) {
+                                    composer.update(cx, |c, cx| c.take_dropped_paths(paths, event.position, window, cx));
+                                    cx.stop_active_drag(window);
+                                    cx.stop_propagation();
+                                }
+                            }
+                        }
+                        if phase.capture() && dragging_file {
+                            let released = released.clone();
+                            window.defer(cx, move |_, cx| { released.update(cx, |_, cx| cx.notify()).ok(); });
+                        }
+                    });
+                }
+            }).absolute().inset_0())
             // ⌘C on words selected in a reply: HTML with their links beside
             // the words (selection_bar.rs). Ahead of the kit's own copy, which
             // has the words alone.

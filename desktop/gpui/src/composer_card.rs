@@ -1038,6 +1038,11 @@ impl AskHost for Composer {
 }
 
 impl Composer {
+    pub(crate) fn native_paste_target(&self, window: &Window, cx: &App) -> Option<Entity<TextareaState>> {
+        std::iter::once(&self.input).chain(self.card.inputs.values())
+            .find(|input| input.read(cx).focus_handle(cx).is_focused(window)).cloned()
+    }
+
     /// Files dropped on the thread: on a Something else box they're that
     /// answer's, anywhere else the message's (ComposerDropView, AskAnswerBox).
     pub(crate) fn take_dropped_paths(&mut self, paths: Vec<std::path::PathBuf>, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
@@ -1052,8 +1057,11 @@ impl Composer {
             .find(|(ask, _)| self.card.box_bounds.get(**ask).is_some_and(|b| b.contains(&at)))
             .map(|(_, input)| input.clone());
         match over {
-            Some(input) => self.take_paths_in(&input, paths, window, cx),
-            None => self.take_paths(paths, window, cx),
+            Some(input) => self.take_drop_in(&input, paths, window, cx),
+            None => {
+                let target = self.input.clone();
+                self.take_drop_in(&target, paths, window, cx);
+            }
         }
     }
 }

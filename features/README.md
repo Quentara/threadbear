@@ -75,3 +75,9 @@ desktop/scripts/remote.sh tinker-desk --desk -- bash -c 'cd features && TB_APP=s
 ```
 
 A failed scenario leaves a screenshot in `reports/failures/`.
+
+`@real-screen` cases post real pointer events and are excluded by default.
+Use `TB_REAL_SCREEN=1` only on Tinker Desk through `remote.sh --desk`, with
+no recording running there. Never run them on the Mac Mike is using. The
+picture-promise case starts its own source window and checks it is in front
+before dragging into its own test app.
