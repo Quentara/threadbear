@@ -5098,8 +5098,9 @@ daily budget, never for private folders). It looks at a thread when:
 - another thread is hibernating until it has done something (end_turn's
   `waitFor` with `until`): after any completed turn, its CLI's own too,
   10 seconds later (`waited-on`, never skipped as quiet). The look lists
-  those threads and their `until`, and its answer's `met` (`{ "<id>":
-  "what shows it has" }`) marks each wait done (`waitMet`), with this
+  those threads and their `until`, and its answer's `met` gives each a verdict
+  (`{ "<id>": { "met": true|false, "why": "what shows it" } }`); only
+  `met: true` with a `why` marks the wait done (`waitMet`), with this
   thread's latest reply; the waiter wakes once all its waits are done. A
   private folder's thread gets no looks, so a wait on one only ends at
   its time.
