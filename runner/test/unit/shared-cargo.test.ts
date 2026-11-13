@@ -239,3 +239,19 @@ test('a program still running from the checkout target is replaced, not rewritte
   assert.equal(fs.fstatSync(fd).ino, before);
   assert.match(fs.readFileSync(fd, 'utf8'), /echo old/);
 });
+
+test("a cargo that didn't build the app doesn't hand back another checkout's", (t) => {
+  const h = host(t);
+  h.checkout('aaa', 'from a', 60);
+  h.checkout('bbb', 'from b', 30);
+  const env = { THREADBEAR_REMOTE_SLOTS: '1' };
+  assert.equal(h.cargo('aaa', ['build'], env).status, 0);
+  // `cargo test -p threadbear-core`, say: the app's not built, and the slot's is a's.
+  assert.equal(h.cargo('bbb', ['test'], env).status, 0);
+  assert.equal(fs.existsSync(path.join(h.base, 'target-bbb', 'debug', 'app')), false);
+  // And a's own still comes back to a, whose files the slot then has again.
+  fs.rmSync(path.join(h.base, 'target-aaa'), { recursive: true });
+  h.checkout('aaa', 'from a', 60);
+  assert.equal(h.cargo('aaa', ['test'], env).status, 0);
+  assert.equal(fs.existsSync(path.join(h.base, 'target-aaa', 'debug', 'app')), false, "a's files changed back in the slot, so its build there is from another generation");
+});

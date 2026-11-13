@@ -28,9 +28,10 @@
 # copy is pointed at the slot's).
 #
 # CARGO_TARGET_DIR as the run sees it stays the checkout's own folder
-# (target-<key>), and before the lock goes, the programs and libraries the
-# slot's target holds at the top of each profile (debug/threadbear-gpui,
-# release/threadbear-web-helper) are copied there: spec.sh, dev-app.ts,
+# (target-<key>), and before the lock goes, the programs and libraries cargo
+# built at the top of each profile (debug/threadbear-gpui,
+# release/threadbear-web-helper), or found fresh for these same files, are
+# copied there: spec.sh, dev-app.ts,
 # stage-update.sh and install-app.sh read them from there after cargo
 # returns, when another checkout's build may already be replacing the slot's.
 # Each is copied beside the old one and moved over it, so a dev app or spec
@@ -128,12 +129,46 @@ touch "$dir/.in-use" "$dir/target" 2>/dev/null || true
 
 # The checkout's copy, by content. The same leave-outs as remote.sh's copy,
 # and node_modules, which cargo never reads and is most of a copy's size.
-if ! rsync -rlpDc --delete --exclude node_modules --exclude .build --exclude target --exclude reports \
+# Anything it changed (-i lists each) starts a new generation of the slot's
+# source, which says below which of its programs were built from what this
+# checkout has.
+changes="$(rsync -rlpDci --delete --exclude node_modules --exclude .build --exclude target --exclude reports \
   --exclude .fixtures --exclude .swiftpm --exclude dist --exclude DerivedData --exclude .DS_Store \
-  "$copy/" "$dir/src/"; then
+  "$copy/" "$dir/src/")" || {
   echo "shared-cargo: couldn't copy $copy into $dir/src" >&2
   exit 1
+}
+gen="$(cat "$dir/.generation" 2>/dev/null)"
+case "$gen" in ""|*[!0123456789]*) gen=0 ;; esac
+# Only lines for something written, made or deleted: macOS's openrsync also
+# lists a file whose time differs (".f..T...."), without changing it.
+if grep -q '^[^.]' <<<"$changes" || [ ! -e "$dir/.generation" ]; then
+  gen=$((gen + 1))
+  # Written before cargo starts: a build cut short past here is of this
+  # generation, or of nothing.
+  printf '%s\n' "$gen" >"$dir/.generation" || { echo "shared-cargo: couldn't write $dir/.generation" >&2; exit 1; }
 fi
+
+# The programs and libraries at the top of each profile folder (the ones with
+# a deps folder: debug, release, a custom profile, <triple>/debug), each with
+# its inode, time and size: one that's different after cargo was built by it.
+artifacts() {
+  local deps prof f
+  while IFS= read -r deps; do
+    prof="${deps%/deps}"
+    for f in "$prof"/*; do
+      [ -f "$f" ] || continue
+      case "$f" in
+        *.dylib|*.so|*.dll|*.exe) ;;
+        *.d|*.rlib|*.rmeta|*.a|*.lib|*.pdb) continue ;;
+        *) [ -x "$f" ] || continue ;;
+      esac
+      printf '%s\n' "$f"
+    done
+  done < <(find "$dir/target" -maxdepth 3 -type d -name deps 2>/dev/null)
+}
+signatures() { artifacts | perl -ne 'chomp; my @s = stat $_ or next; print "$s[1] $s[9] $s[7] $_\n"'; }
+before="$(signatures)"
 
 # Arguments naming the checkout's copy name the slot's.
 args=()
@@ -153,28 +188,30 @@ rc=0
   CARGO_TARGET_DIR="$dir/target" THREADBEAR_SHARED_CARGO_HELD=1 exec cargo ${args[@]+"${args[@]}"}
 ) || rc=$?
 
-# The programs and libraries at the top of each profile folder (the ones with
-# a deps folder: debug, release, a custom profile, <triple>/debug), copied to
-# the checkout's own target unless that already has the same file.
-while IFS= read -r deps; do
-  prof="${deps%/deps}"
-  to="$out/${prof#"$dir/target/"}"
-  for f in "$prof"/*; do
-    [ -f "$f" ] || continue
-    case "$f" in
-      *.dylib|*.so|*.dll|*.exe) ;;
-      *.d|*.rlib|*.rmeta|*.a|*.lib|*.pdb) continue ;;
-      *) [ -x "$f" ] || continue ;;
-    esac
-    name="${f##*/}"
-    # cp -p keeps the time, so the same time and size is the same build.
-    if [ -f "$to/$name" ] && [ ! "$f" -nt "$to/$name" ] && [ ! "$f" -ot "$to/$name" ] \
-      && [ "$(wc -c <"$f")" = "$(wc -c <"$to/$name")" ]; then continue; fi
-    mkdir -p "$to" && cp -p "$f" "$to/.$name.new" && mv -f "$to/.$name.new" "$to/$name" || {
-      echo "shared-cargo: couldn't copy $name into $to" >&2
-      rm -f "$to/.$name.new"
-      [ "$rc" != 0 ] || rc=1
-    }
-  done
-done < <(find "$dir/target" -maxdepth 3 -type d -name deps 2>/dev/null)
+# What goes back to the checkout's own target: a program this cargo built,
+# or one built from this same generation of the source (a fresh build for
+# another checkout with the same files). Not one built from other files:
+# `cargo test -p threadbear-core` here mustn't hand this checkout the app
+# another checkout built last. Each program's generation is kept in made/.
+while IFS= read -r line; do
+  f="${line#* * * }"
+  rel="${f#"$dir/target/"}"
+  made="$dir/made/$rel"
+  if ! grep -qxF "$line" <<<"$before"; then
+    mkdir -p "${made%/*}" && printf '%s\n' "$gen" >"$made" || true
+  elif [ "$(cat "$made" 2>/dev/null)" != "$gen" ]; then
+    continue
+  fi
+  to="$out/$rel"
+  # cp -p keeps the time, so the same time and size is the same build.
+  if [ -f "$to" ] && [ ! "$f" -nt "$to" ] && [ ! "$f" -ot "$to" ] \
+    && [ "$(wc -c <"$f")" = "$(wc -c <"$to")" ]; then continue; fi
+  # Beside the old one and moved over it, so a program still running from
+  # there never sees it half written.
+  mkdir -p "${to%/*}" && cp -p "$f" "${to%/*}/.${to##*/}.new" && mv -f "${to%/*}/.${to##*/}.new" "$to" || {
+    echo "shared-cargo: couldn't copy $rel into $out" >&2
+    rm -f "${to%/*}/.${to##*/}.new"
+    [ "$rc" != 0 ] || rc=1
+  }
+done < <(signatures)
 exit "$rc"
