@@ -514,7 +514,16 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             Ok(json!("ok"))
         }
         "return" => {
-            window.press(if cmd["shift"].as_bool().unwrap_or(false) { "shift-enter" } else { "enter" }, cx);
+            window.press(
+                if cmd["shift"].as_bool().unwrap_or(false) {
+                    "shift-enter"
+                } else if cmd["option"].as_bool().unwrap_or(false) {
+                    "alt-enter"
+                } else {
+                    "enter"
+                },
+                cx,
+            );
             Ok(json!("ok"))
         }
         // The keys the composer's slash palette takes, where the cursor is
@@ -579,7 +588,16 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             Ok(json!("ok"))
         }
         "drop" => {
-            let position = point(px(cmd["x"].as_f64().unwrap_or(0.) as f32), px(cmd["y"].as_f64().unwrap_or(0.) as f32));
+            let mut position = point(px(cmd["x"].as_f64().unwrap_or(0.) as f32), px(cmd["y"].as_f64().unwrap_or(0.) as f32));
+            // `boxOffset`: let go just inside the left of that letter of the
+            // message box's words, for a drop that goes where it's let go.
+            if let Some(offset) = cmd["boxOffset"].as_u64() {
+                window.render_frame(cx);
+                let Some(composer) = app.read(cx).composer(cx) else { return Err("no thread open".into()) };
+                let offset = offset as usize;
+                let letter = composer.read(cx).input.read(cx).range_to_bounds(&(offset..offset + 1)).ok_or("that letter isn't on screen")?;
+                position = point(letter.left() + px(1.), letter.center().y);
+            }
             if cmd["leave"].as_bool().unwrap_or(false) {
                 window.dispatch_event(FileDropEvent::Exited.to_platform_input(), cx);
                 return Ok(json!("ok"));
@@ -605,6 +623,17 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         // The Swift app's `composer-menu`: a chip's menu as text, or a click
         // on one of its items.
         "composer-menu" => {
+            // Other… under a runner's Folder: its dialog, the path typed in
+            // and Return pressed there.
+            if text(cmd, "menu") == "runner" && text(cmd, "click") == "Other…" {
+                let field = app.update(cx, |t, cx| t.type_remote_folder(window, cx));
+                if let Some(folder) = cmd["folder"].as_str() {
+                    field.update(cx, |f, cx| f.set_value(folder.to_owned(), window, cx));
+                    window.render_frame(cx);
+                    window.press("enter", cx);
+                }
+                return Ok(json!("ok"));
+            }
             if text(cmd, "menu") == "runner" {
                 return crate::new_thread::runner_menu_command(app, cmd, cx);
             }
@@ -662,6 +691,9 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
                     window.pointer_up(at, MouseButton::Left, cx);
                     Ok(json!("ok window 0"))
                 }
+                // Words typed in the open picker's search, then Return there,
+                // through the search box's own key handling.
+                "model" | "" if cmd["search"].is_string() => crate::composer_chips::search_command(&composer, text(cmd, "search"), window, cx).map(|_| json!("ok")),
                 _ => {
                     if let Some(title) = cmd["click"].as_str() {
                         return crate::composer_chips::picker_click(&composer, title, cx).map(|_| json!("ok"));

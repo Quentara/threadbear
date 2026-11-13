@@ -1451,21 +1451,30 @@ impl Composer {
             }))
             .on_drop(move |paths: &ExternalPaths, window, cx| {
                 if let Some(this) = drop_target.upgrade() {
+                    // Where it's let go, over the words (`performDragOperation`).
+                    let at = window.mouse_position();
                     this.update(cx, |this, cx| {
                         let target = this.input.clone();
+                        this.caret_to_drop(&target, at, cx);
                         this.take_drop_in(&target, paths.paths().to_vec(), window, cx);
                     });
                 }
             })
             .on_drop(move |drag: &crate::composer_inline::DraggedThread, window, cx| {
                 if let Some(this) = thread_drop.upgrade() {
-                    this.update(cx, |this, cx| this.take_thread_drop(drag, window, cx));
+                    let at = window.mouse_position();
+                    this.update(cx, |this, cx| this.take_thread_drop(drag, at, window, cx));
                 }
             })
             // A file or picture dragged from inside the app (file_drag.rs).
             .on_drop(move |file: &crate::file_drag::DraggedFile, window, cx| {
                 if let (Some(this), Some(real)) = (file_drop.upgrade(), file.still_grabbed()) {
-                    this.update(cx, |this, cx| this.take_paths(vec![real], window, cx));
+                    let at = window.mouse_position();
+                    this.update(cx, |this, cx| {
+                        let target = this.input.clone();
+                        this.caret_to_drop(&target, at, cx);
+                        this.take_paths(vec![real], window, cx);
+                    });
                 }
             })
             .child(

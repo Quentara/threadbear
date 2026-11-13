@@ -18,14 +18,12 @@ use self::metrics::*;
 use crate::style::{self, size, MAX_CONTENT_WIDTH, SIDE_INSET};
 use crate::thread::ThreadPane;
 use gpui_kit::base::{SelectableText, TextView};
-use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::ContextMenuExt as _;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _, StyledExt as _};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 // The zoom-aware px (style.rs), in place of GPUI's.
 use crate::style::px;
-use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, Mutex};
 use threadbear_core::reducer::{
@@ -488,44 +486,42 @@ impl ThreadPane {
         }
     }
 
-    // The asks card is the composer agent's: unchanged from before (`Decisions`
-    // and `asksText` land with the composer's card).
+    /// A closed card left in the transcript (`asksText` once `isOpen` is
+    /// false): quiet, as nothing waits on it now. A done card is one grey
+    /// "✓ Done" line with Archive at its right (`doneText`); a card of asks
+    /// is a grey "Needed you" over the asks, numbered when there are several.
+    /// Every finished turn leaves a done card, so this is on screen all day:
+    /// it used to be a bold "Done" over every old follow-up (13 Nov audit).
     fn asks_row(&mut self, ix: usize, asks: &threadbear_core::reducer::AsksCard, cx: &mut Context<Self>) -> AnyElement {
-        let (muted, border, warning) = {
-            let theme = cx.theme();
-            (theme.muted_foreground, theme.border, theme.warning)
-        };
-        let column = |el: Div| h_flex().w_full().justify_center().child(el.w_full().max_w(px(760.)));
+        use crate::composer_card::{card_button, metrics, ButtonLook};
+        let (card_bg, border, secondary) = (style::card_background(cx), style::card_border(cx), style::secondary_label(cx));
+        let title = |words: &'static str| div().text_size(px(size::CARD_TITLE)).font_weight(FontWeight::MEDIUM).text_color(secondary).child(words);
+        let mut body = v_flex().w_full();
         if asks.is_done() {
-            let mut col = v_flex().gap_1().child(div().font_semibold().child("Done"));
-            for next in &asks.next {
-                col = col.child(div().text_sm().text_color(muted).child(next.clone()));
+            let app = self.app.clone();
+            body = body.child(
+                h_flex()
+                    .w_full()
+                    .h(px(metrics::PAGED_HEADING))
+                    .justify_between()
+                    .child(h_flex().items_center().gap(px(2.5)).child(crate::icons::tall_checkmark().with_size(px(16.)).text_color(style::tick_green(cx))).child(title("Done")))
+                    .child(card_button(("past-done-archive", ix), "Archive", ButtonLook::Plain, "Archive this thread", cx).on_click(move |_, window, cx| {
+                        if let Some(app) = app.upgrade() {
+                            app.update(cx, |app, cx| app.toggle_archive(window, cx));
+                        }
+                    })),
+            );
+        } else {
+            body = body.child(div().h(px(size::WORK_LINE)).flex().items_center().child(title("Needed you")));
+            let numbered = asks.asks.len() > 1;
+            for (n, ask) in asks.asks.iter().enumerate() {
+                let action = threadbear_core::sidebar::preview_plain(&ask.action);
+                let words = if numbered { format!("{}  {action}", n + 1) } else { action };
+                body = body.child(div().mt(px(metrics::ASK_BEFORE)).text_size(px(size::BODY)).line_height(px(size::BODY_LINE)).text_color(secondary).child(words));
             }
-            return column(card(border).child(col)).into_any_element();
         }
-        let mut card = card(if asks.is_open { warning } else { border });
-        // The reading column's style, so a link in a why is drawn as in a
-        // reply (no underline, the link blue), in the card's muted text.
-        let why_style = self.reading_style(cx).with_foreground(muted);
-        for (ai, ask) in asks.asks.iter().enumerate() {
-            let mut block = v_flex().gap_1().child(div().font_semibold().child(ask.action.clone()));
-            if let Some(why) = &ask.why {
-                block = block.child(div().text_sm().text_color(muted).child(crate::open_gate::reading_markdown_view(("why", ix * 10 + ai), why.clone(), self.origin(), &self.summary.cwd).style(why_style.clone())));
-            }
-            if asks.is_open && !ask.options.is_empty() {
-                let mut buttons = h_flex().gap_2().flex_wrap().pt_1();
-                for (oi, option) in ask.options.iter().enumerate() {
-                    let text = format!("{}\n{}", ask.action, option);
-                    let answers = json!([{ "action": ask.action, "answer": option }]);
-                    buttons = buttons.child(Button::new(("ask", ix * 100 + ai * 10 + oi)).small().label(option.clone()).when(ask.suggested == Some(oi), |b| b.primary()).on_click(cx.listener(
-                        move |this, _: &ClickEvent, _, cx| this.send(text.clone(), Some(answers.clone()), cx),
-                    )));
-                }
-                block = block.child(buttons);
-            }
-            card = card.child(block);
-        }
-        column(card).into_any_element()
+        let card = div().mt(px(ROW_TOP + 2.)).mb(px(ROW_BOTTOM + 2.)).px(px(CARD_PAD)).py(px(CARD_PAD - 2.)).rounded(px(10.)).bg(card_bg).border_1().border_color(border).child(body);
+        h_flex().w_full().px(px(SIDE_INSET)).justify_center().child(div().w_full().max_w(px(MAX_CONTENT_WIDTH)).child(card)).into_any_element()
     }
 }
 
@@ -679,10 +675,6 @@ fn footer_text(done: &TurnCompletion) -> String {
 
 /// How long a lit step stays lit, its fade included (`light`: 2.5 s, then 0.8).
 pub(crate) const LIGHT_TIME: std::time::Duration = std::time::Duration::from_millis(3300);
-
-fn card(border: Hsla) -> Div {
-    v_flex().gap_3().p_3p5().rounded_xl().border_1().border_color(border)
-}
 
 /// What a code block's highlighter is.
 type CodeHighlighter = std::sync::Arc<dyn Fn(&gpui_kit::base::text::CodeBlock) -> Vec<(std::ops::Range<usize>, gpui_kit::HighlightStyle)> + Send + Sync>;

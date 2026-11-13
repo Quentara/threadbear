@@ -19,6 +19,10 @@ When('I press Shift-Return', async function (this: ThreadbearWorld) {
   await this.app.do({ cmd: 'return', shift: true });
 });
 
+When('I press Option-Return', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'return', option: true });
+});
+
 When('I send {string}', async function (this: ThreadbearWorld, text: string) {
   await this.app.do({ cmd: 'send', text });
 });
@@ -66,6 +70,17 @@ When('I paste the picture into the composer', async function (this: ThreadbearWo
 // A point in the thread's transcript on both apps' windows.
 When('I drop the picture on the transcript', async function (this: ThreadbearWorld) {
   await this.app.do({ cmd: 'drop', path: samplePicture, x: 650, y: 300 });
+});
+
+// Any file but a picture goes in as its path in backticks.
+const sampleFile = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'support', 'driver.ts');
+
+When('I drop a file on the first letter of the composer\'s words', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'drop', path: sampleFile, boxOffset: 0 });
+});
+
+Then('the composer starts with the dropped file\'s path, then {string}', async function (this: ThreadbearWorld, rest: string) {
+  await this.until(`the path, then "${rest}"`, (d) => d.composer.text.trim() === `\`${sampleFile}\` ${rest}`);
 });
 
 Then('the composer holds {int} picture(s)', async function (this: ThreadbearWorld, count: number) {

@@ -758,8 +758,42 @@ pub(crate) struct ModelPickerView {
 impl ModelPickerView {
     fn new(composer: WeakEntity<Composer>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search models"));
-        let sub = cx.subscribe(&search, |_, _, _: &InputEvent, cx| cx.notify());
+        let sub = cx.subscribe_in(&search, window, |this: &mut Self, _, event: &InputEvent, window, cx| {
+            // Return takes the first match, as the Swift search's onSubmit does.
+            if let InputEvent::PressEnter { .. } = event {
+                this.pick_first(window, cx);
+            }
+            cx.notify();
+        });
         ModelPickerView { composer, search, column: None, login_open: false, _subs: vec![sub] }
+    }
+
+    /// The column the list shows, the provider its models are from, and its
+    /// rows for what's typed in the search, older ones last.
+    fn listed(&self, data: &ChipData, cx: &App) -> Option<(String, String, Vec<PickerRow>)> {
+        let settings = data.settings()?;
+        let pools = settings.uses_pools();
+        let own_column = if pools { settings.pool().map_or(PINNED_COLUMN.to_owned(), |p| p.id.clone()) } else { settings.provider.clone() };
+        let column = self.column.clone().unwrap_or(own_column);
+        let query = self.search.read(cx).value().to_string();
+        let provider = if pools {
+            data.logins.pool(&column).and_then(|p| p.account_ids.iter().find_map(|id| data.logins.account(id))).map_or(settings.provider.clone(), |a| a.provider_id().to_owned())
+        } else {
+            column.clone()
+        };
+        let (main, older): (Vec<_>, Vec<_>) = settings.rows(&provider, &query).into_iter().partition(|r| !r.is_older);
+        Some((column, provider, main.into_iter().chain(older).collect()))
+    }
+
+    /// Return in the search: the first model listed, as a click on it would.
+    /// Nothing listed, nothing happens (the Swift guard).
+    fn pick_first(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(composer) = self.composer.upgrade() else { return };
+        let data = composer.read(cx).chip_data(cx);
+        let Some((column, _, rows)) = self.listed(&data, cx) else { return };
+        let Some(first) = rows.into_iter().next() else { return };
+        composer.update(cx, |c, cx| c.pick_model(&first, &column, &data, cx));
+        window.dispatch_action(Box::new(gpui_kit::base::actions::Cancel), cx);
     }
 }
 
@@ -794,15 +828,8 @@ impl Render for ModelPickerView {
             }
             seen.into_iter().map(|p| (p.clone(), provider_title(&p), None, vec![p])).collect()
         };
-        let own_column = if pools { settings.pool().map_or(PINNED_COLUMN.to_owned(), |p| p.id.clone()) } else { settings.provider.clone() };
-        let column = self.column.clone().unwrap_or(own_column);
         let query = self.search.read(cx).value().to_string();
-        let provider = if pools {
-            data.logins.pool(&column).and_then(|p| p.account_ids.iter().find_map(|id| data.logins.account(id))).map_or(settings.provider.clone(), |a| a.provider_id().to_owned())
-        } else {
-            column.clone()
-        };
-        let rows = settings.rows(&provider, &query);
+        let Some((column, provider, rows)) = self.listed(&data, cx) else { return div().into_any_element() };
         let (main, older): (Vec<_>, Vec<_>) = rows.into_iter().partition(|r| !r.is_older);
         let levels = settings.effort_levels();
         let chosen = settings.effective_effort();
@@ -1172,6 +1199,22 @@ fn model_row(row: PickerRow, provider: &str, cx: &App, action: impl Fn(&mut Wind
         )
         // The default, as a filled star (`star.fill`, tertiary).
         .when(row.is_default, |s| s.child(crate::icons::symbol("star.fill").with_size(px(9.)).text_color(style::faint_text(cx))))
+}
+
+/// The automation's search in the open model picker: `words` put in its
+/// search box, which takes the keyboard, then Return pressed there.
+#[cfg(feature = "automation")]
+pub(crate) fn search_command(composer: &Entity<Composer>, words: &str, window: &mut Window, cx: &mut App) -> Result<(), String> {
+    use gpui_kit::test::TestWindowExt as _;
+    let picker = composer.read(cx).model_picker.clone().ok_or("the model picker isn't open")?;
+    let search = picker.read(cx).search.clone();
+    search.update(cx, |s, cx| {
+        s.set_value(words.to_owned(), window, cx);
+        s.focus(window, cx);
+    });
+    window.render_frame(cx);
+    window.press("enter", cx);
+    Ok(())
 }
 
 /// The picker as text for the automation's `composer-menu` (ThreadSettings

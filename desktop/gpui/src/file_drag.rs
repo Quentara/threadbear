@@ -156,7 +156,13 @@ pub(crate) async fn file_drag_command(app: &WeakEntity<crate::app::Threadbear>, 
             Ok(at)
         })
         .map_err(|e| e.to_string())??;
-    let to = point(gpui_kit::px(cmd["x"].as_f64().unwrap_or(650.) as f32), gpui_kit::px(cmd["y"].as_f64().unwrap_or(300.) as f32));
+    // `onto: "box"`: let go over the message box's words, the one place over
+    // the thread that takes the app's own drags.
+    let to = if cmd["onto"].as_str() == Some("box") {
+        cx.update(|cx| app.read(cx).composer(cx).map(|c| c.read(cx).input.read(cx).input_bounds().center())).ok_or("no message box")?
+    } else {
+        point(gpui_kit::px(cmd["x"].as_f64().unwrap_or(650.) as f32), gpui_kit::px(cmd["y"].as_f64().unwrap_or(300.) as f32))
+    };
     let steps = 12;
     for step in 1..=steps {
         let t = step as f32 / steps as f32;

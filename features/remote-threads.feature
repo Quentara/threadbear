@@ -107,6 +107,18 @@ Feature: Other runners' threads
     And the note under the box says "Starts in misc on bruce, with mike"
     And the "runner" menu has a row "[x] bruce"
 
+  # There's no folder picker for another Mac, so Other… asks for its path
+  # (`typeRemoteFolder`). The Swift app has it under "+" › Folder, and its
+  # automation, frozen since 12 Nov, can't open that dialog.
+  @composer.runner @remote-threads @swift-pending
+  Scenario: A new thread on another machine can start in a folder typed in
+    When I start a new thread
+    And I pick "bruce" from the "runner" menu
+    Then the "runner" menu has a row "    [ ] Other…"
+    When I type "/Users/bruce/dev/backup" as the folder on that machine
+    Then the note under the box says "Starts in backup on bruce, with mike"
+    And the "runner" menu has a row "    [x] /Users/bruce/dev/backup"
+
   @composer.runner @remote-threads
   Scenario: A new thread started on another machine is listed as its
     When I start a new thread

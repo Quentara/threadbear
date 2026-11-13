@@ -266,6 +266,10 @@ impl MenuRow {
     pub(crate) fn runner_folder(folder: String, checked: bool) -> Self {
         Self { title: folder.clone(), symbol: Some("folder"), action: Some(MenuAction::DraftFolder(folder)), checked, enabled: true, children: vec![], separator: false }
     }
+    /// Other… under it, to type a path on that Mac.
+    pub(crate) fn type_runner_folder() -> Self {
+        Self { title: "Other…".to_owned(), symbol: Some("pencil"), action: Some(MenuAction::TypeDraftFolder), checked: false, enabled: true, children: vec![], separator: false }
+    }
 }
 
 /// What choosing a menu line does.
@@ -297,6 +301,8 @@ pub(crate) enum MenuAction {
     Runner(Option<String>),
     DefaultRunner(Option<String>),
     DraftFolder(String),
+    /// Other… under that Folder: a path on that Mac, typed (`typeRemoteFolder`).
+    TypeDraftFolder,
     /// Move to ▸ a runner, and Cancel Move once it's going (move_sheet.rs).
     MoveTo(String, String),
     CancelMove,
@@ -827,6 +833,10 @@ impl Threadbear {
             MenuAction::Runner(runner) => return self.choose_new_thread_runner(runner, true, cx),
             MenuAction::DefaultRunner(runner) => return self.set_default_runner(runner, cx),
             MenuAction::DraftFolder(folder) => return self.change_new_draft(&json!({ "cwd": folder }), cx),
+            MenuAction::TypeDraftFolder => {
+                self.type_remote_folder(window, cx);
+                return;
+            }
             MenuAction::EditSchedule(id) => return self.edit_schedule(&id, window, cx),
             MenuAction::RunSchedule(id) => return self.run_schedule(id, cx),
             MenuAction::PauseSchedule(id, paused) => return self.set_schedule_paused(id, paused, cx),
@@ -883,6 +893,7 @@ impl Threadbear {
             | MenuAction::Runner(_)
             | MenuAction::DefaultRunner(_)
             | MenuAction::DraftFolder(_)
+            | MenuAction::TypeDraftFolder
             | MenuAction::EditSchedule(_)
             | MenuAction::RunSchedule(_)
             | MenuAction::PauseSchedule(..)

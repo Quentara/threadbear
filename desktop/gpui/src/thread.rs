@@ -1394,7 +1394,7 @@ impl ThreadPane {
 
     /// A work link in a reply: opens the step's group, scrolls to the step and
     /// lights it up for a moment (`openThreadLink`).
-    pub(crate) fn open_work_link(&mut self, quote: &str, row_id: &str, _window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn open_work_link(&mut self, quote: &str, row_id: &str, window: &mut Window, cx: &mut Context<Self>) {
         let model = self.feed.model();
         // A link with no step behind it beeps, as the Swift app's does, so
         // the click doesn't look as if it was missed.
@@ -1408,8 +1408,17 @@ impl ThreadPane {
                 self.apply(change, cx);
             }
         }
+        // A third of the way down the view, not at its very top, so what led
+        // up to the step is in sight too (`openThreadLink`).
         if let Some(index) = self.feed.model().index_of(&step) {
             self.scroller.update(cx, |s, cx| s.scroll_to_row(index, px(0.), cx));
+            let scroller = self.scroller.clone();
+            window.on_next_frame(move |_, cx| {
+                scroller.update(cx, |s, cx| {
+                    let down = s.viewport().size.height / 3.;
+                    s.back_up(down, cx);
+                });
+            });
             self.light_row(step, cx);
         }
     }
@@ -1662,15 +1671,25 @@ impl Render for ThreadPane {
                 })
                 .drag_over::<ExternalPaths>(|s, _, _, cx| s.bg(crate::style::accent(cx).opacity(0.06)).border_2().border_color(crate::style::accent(cx)))
                 // A thread from the sidebar goes into the message as its chip.
-                .on_drop(move |drag: &crate::composer_inline::DraggedThread, window, cx| thread_drop.update(cx, |c, cx| c.take_thread_drop(drag, window, cx)))
+                .on_drop(move |drag: &crate::composer_inline::DraggedThread, window, cx| {
+                    let at = window.mouse_position();
+                    thread_drop.update(cx, |c, cx| c.take_thread_drop(drag, at, window, cx));
+                })
                 .drag_over::<crate::composer_inline::DraggedThread>(|s, _, _, cx| s.bg(crate::style::accent(cx).opacity(0.06)).border_2().border_color(crate::style::accent(cx)))
                 // A file or picture dragged from inside the app (file_drag.rs)
-                // is a dropped file too: GPUI only hands the system its drag
-                // once it's out of the window.
+                // is a dropped file too, but only let go over a box: one let
+                // go anywhere else over the thread is a drag out that changed
+                // its mind, and shouldn't land in the message (`takesDropFromThread`
+                // turns this app's own drags away; the box still takes them).
+                // GPUI only hands the system its drag once it's out of the window.
                 .on_drop(move |file: &crate::file_drag::DraggedFile, window, cx| {
                     let Some(real) = file.still_grabbed() else { return };
                     let at = window.mouse_position();
-                    file_drop.update(cx, |c, cx| c.take_dropped_paths(vec![real], at, window, cx));
+                    file_drop.update(cx, |c, cx| {
+                        if c.box_under(at, cx).is_some() {
+                            c.take_dropped_paths(vec![real], at, window, cx);
+                        }
+                    });
                 })
                 .drag_over::<crate::file_drag::DraggedFile>(|s, _, _, cx| s.bg(crate::style::accent(cx).opacity(0.06)).border_2().border_color(crate::style::accent(cx)))
         });

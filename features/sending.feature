@@ -22,6 +22,15 @@ Feature: Sending a message
     Then the composer holds a new line after "first line"
     And the transcript doesn't show my message "first line"
 
+  # Option-Return is Shift-Return (ComposerView's keyDown). The Swift
+  # automation's `return` only knows Shift, and it's frozen, so pending there.
+  @composer.return @swift-pending
+  Scenario: Option-Return starts a new line too
+    When I type "first line" in the composer
+    And I press Option-Return
+    Then the composer holds a new line after "first line"
+    And the transcript doesn't show my message "first line"
+
   @composer.listcontinue
   Scenario: Shift-Return carries a numbered list on
     When I type "1. first" in the composer
@@ -77,6 +86,16 @@ Feature: Sending a message
   Scenario: Dropping a picture on the thread adds it to the composer
     When I drop the picture on the transcript
     Then the composer holds 1 picture
+
+  # Let go over the box's words, a drop goes in where it was let go
+  # (`characterIndexForInsertion`), not where the cursor was; anywhere else
+  # over the thread it goes at the cursor. The Swift app's `drop` can't aim at
+  # a letter, so it's pending there.
+  @composer.filedrop @swift-pending
+  Scenario: A file let go over the message's words goes in where it was let go
+    When I type "and the rest" in the composer
+    And I drop a file on the first letter of the composer's words
+    Then the composer starts with the dropped file's path, then "and the rest"
 
   @composer.chiphover
   Scenario: Hovering a chip shows its picture

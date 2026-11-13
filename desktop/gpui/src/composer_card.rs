@@ -78,6 +78,8 @@ struct PageSlide {
 
 /// How long the slide takes (CardDeck.duration).
 const SLIDE: Duration = Duration::from_millis(180);
+/// The crossfade in its place with Reduce Motion on.
+const FADE: Duration = Duration::from_millis(120);
 
 /// Easing out, as Core Animation's `.easeOut` does it near enough.
 fn ease_out(t: f32) -> f32 {
@@ -555,7 +557,8 @@ impl Composer {
                         this.update(cx, |this, cx| this.set_page(page.saturating_sub(1), cx));
                     }
                 }))
-                .child(page_counter(page, card.asks.len(), self.card.slide.filter(|s| s.to == page), cx))
+                // With Reduce Motion the number changes where it is (ComposerCardHost).
+                .child(page_counter(page, card.asks.len(), self.card.slide.filter(|s| s.to == page && !cx.reduce_motion()), cx))
                 .child(pager_arrow("›", page + 1 < card.asks.len(), "Next ask", ("page-next", 0usize), cx, move |_, _, cx| {
                     if let Some(this) = this_next.upgrade() {
                         this.update(cx, |this, cx| this.set_page(page + 1, cx));
@@ -601,6 +604,7 @@ impl Composer {
             // height; only the page showing is drawn, and it goes last so
             // it's the one on top for the pointer.
             let slide = self.card.slide.filter(|s| s.to == page && s.from < card.asks.len());
+            let reduce = cx.reduce_motion();
             let mut pages = div().w_full().grid().grid_cols(1).overflow_hidden();
             for (index, ask) in card.asks.iter().enumerate().filter(|(i, _)| *i != page).chain(card.asks.iter().enumerate().filter(|(i, _)| *i == page)) {
                 let body = v_flex().w_full().child(self.render_ask(index, ask, numbered, window, cx));
@@ -609,6 +613,13 @@ impl Composer {
                     // The two asks sliding like a deck (CardDeck): the next
                     // pushes in from the right as the old goes off left, and
                     // back the other way.
+                    // Reduce Motion: one page fades into the other where it
+                    // is, in 0.12 s, as the Swift card's layers do.
+                    Some(s) if reduce && (index == s.from || index == s.to) => {
+                        let (from, to) = if index == s.to { (0., 1.) } else { (1., 0.) };
+                        let id = ElementId::NamedInteger("card-fade".into(), s.serial * 1000 + index as u64);
+                        cell.child(body.with_animation(id, Animation::new(FADE), move |el, t| el.opacity(from + (to - from) * t)))
+                    }
                     Some(s) if index == s.from || index == s.to => {
                         let forward = s.to > s.from;
                         let (start, end) = if index == s.to { (if forward { 1. } else { -1. }, 0.) } else { (0., if forward { -1. } else { 1. }) };
@@ -1070,23 +1081,34 @@ impl Composer {
     /// Files dropped on the thread: on a Something else box they're that
     /// answer's, anywhere else the message's (ComposerDropView, AskAnswerBox).
     pub(crate) fn take_dropped_paths(&mut self, paths: Vec<std::path::PathBuf>, at: Point<Pixels>, window: &mut Window, cx: &mut Context<Self>) {
-        // On a paged card only the page showing has a box in sight; the
-        // others keep where they were last drawn.
+        let target = self.box_under(at, cx).unwrap_or_else(|| self.input.clone());
+        self.caret_to_drop(&target, at, cx);
+        self.take_drop_in(&target, paths, window, cx);
+    }
+
+    /// The box a point is over: an open card's Something else box, or the
+    /// message box itself. On a paged card only the page showing has a box
+    /// in sight; the others keep where they were last drawn.
+    pub(crate) fn box_under(&self, at: Point<Pixels>, cx: &App) -> Option<Entity<TextareaState>> {
         let shown = self.open_card(cx).filter(|c| !self.card.collapsed && is_paged(c)).map(|_| self.card.page);
-        let over = self
-            .card
+        self.card
             .inputs
             .iter()
             .filter(|(ask, _)| shown.is_none_or(|page| page == **ask) && !self.card.collapsed)
             .find(|(ask, _)| self.card.box_bounds.get(**ask).is_some_and(|b| b.contains(&at)))
-            .map(|(_, input)| input.clone());
-        match over {
-            Some(input) => self.take_drop_in(&input, paths, window, cx),
-            None => {
-                let target = self.input.clone();
-                self.take_drop_in(&target, paths, window, cx);
-            }
+            .map(|(_, input)| input.clone())
+            .or_else(|| self.input.read(cx).input_bounds().contains(&at).then(|| self.input.clone()))
+    }
+
+    /// Let go over a box's words, a drop goes in where it was let go, as the
+    /// Swift box's `characterIndexForInsertion` puts it; anywhere else over
+    /// the thread it goes where the cursor already is, as a paste does.
+    pub(crate) fn caret_to_drop(&self, target: &Entity<TextareaState>, at: Point<Pixels>, cx: &mut App) {
+        if !target.read(cx).input_bounds().contains(&at) {
+            return;
         }
+        let offset = target.read(cx).offset_for_point(at);
+        target.update(cx, |t, cx| t.set_selected_range(offset..offset, cx));
     }
 }
 

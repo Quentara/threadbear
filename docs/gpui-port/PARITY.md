@@ -302,6 +302,41 @@ built parsers and gates with no launch of the app, which is the trap.)
   link, each on the first click, with the app coming in front each time.
   Not tried: PDF and video previews (their own views say yes,
   media_views.m) and the Terminal.
+### 2026-11-13 Gaps from the in-thread parity recheck (`card.done`, `composer.modelpicker`, `composer.runner`, `composer.filedrop`, `drag.fileout`, `composer.return`, `rich.worklinks`)
+
+From the coordinator's recheck of everything inside a thread
+(`~/Library/Caches/Threadbear/parity-audit/recheck-thread.md`):
+
+- A past Done card in the transcript is the Swift one now: a quiet card
+  with one grey "✓ Done" line and Archive at its right (`doneText` with
+  `isOpen` false). It was the old placeholder, a bold "Done" over every old
+  follow-up, and every finished turn leaves one. A past card of asks is a
+  grey "Needed you" over the asks in grey, numbered when there are several.
+- Return in the model picker's search picks the first model it lists, as
+  the Swift search's `onSubmit` does.
+- A new thread on another Mac: Runs on's Folder is always there, with
+  Other… to type a path on that Mac (`typeRemoteFolder`), so a first thread
+  on a fresh Mac can pick its folder. A typed folder heads the list.
+- Drops: let go over the message box's words, a file goes in where it was
+  let go (`characterIndexForInsertion`; the kit's input has
+  `offset_for_point` for it); anywhere else over the thread it goes at the
+  cursor as before. The app's own drags (a picture in the transcript, a
+  Highlights file, the pane's picture) only go in when let go over a box:
+  over the rest of the thread they're a drag out that changed its mind
+  (`takesDropFromThread`). The three drag-out scenarios that let go over
+  the transcript now let go over the box, and a fourth checks the
+  transcript turns one away.
+- Option-Return adds a line, as Shift-Return does (an `alt-enter` binding
+  in the kit's input).
+- With Reduce Motion on, a paged asks card's pages crossfade in place in
+  0.12 s and the number changes without rolling (ComposerCardHost).
+- A ↑ work link puts its step a third of the way down the view, not at the
+  very top, a frame after scrolling to it so the rows above are measured.
+- Not done: dragging a file link or a web link out of a reply's words. GPUI
+  hands the system only files (`external_drag_payload`), so a web link
+  can't go out as a URL, and the kit's selectable text takes a press on a
+  link as the start of a selection, so a file link has no drag to start
+  from yet. Both stay open under `drag.fileout`.
 
 ### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
 

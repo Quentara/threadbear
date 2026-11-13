@@ -315,6 +315,15 @@ impl Threadbear {
         for runner in &self.remote.runners {
             lines.push(format!("    {}{}", if default.as_deref() == Some(runner.id.as_str()) { "[x] " } else { "[ ] " }, runner.name));
         }
+        if let Some(runner) = chosen.as_deref().filter(|r| self.remote.logins.contains_key(*r)) {
+            let current = self.draft_summary().cwd;
+            lines.push("---".to_owned());
+            lines.push("[ ] Folder".to_owned());
+            for folder in self.listed_remote_folders(runner, &current) {
+                lines.push(format!("    {}{folder}", if folder == current { "[x] " } else { "[ ] " }));
+            }
+            lines.push("    [ ] Other…".to_owned());
+        }
         lines
     }
 
@@ -355,16 +364,73 @@ impl Threadbear {
             defaults.push(MenuRow::runner(runner.name.clone(), crate::icons::runner_symbol(runner.icon.as_deref()), default.as_deref() == Some(runner.id.as_str()), false, MenuAction::DefaultRunner(Some(runner.id.clone()))));
         }
         rows.push(MenuRow::submenu("Default", "star", defaults));
-        // On another runner there's no "+": its folders are here.
+        // On another runner there's no "+": its folders are here, always with
+        // Other… to type one, so a first thread on a fresh Mac can still pick
+        // its folder (`remoteFolderMenu`).
         if let Some(runner) = chosen.as_deref().filter(|r| self.remote.logins.contains_key(*r)) {
             let current = self.draft_summary().cwd;
-            let folders: Vec<MenuRow> = self.remote_folders(runner).into_iter().map(|f| { let on = f == current; MenuRow::runner_folder(f, on) }).collect();
+            let mut folders: Vec<MenuRow> = self.listed_remote_folders(runner, &current).into_iter().map(|f| { let on = f == current; MenuRow::runner_folder(f, on) }).collect();
             if !folders.is_empty() {
-                rows.push(MenuRow::separator());
-                rows.push(MenuRow::submenu("Folder", "folder", folders));
+                folders.push(MenuRow::separator());
             }
+            folders.push(MenuRow::type_runner_folder());
+            rows.push(MenuRow::separator());
+            rows.push(MenuRow::submenu("Folder", "folder", folders));
         }
         self.open_menu(None, rows, position, false, window, cx);
+    }
+
+    /// The Folder submenu's folders: the one the draft has first when it's
+    /// none of that runner's known ones (one typed in), then those, eight at most.
+    fn listed_remote_folders(&self, runner: &str, current: &str) -> Vec<String> {
+        let mut folders = self.remote_folders(runner);
+        if !current.is_empty() && !folders.iter().any(|f| f == current) {
+            folders.insert(0, current.to_owned());
+        }
+        folders.truncate(8);
+        folders
+    }
+
+    /// Other…: asks for a path on the other Mac, as there's no folder
+    /// picker for it (`typeRemoteFolder`). Nothing is checked here; that
+    /// runner says if it isn't there when the thread starts. Return in the
+    /// field is Use. Hands back the field, for scripts.
+    pub(crate) fn type_remote_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Entity<gpui_kit::component::input::InputState> {
+        use gpui_kit::component::dialog::DialogButtonProps;
+        use gpui_kit::component::input::{Input, InputEvent, InputState};
+        use gpui_kit::component::WindowExt as _;
+        let name = self.new_thread.picks.runner.as_deref().map_or_else(|| "that Mac".to_owned(), |id| self.runner_name_of(id));
+        let current = self.draft_summary().cwd;
+        let field = cx.new(|cx| {
+            let mut field = InputState::new(window, cx).placeholder(format!("/Users/{name}/dev"));
+            field.set_value(current, window, cx);
+            field
+        });
+        let typed_folder = |field: &Entity<InputState>, cx: &App| Some(field.read(cx).value().trim().to_owned()).filter(|f| !f.is_empty());
+        cx.subscribe_in(&field, window, move |this, field, event: &InputEvent, window, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                if let Some(folder) = typed_folder(field, cx) {
+                    this.change_new_draft(&json!({ "cwd": folder }), cx);
+                }
+                window.close_dialog(cx);
+            }
+        })
+        .detach();
+        let app = cx.entity().downgrade();
+        let (typed, title, about) = (field.clone(), format!("A folder on {name}"), format!("Its full path, like /Users/{name}/dev."));
+        window.open_alert_dialog(cx, move |dialog, _, _| {
+            let (field, app) = (typed.clone(), app.clone());
+            dialog.title(title.clone()).description(about.clone()).width(px(380.)).child(Input::new(&typed)).button_props(DialogButtonProps::default().ok_text("Use").show_cancel(true)).on_ok(move |_, _, cx| {
+                if let Some(folder) = typed_folder(&field, cx) {
+                    app.update(cx, |this, cx| this.change_new_draft(&json!({ "cwd": folder }), cx)).ok();
+                }
+                true
+            })
+        });
+        let handle = field.read(cx).focus_handle(cx);
+        window.focus(&handle, cx);
+        crate::web_panels::keyboard_to_app(window);
+        field
     }
 
     // ---- Drawing ----

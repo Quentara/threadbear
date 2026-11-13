@@ -165,3 +165,8 @@ When('its move to this Mac is claimed before the local thread arrives', async fu
   await this.app.do({ cmd: 'mock', method: 'moveArrive', params: { threadId: d.selection?.id, claimedFirst: true } });
   await sleep(500);
 });
+
+// Runs on › Folder › Other…, the path typed in its dialog and Return pressed.
+When('I type {string} as the folder on that machine', async function (this: ThreadbearWorld, folder: string) {
+  await this.app.do({ cmd: 'composer-menu', menu: 'runner', click: 'Other…', folder });
+});

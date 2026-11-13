@@ -465,14 +465,18 @@ folder?" or "Explain what you can do for me here." When you're ready for it
 to make something, try "Make a file called hello.txt that says hi" and watch
 it appear in `~/ThreadbearThreads`.
 
-Return sends and Shift-Return adds a new line. In a list, Shift-Return
+Return sends and Shift-Return (or Option-Return) adds a new line. In a list, Shift-Return
 starts the next item ("2. " after "1. milk", "- " after "- milk"), and
 Shift-Return on an empty item ends the list. You can paste or drop images
 into the composer, or add them with +. Each one goes in where the cursor
 is as a small chip, "Picture 1", "Picture 2", with
 its thumbnail, and the agent gets each picture right there in your words.
-You can let go of a file anywhere over the thread, not just on the box: the
-thread's outlined while it'll take it, and the file goes in where the cursor is.
+Let go of a file over the box's words and it goes in right there. You can
+also let go of it anywhere else over the thread: the thread's outlined while
+it'll take it, and the file goes in where the cursor is. A picture or file
+dragged out of the app itself (a picture in the transcript, a Highlights
+file) only goes in when you let go over the box, so a drag out that changes
+its mind doesn't land in your message.
 So "this one [Picture 1] should look like this one [Picture 2]" says which
 is which. The thumbnails show over the text too; the cross on one takes it
 and its chip out. Hover a chip to see its picture, in the composer or once
@@ -970,7 +974,9 @@ folder in the app never approves its check.
 
 If you run Threadbear on more than one Mac (or on a Linux server as well,
 INSTALL.md section 6), a schedule that starts a new
-thread can run on any of them: pick the Mac under Runs on. It runs there
+thread can run on any of them: pick the Mac under Runs on. A new thread
+can too: Runs on under the box lists the Macs, and its Folder lists that
+Mac's folders, with Other… to type a full path there. It runs there
 even while this one is asleep, in that Mac's folder (leave the folder
 empty for its default). Its threads show on your phone and the website, and
 threads made on another Mac show in your sidebar too, with that Mac's
