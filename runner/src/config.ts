@@ -215,8 +215,9 @@ export type RunnerJson = {
   // icon: an SF Symbol for this runner in lists (machine.ts works one out).
   // An rpcUrl left from the direct link between Macs (gone 13 Nov 2026) is ignored.
   // full: true sends tool output to your Convex deployment as well, scrubbed first
-  // (docs/full-convex.md). A new install's setup writes true; one from before
-  // has none, and its runner asks once (convex-use.ts), noting when in fullAsked.
+  // (docs/full-convex.md). Unset to start: the main runner asks once, when a
+  // phone, the website or another machine would show it (convex-use.ts), noting
+  // when in fullAsked.
   // usageWarning: false hides tb status's warning near Convex's Free limits.
   // pastedPictures: false keeps pictures you paste off your Convex deployment
   // (docs/on-your-mac.md).

@@ -101,7 +101,7 @@ test('the question names what made it useful, with the benefit first', () => {
 });
 
 function offer(start: { full?: boolean; asked?: string; key?: string } = {}) {
-  const state = { full: start.full, asked: start.asked };
+  const state = { full: start.full, asked: start.asked, allowed: true, existing: undefined as string | undefined, noted: [] as string[] };
   const started: FullSyncReason[] = [];
   const queued: (() => void)[] = [];
   let failNext = false;
@@ -115,11 +115,14 @@ function offer(start: { full?: boolean; asked?: string; key?: string } = {}) {
       started.push(reason);
       return `t${started.length}`;
     },
-    note: () => {
+    note: (id) => {
       state.asked = '2026-11-13T00:00:00.000Z';
+      state.noted.push(id);
     },
     later: (fn) => void queued.push(fn),
     delayMs: 1,
+    allowed: () => state.allowed,
+    existing: () => state.existing,
   });
   return { o, state, started, run: () => queued.splice(0).forEach((f) => f()), failOnce: () => (failNext = true) };
 }
@@ -168,4 +171,26 @@ test("answered while it waited, it doesn't ask; a refused thread lets a later tr
   r.o.trigger('browser');
   r.run();
   assert.deepEqual(r.started, ['browser']);
+});
+
+test("a thread a stopped runner opened but didn't note is noted, not asked again", () => {
+  const t = offer();
+  t.state.existing = 'old';
+  t.o.trigger('phone');
+  t.run();
+  assert.deepEqual(t.started, [], 'no second thread');
+  assert.deepEqual(t.state.noted, ['old']);
+});
+
+test('while the runner is stopping or handing over it waits, and a later trigger asks', () => {
+  const t = offer();
+  t.state.allowed = false;
+  t.o.trigger('phone');
+  t.run();
+  assert.deepEqual(t.started, []);
+  assert.equal(t.state.asked, undefined, 'not noted');
+  t.state.allowed = true;
+  t.o.trigger('machine');
+  t.run();
+  assert.deepEqual(t.started, ['machine']);
 });

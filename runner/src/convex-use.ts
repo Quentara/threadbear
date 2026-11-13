@@ -194,10 +194,14 @@ export function fullSyncQuestion(reason: FullSyncReason | undefined, machine: st
 
 // The brief for the thread that asks. It goes to the install's own agent,
 // which asks with its end-of-turn card and sets the answer with tb.
+// The asking thread's title, so a runner that crashed before noting it can find
+// it again rather than ask twice.
+export const FULL_SYNC_ASK_TITLE = 'Show tool output on your other devices?';
+
 export function askBrief(tb: string, reason?: FullSyncReason, machine = 'Mac'): { title: string; why: string; text: string } {
   const question = fullSyncQuestion(reason, machine);
   return {
-    title: 'Show tool output on your other devices?',
+    title: FULL_SYNC_ASK_TITLE,
     why: 'asks once about full sync',
     text: [
       "You're starting this on the runner's behalf (docs/full-convex.md step 6). Ask the user one question, then set the answer. Don't do anything else.",
@@ -223,6 +227,10 @@ type FullSyncOfferDeps = {
   note(threadId: string): void;
   later(fn: () => void, ms: number): void;
   delayMs: number;
+  // False while the runner is stopping or handing over: then it waits for a later trigger.
+  allowed(): boolean;
+  // A thread already asking (opened by a runner that stopped before it noted it).
+  existing(): string | undefined;
   log?: (msg: string, meta: Record<string, unknown>) => void;
 };
 
@@ -244,7 +252,12 @@ export class FullSyncOffer {
     this.deps.later(() => {
       try {
         // Answered, or asked by an earlier release, in the meantime: nothing.
-        if (!shouldAskFullSync(this.deps.read())) return;
+        if (!shouldAskFullSync(this.deps.read()) || !this.deps.allowed()) return;
+        const already = this.deps.existing();
+        if (already) {
+          this.deps.note(already);
+          return;
+        }
         let threadId: string;
         try {
           threadId = this.deps.start(reason);

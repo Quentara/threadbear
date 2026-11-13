@@ -1,12 +1,13 @@
-# Threadbear: full Convex by default
+# Threadbear: full Convex
 
 Written 5 Nov 2026 in thread 3a33a492, after Jamie Turner's DM. Numbers are from
 Mike's M5 unless they say otherwise, and estimates say so.
 
 ## What we're doing and why
 
-Every finished thread event goes to the person's own Convex deployment, on by
-default with an off switch. Other machines' threads are then read and steered
+Every finished thread event can go to the person's own Convex deployment: off to
+start, offered once when a phone, the website or another machine would show it
+(changed from on by default on 13 Nov, see step 6). Other machines' threads are then read and steered
 through Convex, so the Tailscale link, runner tokens and `tb pair` can go.
 
 Two reasons:
@@ -210,7 +211,7 @@ The original plan for this step follows.
 - Ask (the quick question feature) still talks to the archive server directly.
   `quickAsk` commands exist, so moving it is a small separate job.
 
-### 6. On by default
+### 6. Offered when it helps
 
 **Changed 13 Nov: offered when it helps, not on by default.** Mike's call, after
 weighing who benefits: every benefit of full sync is reading a thread somewhere

@@ -41,11 +41,14 @@ import { ClaudeAdapter } from './adapters/claude/adapter.ts';
 import { ProcessRegistry } from './proc.ts';
 import { Runner } from './runner.ts';
 import { startOwnThread } from './own-threads.ts';
-import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncReason } from './convex-use.ts';
+import { askBrief, ConvexUseTally, FULL_SYNC_ASK_TITLE, FullSyncOffer, fullSyncReason } from './convex-use.ts';
 // How long after starting the runner looks for a reason to ask about full sync,
 // and how long after a pairing or a new machine it asks (convex-use.ts).
 const ASK_FULL_SYNC_AFTER_MS = 5 * 60_000;
 const ASK_FULL_SYNC_EVENT_MS = 30_000;
+// And how often it looks again while it hasn't asked: a token issued by hand
+// (npx convex run tokens:issue) fires nothing here.
+const ASK_FULL_SYNC_LOOK_MS = 60 * 60_000;
 import { CodexAdapter } from './adapters/codex/adapter.ts';
 import { AcpAdapter } from './adapters/acp/adapter.ts';
 import { ACP_AGENTS, ACP_PROVIDERS, type AcpProvider } from './adapters/acp/agents.ts';
@@ -576,7 +579,7 @@ async function main(): Promise<void> {
       if (n.method === 'remoteThreads.updated') {
         publishUpdates();
         // Another machine has turned up on this backend: full sync would help.
-        if ((n.params as { runners?: unknown[] } | undefined)?.runners?.length) fullSyncOfferRef?.trigger('machine');
+        if ((n.params as { runners?: { online?: boolean }[] } | undefined)?.runners?.some((r) => r.online)) fullSyncOfferRef?.trigger('machine');
       }
     },
     home: cfg.home,
@@ -720,17 +723,25 @@ async function main(): Promise<void> {
     },
     later: (fn, ms) => void setTimeout(fn, ms).unref?.(),
     delayMs: ASK_FULL_SYNC_EVENT_MS,
+    allowed: () => !stopping && !draining,
+    existing: () => runner.list(['inbox', 'snoozed', 'archived']).find((t) => t.title === FULL_SYNC_ASK_TITLE)?.id,
     log: (msg, meta) => log.info(msg, meta),
   });
   fullSyncOfferRef = fullSyncOffer;
-  // A few minutes in, so a release that's about to roll back doesn't ask: a
-  // phone, browser or other machine that's already there.
-  setTimeout(() => {
-    if (!fullSyncOffer.open) return;
+  // A phone, browser or other machine that's already there: a few minutes in,
+  // so a release that's about to roll back doesn't ask, then hourly while it
+  // hasn't, for a token issued by hand or a lookup that failed. Only machines
+  // heard from lately count: a runner whose key was revoked lingers in the list.
+  const lookForFullSyncReason = () => {
+    if (!fullSyncOffer.open || stopping || draining) return;
     void sync
       .listTokens()
-      .catch(() => [])
-      .then((devices) => fullSyncOffer.trigger(fullSyncReason({ devices, otherRunners: sync.remoteThreads().runners.length })));
+      .then((devices) => fullSyncOffer.trigger(fullSyncReason({ devices, otherRunners: sync.remoteThreads().runners.filter((r) => r.online).length })))
+      .catch(() => undefined);
+  };
+  setTimeout(() => {
+    lookForFullSyncReason();
+    setInterval(lookForFullSyncReason, ASK_FULL_SYNC_LOOK_MS).unref?.();
   }, ASK_FULL_SYNC_AFTER_MS).unref?.();
   const upstream = new Upstream({
     home: cfg.home,
