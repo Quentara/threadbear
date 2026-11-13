@@ -480,7 +480,7 @@ export const movesPart = {
     const st = this.threads.get(threadId);
     if (!st) return false;
     const { rt } = st;
-    if (rt.turn || rt.approvals.size || rt.wakeTimer || rt.hooksRunning || rt.runningActions?.size || rt.editing || rt.cleaning) return false;
+    if (rt.turn || rt.approvals.size || rt.wakeTimer || rt.hooksRunning || rt.runningActions?.size || rt.editing || rt.cleaning || rt.preparing) return false;
     return !rt.tasks.some((t) => t.kind === 'agent') && !st.rec.subagents?.some((a) => a.status === 'running');
   },
 

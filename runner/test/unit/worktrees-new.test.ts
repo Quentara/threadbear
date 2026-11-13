@@ -359,3 +359,28 @@ test('Stop during the worktree setup, then a new message: the CLI waits for the 
   await new Promise((r) => setTimeout(r, 100));
   assert.equal(h.adapter.sessions.length, 1, 'one CLI');
 });
+
+// From Codex's review of the fix above: a handover lets a stopped thread go
+// at once, and letting go marks it deleted too, so the setup's end took it
+// for a delete and removed a worktree the next runner now had. A thread
+// being set up is kept until the setup ends, and a let-go one's worktree
+// is never removed by it.
+test('a handover while a stopped thread is being set up keeps it until the setup ends, and its worktree stays', async () => {
+  const g = gatedSetup();
+  const { root, main } = makeRepo(g.patch);
+  const h = harness();
+  const { thread } = h.runner.create({ text: 'Go', accountId: 'claude-3', cwd: main });
+  const wt = path.join(root, 'proj-threads', thread.id.slice(0, 8));
+  await until(g.started, 'the setup to start');
+  h.runner.interrupt(thread.id, { byMike: true });
+  const handedOver: string[] = [];
+  const drain = h.runner.beginDrain([], { onHandedOver: (id) => handedOver.push(id) });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(h.runner.threads.has(thread.id), 'kept while its setup runs');
+  g.go();
+  await drain;
+  await until(() => handedOver.includes(thread.id), 'handed over once the setup ends');
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(fs.existsSync(path.join(wt, '.setup-ran')), 'the worktree stays, set up, for the next runner');
+  assert.equal(h.adapter.sessions.length, 0);
+});

@@ -39,8 +39,10 @@ export const worktreesPart = {
     } finally {
       // Deleted meanwhile: delete() left the worktree to this (it would
       // have removed it from under the setup, or never known of it), so
-      // it goes now rather than be left with no thread.
-      if (rt.deleted && rec.worktree && !rec.worktree.removedAt) {
+      // it goes now rather than be left with no thread. Not one let go to
+      // another runner, which has the worktree now (a handover keeps a
+      // thread being set up, but a crash or a move may not).
+      if (rt.trashed && rec.worktree && !rec.worktree.removedAt) {
         await this.cleanUpWorktree(st, true).catch((e: unknown) => this.log.error('worktree cleanup failed', { threadId: rec.id, error: String(e) }));
       }
     }

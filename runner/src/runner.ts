@@ -383,6 +383,10 @@ type Runtime = {
   // changes on the record before this CLI has gone.
   sessionProvider?: Provider;
   deleted?: boolean; // anything the old CLI still reports is dropped
+  // Deleted by Mike or an agent (delete()), not let go to another runner
+  // (letGo sets deleted too): only then is a worktree still being set up
+  // removed when its setup ends.
+  trashed?: boolean;
   turn?: Turn;
   // When the live CLI last said anything, and whether it looks frozen
   // (frozen-cli.ts): the check's clock, and what an interrupt has to know.
@@ -1801,8 +1805,10 @@ export class Runner {
         .finally(() => {
           if (rt.preparing !== held) return;
           rt.preparing = undefined;
-          // An archive that came meanwhile goes ahead now.
+          // An archive that came meanwhile goes ahead now, and a handover
+          // that kept the thread for it looks again.
           this.archiveWhenGone(st);
+          if (this.draining) this.queueHandoverCheck();
         });
       rt.preparing = held;
       await preparing;
@@ -3107,8 +3113,6 @@ export class Runner {
         // (runner/quiet-inbox.ts).
         if (rec.archivedAt) rec.keptOut = true;
         delete rec.archivedAt;
-        // A hibernation that came due while it was archived wakes now.
-        if (rec.snoozedUntil) this.armSnoozeTimer();
       }
     }
     if (archiving) {
@@ -3185,6 +3189,7 @@ export class Runner {
     const st = this.mustGet(threadId);
     const { rec, rt } = st;
     rt.deleted = true;
+    rt.trashed = true;
     this.threads.delete(threadId);
     this.waitedOnDeleted(threadId);
     this.dirty.delete(threadId);
