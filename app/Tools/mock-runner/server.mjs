@@ -3459,6 +3459,24 @@ The new hero is shorter, and every page now leads with what the app does.
     if (fs.existsSync(clip)) file('screens/hero-walkthrough.mp4', { copy: clip });
     // And a one-page PDF, for a PDF in the pane.
     file('docs/launch-brief.pdf', onePagePdf('Launch brief: the new hero ships Friday', 'https://example.com/launch-brief'));
+    // A page that draws itself, for a local page in the pane with its
+    // scripts off, then Run them (features/file-previews.feature): its
+    // script says in the title what it could fetch. The logo it names may
+    // be read; the picture beside it, which it doesn't name, and the dotfile
+    // may not, and nothing goes out.
+    file('mockups/drawn.html', `<!doctype html><meta charset="utf-8"><title>Drawn mockup</title>
+<style>body{font:15px/1.5 -apple-system,system-ui;margin:28px}</style>
+<img src="logo.png" width="48" height="48" alt="">
+<p>A mockup that draws itself, so it has scripts.</p>
+<script>
+(async () => {
+  const status = async (u) => { try { return String((await fetch(u)).status); } catch (e) { return 'blocked'; } };
+  document.title = 'named ' + await status('logo.png') + ', unnamed ' + await status('notes.png') + ', dotfile ' + await status('.env') + ', away ' + await status('https://example.com/');
+})();
+</script>`);
+    file('mockups/logo.png', { copy: path.join(here, 'fixtures/demo-upload-resume/media/progress-before.png') });
+    file('mockups/notes.png', { copy: path.join(here, 'fixtures/demo-upload-resume/media/progress-before.png') });
+    file('mockups/.env', 'SECRET=not for pages\n');
     file('logs/docs-build.txt', 'Error: Could not resolve image /docs/hero.png\n  at src/pages/docs.astro:12\nBuild failed in 14.2s.\n');
     file('src/hero.ts', '// The hero at the top of the home page.\nexport function hero(words: string): string {\n  return `<h1>${words}</h1>`;\n}\n');
     site.summary.cwd = root;

@@ -986,6 +986,11 @@ impl Render for ReviewWindow {
         // (media_view.rs); they hide while the title bar's menu is up.
         let clips = crate::media_view::sweeper(window, crate::media_view::Cover { everything: self.more_open, menus: Vec::new() });
         self.sync_reply_box(window, cx);
+        // A page's view goes once its shot isn't the one on show.
+        let page_shown = self.session.mode == ReviewMode::Single && self.session.shown_shot().is_some_and(|s| s.page().is_some());
+        if !page_shown {
+            self.stage.page = None;
+        }
         // The rail keeps the option on show in view as the stage moves.
         if self.session.mode == ReviewMode::Single && self.rail_follows != Some(self.session.focused()) {
             self.rail_follows = Some(self.session.focused());
@@ -1339,6 +1344,7 @@ impl ReviewWindow {
             "stage": match (s.mode, s.shown_shot()) {
                 (ReviewMode::All, _) => "all",
                 (_, Some(shot)) if shot.video().is_some_and(|v| crate::media_view::state_of(&stage::stage_key(v)).is_some()) => "player",
+                (_, Some(shot)) if shot.page().is_some_and(|p| self.stage.page.as_ref().is_some_and(|(shown, _)| shown == p)) => "page",
                 (_, Some(shot)) if shot.media.is_some() => "still",
                 _ => "picture",
             },

@@ -295,6 +295,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `panel.bar` | Panel bar buttons | Reload, Open in browser, Back | Drawn in the panel's bar. | build | S | `PanelsView` (`DockPaneButtons`) |
 | `panel.convex` | Convex panel | Dashboard, Dev/Prod switch, sign-in states | Web runtime page with the deploy key injected, and the sign-in states drawn in GPUI. | web | L | `PanelsView` (`ConvexPanel`, `ConvexWebPage`) |
 | `panel.requests` | Panel requests | Agent opens a panel for you | Port the logic. | build | S | `PanelRequestModel`, `PanelRequests` |
+| `pane.sections` | Pane sections side by side | Highlights, Files, Patches and the panels each draw their own wherever the dock puts them: side by side, stacked or torn out | A view per section over the one pane model (`side_sections.rs`); a press in one makes it the chosen one. | build | S | `PanelsView` (`DockPane`) |
 | `panel.projectpage` | Project page panels | Rail on a project | Reuses the right rail. | build | S | `ProjectPage`, `PanelsView` |
 
 ## 11. Browser pane
@@ -319,8 +320,8 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `file.editor` | Text editor | Edit raw, autosave, ⌘S, line numbers | gpui-kit code editor, with autosave ours (unverified that it shows line numbers). | kit | L | `TextFileView`, `LineNumberRuler` |
 | `file.find` | Find in file | Native find bar in the editor | Drawn find bar over the code editor (unverified whether the editor already has one). | build | M | `TextFileView` |
 | `file.conflict` | Conflict bar | Take the file's or Keep mine | Drawn, from `TextFileDocument` and file watching. | build | S | `TextFileView` (`ConflictBar`), `TextFileDocument` |
-| `file.htmlpreview` | Local HTML preview | Static page with named assets, sealed | Risk: the seal relies on `WKURLSchemeHandler`, content rules and private calls, so it has to be rebuilt and proven again on CEF. | hard | L | `LocalPreviewSchemeHandler`, `PreviewSandbox`, `LocalPreviewSite` |
-| `file.runthem` | Run them | Consent bar for scripts on those bytes | Drawn consent bar over a web runtime page. | web | M | `HighlightsView` (`LocalPagePreview`), `FirstClick` (`SealedPreviewWebView`) |
+| `file.htmlpreview` | Local HTML preview | Static page with named assets, sealed | A web runtime page in the sealed context, at an `https://<token>.preview.threadbear.invalid` address only its own view answers, from `local_preview::Site` (the Swift rules, ported); every other request cancelled, the main frame held to its page (`threadbear_web::preview_rules`). | hard | L | `LocalPreviewSchemeHandler`, `PreviewSandbox`, `LocalPreviewSite` |
+| `file.runthem` | Run them | Consent bar for scripts on those bytes | Drawn consent bar over a web runtime page; the page is served only while its bytes match, with the clipboard and copy guards put in through DevTools before its scripts. | web | M | `HighlightsView` (`LocalPagePreview`), `FirstClick` (`SealedPreviewWebView`) |
 | `folder.list` | Folder list | Sortable columns, expand | `DataTable` with `Tree`-style expansion (unverified that the two combine). | kit | L | `FolderBrowser` |
 | `folder.icons` | Folder icons | Thumbnails | macOS: `QLThumbnailGenerator`; Windows and Linux: images decoded in-app and generic icons for the rest. | shim | L | `FolderBrowser` |
 | `folder.pathbar` | Path bar | Breadcrumbs, ... menu | Drawn, with a gpui-kit menu. | build | S | `FolderBrowser` (`FolderPathBar`) |

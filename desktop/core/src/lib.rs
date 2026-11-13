@@ -30,6 +30,7 @@ pub mod inline_chips;
 pub mod investigate;
 pub mod keyboard;
 pub mod librarian;
+pub mod local_preview;
 pub mod login_picker;
 pub mod logins;
 pub mod navigation;

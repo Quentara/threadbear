@@ -321,7 +321,9 @@ too, so a font or picture from the web is left out, and its links don't
 open. A page with scripts of its own opens with them off and a bar over
 it: Run them turns them on for that page, still kept off the internet,
 until the file changes, when it asks again. Open the file in your
-browser to see it with everything.
+browser to see it with everything. The GPUI app shows these pages with its
+web runtime: until that's installed, the pane asks for it where the page
+would be.
 
 To share a file somewhere else, drag it out of the app: a file link in a
 reply, a picture in the transcript, a file in Highlights, a row in a folder
@@ -654,7 +656,10 @@ the thread you're reading, Highlights, a project's panels, Patches, and
 the ones you open from the left-hand rail, such as Usage and Updates. Each
 panel has a bar along its top with its title, and panels that share a
 space show as tabs in it. To begin with there are three side by side:
-the list, the thread and Highlights.
+the list, the thread and Highlights. Highlights, Files, Patches and a
+project's panels each show their own content wherever they are, so you can
+keep Files open beside Highlights; a file opened from one opens over that
+one.
 
 To move a panel, press and hold on it for a moment, then drag. That works
 anywhere on the panel: its title, one of its tabs, the empty part of its

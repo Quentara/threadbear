@@ -46,7 +46,8 @@ File references are where to look.
   If you press Start using the new app in the Swift app (or run
   `desktop/scripts/install-app.sh`), also `~/Applications/Threadbear GPUI.app`,
   which keeps its window and panel layout in `desktop-settings.json` and
-  `gpui-prefs.json` in the data folder, what a click on a link in a reply
+  `gpui-prefs.json` in the data folder (with the local pages you chose
+  Run them for, a digest of each), what a click on a link in a reply
   does (its menu's Default) in `desktop-links.json` there, the side pane's
   folded headings in `desktop-highlights.json`, and how it shows files and
   folders (Preview or Markdown, list or icons, the sort, hidden files) in

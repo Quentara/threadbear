@@ -299,7 +299,7 @@ fn sweep(frame: u64, menu_at: Option<Point<Pixels>>, popover: bool, window: &mut
 }
 
 /// The window's own view, a page's parent.
-fn native_view(window: &Window) -> Option<*mut c_void> {
+pub(crate) fn native_view(window: &Window) -> Option<*mut c_void> {
     #[cfg(target_os = "macos")]
     {
         use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -444,6 +444,44 @@ fn slot(panels: &Entity<WebPanels>, key: &str, url: &str, kind: impl FnOnce() ->
         // After this frame: Chromium makes its view as it's asked, which
         // shouldn't happen in the middle of the app's drawing.
         cx.defer(move |cx| panels.update(cx, |p, cx| p.make(key, url, kind, parent, cx)));
+    }
+    div().size_full().into_any_element()
+}
+
+/// A local web page in the pane (`file.htmlpreview`), sealed: a page of the
+/// pool like a panel's, but in the sealed context, reading only its own
+/// folder's named assets (threadbear_web::preview_rules), with its scripts on
+/// only for `scripts_for`'s bytes. `real` is the file the open gate found;
+/// `opened` makes opening it again a fresh page, read again.
+pub(crate) fn local_page(real: &str, scripts_for: Option<&str>, opened: u64, main: bool, window: &mut Window, cx: &mut App) -> AnyElement {
+    let Some(panels) = panels(cx) else { return note("This page can't show here.", cx) };
+    let parent = match running("hl-page", "this page", main, None, window, cx) {
+        Ok(parent) => parent,
+        Err(instead) => return instead,
+    };
+    let key = format!("preview:{opened}:{}:{real}", scripts_for.unwrap_or(""));
+    if let Some(drawn) = panels.update(cx, |p, _| p.touch(&key)) {
+        return canvas(move |bounds, _, _| drawn.set((frame_now(), bounds)), |_, _, _, _| {}).size_full().into_any_element();
+    }
+    if let Some(why) = panels.read(cx).failed.get(&key).cloned() {
+        return note(&format!("Couldn't show this page: {why}"), cx);
+    }
+    if panels.update(cx, |p, _| p.making.insert(key.clone())) {
+        match threadbear_core::local_preview::Site::new(std::path::Path::new(real), scripts_for.map(str::to_owned)) {
+            Some(site) => {
+                let preview = threadbear_web::PreviewSite::new(Arc::new(site), scripts_for.is_some());
+                let (panels, url) = (panels.clone(), preview.page_url());
+                // After this frame, as a panel's page is made.
+                cx.defer(move |cx| panels.update(cx, |p, cx| p.make(key, url, PanelKind::Preview(preview), parent, cx)));
+            }
+            None => {
+                panels.update(cx, |p, cx| {
+                    p.making.remove(&key);
+                    p.failed.insert(key, "its folder couldn't be read".into());
+                    cx.notify();
+                });
+            }
+        }
     }
     div().size_full().into_any_element()
 }

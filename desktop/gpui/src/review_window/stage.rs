@@ -46,6 +46,11 @@ pub(crate) struct StageState {
 
     /// The option and shot the row under the stage last scrolled to.
     followed: Option<(usize, usize)>,
+    /// A page shot on show, sealed with its scripts off (`review.media`):
+    /// its file and its view, dropped once another shot shows.
+    pub(crate) page: Option<(String, Rc<threadbear_web::PanelPage>)>,
+    /// Why the page shot on show couldn't show in place, by its file.
+    page_failed: Option<(String, String)>,
 }
 
 struct Zoomed {
@@ -267,6 +272,13 @@ impl ReviewWindow {
         self.stage.zoom = None;
         self.after_zoom();
         let fit = GalleryLayout::fit(rules::aspect(&shot.image), f64::from(room.size.width), f64::from(room.size.height));
+        // A page in place, sealed as the pane's are: only its own named
+        // assets, no network, its scripts off (the Swift window's too).
+        if let Some(page) = shot.page() {
+            if let Some(view) = self.stage_page(page, window, cx) {
+                return div().id("review-media").absolute().size_full().flex().items_center().justify_center().child(div().flex_none().w(pt(fit.0)).h(pt(fit.1)).child(view)).into_any_element();
+            }
+        }
         if let Some(video) = shot.video().filter(|_| crate::media_view::SHOWN_HERE) {
             let path = video.to_owned();
             // Fitted as its still is, so the controls sit on the film.
@@ -322,6 +334,52 @@ impl ReviewWindow {
                     .child(div().absolute().inset_0().bg(hsla(0., 0., 0., 0.35)).flex().items_center().justify_center().child(button)),
             )
             .into_any_element()
+    }
+
+    /// The page's view, placed where it's drawn each frame, or None while the
+    /// web runtime isn't running here or the gate won't show the file: then
+    /// the still and Open the page, as before.
+    fn stage_page(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let runtime = crate::web_runtime::runtime(cx)?;
+        if runtime.read(cx).state != threadbear_core::web_runtime::State::Ready || !runtime.update(cx, |r, cx| r.ensure_engine(cx)) {
+            return None;
+        }
+        if self.stage.page_failed.as_ref().is_some_and(|(p, _)| p == path) {
+            return None;
+        }
+        if self.stage.page.as_ref().is_none_or(|(p, _)| p != path) {
+            self.stage.page = None;
+            let made = (|| {
+                let real = threadbear_core::local_preview::decide_page(path, Origin::ThisMac)?;
+                let site = threadbear_core::local_preview::Site::new(&real, None).ok_or_else(|| "its folder couldn't be read".to_owned())?;
+                let preview = threadbear_web::PreviewSite::new(std::sync::Arc::new(site), false);
+                let parent = crate::web_panels::native_view(window).ok_or_else(|| "the window has no view".to_owned())?;
+                let (page, _events) = threadbear_web::PanelPage::open(parent, &preview.page_url(), threadbear_web::PanelKind::Preview(preview))?;
+                Ok::<_, String>(page)
+            })();
+            match made {
+                Ok(page) => self.stage.page = Some((path.to_owned(), Rc::new(page))),
+                Err(why) => {
+                    self.stage.page_failed = Some((path.to_owned(), why));
+                    return None;
+                }
+            }
+        }
+        let page = self.stage.page.as_ref()?.1.clone();
+        // The title bar's menu draws under a native view: out of sight while it's up.
+        let covered = self.more_open;
+        Some(
+            canvas(
+                move |bounds, window, _| {
+                    let height = f32::from(window.viewport_size().height);
+                    page.set_bounds(f32::from(bounds.origin.x), f32::from(bounds.origin.y), f32::from(bounds.size.width), f32::from(bounds.size.height), height);
+                    page.set_hidden(covered);
+                },
+                |_, _, _, _| {},
+            )
+            .size_full()
+            .into_any_element(),
+        )
     }
 
     /// The whole image small, top right, with a box for the part on show, while

@@ -121,3 +121,24 @@ Feature: Files opened in the side pane
     Then the pane shows a picture
     When I copy the picture in the pane
     Then it was copied as a picture
+
+  # A local page shows in the pane, sealed: only itself and the assets it
+  # names, no network, its scripts off until Run them for those bytes. The
+  # GPUI app draws it with the web runtime; the dump's bar words, the page's
+  # title and Run them are its own, so these wait on the Swift app's dump.
+  @file.htmlpreview @web-runtime @swift-pending
+  Scenario: A local page shows in the pane with its scripts off, and says it has some
+    Given the web runtime is installed
+    When I open the thread "Rebuild the three landing pages"
+    And I open "mockups/drawn.html" in the thread's folder in the pane
+    Then the pane shows a "web" page with the words "mockups/drawn.html"
+    And the pane's page says "This page has scripts"
+    And the local page in the pane is titled "Drawn mockup"
+
+  @file.runthem @web-runtime @swift-pending
+  Scenario: Run them runs the page's scripts, which still read only what it names
+    Given the web runtime is installed
+    When I open the thread "Rebuild the three landing pages"
+    And I open "mockups/drawn.html" in the thread's folder in the pane
+    And I press Run them over the page in the pane
+    Then the local page in the pane is titled "named 200, unnamed 404, dotfile 404, away blocked"
