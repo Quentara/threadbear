@@ -101,10 +101,16 @@ try {
 
   // A row: the fingers held part way, it's that far along...
   guardInput(app.pid!, [row]);
-  const held = spawn(gesture, [String(row[0]), String(row[1]), '1500', ...steps(-40, 8).map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`)], { env: { ...process.env, ...gestureGuard(app.pid!) } });
+  const held = spawn(gesture, [String(row[0]), String(row[1]), '1500', ...steps(-40, 8).map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`)], { env: { ...process.env, ...gestureGuard(app.pid!) }, stdio: ['ignore', 'ignore', 'inherit'] });
+  // Listened for at once: a refusal after the hover ends it well inside the sleep.
+  const heldDone = new Promise<void>((done, fail) => {
+    held.on('error', fail);
+    held.on('exit', (code) => (code === 0 ? done() : fail(new Error(`post-gesture stopped (exit ${code}); see above`))));
+  });
+  heldDone.catch(() => {});
   await sleep(1100);
   const along = await app.do({ cmd: 'row-swipe' });
-  await new Promise((done) => held.on('exit', done));
+  await heldDone;
   check('a row follows the fingers part way', /offset -40 armed false/.test(along), along);
   // ...and let go short of the line, it goes back into place.
   await sleep(700);
@@ -175,10 +181,14 @@ try {
   // Finder would copy into whatever folder someone has open there. Right of
   // the window if there's room, else left of it, touching it so the drag
   // never crosses anyone else's window on the way (realDrag checks the path).
+  // Worked out from the window as it is for each drag, as it's resized between.
   const fits = (x: number) => displays().some(([dx, , dw]) => x >= dx + EDGE && x + 240 <= dx + dw - EDGE);
-  const target: [number, number, number, number] = fits(wx + ww) ? [wx + ww, wy + 150, 240, 240] : [wx - 240, wy + 150, 240, 240];
-  async function dragOut(what: string, from: [number, number], name: string): Promise<void> {
-    const to: [number, number] = [target[0] + 120, target[1] + 120];
+  /** `at` is in the window, from its top left. */
+  async function dragOut(what: string, at: [number, number], name: string): Promise<void> {
+    const [fx, fy, fw] = windowFrame(app.pid!);
+    const from: Point = [fx + at[0], fy + at[1]];
+    const target: [number, number, number, number] = fits(fx + fw) ? [fx + fw, fy + 150, 240, 240] : [fx - 240, fy + 150, 240, 240];
+    const to: Point = [target[0] + 120, target[1] + 120];
     const drops = spawn(dropTarget, [...target.map(String), '12']);
     let said = '';
     drops.stdout.on('data', (d) => (said += d));
@@ -201,7 +211,7 @@ try {
   const highlight = await app.do({ cmd: 'label-point', label: 'pricing-before.png' }).catch((e) => String(e));
   if (highlight.startsWith('ok')) {
     const [, rx, ry] = highlight.split(' ').map(Number);
-    await dragOut('a Highlights file', [wx + rx, wy + ry], 'pricing-before.png');
+    await dragOut('a Highlights file', [rx, ry], 'pricing-before.png');
   } else {
     check('a Highlights file dragged out of the window goes as its file', false, highlight);
   }
@@ -220,7 +230,7 @@ try {
   const tile = await app.do({ cmd: 'tile-point', count: 2 }).catch((e) => String(e));
   if (tile.startsWith('ok')) {
     const [, tx, ty, name] = tile.split(' ');
-    await dragOut('a picture', [wx + Number(tx), wy + Number(ty)], name);
+    await dragOut('a picture', [Number(tx), Number(ty)], name);
   } else {
     check('a picture dragged out of the window goes as its file', false, tile);
   }
@@ -233,6 +243,10 @@ try {
   if (failed) process.exitCode = 1;
   try {
     await app.stop();
+  } catch (error) {
+    // A failed stop is a failed run, even after every check passed.
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   } finally {
     try {
       movePointer(pointerWas);

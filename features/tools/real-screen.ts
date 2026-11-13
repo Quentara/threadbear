@@ -212,15 +212,17 @@ export function guardWindowMove(pid: number, from: Point, to: Point, screen: Scr
 }
 
 /**
- * Points along the straight line a drag takes, every 16 points: realdrag
- * posts 40 moves along it, and one over a window that isn't `pids` would
- * hand that window the drag (a drag-and-drop's enter and update at least).
+ * The 40 points realdrag moves through on the way, the same as it works them
+ * out: one over a window that isn't `pids` would hand that window the drag (a
+ * drag-and-drop's enter and update at least). realdrag looks at each again as
+ * it goes; this stops a drag that can't work before anything is pressed.
  */
 export function guardPath(pids: number[], from: Point, to: Point, screen: Screen = realScreen): void {
-  const steps = Math.max(1, Math.ceil(Math.hypot(to[0] - from[0], to[1] - from[1]) / 16));
+  const steps = 40;
   const shown = screen.displays();
   for (let i = 1; i < steps; i += 1) {
-    const p: Point = [Math.round(from[0] + ((to[0] - from[0]) * i) / steps), Math.round(from[1] + ((to[1] - from[1]) * i) / steps)];
+    const t = i / steps;
+    const p: Point = [from[0] + (to[0] - from[0]) * t, from[1] + (to[1] - from[1]) * t];
     if (!shown.some((d) => inside(p, d, EDGE))) throw new Error(`The drag passes (${p[0]}, ${p[1]}), off screen or within ${EDGE} points of its edge. No events were posted.`);
     const top = screen.windowAt(p[0], p[1]);
     if (!top || !pids.includes(top.pid)) throw new Error(`The drag passes over ${top ? top.owner : 'nothing'} at (${p[0]}, ${p[1]}). No events were posted.`);
@@ -255,8 +257,9 @@ export function realDrag(tool: string, from: Point, to: Point, hold: number, opt
 
 /**
  * A drag by a grip on `pid`'s window, which may move the window: checked by
- * guardWindowMove just before it's posted, and realdrag looks again at the
- * grip after its hover. Not at the drop: the window's moved there with the pointer.
+ * guardWindowMove just before it's posted. realdrag looks again at the grip
+ * after its hover, at each step, and at the drop before letting go, by then
+ * under the window, which moved there with the pointer.
  */
 export function realGripDrag(tool: string, from: Point, to: Point, hold: number, opts: { pid: number; env?: Record<string, string>; screen?: Screen; post?: Post }): void {
   const { pid, screen = realScreen, post = execPost } = opts;
@@ -265,6 +268,7 @@ export function realGripDrag(tool: string, from: Point, to: Point, hold: number,
     ...opts.env,
     RD_GUARD: screen === realScreen ? windowAtTool() : 'window-at',
     RD_PRESS_PID: String(pid),
+    RD_DROP_PID: String(pid),
   });
 }
 

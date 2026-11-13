@@ -81,6 +81,10 @@ try {
 } finally {
   try {
     await app.stop();
+  } catch (error) {
+    // A failed stop is a failed run, even after every check passed.
+    console.error(error instanceof Error ? error.message : error);
+    process.exitCode = 1;
   } finally {
     try {
       movePointer(pointerWas);

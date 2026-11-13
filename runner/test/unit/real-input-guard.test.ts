@@ -3,7 +3,9 @@
 // opens a window, reads the real screen or posts an event.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EDGE, guardInput, guardPath, guardWindowMove, realDrag, realGripDrag, type Post, type Screen } from '../../../features/tools/real-screen.ts';
@@ -153,10 +155,11 @@ test('a drag hands realdrag who must be at the press and the drop, to look again
   assert.ok(sent[0].env.RD_GUARD);
   // A drop on our target, but the target dropped onto the app's: refused.
   assert.throws(() => realDrag('realdrag', [1400, 360], [1000, 370], 0.4, { pid: APP, dropPid: 555, screen: screen([target, app]), post }), /Threadbear is there/);
-  // A grip drag looks again at the grip, not the drop, as the window moves with it.
+  // A grip drag has realdrag look for the app at the drop too: by the time
+  // it lets go, the window has moved there with the pointer.
   realGripDrag('realdrag', [324, 114], [394, 164], 0.1, { pid: APP, env: { RD_PRESS: '0.02' }, screen: screen([app]), post });
   assert.equal(sent[1].env.RD_PRESS_PID, String(APP));
-  assert.equal(sent[1].env.RD_DROP_PID, undefined);
+  assert.equal(sent[1].env.RD_DROP_PID, String(APP));
   assert.equal(sent[1].env.RD_PRESS, '0.02');
 });
 
@@ -176,11 +179,27 @@ test('the drag tools post nothing but through the guarded helpers', () => {
   }
 });
 
-test('realdrag and post-gesture look again before pressing and letting go', () => {
-  const drag = fs.readFileSync(path.join(root, 'app/Tools/realdrag.swift'), 'utf8');
-  // The look comes after the hover and before the press, and before the release.
-  assert.ok(drag.indexOf('ours(from, "RD_PRESS_PID")') < drag.indexOf('post(.leftMouseDown'), 'press check before any press');
-  assert.ok(drag.indexOf('ours(to, "RD_DROP_PID")') < drag.lastIndexOf('post(.leftMouseUp, to); wait(0.6)'), 'drop check before the release');
+test('realdrag looks again at the press, every step and the drop, and backs out to the press point', { skip: process.platform !== 'darwin' }, () => {
+  // Compiles only the drag's decisions with a made-up screen; posts nothing.
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-realdrag-'));
+  try {
+    const main = path.join(folder, 'main.swift');
+    fs.writeFileSync(main, fs.readFileSync(path.join(root, 'app/Tools/realdrag.swift'), 'utf8') + '\n' + fs.readFileSync(path.join(root, 'runner/test/fixtures/realdrag.swift'), 'utf8'));
+    const binary = path.join(folder, 'realdrag-test');
+    execFileSync('swiftc', ['-D', 'TESTING', main, '-o', binary], { timeout: 120_000 });
+    assert.match(execFileSync(binary, { encoding: 'utf8', timeout: 10_000 }), /realdrag checks passed/);
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
+});
+
+test('post-gesture looks again before it touches and before every event', () => {
   const gesture = fs.readFileSync(path.join(root, 'app/Tools/post-gesture.swift'), 'utf8');
-  assert.ok(gesture.indexOf('PG_GUARD') < gesture.indexOf('post(0, 0, phase: 128)'), 'gesture check before the fingers touch');
+  const look = gesture.indexOf('env["PG_GUARD"]'), touch = gesture.indexOf('post(0, 0, phase: 128)'), each = gesture.indexOf('if let want, covering()');
+  const fn = gesture.indexOf('func post(');
+  assert.ok(look > 0 && touch > 0 && each > 0 && fn > 0, 'the checks are all there');
+  assert.ok(look < touch, 'the look comes before the fingers touch');
+  assert.ok(fn < each && each < gesture.indexOf('cg.post(tap:'), 'every event is checked before it goes');
+  assert.match(gesture, /timedOut/, 'the guard program has a deadline');
+  assert.match(gesture, /terminationStatus == 0/, 'and must exit cleanly');
 });
