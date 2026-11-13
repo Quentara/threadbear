@@ -178,7 +178,7 @@ impl Threadbear {
             }
             self.note_failed_account(before.as_ref(), &summary);
         }
-        let gone: Vec<String> = self.threads.values().filter(|t| t.runner_id.is_some() && !listed.contains(&t.id) && !self.remote.made.contains(&t.id)).map(|t| t.id.clone()).collect();
+        let gone: Vec<String> = self.threads.values().filter(|t| self.remote.index.can_remove_missing() && t.runner_id.is_some() && !listed.contains(&t.id) && !self.remote.made.contains(&t.id)).map(|t| t.id.clone()).collect();
         for id in gone {
             if !self.moved_away(&id, cx) {
                 self.threads.remove(&id);

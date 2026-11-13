@@ -17,7 +17,7 @@ pub fn account_for(provider: &str, remote: bool, known: Option<SignInAccount>) -
         return None;
     }
     if let Some(known) = known {
-        return Some(known);
+        return known.can_sign_in().then_some(known);
     }
     match provider {
         "claude" => Some(SignInAccount { id: "claude-main".into(), provider: "claude".into(), title: "Claude".into(), config_dir: String::new() }),
@@ -34,13 +34,24 @@ pub struct SignInAccount {
     pub config_dir: String,
 }
 
+impl SignInAccount {
+    pub fn can_sign_in(&self) -> bool {
+        match self.provider.as_str() {
+            "claude" | "" => self.id == "claude-main" || !self.config_dir.trim().is_empty(),
+            "codex" => self.id == "codex-main" || !self.config_dir.trim().is_empty(),
+            _ => true,
+        }
+    }
+}
+
 /// A provider's own sign-in, as `ProviderInfo.loginCommand` has it.
 pub fn login_command(provider: &str) -> &'static str {
     match provider {
         "codex" => "codex login",
         "cursor" => "agent login",
         "opencode" => "opencode auth login",
-        _ => "claude auth login",
+        "claude" | "" => "claude auth login",
+        _ => "",
     }
 }
 
@@ -69,6 +80,9 @@ pub fn script(account: &SignInAccount, cli_path: &str) -> String {
 
 /// The hello's command is a program and arguments, never shell source.
 pub fn script_with_command(account: &SignInAccount, cli_path: &str, command: &str) -> String {
+    if !account.can_sign_in() || command.trim().is_empty() {
+        return "#!/bin/zsh -l\nprintf '%s\\n' 'Sign-in is unavailable for this login. Refresh the accounts in Threadbear.'\n".into();
+    }
     let codex = account.provider == "codex";
     let mut env = String::new();
     if codex && !account.config_dir.is_empty() {
@@ -130,7 +144,7 @@ mod tests {
     #[test]
     fn a_logins_name_is_printed_never_run() {
         let title = "claude$(touch injected) `touch injected` \"q\" 'q' \\ $HOME\nsecond line; touch injected";
-        let s = script(&account("../../evil id", "claude", title, ""), "/usr/bin/true");
+        let s = script(&account("claude-main", "claude", title, ""), "/usr/bin/true");
         let printed = s.lines().find(|l| l.starts_with("printf")).unwrap();
         // The whole name is inside one pair of single quotes, its own quote
         // closed and reopened, and the newline gone.

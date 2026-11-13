@@ -140,10 +140,10 @@ impl RunnerLogins {
     pub fn from_hello(hello: &Value) -> RunnerLogins {
         let login_commands = hello["providers"].as_array().into_iter().flatten().filter_map(|p| {
             let id = p["id"].as_str().filter(|s| !s.is_empty())?;
-            let command = p["loginCommand"].as_str().filter(|s| !s.trim().is_empty())?;
-            Some((id.to_owned(), command.to_owned()))
+            let command = p["loginCommand"].as_str()?;
+            Some((id.to_owned(), command.trim().to_owned()))
         }).collect();
-        RunnerLogins { accounts: accounts_from(&hello["accounts"]), pools: pools_from(&hello["pools"]), defaults: crate::wire::read(hello["defaults"].clone()).unwrap_or_default(), login_commands }
+        RunnerLogins { accounts: accounts_from(&hello["accounts"]), pools: pools_from(&hello["pools"]), defaults: hello.get("defaults").cloned().and_then(crate::wire::read).unwrap_or_default(), login_commands }
     }
 
     /// `accounts.updated`: the logins, which replace the ones from `hello`.

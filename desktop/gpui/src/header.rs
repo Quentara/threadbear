@@ -966,7 +966,8 @@ impl Threadbear {
             return None;
         }
         let known = self.logins.account(&thread.account_id).map(|a| SignInAccount { id: a.id.clone(), provider: a.provider_id().to_owned(), title: a.title.clone(), config_dir: a.config_dir.clone() });
-        sign_in::account_for(&thread.provider, thread.runner_id.is_some(), known)
+        let account = sign_in::account_for(&thread.provider, thread.runner_id.is_some(), known)?;
+        (!self.logins.login_command(&account.provider).is_empty()).then_some(account)
     }
 
     /// `remoteSignInRunner`: another Mac's thread whose login was refused,

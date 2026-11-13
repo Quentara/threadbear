@@ -1130,9 +1130,11 @@ pub struct PatchInfo {
     pub untrusted: Option<String>,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub hash: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::optional_list")]
+    // The Trust prompt must show the complete set of helpers and grants.
+    // An unreadable disclosure fails the patch row closed.
+    #[serde(default)]
     pub helpers: Option<Vec<String>>,
-    #[serde(default, deserialize_with = "crate::wire::optional_list")]
+    #[serde(default)]
     pub grants: Option<Vec<String>>,
 }
 

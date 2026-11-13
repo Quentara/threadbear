@@ -1044,6 +1044,9 @@ impl Threadbear {
                             Err(message) => { this.list_error = Some(message.into()); cx.notify(); return; }
                         };
                         let confirmed: std::collections::HashSet<_> = list.rows.iter().map(|t| t.id.clone()).collect();
+                        // An explicit, readable archive is still authoritative
+                        // even when another row could not be read.
+                        for thread in &list.rows { crate::terminal::thread_updated(thread, cx); }
                         let before = (*this.threads).clone();
                         let cleanup = list.apply(&mut this.threads);
                         let reload: std::collections::HashSet<_> = confirmed.iter().filter(|id| {

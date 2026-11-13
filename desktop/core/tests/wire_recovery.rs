@@ -74,6 +74,10 @@ fn browser_tabs_skip_bad_rows_and_keep_other_host_fields() {
     }
     let panel: PanelState = serde_json::from_value(json!({"tabs":[false,{"tabId":1,"title":42}]})).unwrap();
     assert_eq!(panel.tabs.len(), 1);
+    let mut rows = vec![json!(false); threadbear_core::browserbear::MAX_TABS];
+    rows.push(json!({"tabId":1}));
+    let panel: PanelState = serde_json::from_value(json!({"tabs":rows})).unwrap();
+    assert!(panel.tabs.is_empty(), "the cap counts consumed entries, including bad ones");
 }
 
 #[test]
@@ -86,18 +90,43 @@ fn invalid_identities_and_duplicate_rows_do_not_authorize_cleanup() {
     let mut threads = std::collections::HashMap::from([("kept".into(), ThreadSummary::default())]);
     assert!(!list.apply(&mut threads));
     assert!(threads.contains_key("kept"));
+    let empty = ThreadList::decode(&json!({"threads":[false,{"id":42}]})).unwrap();
+    assert!(!empty.apply(&mut threads));
+    assert!(threads.contains_key("kept"));
+}
+
+#[test]
+fn remote_empty_partial_and_invalid_indexes_cannot_remove_missing_threads() {
+    let good = json!({"runnerId":"cloud","threadId":"12345678-1234-1234-1234-123456789abc"});
+    for value in [json!({}), json!({"threads":false}), json!({"threads":[]}), json!({"threads":[false]}), json!({"threads":[good.clone(),false]}), json!({"threads":[good.clone(),good.clone()]})] {
+        assert!(!decode_remote_threads(&value).can_remove_missing());
+    }
+    assert!(decode_remote_threads(&json!({"threads":[good]})).can_remove_missing());
 }
 
 #[test]
 fn decode_diagnostics_never_include_values_or_map_keys() {
     static MESSAGES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
     threadbear_core::wire::set_logger(|message| MESSAGES.lock().unwrap().push(message.to_owned()));
+    #[derive(serde::Deserialize)]
+    struct Probe {
+        #[serde(deserialize_with = "threadbear_core::wire::field")]
+        _number: Option<i128>,
+        #[serde(deserialize_with = "threadbear_core::wire::field")]
+        _other: Option<i128>,
+    }
+    for _ in 0..20 {
+        let _: Probe = serde_json::from_value(json!({"_number":"PRIVATE SENTINEL", "_other":"PRIVATE SENTINEL"})).unwrap();
+    }
     let _: ThreadSummary = serde_json::from_value(json!({"id":"t", "contextTokens":"PRIVATE SENTINEL"})).unwrap();
     let _ = threadbear_core::inbox::ThreadList::decode(&json!({"threads":[{"id":{"PRIVATE SENTINEL":42}}]}));
     let _ = RunnerLogins::from_hello(&json!({"defaults":{"models":{"PRIVATE SENTINEL":false}}}));
     let messages = MESSAGES.lock().unwrap();
     assert!(messages.iter().any(|m| m.contains("dropped invalid")));
     assert!(messages.iter().all(|m| !m.contains("PRIVATE SENTINEL")));
+    let probe: Vec<_> = messages.iter().filter(|m| m.contains("i128")).collect();
+    assert_eq!(probe.len(), 2, "each field is identified separately and repeated decoding logs only once");
+    assert!(probe[0].contains("wire_recovery.rs:"), "the log identifies the source field");
 }
 
 #[test]
@@ -111,6 +140,31 @@ fn provider_commands_are_quoted_as_arguments_and_old_hellos_have_defaults() {
     let account = sign_in::SignInAccount { id:"cursor-main".into(), provider:"cursor".into(), title:"Cursor".into(), config_dir:String::new() };
     let script = sign_in::script_with_command(&account, "", "agent login; touch /tmp/unwanted $(whoami)");
     assert!(script.contains("agent 'login;' touch /tmp/unwanted '$(whoami)'"));
+    let unknown = RunnerLogins::from_hello(&json!({"providers":[{"id":"new","loginCommand":""},{"id":"cursor","loginCommand":""}]}));
+    assert_eq!(unknown.login_command("new"), "");
+    assert_eq!(unknown.login_command("cursor"), "");
+    assert_eq!(old.login_command("unknown"), "");
+    assert!(!sign_in::script_with_command(&account, "/opt/agent", "").contains("/opt/agent"));
+}
+
+#[test]
+fn patch_trust_disclosures_and_nonmain_login_folders_fail_closed() {
+    use threadbear_core::highlights::PatchInfo;
+    for field in ["helpers", "grants"] {
+        for bad in [json!(["readable",false]),json!({"path":"hidden"})] {
+            let mut patch = json!({"id":"p","untrusted":"Read first","file":"patch.ts","hash":"hash"});
+            patch[field] = bad;
+            assert!(serde_json::from_value::<PatchInfo>(patch).is_err());
+        }
+    }
+    for (id, provider) in [("claude-1","claude"),("codex-1","codex")] {
+        let logins = RunnerLogins::from_hello(&json!({"accounts":[{"id":id,"provider":provider,"configDir":false}]}));
+        let a = &logins.accounts[0];
+        let account = sign_in::SignInAccount { id:a.id.clone(),provider:a.provider.clone(),title:a.title.clone(),config_dir:a.config_dir.clone() };
+        assert!(sign_in::account_for(provider,false,Some(account.clone())).is_none());
+        let script = sign_in::script(&account,"/opt/cli");
+        assert!(!script.contains("/opt/cli"));
+    }
 }
 
 #[test]

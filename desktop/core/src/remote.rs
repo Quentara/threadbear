@@ -38,6 +38,8 @@ pub struct RemoteThreads {
     /// Mike's runner order (backend API 58), every runner's id: what the
     /// phone and the Runners panel list them in. None from a backend without one.
     pub order: Option<Vec<String>>,
+    /// A partial or empty index cannot prove a previously seen row is gone.
+    complete: bool,
 }
 
 impl RemoteRunner {
@@ -101,14 +103,27 @@ fn summary(row: &Value) -> Option<ThreadSummary> {
 /// `remoteThreads.list`'s answer (or `remoteThreads.updated`'s params), read
 /// leniently: an unreadable row is left out.
 pub fn decode_remote_threads(value: &Value) -> RemoteThreads {
+    let values = value["threads"].as_array();
+    let mut ids = std::collections::HashSet::new();
+    let threads: Vec<_> = values.into_iter().flatten().enumerate().filter_map(|(i, row)| {
+        match summary(row) {
+            Some(thread) if ids.insert(thread.id.clone()) => Some(thread),
+            _ => { crate::wire::dropped::<ThreadSummary>(&format!("remote thread list entry at {i}")); None }
+        }
+    }).collect();
+    if values.is_none() { crate::wire::dropped::<RemoteThreads>("remote thread list envelope"); }
+    let complete = !threads.is_empty() && values.is_some_and(|v| v.len() == threads.len());
     RemoteThreads {
         runners: value["runners"].as_array().into_iter().flatten().filter_map(RemoteRunner::decode).collect(),
-        threads: value["threads"].as_array().into_iter().flatten().filter_map(summary).collect(),
+        threads,
         order: value["order"].as_array().map(|ids| ids.iter().filter_map(|id| id.as_str().map(str::to_owned)).collect()),
+        complete,
     }
 }
 
 impl RemoteThreads {
+    pub fn can_remove_missing(&self) -> bool { self.complete }
+
     pub fn runner(&self, id: &str) -> Option<&RemoteRunner> {
         self.runners.iter().find(|r| r.id == id)
     }

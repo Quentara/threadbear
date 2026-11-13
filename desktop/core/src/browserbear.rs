@@ -161,7 +161,7 @@ fn capped_tabs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<AgentTab>, 
         }
         fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
             let mut tabs = vec![];
-            while tabs.len() < MAX_TABS {
+            for _ in 0..MAX_TABS {
                 match seq.next_element::<Value>()? {
                     Some(value) => { if let Some(tab) = crate::wire::read(value) { tabs.push(tab); } }
                     None => return Ok(tabs),
