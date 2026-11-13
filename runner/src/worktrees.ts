@@ -13,7 +13,7 @@ import type { WorktreePatch } from './patches.ts';
 import { inBackground } from './background.ts';
 import { mainCheckoutOf as linkedMainCheckout } from './patch-trust.ts';
 import { untrustedGitArgs } from './safe-git.ts';
-import { joinQueue, leaveQueue, queueDir, readEntry, setRunning, waiting, waitingLine, writeEntry, type QueueEntry } from './land-queue.ts';
+import { LAND_TIMES_FILE, joinQueue, leaveQueue, queueDir, readEntry, setRunning, waiting, waitingLine, writeEntry, type QueueEntry } from './land-queue.ts';
 
 // What a thread's record keeps about its worktree.
 export type WorktreeRecord = {
@@ -363,7 +363,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
   }
   const common = path.resolve(t.path, commonRel);
   const gitDir = path.resolve(t.path, (await gitOut(t.path, ['rev-parse', '--git-dir'])) ?? commonRel);
-  const timesFile = path.join(common, 'threadbear-land-times.log');
+  const timesFile = path.join(common, LAND_TIMES_FILE);
   const asked = Date.now();
 
   // One tb land at a time in a worktree: it rebases before taking the

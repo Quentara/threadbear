@@ -387,6 +387,23 @@ rollback covers a release that doesn't come up.
   no host answers. Mike, 9 Nov: six updates that morning each ran the
   whole unit suite on his M5 for ten minutes. With no check host they run
   in the clone as before.
+- A commit that `tb land` checked on this machine isn't checked a second
+  time. Main only moves to a commit a landing's check passed, and that
+  check leaves a line in `threadbear-land-times.log`
+  (docs/thread-worktrees.md, "Where a landing's time goes"), so when the
+  commit to build has a line there for a real, passing check that ran the
+  runner's typecheck and unit tests, the build runs `deploy.mjs
+  --skip-checks` (`landChecked` in `runner/src/update.ts`; the runner's log
+  says `checksLeftOut`). The snapshot, the smoke test and the crash
+  rollback are as before. On 13 Nov each landing that changed the runner
+  had the same tests run twice, five minutes apart: about two hours a day
+  of the check hosts, and on a fork with no check host both runs on the
+  person's own Mac. The checks still run when anything the deploy tests
+  cover has changed since the running release (`runner/scripts/`,
+  `launch.mjs`, `launcher/`, `test/deploy/`, `check.sh`: only a build runs
+  those tests), for a commit that reached main some other way
+  (`scripts/sync-main.sh`, a push), and always on a machine that follows
+  GitHub's main, which has no landings of its own to go by.
 - A build that fails starts a thread in the background to fix it
   (`runner/src/fix-update.ts`; Mike, 6 Nov: the old banner came up often,
   mostly for tests that flaked on a busy Mac, and told him nothing he could

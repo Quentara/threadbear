@@ -23,6 +23,7 @@ import { inBackground } from './background.ts';
 import type { UpdateFailure } from './fix-update.ts';
 import { machineTrouble } from './machine-trouble.ts';
 import { cleanGitError, followOrigin as fetchAndFollowOrigin, oldestMissingAt, type OriginResult } from './follow-origin.ts';
+import { LAND_TIMES_FILE } from './land-queue.ts';
 
 export const CHECK_INTERVAL_MS = 5 * 60_000;
 // After main's ref changes in the checkout (a commit or merge landing), the
@@ -139,7 +140,10 @@ export type UpdateDeps = {
   fetchOrigin?: (checkout: string) => Promise<OriginResult>;
   oldestMissing?: (checkout: string, prefix: string, since: string, ref: string) => Promise<number | undefined>;
   treeOf?: (dir: string, prefix: string, commit: string) => string | undefined;
-  deploy?: (runnerDir: string, home: string, logFile: string, follow: string) => Promise<DeployResult>;
+  deploy?: (runnerDir: string, home: string, logFile: string, follow: string, opts?: { skipChecks?: boolean }) => Promise<DeployResult>;
+  // Whether a landing's check already passed what the build would check
+  // (landChecked above), and where.
+  landChecked?: (checkout: string, clone: string, prefix: string, commit: string, runningCommit: string | undefined) => Promise<string | undefined>;
   // Deploys the Convex backend and website at main before the runner is
   // built (scripts/deploy-backend.mjs): a no-op when they haven't changed.
   deployBackend?: (repoDir: string, runnerDir: string, home: string, commit: string, logFile: string) => Promise<{ ok: boolean; error?: string }>;
@@ -346,6 +350,87 @@ export async function buildTreeAt(dir: string, prefix: string): Promise<string> 
   return [runner, ...extra].join(' ');
 }
 
+// The steps of check.sh a landing's check has to have run and passed for a
+// build of the same commit to leave its own checks out: all that deploy.mjs's
+// step 1 runs, by the names check.sh prints them under.
+export const LAND_CHECK_STEPS = ['runner typecheck', 'runner unit tests'];
+// What check.sh's "runner deploy tests" step is for (its `needed` line, and
+// `needed` always says yes to check.sh itself; update.test.ts holds the two
+// together). `tb land`'s --quick never runs that step and a build's --runner
+// does, so a build that changes any of this still runs its checks.
+export const DEPLOY_TESTS_COVER = /^(runner\/(scripts\/|launch\.mjs$|launcher\/|test\/deploy\/)|check\.sh$)/;
+const LAND_TIMES_READ_MAX = 4 * 1024 * 1024;
+
+// The newest line of a landing log that says this exact commit passed a
+// real check (not a dry run) with every one of LAND_CHECK_STEPS run and
+// passed, not skipped. Read as the landing writes it: no link followed and
+// no fifo waited on, and anything odd is just no line.
+export function passedLandCheck(file: string, commit: string): { at?: string; host?: string } | undefined {
+  let text: string;
+  try {
+    const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
+    const fd = fs.openSync(file, O_RDONLY | O_NOFOLLOW | O_NONBLOCK);
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile() || st.size > LAND_TIMES_READ_MAX) return undefined;
+      text = fs.readFileSync(fd, 'utf8');
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return undefined;
+  }
+  const lines = text.split('\n');
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (!lines[i].includes(commit)) continue;
+    try {
+      const e = JSON.parse(lines[i]) as { at?: unknown; host?: unknown; commit?: unknown; ok?: unknown; dryRun?: unknown; steps?: unknown };
+      if (e.commit !== commit || e.ok !== true || e.dryRun) continue;
+      const steps = Array.isArray(e.steps) ? (e.steps as { name?: unknown; status?: unknown }[]) : [];
+      if (!LAND_CHECK_STEPS.every((name) => steps.some((s) => s?.name === name && s?.status === 'ok'))) continue;
+      return { ...(typeof e.at === 'string' ? { at: e.at } : {}), ...(typeof e.host === 'string' ? { host: e.host } : {}) };
+    } catch {
+      // a line cut short, or not a landing's
+    }
+  }
+  return undefined;
+}
+
+// Why a build of `commit` needn't run its typecheck and unit tests again, in
+// a few words, or undefined when it must. On 13 Nov every landing that
+// changed the runner had its tests run twice over on this Mac's account: by
+// `tb land` (check.sh --quick, 5 minutes on a check host), then by the
+// build of that same commit seconds later (check.sh --runner, the same
+// tests again), about two hours a day of the check hosts and five minutes
+// more before each runner change was live. On a fork with no check host
+// both runs are on the person's own Mac.
+//
+// Main only moves to a commit a landing's check passed, and the landing
+// leaves a line for it (worktrees.ts, logCheckTimes), so when the commit
+// to build is exactly one a real check passed here, with the runner's
+// typecheck and unit tests run and not skipped, the build leaves them out
+// (deploy.mjs --skip-checks; the snapshot, the smoke test and the crash
+// rollback are as before). Not when anything the deploy tests cover has
+// changed since the release that's running, as only a build's checks run
+// those; not for a release built with local changes or a runner that isn't
+// in runner/, where that can't be told; and never on a machine that follows
+// GitHub's main (the caller's rule), which lands nothing itself.
+export async function landChecked(checkout: string, clone: string, prefix: string, commit: string, runningCommit: string | undefined): Promise<string | undefined> {
+  if (prefix !== 'runner/' || !runningCommit || !/^[0-9a-f]{40,64}$/.test(commit) || !/^[0-9a-f]{7,64}$/.test(runningCommit)) return undefined;
+  let common: string;
+  let changed: string;
+  try {
+    common = path.resolve(checkout, await gitAsync(checkout, ['rev-parse', '--git-common-dir']));
+    changed = await gitAsync(clone, ['diff', '--name-only', '--no-renames', runningCommit, commit, '--']);
+  } catch {
+    return undefined; // no such commit in the clone, say: can't tell, so check
+  }
+  if (changed.split('\n').some((f) => DEPLOY_TESTS_COVER.test(f))) return undefined;
+  const line = passedLandCheck(path.join(common, LAND_TIMES_FILE), commit);
+  if (!line) return undefined;
+  return `tb land's check passed them at this commit${line.host ? ` on ${line.host}` : ''}${line.at ? ` at ${line.at}` : ''}`;
+}
+
 // deploy.mjs from the clone, stopping after it has pointed current at the
 // new release (--no-restart): the runner asks for the restart itself, so
 // the build never has to outlive it. Its output goes to logFile.
@@ -399,7 +484,7 @@ export function runBackendDeploy(repoDir: string, runnerDir: string, home: strin
   });
 }
 
-export function runDeploy(runnerDir: string, home: string, logFile: string, follow: string): Promise<DeployResult> {
+export function runDeploy(runnerDir: string, home: string, logFile: string, follow: string, opts: { skipChecks?: boolean } = {}): Promise<DeployResult> {
   return new Promise((resolve) => {
     const env: Record<string, string | undefined> = {};
     for (const [k, v] of Object.entries(process.env)) if (!/^THREADB(EAR|ARE)_/.test(k)) env[k] = v;
@@ -411,7 +496,7 @@ export function runDeploy(runnerDir: string, home: string, logFile: string, foll
       return;
     }
     // Background priority (background.ts): the release build is npm ci and tsc.
-    const child = spawn(...inBackground(process.execPath, [path.join(runnerDir, 'scripts', 'deploy.mjs'), '--no-restart', '--home', home, '--follow', follow]), {
+    const child = spawn(...inBackground(process.execPath, [path.join(runnerDir, 'scripts', 'deploy.mjs'), '--no-restart', '--home', home, '--follow', follow, ...(opts.skipChecks ? ['--skip-checks'] : [])]), {
       cwd: runnerDir,
       env,
       stdio: ['ignore', fd, fd],
@@ -642,8 +727,14 @@ export class RunnerUpdater {
       this.state = 'building';
       this.reason = undefined;
       this.deps.onChange?.();
-      log.info('building a release of main', { commit: main.short, subject: main.subject });
-      let result = await (this.deps.deploy ?? runDeploy)(path.join(dir, release.prefix), home, updateLogPath(home), release.checkout);
+      // Checks a landing here already passed at this very commit aren't run
+      // again (landChecked). A lookup that fails just means they are.
+      const passed = this.followsOrigin
+        ? undefined
+        : await (this.deps.landChecked ?? landChecked)(release.checkout, dir, release.prefix, main.commit, release.dirty ? undefined : release.commit).catch(() => undefined);
+      if (this.stopped) return decision;
+      log.info('building a release of main', { commit: main.short, subject: main.subject, ...(passed ? { checksLeftOut: passed } : {}) });
+      let result = await (this.deps.deploy ?? runDeploy)(path.join(dir, release.prefix), home, updateLogPath(home), release.checkout, { skipChecks: Boolean(passed) });
       if (this.stopped) return decision;
       // Counted per build tree, as failedAlready keys a failure, so a commit
       // that only fixes a test starts its own count (Codex, 9 Nov).

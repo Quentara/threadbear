@@ -15,6 +15,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 
+// Where each check leaves its line (worktrees.ts, logCheckTimes), beside the
+// landing lock in the repo's common git directory. The runner's updater
+// reads it too, to leave out checks a landing has already passed (update.ts,
+// landChecked).
+export const LAND_TIMES_FILE = 'threadbear-land-times.log';
+
 export type QueueResult = {
   // The entry's own commits as they landed on main (its rebased tip), and
   // their `git log --oneline`, for the owner to print.
