@@ -587,6 +587,18 @@ test("the caller gate marks any agent's move, Full access's too, so it never car
   assert.equal(gate.check(full.id, 'threads.update', { threadId: ask.id, title: 'z' }).byAgent, undefined);
 });
 
+test('only the runner\'s full sync question may set full sync, and only that', () => {
+  const h = poolHarness();
+  const asking = h.runner.create({ text: 'q', permissionMode: 'ask' }).thread;
+  const other = h.runner.create({ text: 'o', permissionMode: 'ask' }).thread;
+  const gate = new CallerGate({ runner: h.runner, fullSyncAskThread: () => asking.id });
+  assert.deepEqual(gate.check(asking.id, 'settings.update', { fullSync: true }), { fullSync: true });
+  assert.throws(() => gate.check(other.id, 'settings.update', { fullSync: true }));
+  assert.throws(() => gate.check(asking.id, 'settings.update', { fullSync: true, followMain: false }));
+  assert.throws(() => gate.check(asking.id, 'settings.update', { defaultCwd: '/' }));
+  assert.throws(() => new CallerGate({ runner: h.runner }).check(asking.id, 'settings.update', { fullSync: true }));
+});
+
 test("an agent's move ends the thread's wait for room, so the old timer can't carry it on later either", async () => {
   const h = poolHarness();
   h.setUsage('claude-main', room(0.2, 200));

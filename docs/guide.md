@@ -1495,7 +1495,7 @@ machine is, with an orange dot on its tile while it's low on memory or disk.
 Other changes are done on the Mac or by asking an agent. The gear
 has the appearance and Sign out. Pictures you paste show there too: they go to
 your Convex deployment as they are, so nothing can scrub a secret from one, and
-`"sync": { "pastedPictures": false }` in `runner.json` keeps them on the Mac. A tool line opens to what the tool did if its runner has full sync on (`"sync": { "full": true }` in that runner's `runner.json`; off by default, and docs/on-your-mac.md says what it sends), and its screenshots show when you tap them. The pencil beside the search starts a new
+`"sync": { "pastedPictures": false }` in `runner.json` keeps them on the Mac. A tool line opens to what the tool did if its runner has full sync on (on for a new install; `tb settings full on|off` changes it, and docs/on-your-mac.md says what it sends), and its screenshots show when you tap them. The pencil beside the search starts a new
 thread on a runner's default folder and login. On your Mac,
 `threadbear://thread/<id>` opens a thread in the app instead (the Open
 thread button on a tab BrowserBear has marked for an agent uses it). With
@@ -1917,7 +1917,12 @@ Your threads are mirrored to a Convex deployment in your own Convex account,
 which setup made: the thread list, the text of each message, one line for
 each thing an agent did, and your logins' emails and usage. Anything that
 looks like a secret is scrubbed out of the text on the way up, which helps
-but isn't a guarantee. Tool output stays on your Mac. Pictures you paste into
+but isn't a guarantee. With full sync on, which it is for a new install, each
+tool's output, its input and diffs go up too, after the same scrubbing, and are
+kept 30 days; output from files and commands that usually hold secrets stays on
+your Mac, and so do tool screenshots. `tb settings full off` keeps all tool output
+on your Mac. `tb status` estimates how much of Convex's Free plan you're using and
+warns before you get near its limits. Pictures you paste into
 a message go up as they are, so your website can show them, and nothing can
 scrub a secret out of a picture: `"sync": { "pastedPictures": false }` in
 `runner.json` keeps them on your Mac. A photo you send from your phone passes

@@ -14,7 +14,9 @@ import { loadConfig, paths, readRunnerJson } from '../../src/config.ts';
 import { downgradeFetch, redirectTrap } from '../helpers/redirect-trap.ts';
 import { scrubText } from '../../src/redaction.ts';
 import { Scrubber } from '../../src/scrub.ts';
-import { SCRUB_API_VERSION } from '../../src/sync.ts';
+import { SCRUB_API_VERSION, isConvexCloud } from '../../src/sync.ts';
+import { ConvexUseTally } from '../../src/convex-use.ts';
+
 
 type Call = { kind: string; fn: string; args: Record<string, unknown> };
 
@@ -2835,6 +2837,64 @@ test("an archived thread's folder is looked at for its history", async () => {
   assert.ok(sent.length > 0);
   assert.ok(!JSON.stringify(sent).includes(value), 'neither its history nor its row');
   await sync.stop();
+});
+
+test('every mutation is counted for the estimate of Convex use, and the warning can be hidden', async () => {
+  const { h } = setup();
+  const home = tmpDir();
+  const make = (usageWarning?: boolean) =>
+    new ConvexSync({
+      config: { enabled: true, url: 'https://x.convex.cloud', name: 'TestMac', runnerId: 'r1', ...(usageWarning === false ? { usageWarning } : {}) },
+      key: 'k',
+      runner: h.runner,
+      version: '0.1.0+test',
+      startedAt: '2026-10-27T00:00:00.000Z',
+      clock: h.clock,
+      log: nullLogger,
+      use: new ConvexUseTally({ home }),
+      post: async (_kind, fn) => (fn === 'sync:heartbeat' ? { apiVersion: BACKEND_API_VERSION } : null),
+    });
+  const sync = make();
+  sync.start();
+  await sync.flushNow();
+  const before = sync.status().use!.sent;
+  assert.ok(before > 0, 'the start counted');
+  // A huge month of writes: over 70% of Free, so it warns, unless told not to.
+  await sync.relaySource()!.post('mutation', 'sync:somethingElse', { key: 'k', text: 'x'.repeat(400_000_000) });
+  assert.ok(sync.status().use!.sent > before + 400_000_000);
+  assert.match(sync.status().use!.warning ?? '', /Free plan/);
+  await sync.stop();
+  // A failed try isn't counted: only what the backend took.
+  let failing = true;
+  const flaky = new ConvexSync({
+    config: { enabled: true, url: 'https://x.convex.cloud', name: 'TestMac', runnerId: 'r1' },
+    key: 'k',
+    runner: h.runner,
+    version: '0.1.0+test',
+    startedAt: '2026-10-27T00:00:00.000Z',
+    clock: h.clock,
+    log: nullLogger,
+    use: new ConvexUseTally({ home: tmpDir() }),
+    post: async (_kind, fn) => {
+      if (fn === 'sync:somethingElse' && failing) throw new Error('down');
+      return fn === 'sync:heartbeat' ? { apiVersion: BACKEND_API_VERSION } : null;
+    },
+  });
+  flaky.start();
+  await flaky.flushNow();
+  const start = flaky.status().use!.sent;
+  await assert.rejects(flaky.relaySource()!.post('mutation', 'sync:somethingElse', { key: 'k', text: 'y'.repeat(1_000_000) }));
+  assert.equal(flaky.status().use!.sent, start);
+  failing = false;
+  await flaky.relaySource()!.post('mutation', 'sync:somethingElse', { key: 'k', text: 'y'.repeat(1_000_000) });
+  assert.ok(flaky.status().use!.sent > start + 1_000_000);
+  await flaky.stop();
+  assert.equal(isConvexCloud('https://x.convex.cloud'), true);
+  assert.equal(isConvexCloud('http://127.0.0.1:3210'), false, "a self-hosted backend has no Free plan to warn about");
+  assert.equal(isConvexCloud('https://convex.cloud.example.com'), false);
+  const quiet = make(false);
+  assert.equal(quiet.status().use!.warning, undefined);
+  assert.ok(quiet.status().use!.sent > 400_000_000, 'the count is kept on disk');
 });
 
 test("a runner key doesn't ask for the list of runners, which only the main key may read", async () => {

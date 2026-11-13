@@ -139,7 +139,7 @@ export type Config = {
   // THREADBEAR_SYNC=off turns it off for tests and dev runners.
   // urlRefused: why the configured url isn't used (plain http off this
   // Mac, secure-url.ts), so sync is off and tb status says why.
-  sync: { enabled: boolean; url?: string; urlRefused?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean };
+  sync: { enabled: boolean; url?: string; urlRefused?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean; fullAsked?: string; usageWarning?: boolean };
   // The silent on-device secret check (src/secret-check.ts): off unless asked.
   secretCheck?: boolean;
   // Mike's Connectors gateway's base URL (connectors.ts), for the app's
@@ -215,10 +215,12 @@ export type RunnerJson = {
   // icon: an SF Symbol for this runner in lists (machine.ts works one out).
   // An rpcUrl left from the direct link between Macs (gone 13 Nov 2026) is ignored.
   // full: true sends tool output to your Convex deployment as well, scrubbed first
-  // (docs/full-convex.md). Off unless you say so.
+  // (docs/full-convex.md). A new install's setup writes true; one from before
+  // has none, and its runner asks once (convex-use.ts), noting when in fullAsked.
+  // usageWarning: false hides tb status's warning near Convex's Free limits.
   // pastedPictures: false keeps pictures you paste off your Convex deployment
   // (docs/on-your-mac.md).
-  sync?: { enabled?: boolean; url?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean };
+  sync?: { enabled?: boolean; url?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean; fullAsked?: string; fullAskedThread?: string; usageWarning?: boolean };
   secretCheck?: { enabled?: boolean };
   // Days after a thread is archived that housekeeping clears its pictures
   // (housekeeping.ts). Absent: they're kept. Mike's runners set 30.
@@ -498,7 +500,13 @@ function syncConfig(raw: RunnerJson['sync'], env: NodeJS.ProcessEnv): Config['sy
   const icon = nonEmpty(raw?.icon);
   if (icon) out.icon = icon;
   if (raw?.pastedPictures === false) out.pastedPictures = false;
+  // Unset stays unset: an install from before full sync was the default is
+  // asked, never switched on by an update (docs/full-convex.md step 6).
   if (raw?.full === true) out.full = true;
+  else if (raw?.full === false) out.full = false;
+  const asked = nonEmpty(raw?.fullAsked);
+  if (asked) out.fullAsked = asked;
+  if (raw?.usageWarning === false) out.usageWarning = false;
   return out;
 }
 

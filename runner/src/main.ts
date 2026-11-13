@@ -9,7 +9,7 @@ import { readShareImage } from './share-images.ts';
 import { CallerGate } from './rpc-gate.ts';
 import { threadOfPort } from './peer.ts';
 import { threadKey as makeThreadKey } from './rpc-auth.ts';
-import { loadConfig, ensureHome, readToken, paths, recordListening, defaultHome, DEFAULT_CWD, RUNNER_VERSION, RunnerJsonError } from './config.ts';
+import { loadConfig, ensureHome, readToken, paths, recordListening, defaultHome, DEFAULT_CWD, RUNNER_VERSION, RunnerJsonError, readRunnerJson, writeRunnerJson } from './config.ts';
 import { startHousekeeping } from './housekeeping.ts';
 import { RELEASE, markConfigStop, markGoodLater, onSupervisorGone, ownCheckout, readRelease, readState, requestHandover, supervised, takeRollbackNotice, tellLaunchListening } from './release.ts';
 import { PatchTrust } from './patch-trust.ts';
@@ -41,6 +41,9 @@ import { ClaudeAdapter } from './adapters/claude/adapter.ts';
 import { ProcessRegistry } from './proc.ts';
 import { Runner } from './runner.ts';
 import { startOwnThread } from './own-threads.ts';
+import { askBrief, ConvexUseTally, shouldAskFullSync } from './convex-use.ts';
+// How long after starting the runner asks about full sync (convex-use.ts).
+const ASK_FULL_SYNC_AFTER_MS = 5 * 60_000;
 import { CodexAdapter } from './adapters/codex/adapter.ts';
 import { AcpAdapter } from './adapters/acp/adapter.ts';
 import { ACP_AGENTS, ACP_PROVIDERS, type AcpProvider } from './adapters/acp/agents.ts';
@@ -516,6 +519,7 @@ async function main(): Promise<void> {
   };
   const sync = new ConvexSync({
     config: { ...cfg.sync, runnerId: syncRunnerId, icon: runnerIcon },
+    use: new ConvexUseTally({ home: cfg.home }),
     key: syncKey,
     statePath: `${cfg.home}/sync-state.json`,
     cachePath: `${cfg.home}/sync-sent.json`,
@@ -687,6 +691,34 @@ async function main(): Promise<void> {
     // The app's Bring Them In and Let's Discuss titles (UpdatesPanel).
     openByHand: () => runner.list(['inbox', 'snoozed']).find((t) => /^(Bring in|Discuss) Mike's release /.test(t.title))?.id,
   });
+  // An install from before full sync was the default is asked once whether to
+  // turn it on, in a thread of its own (convex-use.ts); a new one's setup wrote
+  // the answer already. Noted first, so a crash before the thread starts doesn't
+  // ask twice, and a few minutes in, so a release that's about to roll back
+  // doesn't ask either.
+  if (shouldAskFullSync({ syncOn: Boolean(cfg.sync.enabled && cfg.sync.url && syncKey), key: syncKey, full: cfg.sync.full, asked: cfg.sync.fullAsked })) {
+    setTimeout(() => {
+      const before = readRunnerJson(cfg.home);
+      if (before.sync?.full !== undefined || before.sync?.fullAsked) return;
+      // The thread first, then the note: a runner that's handing over refuses
+      // new threads, and then the next one asks. A crash between the two asks
+      // twice, which is better than never.
+      // The checkout's tb, as this release's folder is pruned after a few more.
+      const tbPath = thisRelease?.checkout ? path.join(thisRelease.checkout, 'runner', 'bin', 'tb') : path.join(import.meta.dirname, '..', 'bin', 'tb');
+      const tb = `'${tbPath.replace(/'/g, `'\\''`)}'`;
+      let threadId: string;
+      try {
+        threadId = startOwnThread(runner, askBrief(tb), thisRelease?.checkout);
+      } catch (e) {
+        log.warn('could not ask about full sync', { error: String(e) });
+        return;
+      }
+      const json = readRunnerJson(cfg.home);
+      json.sync = { ...json.sync, fullAsked: new Date().toISOString(), fullAskedThread: threadId };
+      writeRunnerJson(cfg.home, json);
+      log.info('asked about full sync', { threadId });
+    }, ASK_FULL_SYNC_AFTER_MS).unref?.();
+  }
   const upstream = new Upstream({
     home: cfg.home,
     checkout: thisRelease?.checkout,
@@ -999,7 +1031,7 @@ async function main(): Promise<void> {
     methods,
     remote: peers,
     relay,
-    gate: new CallerGate({ runner, remote: peers, schedules: scheduler }),
+    gate: new CallerGate({ runner, remote: peers, schedules: scheduler, fullSyncAskThread: () => readRunnerJson(cfg.home).sync?.fullAskedThread }),
     callerOfPort: (port) => threadOfPort(port, { registry, known: (id) => runner.has(id) || peers.owns(id), log }),
     updates: () => (draining ? undefined : runnerUpdates()),
     appHello: (build, app) => appRestarts.appHello(build, app),
@@ -1009,7 +1041,10 @@ async function main(): Promise<void> {
       // Pushes failing (sync.ts notePushFailing) is said once as it starts;
       // an app that wasn't connected then hears it here.
       const pushFailing = sync.status().pushFailing;
+      // Near the Free plan's limits, as far as this runner can tell (convex-use.ts).
+      const useWarning = sync.status().use?.warning;
       return [
+        ...(useWarning ? [{ level: 'warning' as const, message: useWarning }] : []),
         ...(pushFailing ? [{ level: 'warning' as const, message: pushFailingText(pushFailing) }] : []),
         ...(rolledBack ? [{ level: 'warning' as const, message: rolledBack }] : []),
         ...(noCodex ? [{ level: 'warning' as const, message: noCodex }] : []),

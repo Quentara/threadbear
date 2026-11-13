@@ -243,10 +243,10 @@ const FAQ = [
     "You can still read all your threads on your phone and the website, because they're synced to your Convex deployment. The agents run on your Mac though, so they can't do anything while it's asleep (Threadbear won't keep it awake unless you turn on <a href=\"/docs/experiments\">that experiment</a>), and anything you send from your phone waits for it to wake up. If you want work to keep going, a second Mac or a Linux server can be an always-on machine, and you can pick it when you start a thread from your phone."],
   ["Do I need the iPhone app?",
     "No, the Mac app does everything on its own. The iPhone app and the browser links are for when you're away from your desk."],
-  // runner/src/sync.ts mirrors this; docs/on-your-mac.md has the full list. When full sync goes on
-  // by default (docs/full-convex.md, step 6) tool output goes up too, and this has to change.
+  // runner/src/sync.ts mirrors this; docs/on-your-mac.md has the full list. Full sync is on for a
+  // new install since 13 Nov (docs/full-convex.md, step 6), so tool output goes up too.
   ["What goes up to Convex?",
-    "The thread list, the text of every message, one line for each thing an agent did, anything waiting on you, your projects and schedules, your logins' emails and usage, and any pictures you paste in. Tool output stays on your Mac. Anything that looks like a secret gets scrubbed out of the text on the way up, but that's not a guarantee, and nothing can scrub a picture. It's your deployment in your own Convex account, so none of it comes to me. The <a href=\"/docs/privacy\">privacy docs</a> have the rest, including the switch that keeps pictures on your Mac."],
+    "The thread list, the text of every message, what each tool did and what it gave back (kept 30 days), anything waiting on you, your projects and schedules, your logins' emails and usage, and any pictures you paste in. Anything that looks like a secret gets scrubbed out on the way up, but that's not a guarantee, and nothing can scrub a picture, so output from things like your .env files and the agent's screenshots stay on your Mac. You can keep all the tool output on your Mac too with <code>tb settings full off</code>. It's your deployment in your own Convex account, so none of it comes to me. The <a href=\"/docs/privacy\">privacy docs</a> have the rest, including the switch that keeps pictures on your Mac."],
   // Self-hosting is step 8 of docs/setup-and-updates.md and isn't built, so setup can't do it. With
   // sync off the Mac app still works, since it talks to the runner (docs/protocol.md, "Sync").
   ["Do I have to use Convex?",

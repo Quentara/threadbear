@@ -212,6 +212,19 @@ The original plan for this step follows.
 
 ### 6. On by default
 
+**Done 13 Nov** (runner and setup only, no backend change). A new install's setup
+writes `"sync": { "full": true }`, a Mac joining an install too (its runner.json is new). An install from before has no `sync.full`, and is never switched by
+an update: its main runner asks once, a few minutes after it starts, in a thread of
+its own (`src/convex-use.ts`), then notes `sync.fullAsked` and `sync.fullAskedThread`
+so it doesn't ask again, and that thread sets the answer with `tb settings full on|off`
+(no answer leaves it off). It's the only thread that may, whatever its mode
+(`src/rpc-gate.ts`). A
+runner key's machine is never asked. `tb status` estimates this runner's use against
+Free and warns past 70% ("Warning before the limits" in docs/convex-backend.md).
+Mike's runners have `sync.usageWarning: false`, as his team is on Pro. Not done: a
+switch in the GPUI app's Settings (the CLI and the question set it), and the
+iPhone opening tool output (1.0.5).
+
 **Free accounts, worked out 6 Nov** from 1.52 hours of real rows: 2,797 bodies, 5.21 MB, 221 M5
 turns, so about 24 KB of body rows a turn. Writes plus 30-day deletion make about 48 KB a turn of
 I/O, and storage levels off at 30 days' writes. These are estimates, before index overhead.

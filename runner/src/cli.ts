@@ -138,6 +138,7 @@ const HELP = `tb: talk to the Threadbear runner
   tb librarian run [<threadId>]   a look at a thread now; with none, at every recent thread it hasn't seen
   tb librarian pause|resume
   tb settings [--json]            what the Settings window shows
+  tb settings full on|off         tool output to Convex too (from the next start)
   tb models [--json]              the small-model pool and private folders
   tb models pool <pool|off>       which pool's Claude logins answer small jobs (off: none, so no titles or librarian)
   tb models try <job> "text" [--labels a,b] [--field name=description]... [--system S] [--cwd DIR]
@@ -774,6 +775,23 @@ async function run(client: RunnerClient, cmd: string, args: string[], f: Flags):
       return 0;
     }
     case 'settings': {
+      // tb settings full on|off: full sync (docs/full-convex.md), the one
+      // setting the runner asks about by itself (convex-use.ts askBrief).
+      if (args[0] === 'full') {
+        const v = args[1];
+        if (v !== 'on' && v !== 'off') {
+          console.error('Usage: tb settings full on|off');
+          return 2;
+        }
+        const r = await client.call<{ settings: Settings }>('settings.update', { fullSync: v === 'on' });
+        // A runner from before this setting answers without saving it.
+        if (r.settings.fullSync !== (v === 'on')) {
+          console.error("This runner is too old to change full sync from here. Set \"sync\": { \"full\": " + (v === 'on') + " } in runner.json, then restart it.");
+          return 1;
+        }
+        console.log(`Full sync ${v === 'on' ? 'on' : 'off'}: saved in runner.json, and it takes effect when the runner next starts.`);
+        return 0;
+      }
       const r = await client.call<{ settings: Settings }>('settings.get', {});
       if (f.json) console.log(JSON.stringify(r.settings, null, 2));
       else printSettings(r.settings);
@@ -816,6 +834,7 @@ function printSettings(s: Settings): void {
   console.log(`One reply        ${s.oneReply ? 'on' : 'off'}`);
   console.log(`Lab review       ${s.labReview === false ? 'off' : 'on'}`);
   if (s.keepAwake !== undefined) console.log(`Keep Mac awake   ${s.keepAwake ? 'on' : 'off'}`);
+  if (s.fullSync !== undefined) console.log(`Full sync        ${s.fullSync ? 'on' : 'off'}`);
   printModels(s);
 }
 

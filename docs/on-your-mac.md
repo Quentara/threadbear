@@ -511,9 +511,13 @@ picture that goes up (ones agents post or pin, and anything in a thread you
 share) goes as it is. Scrubbing also can't undo a leak. A key that shows up in
 a thread has already been to the AI provider, so rotate it.
 
-**Full sync** is off unless a runner's `runner.json` has `"sync": { "full": true }`.
-With it off, tool output, diffs and tool screenshots stay on that runner, and
-nothing below happens. With it on, from then on (older tools aren't sent), that
+**Full sync** is on for a new install: setup writes `"sync": { "full": true }`
+into its `runner.json`. An install from before it was the default isn't switched
+on by an update: its runner asks once, in a thread of its own, and does what you
+answer (`tb settings full on|off` sets it any time). A Mac set up fresh, joining an
+install or not, gets it on from setup; a Linux runner has whatever its own
+`runner.json` says. `"sync": { "full": false }` keeps tool output,
+diffs and tool screenshots on that runner, and then nothing below happens. With it on, from then on (older tools aren't sent), that
 runner also sends each finished tool's output, its full input, its diffs and the
 reasoning before it to your deployment, after the same scrubbing, where they're
 kept 30 days. This lets you read them from any device while the runner's off. It's

@@ -147,7 +147,10 @@ yourself: it can run their agents.
 ## 5. Tell them it's done
 
 Say what was set up (their Convex project and its URL, where the app is), and
-that the runner and app update themselves when their `main` changes.
+that the runner and app update themselves when their `main` changes. Also say,
+in a line, that tool output goes to their Convex deployment too, scrubbed first
+but not guaranteed, and pictures can't be scrubbed; `tb settings full off` keeps
+it on their Mac.
 
 ## Another Mac (optional)
 
@@ -214,7 +217,9 @@ Threads on it are opened and steered from the Mac through Convex, so nothing con
    setup gives a new Mac (threads that name no mode start on Auto), and
    `sync.name` (what the sidebar calls this machine). Then, on the first Mac,
    run `tb runner add <name> --ssh <user@server>`. It writes the backend URL,
-   a runner id and a separate runner key to this server. Never copy the Mac's
+   a runner id and a separate runner key to this server. Add `sync.full`
+   `true` to send this server's tool output to Convex too, as setup does for a
+   new Mac; a runner key's machine is never asked about it. Never copy the Mac's
    main key or deploy key.
 7. **Install:** `runner/scripts/install-runner.sh`. On Linux it writes a
    systemd user service, `~/.config/systemd/user/com.mikerosoft.threadbear.runner.service`,

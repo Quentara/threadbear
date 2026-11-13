@@ -740,6 +740,9 @@ type Settings = {
                         // to bring in Mike's releases, in days (1 to 365;
                         // 5 by default), only for important ones, or never
                         // (runner.json releases.bringIn; "Mike's releases")
+  fullSync: boolean     // full sync, as runner.json's sync.full says; it
+                        // takes effect when the runner next starts
+                        // (docs/full-convex.md; `tb settings full on|off`)
   models: {
     pool: string | null      // the pool whose Claude logins answer small
                              // jobs; "claude" by default, null: none, so
@@ -1175,7 +1178,7 @@ the summary and then the reply.
 | `pools.list` | `{}` | `{ pools: Pool[] }` (see Pools) |
 | `pools.save` | `{ pools: Pool[] }` | `{ pools: Pool[] }`. Replaces the whole list in `runner.json` (`builtIn` is dropped; an empty list goes back to the built-in ones). `-32602` for a duplicate id, a blank id or title, an empty `accountIds`, or an account id the runner doesn't know. A blank or non-string `icon` is dropped. Every client gets `pools.updated` |
 | `settings.get` | `{}` | `{ settings: Settings }` |
-| `settings.update` | `{ defaultCwd?, idleMinutes?, maxLiveCLIs?, followMain?, bulletReplies?, oneReply?, labReview?, keepAwake?, bringIn?, models?: { pool?: string \| null, privateFolders? }, experiments?: { [id]: boolean } }` | `{ settings: Settings }`. Saves what's given to `runner.json` and applies it straight away, except `followMain` (next restart). `experiments` sets those switches under runner.json's `experiments`, keeping the rest; `Settings.experiments` lists every one as `{ id, name, does, on }`, oldest first. `defaultCwd` must be an existing folder, `idleMinutes` at least 1, `maxLiveCLIs` 1 to 20, `pool` a pool id or `null`, each `experiments` key an experiment's id; otherwise `-32602` saying which. Every client gets `settings.updated` |
+| `settings.update` | `{ defaultCwd?, idleMinutes?, maxLiveCLIs?, followMain?, bulletReplies?, oneReply?, labReview?, keepAwake?, bringIn?, fullSync?, models?: { pool?: string \| null, privateFolders? }, experiments?: { [id]: boolean } }` | `{ settings: Settings }`. Saves what's given to `runner.json` and applies it straight away, except `followMain` and `fullSync` (next restart). `experiments` sets those switches under runner.json's `experiments`, keeping the rest; `Settings.experiments` lists every one as `{ id, name, does, on }`, oldest first. `defaultCwd` must be an existing folder, `idleMinutes` at least 1, `maxLiveCLIs` 1 to 20, `pool` a pool id or `null`, each `experiments` key an experiment's id; otherwise `-32602` saying which. Every client gets `settings.updated` |
 | `instructions.get` | `{}` | `{ instructions: StandingInstructions }` (see Standing instructions). `-32601` with the experiment off, and from an older runner: the app then shows no box |
 | `instructions.set` | `{ text: string }` | `{ instructions: StandingInstructions }`. Saves and signs the text, trimmed; an empty one clears them and removes both files. `-32602` for a `text` that isn't a string or is over 20,000 characters, `-32601` as for `instructions.get`. Every client gets `instructions.updated` |
 | `devices.list` | `{}` | `{ devices: Device[], site?: string, reason?: string }` (see Devices). `site` is the website's root while sync is on; `reason` says why nothing can pair when it's off |
@@ -6128,7 +6131,13 @@ the mirror back as state. The Mac app doesn't use it.
   in `sync-sent.json` (`bodies`), and a start reads only threads past that, up to
   20,000 events, then goes on from now. It's sent again only after a lost reply, and
   an identical row writes nothing. `runner.status`'s `sync.full` is `{ bodies, bytes,
-  withheld, unsent, pending, backendTooOld? }`. Reads: `phone:eventBody { token,
+  withheld, unsent, pending, backendTooOld? }`, and `sync.use` is `{ sent, bodies, io,
+  storage, since, warning? }`: bytes this runner sent in the last 30 days, the part
+  that was tool output, and estimates of a month's I/O and of stored tool output
+  against Convex's Free plan (`src/convex-use.ts`), with a `warning` (also a
+  `runner.notice` on connect) past 70% of either limit unless `sync.usageWarning`
+  is false. A runner can't read its team's real usage, so these are estimates of
+  this runner alone. Reads: `phone:eventBody { token,
   threadId, seq }` and `sync:remoteBody { key, threadId, seq }` answer `null`, `{ state:
   "withheld", reason? }`, `{ state: "expired" }` or `{ state: "text", text, ok?, truncated?,
   input?, diffs?, reasoning?, images?, cut? }`, one query per opening, never live;

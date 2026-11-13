@@ -46,6 +46,7 @@ import { Scrubber, type ScrubStatus } from './scrub.ts';
 import { scrubEveryString } from './redaction.ts';
 import { withholdReason } from './withhold.ts';
 import { BodyCollector, prepareBody, type BodyDoc, type RawBody } from './full-sync.ts';
+import type { ConvexUse, ConvexUseTally } from './convex-use.ts';
 import { cutSafely } from './safe-cut.ts';
 import { siteOf } from './convex-admin.ts';
 import { credentialUrlProblem } from './secure-url.ts';
@@ -123,6 +124,8 @@ export type SyncConfig = {
   pastedPictures?: boolean;
   // Full sync (docs/full-convex.md step 4): tool output, input and diffs go up too.
   // Off unless it's asked for; off, nothing here writes eventBodies.
+  // false hides the estimate's warning near Convex's Free limits (convex-use.ts).
+  usageWarning?: boolean;
   full?: boolean;
 };
 
@@ -361,6 +364,9 @@ export type SyncStatus = {
   // and what stayed on the runner. withheld: its command or file can hold secrets.
   // unsent: given up on (too big, over a key's budget, or the check failed).
   full?: { bodies: number; bytes: number; withheld: number; unsent: number; pending: number; backendTooOld?: boolean };
+  // Roughly how much of a Free plan this runner uses (convex-use.ts), with a
+  // warning near its limits unless runner.json's sync.usageWarning is false.
+  use?: ConvexUse;
   // The phone's commands: whether the runner is listening for them, how
   // many it has applied since start, and the last one that failed.
   commands?: { state: 'off' | 'on' | 'error'; applied: number; failed: number; lastError?: string };
@@ -653,6 +659,8 @@ export type SyncDeps = {
   // For the sidebar table (thread-index.ts): telling the app about other
   // runners' threads, and the data dir their tokens are copied into.
   publish?: (n: Notification) => void;
+  // Counts what goes up, for the estimate of Convex use (convex-use.ts).
+  use?: ConvexUseTally;
   home?: string;
   // When the backend turns this runner's key down: a notice for the app,
   // the key on disk now (readSyncKey, so a new one from tb runner add is
@@ -1457,7 +1465,15 @@ export class ConvexSync {
     // included, goes through here, so no field can be forgotten. Digests of what
     // was sent are of the row before this, so a rule or a value changing never
     // makes a row look new, and a start doesn't write everything again.
-    const send = deps.post ?? (url ? convexPoster(url) : async () => undefined);
+    const post = deps.post ?? (url ? convexPoster(url) : async () => undefined);
+    // Every mutation's size, for tb status's estimate of Convex use against
+    // the Free plan (convex-use.ts): a runner can't read its team's usage.
+    // Counted once it's taken: a failed try and its retry aren't twice the use.
+    const send: typeof post = async (kind, fn, args) => {
+      const out = await post(kind, fn, args);
+      if (kind === 'mutation' && deps.use) deps.use.record(Buffer.byteLength(JSON.stringify(args)), fn === 'sync:appendBodies');
+      return out;
+    };
     this.post = async (kind, fn, args) => {
       if (kind !== 'mutation') return send(kind, fn, args);
       // A command for another runner, like one from the phone: that runner has
@@ -1586,6 +1602,7 @@ export class ConvexSync {
   async stop(opts: { bye?: boolean } = {}): Promise<void> {
     if (!this.running) return;
     this.running = false;
+    this.deps.use?.save();
     this.unsub?.();
     this.unsubCommands?.();
     this.unsubCommands = undefined;
@@ -1684,6 +1701,12 @@ export class ConvexSync {
     if (held) s.schedulesHeld = held;
     if (this.deps.config.full) {
       s.full = { ...this.bodyStats, pending: this.bodies.length, ...((this.backendApiVersion ?? 0) < BODIES_API_VERSION && this.backendApiVersion !== undefined ? { backendTooOld: true } : {}) };
+    }
+    if (this.deps.use) {
+      const use = this.deps.use.use();
+      // Free's limits are Convex cloud's; a self-hosted backend has none.
+      if (this.deps.config.usageWarning === false || !isConvexCloud(this.deps.config.url)) delete use.warning;
+      s.use = use;
     }
     s.scrub = { ...this.scrubber.status(), ...(this.backendApiVersion !== undefined ? { backendChecks: this.backendApiVersion >= SCRUB_API_VERSION } : {}) };
     return s;
@@ -4406,5 +4429,14 @@ export class ConvexSync {
       default:
         throw new Error(`unknown command ${c.kind}`);
     }
+  }
+}
+
+// A deployment on Convex cloud, whose plans have the Free limits convex-use.ts warns about.
+export function isConvexCloud(url: string | undefined): boolean {
+  try {
+    return url !== undefined && /\.convex\.cloud$/.test(new URL(url).hostname);
+  } catch {
+    return false;
   }
 }
