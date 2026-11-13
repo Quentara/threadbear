@@ -294,6 +294,86 @@ test('a worktree left detached by a tb killed during a group check is put back b
   assert.ok(!fs.existsSync(path.join(gitDir, 'threadbear-land-checking.json')));
 });
 
+// 13 Nov: an agent committed its fix on the detached group while its tb
+// land still had it, stopped that tb and ran it again, and the checkout of
+// its branch left the fix on no branch, silently.
+function stackedOn(a: LandTarget): { own: string; top: string; gitDir: string } {
+  const own = sh(a.path, 'git rev-parse HEAD');
+  const gitDir = sh(a.path, 'git rev-parse --absolute-git-dir');
+  // Another's unlanded work on top, as a group check stacks it.
+  sh(a.path, 'git checkout -q --detach');
+  commit(a.path, { 'other.txt': 'theirs\n' }, "Another's work");
+  const top = sh(a.path, 'git rev-parse HEAD');
+  fs.writeFileSync(path.join(gitDir, 'threadbear-land-checking.json'), JSON.stringify({ branch: a.branch, own, top }));
+  return { own, top, gitDir };
+}
+
+test('commits made on the group a killed tb land left detached are carried onto the branch and land', async () => {
+  const { main } = makeRepo();
+  const [a] = branches(main, ['a']);
+  const { gitDir } = stackedOn(a);
+  commit(a.path, { 'a.txt': 'fixed\n' }, 'Fix a');
+  const fix = sh(a.path, 'git rev-parse --short HEAD');
+  const c = capture();
+  assert.equal(await land({ ...a, check: 'true' }, c.opts), 0, c.err.join('\n'));
+  assert.match(c.out.join('\n'), new RegExp(`moved onto ${a.branch}[^]*${fix} Fix a`));
+  assert.equal(fs.readFileSync(path.join(main, 'a.txt'), 'utf8'), 'fixed\n');
+  assert.ok(!fs.existsSync(path.join(main, 'other.txt')), "the other's work isn't landed with it");
+  assert.equal(sh(a.path, 'git rev-parse --abbrev-ref HEAD'), a.branch);
+  assert.ok(!fs.existsSync(path.join(gitDir, 'threadbear-land-checking.json')));
+});
+
+test("commits on the detached group that won't go onto the branch stop tb land, with how to keep them", async () => {
+  const { main } = makeRepo();
+  const [a] = branches(main, ['a']);
+  const { own, top, gitDir } = stackedOn(a);
+  // Changes a file only the other's work has.
+  commit(a.path, { 'other.txt': 'mine\n' }, 'Fix theirs');
+  const head = sh(a.path, 'git rev-parse HEAD');
+  const before = sh(main, 'git rev-parse main');
+  const c = capture();
+  assert.equal(await land({ ...a, check: 'true' }, c.opts), 1);
+  const said = c.err.join('\n');
+  assert.match(said, /Fix theirs/);
+  assert.match(said, new RegExp(`git cherry-pick ${top.slice(0, 9)}\\.\\.${head.slice(0, 9)}`));
+  assert.equal(sh(a.path, 'git rev-parse HEAD'), head, 'HEAD stays on the commits');
+  assert.equal(sh(a.path, `git rev-parse ${a.branch}`), own);
+  assert.equal(sh(main, 'git rev-parse main'), before);
+  assert.ok(fs.existsSync(path.join(gitDir, 'threadbear-land-checking.json')), 'kept, so the next tb land asks again');
+});
+
+test('a commit made in the holder while its group check runs is carried onto its branch, not dropped', async () => {
+  const { root, main } = makeRepo();
+  const [a, b, c] = branches(main, ['a', 'b', 'c']);
+  // The group (b and c together) fails, after saying where it runs.
+  const check = `${slowCheck(root)}; if test -f b.txt && test -f c.txt; then pwd > '${root}/holder'; ` +
+    `while ! test -f '${root}/group-release'; do sleep 0.05; done; exit 2; fi`;
+  const first = land({ ...a, check }, capture().opts);
+  await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const caps = [capture(), capture()];
+  const rest = [b, c].map((t, i) => land({ ...t, check }, caps[i].opts));
+  let codes: number[];
+  try {
+    await until(() => caps.every((x) => x.out.some((l) => l.startsWith('Waiting for another landing'))), 'b and c waiting');
+    write(root, { release: '' });
+    assert.equal(await first, 0);
+    await until(() => fs.existsSync(path.join(root, 'holder')), 'the group check');
+    const holder = fs.realpathSync(fs.readFileSync(path.join(root, 'holder'), 'utf8').trim());
+    commit(holder, { 'fix.txt': 'fix\n' }, 'Fix during the check');
+  } finally {
+    write(root, { 'group-release': '' });
+    codes = await Promise.all(rest);
+  }
+  const i = [b, c].findIndex((t) => sh(t.path, 'git log --format=%s -1') === 'Fix during the check');
+  assert.ok(i >= 0, 'the fix is on the holder\'s branch');
+  const h = [b, c][i];
+  assert.equal(codes[i], 1);
+  assert.match(caps[i].err.join('\n'), /Commits were made in .* while it was being checked, so nothing landed; they're on/);
+  assert.equal(sh(h.path, 'git rev-parse --abbrev-ref HEAD'), h.branch);
+  assert.equal(sh(h.path, `git log --format=%s main..${h.branch}`).split('\n').at(-1), `Add ${i ? 'c' : 'b'}`, 'only its own commits under the fix');
+  assert.ok(!fs.existsSync(path.join(main, 'fix.txt')));
+});
+
 test('a commit made empty on purpose lands with its group, as a rebase would keep it', async () => {
   const { root, main } = makeRepo();
   const [a, b, c] = branches(main, ['a', 'b', 'c']);

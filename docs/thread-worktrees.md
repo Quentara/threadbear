@@ -209,7 +209,14 @@ their own.
   for each meant two passing group checks in a row landed nothing.
 - A tb killed during a group check leaves its worktree detached at the
   stack (its branch is untouched) and a marker in the worktree's git dir;
-  the next `tb land` there checks the branch out again. Two `tb land`s in
+  the next `tb land` there checks the branch out again. Commits made on
+  the detached stack meanwhile (a fix committed while the check ran) are
+  first carried onto the branch, as a rebase would, and said; if they
+  don't go on cleanly, `tb land` stops with their ids and how to keep them
+  (`git cherry-pick`), leaving HEAD on them. A running `tb land` does the
+  same when it goes back to the branch, then stops without landing, so the
+  next run lands them too. On 13 Nov a fix committed there was checked out
+  away silently and the same check failed again. Two `tb land`s in
   one worktree take turns (`threadbear-land-worktree.lock` in its git dir).
 - If a group's check fails, nothing lands and the group is halved: the
   holder goes again with itself and the first half, and the rest wait with
