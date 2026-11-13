@@ -37,9 +37,9 @@ earlier four-platform run.
 
 <!-- parity:start -->
 
-122 of 329 features have a spec so far, across 220 scenarios.
+126 of 329 features have a spec so far, across 226 scenarios.
 
-Scenarios passing: Swift: 207 of 220, Mac: 208 of 220, Windows: 192 of 220, Linux: 208 of 220.
+Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linux: 208 of 226.
 
 
 ### 0. Foundations everything else needs
@@ -64,7 +64,7 @@ Scenarios passing: Swift: 207 of 220, Mac: 208 of 220, Windows: 192 of 220, Linu
 |---|---|---|---|---|
 | `rail.activity` Activity bar | pass | pass | pass | pass |
 | `rail.dots` Rail dots | pass | pass | pass | pass |
-| `rail.right` Right rail | pass | pass | pass | pass |
+| `rail.right` Right rail | partly | pass | partly | partly |
 
 ### 3. Sidebar and inbox
 
@@ -129,6 +129,12 @@ Scenarios passing: Swift: 207 of 220, Mac: 208 of 220, Windows: 192 of 220, Linu
 | `transcript.changes` Changes card | pass | pass | pass | pass |
 | `transcript.rowmenu` Row context menu | pass | pass | pass | pass |
 
+### 6. Rich content inside a reply
+
+| Feature | Swift | Mac | Windows | Linux |
+|---|---|---|---|---|
+| `rich.browserbear` BrowserBear tab handover | pending | pass | pending | pending |
+
 ### 7. Composer
 
 | Feature | Swift | Mac | Windows | Linux |
@@ -183,6 +189,14 @@ Scenarios passing: Swift: 207 of 220, Mac: 208 of 220, Windows: 192 of 220, Linu
 | `patches.run` Patch chips run | pass | pass | pass | pass |
 | `panel.list` List panel | pass | pass | pass | pass |
 | `panel.image` Image panel | pass | pass | pass | pass |
+
+### 11. Browser pane
+
+| Feature | Swift | Mac | Windows | Linux |
+|---|---|---|---|---|
+| `browser.pages` Page list | pending | pass | pending | pending |
+| `browser.show` Show window | pending | pass | pending | pending |
+| `browser.handoff` Your turn and Done | pending | pass | pending | pending |
 
 ### 12. File previews and folders
 
@@ -406,6 +420,44 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   Swift app's and main's (which drew Highlights twice). The whole GPUI suite:
   517 of 519, the two failures passing alone (a PDF link, and the restart
   banner, which flickers under load).
+### 2026-11-13 The Browser pane and BrowserBear's handoff (`browser.pages`, `browser.show`, `browser.handoff`, `rich.browserbear`)
+
+- The globe on the right rail, between a thread's panels and Files, while
+  BrowserBear is on the Mac: the count of the thread's pages, and the accent
+  dot while one is handed to Mike. Its pane is Swift's: an address bar that
+  opens a page in the agents' browser, then each page with its still (every
+  3 s while the pane is on show), its title, host and what the agent is
+  doing, Show window, and Done on a page that's his turn, each spinning
+  until BrowserBear answers. No web view, as in Swift since 8 Nov.
+- A handoff opens the pane by itself, and so does coming back to a thread
+  with a page still Mike's turn; closing it leaves it closed until the next
+  handoff. `show_panel` for `browser` shows it, and the app's hello now
+  says `browserPanel` on a Mac, so the runner counts it for BrowserBear's
+  request (with the gpuiApp experiment on).
+- A web link from a reply, a pin or a panel first asks BrowserBear to hand
+  over an agent's tab already on that page (4 s at most, off the main
+  thread), and opens in the browser only if none is.
+- A scripted app never reaches the real BrowserBear: without
+  `BROWSERBEAR_HOME` it has none. The specs run against a stand-in
+  (`features/support/browserbear.ts`).
+- The Swift app's dump has no Browser button or pane and it's frozen, so
+  the pane's scenarios are `@swift-pending`; the two link scenarios aren't,
+  but weren't run against it (nor on Windows or Linux: the cloud host's disk
+  was full).
+- Codex's review found seven things, all fixed: the socket's connect ran on
+  the main thread (now the writer thread connects), tabs.json was read
+  whole every 0.75 s with no limit and merged in quadratic time (now only
+  when its size or time changes, a plain file under 4 MB, at most 2000
+  pages, merged through a map), the scripted guard needed the automation
+  build (now any build started by a script), coming back to a thread with
+  a page handed over didn't open the pane (now checked whenever the pane
+  follows a new thread), a stalled connection kept its queue (a timeout now
+  drops it, and the queue holds 64), the handoff's 4 s was per read (now one
+  deadline, on a thread of its own), and a reply without `ok: true` or with
+  another id counted as handed off (now it opens the browser).
+- Verification: on Tinker Desk's desktop, browser-pane.feature with
+  panel-requests, reply-links and rails: 26 scenarios, 26 passed. Core's
+  browserbear and panel_requests tests, and the runner's thread-keys test.
 
 ### 2026-11-12 The limit box asks: Continue now on (`banner.limit`)
 

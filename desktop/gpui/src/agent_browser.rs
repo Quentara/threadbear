@@ -48,14 +48,11 @@ static HOME: LazyLock<Option<PathBuf>> = LazyLock::new(|| {
     bear::home(env.as_deref(), Path::new(&crate::files::home_dir()), scripted())
 });
 
-#[cfg(feature = "automation")]
+/// Started by a script (the specs, an agent's dev-app): whatever the build,
+/// as dev-app can run one made without the automation feature
+/// (`installed::launch` reads the same marker).
 fn scripted() -> bool {
     std::env::var_os("THREADBEAR_AUTOMATION").is_some()
-}
-
-#[cfg(not(feature = "automation"))]
-fn scripted() -> bool {
-    false
 }
 
 /// BrowserBear's socket, when it's there.
@@ -65,18 +62,33 @@ fn socket() -> Option<PathBuf> {
 
 // ---------------------------------------------------------------- the handoff
 
+/// The longest a clicked link waits on BrowserBear, all told.
+const HANDOFF_WITHIN: Duration = Duration::from_secs(4);
+
 /// Asks BrowserBear to bring an agent's tab already on `url` to Mike (into his
-/// window, in front). True when it did; false straight away without
-/// BrowserBear, and after 4 s at most when it doesn't answer: a tab an agent
-/// opened is found at once, but ruling one out means listing Chrome's tabs,
-/// which takes seconds while BrowserBear's extension wakes up (2 s was too
-/// short, 30 Oct). Blocking: run it off the main thread.
+/// window, in front). True only when it says it did; false straight away
+/// without BrowserBear, and after 4 s at most when it doesn't answer: a tab an
+/// agent opened is found at once, but ruling one out means listing Chrome's
+/// tabs, which takes seconds while BrowserBear's extension wakes up (2 s was
+/// too short, 30 Oct). Blocking: run it off the main thread.
 pub(crate) fn handoff(url: &str) -> bool {
     if !bear::handoff_candidate(url) {
         return false;
     }
     let Some(path) = socket() else { return false };
-    one_request(&path, &bear::request_line(1, "handoff", json!({ "tab": url }), None)).is_some_and(|reply| matches!(bear::read_line(&reply), Some(bear::Line::Reply { answer: Ok(_), .. })))
+    let line = bear::request_line(1, "handoff", json!({ "tab": url }), None);
+    // On a thread of its own, so a connect that hangs (a full accept queue)
+    // can't hold the link past the deadline; that thread ends by itself.
+    let (tx, rx) = std::sync::mpsc::channel();
+    let deadline = Instant::now() + HANDOFF_WITHIN;
+    let started = std::thread::Builder::new().name("browserbear-handoff".into()).spawn(move || {
+        let _ = tx.send(one_request(&path, &line, deadline));
+    });
+    if started.is_err() {
+        return false;
+    }
+    let Ok(Some(reply)) = rx.recv_timeout(HANDOFF_WITHIN) else { return false };
+    bear::handed_off(&reply, 1)
 }
 
 /// Whether a link should ask BrowserBear before it opens.
@@ -84,17 +96,19 @@ pub(crate) fn may_hand_off(url: &str) -> bool {
     bear::handoff_candidate(url) && socket().is_some()
 }
 
-/// One line out and one back on a connection of its own, 4 s each way at most.
+/// One line out and one back on a connection of its own, by `deadline`.
 #[cfg(unix)]
-fn one_request(path: &Path, line: &[u8]) -> Option<Vec<u8>> {
+fn one_request(path: &Path, line: &[u8], deadline: Instant) -> Option<Vec<u8>> {
     use std::io::{Read as _, Write as _};
+    let left = || deadline.checked_duration_since(Instant::now()).filter(|d| !d.is_zero());
     let mut stream = std::os::unix::net::UnixStream::connect(path).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(4))).ok()?;
-    stream.set_write_timeout(Some(Duration::from_secs(4))).ok()?;
+    stream.set_write_timeout(Some(left()?)).ok()?;
     stream.write_all(line).ok()?;
     let mut reply = vec![];
     let mut buffer = [0u8; 4096];
     while !reply.contains(&b'\n') {
+        // What's left of the deadline each time, so a trickle can't stretch it.
+        stream.set_read_timeout(Some(left()?)).ok()?;
         let n = stream.read(&mut buffer).ok()?;
         if n == 0 || reply.len() > 1 << 20 {
             return None;
@@ -106,7 +120,7 @@ fn one_request(path: &Path, line: &[u8]) -> Option<Vec<u8>> {
 }
 
 #[cfg(not(unix))]
-fn one_request(_path: &Path, _line: &[u8]) -> Option<Vec<u8>> {
+fn one_request(_path: &Path, _line: &[u8], _deadline: Instant) -> Option<Vec<u8>> {
     None
 }
 
@@ -114,27 +128,33 @@ fn one_request(_path: &Path, _line: &[u8]) -> Option<Vec<u8>> {
 
 type Answer = Result<Value, String>;
 
+/// Requests waiting to be written at most: past it the other side isn't
+/// reading, and a request is refused rather than queued.
+const QUEUE: usize = 64;
+
 /// BrowserBear's private Unix socket, kept open while the app runs, with
-/// replies matched to requests by id (`BrowserBearPipe`). A thread reads, a
-/// thread writes, so nothing here ever waits on the main thread.
+/// replies matched to requests by id (`BrowserBearPipe`). A thread connects
+/// and writes, another reads, so nothing here ever waits on the main thread.
 struct Pipe {
-    writer: std::sync::mpsc::Sender<Vec<u8>>,
+    writer: std::sync::mpsc::SyncSender<Vec<u8>>,
     waiting: Arc<Mutex<HashMap<u64, oneshot::Sender<Answer>>>>,
     /// Why it closed, once it has.
     dead: Arc<Mutex<Option<String>>>,
     next: u64,
+    /// The connection, once the writer has made it: shut on drop, which
+    /// ends both threads whatever they're waiting on.
     #[cfg(unix)]
-    stream: std::os::unix::net::UnixStream,
+    stream: Arc<Mutex<Option<std::os::unix::net::UnixStream>>>,
 }
 
 impl Pipe {
+    /// Starts connecting; requests queue meanwhile. A failure shows as `dead`.
     #[cfg(unix)]
-    fn connect(path: &Path) -> Option<Pipe> {
+    fn connect(path: PathBuf) -> Option<Pipe> {
         use std::io::{Read as _, Write as _};
-        let stream = std::os::unix::net::UnixStream::connect(path).ok()?;
-        let (mut reader, mut writing) = (stream.try_clone().ok()?, stream.try_clone().ok()?);
         let waiting: Arc<Mutex<HashMap<u64, oneshot::Sender<Answer>>>> = Arc::default();
         let dead: Arc<Mutex<Option<String>>> = Arc::default();
+        let stream: Arc<Mutex<Option<std::os::unix::net::UnixStream>>> = Arc::default();
         let die = {
             let (waiting, dead) = (waiting.clone(), dead.clone());
             move |why: String| {
@@ -147,47 +167,63 @@ impl Pipe {
                 }
             }
         };
-        let (writer, lines) = std::sync::mpsc::channel::<Vec<u8>>();
-        let died = die.clone();
+        let (writer, lines) = std::sync::mpsc::sync_channel::<Vec<u8>>(QUEUE);
+        let (answers, shared, read_dead) = (waiting.clone(), stream.clone(), die.clone());
         std::thread::Builder::new()
             .name("browserbear-write".into())
             .spawn(move || {
-                for line in lines {
-                    if let Err(e) = writing.write_all(&line) {
-                        died(e.to_string());
-                        break;
+                let connected = std::os::unix::net::UnixStream::connect(&path).and_then(|s| Ok((s.try_clone()?, s.try_clone()?, s)));
+                let (mut writing, mut reader, kept) = match connected {
+                    Ok(c) => c,
+                    Err(e) => return die(format!("Couldn't reach BrowserBear: {e}")),
+                };
+                {
+                    let mut slot = shared.lock().unwrap_or_else(|e| e.into_inner());
+                    // Dropped while connecting: nothing more to do.
+                    if Arc::strong_count(&shared) == 1 {
+                        return;
                     }
+                    *slot = Some(kept);
                 }
-            })
-            .ok()?;
-        let answers = waiting.clone();
-        std::thread::Builder::new()
-            .name("browserbear-read".into())
-            .spawn(move || {
-                let mut lines = bear::Lines::default();
-                let mut buffer = vec![0u8; 1 << 20];
-                loop {
-                    let n = match reader.read(&mut buffer) {
-                        Ok(0) => return die("BrowserBear disconnected. Reopen the panel to reconnect.".into()),
-                        Ok(n) => n,
-                        Err(e) => return die(e.to_string()),
-                    };
-                    let got = match lines.push(&buffer[..n]) {
-                        Ok(got) => got,
-                        Err(why) => return die(why),
-                    };
-                    for line in got {
-                        match bear::read_line(&line) {
-                            Some(bear::Line::Reply { id, answer }) => {
-                                if let Some(reply) = answers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id) {
-                                    let _ = reply.send(answer);
+                let read = std::thread::Builder::new().name("browserbear-read".into()).spawn(move || {
+                    let die = read_dead;
+                    let mut lines = bear::Lines::default();
+                    let mut buffer = vec![0u8; 1 << 20];
+                    loop {
+                        let n = match reader.read(&mut buffer) {
+                            Ok(0) => return die("BrowserBear disconnected. Reopen the panel to reconnect.".into()),
+                            Ok(n) => n,
+                            Err(e) => return die(e.to_string()),
+                        };
+                        let got = match lines.push(&buffer[..n]) {
+                            Ok(got) => got,
+                            Err(why) => return die(why),
+                        };
+                        for line in got {
+                            match bear::read_line(&line) {
+                                Some(bear::Line::Reply { id, answer }) => {
+                                    if let Some(reply) = answers.lock().unwrap_or_else(|e| e.into_inner()).remove(&id) {
+                                        let _ = reply.send(answer);
+                                    }
                                 }
+                                // Nothing the pane uses comes unasked.
+                                Some(bear::Line::Event(_)) => {}
+                                None => return die("BrowserBear sent an unreadable response.".into()),
                             }
-                            // Nothing the pane uses comes unasked.
-                            Some(bear::Line::Event(_)) => {}
-                            None => return die("BrowserBear sent an unreadable response.".into()),
                         }
                     }
+                });
+                if read.is_err() {
+                    return die("Couldn't start reading BrowserBear's answers.".into());
+                }
+                for line in lines {
+                    if let Err(e) = writing.write_all(&line) {
+                        return die(e.to_string());
+                    }
+                }
+                // The pipe's gone: end the reader too, if Drop didn't.
+                if let Some(stream) = shared.lock().unwrap_or_else(|e| e.into_inner()).take() {
+                    let _ = stream.shutdown(std::net::Shutdown::Both);
                 }
             })
             .ok()?;
@@ -195,7 +231,7 @@ impl Pipe {
     }
 
     #[cfg(not(unix))]
-    fn connect(_path: &Path) -> Option<Pipe> {
+    fn connect(_path: PathBuf) -> Option<Pipe> {
         None
     }
 
@@ -213,32 +249,35 @@ impl Pipe {
             return (id, rx);
         }
         self.waiting.lock().unwrap_or_else(|e| e.into_inner()).insert(id, tx);
-        let _ = self.writer.send(bear::request_line(id, cmd, args, thread));
+        if self.writer.try_send(bear::request_line(id, cmd, args, thread)).is_err() {
+            if let Some(tx) = self.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id) {
+                let _ = tx.send(Err("BrowserBear isn't keeping up. Try again in a moment.".into()));
+            }
+        }
         (id, rx)
-    }
-
-    /// A request given up on: its answer, if it ever comes, goes nowhere.
-    fn forget(&self, id: u64) {
-        self.waiting.lock().unwrap_or_else(|e| e.into_inner()).remove(&id);
     }
 }
 
 impl Drop for Pipe {
     fn drop(&mut self) {
-        // Ends the reader; the writer ends with its channel.
+        // Ends the reader and a writer stuck writing; one still connecting
+        // sees it's alone and stops.
         #[cfg(unix)]
-        let _ = self.stream.shutdown(std::net::Shutdown::Both);
+        if let Some(stream) = self.stream.lock().unwrap_or_else(|e| e.into_inner()).take() {
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+        }
     }
 }
 
 /// An answer, or why there isn't one within `ANSWER_WITHIN`.
-async fn answer(rx: oneshot::Receiver<Answer>, cx: &AsyncApp) -> Answer {
+/// True with it when the time ran out.
+async fn answer(rx: oneshot::Receiver<Answer>, cx: &AsyncApp) -> (Answer, bool) {
     use futures::future::{select, Either};
     let timer = cx.background_executor().timer(ANSWER_WITHIN);
     match select(rx, Box::pin(timer)).await {
-        Either::Left((Ok(answer), _)) => answer,
-        Either::Left((Err(_), _)) => Err("BrowserBear disconnected. Reopen the panel to reconnect.".into()),
-        Either::Right(_) => Err("BrowserBear didn't answer in time.".into()),
+        Either::Left((Ok(answer), _)) => (answer, false),
+        Either::Left((Err(_), _)) => (Err("BrowserBear disconnected. Reopen the panel to reconnect.".into()), false),
+        Either::Right(_) => (Err("BrowserBear didn't answer in time.".into()), true),
     }
 }
 
@@ -271,9 +310,15 @@ pub(crate) struct AgentBrowser {
     pending_requests: HashMap<String, u64>,
     next_request: u64,
     pipe: Option<Pipe>,
+    /// Goes up with each new connection, so a late timeout drops only its own.
+    pipe_serial: u64,
     polling: bool,
-    last: Option<Vec<u8>>,
+    /// tabs.json's size and time when last read.
+    last: Option<(u64, Option<std::time::SystemTime>)>,
     pub(crate) stills: HashMap<String, Still>,
+    /// Goes up when the pages or whether BrowserBear is here change: what the
+    /// window's rail draws, so a new still doesn't redraw the whole window.
+    pub(crate) generation: u64,
     stills_asked: HashMap<String, Instant>,
     /// The thread whose Browser pane is on show, if one is: its rows' stills
     /// are asked for as they come due.
@@ -325,9 +370,11 @@ impl AgentBrowser {
             pending_requests: HashMap::new(),
             next_request: 0,
             pipe: None,
+            pipe_serial: 0,
             polling: false,
             last: None,
             stills: HashMap::new(),
+            generation: 0,
             stills_asked: HashMap::new(),
             showing: None,
             _poll: poll,
@@ -356,21 +403,33 @@ impl AgentBrowser {
         let there = bear::socket(&home).exists();
         if there != self.socket_there {
             self.socket_there = there;
+            self.generation += 1;
             cx.notify();
         }
         self.notice_closed(cx);
         self.poll_profiles(cx);
-        let Ok(data) = std::fs::read(bear::tabs_file(&home)) else { return };
-        if self.last.as_ref() == Some(&data) {
+        // Only a plain file of a sensible size, and only when it's changed:
+        // this runs on the main thread every 0.75 s.
+        let file = bear::tabs_file(&home);
+        let Ok(meta) = std::fs::metadata(&file) else { return };
+        if !meta.is_file() || meta.len() > bear::MAX_TABS_FILE {
             return;
         }
-        let state = bear::agent_state(&data);
-        self.last = Some(data);
-        let Some(state) = state else { return };
+        let stamp = (meta.len(), meta.modified().ok());
+        if self.last == Some(stamp) {
+            return;
+        }
+        self.last = Some(stamp);
+        let Ok(data) = std::fs::read(&file) else { return };
+        let Some(state) = bear::agent_state(&data) else { return };
         self.agent_tabs = state.tabs;
-        self.port = state.port;
         if let Some(browser) = state.browser.filter(|b| !b.is_empty()) {
             self.browser_name = browser;
+        }
+        if state.port != self.port {
+            self.port = state.port;
+            self.generation += 1;
+            cx.notify();
         }
         self.merge(cx);
     }
@@ -383,6 +442,7 @@ impl AgentBrowser {
             let live: HashSet<String> = self.tabs.iter().map(AgentTab::id).collect();
             self.stills.retain(|id, _| live.contains(id));
             self.stills_asked.retain(|id, _| live.contains(id));
+            self.generation += 1;
             cx.notify();
         }
     }
@@ -407,7 +467,8 @@ impl AgentBrowser {
     fn connection(&mut self) -> Option<&mut Pipe> {
         if self.pipe.is_none() {
             let path = socket()?;
-            self.pipe = Pipe::connect(&path);
+            self.pipe = Pipe::connect(path);
+            self.pipe_serial += 1;
         }
         self.pipe.as_mut()
     }
@@ -415,14 +476,17 @@ impl AgentBrowser {
     /// Sends a request and hands its answer to `done` on the main thread.
     fn send(&mut self, cmd: &str, args: Value, thread: Option<&str>, cx: &mut Context<Self>, done: impl FnOnce(&mut Self, Answer, &mut Context<Self>) + 'static) -> bool {
         let Some(pipe) = self.connection() else { return false };
-        let (id, rx) = pipe.request(cmd, args, thread);
+        let (_, rx) = pipe.request(cmd, args, thread);
+        let serial = self.pipe_serial;
         cx.spawn(async move |this, cx| {
-            let got = answer(rx, cx).await;
+            let (got, timed_out) = answer(rx, cx).await;
             this.update(cx, |b, cx| {
-                if got.is_err() {
-                    if let Some(pipe) = &b.pipe {
-                        pipe.forget(id);
-                    }
+                // BrowserBear stopped answering on this connection: drop it,
+                // with whatever is still queued on it, so the next request
+                // starts afresh rather than behind a stalled one.
+                if timed_out && b.pipe_serial == serial && b.pipe.is_some() {
+                    b.pipe = None;
+                    b.polling = false;
                 }
                 done(b, got, cx);
             })

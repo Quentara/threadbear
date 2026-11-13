@@ -129,8 +129,15 @@ pub struct AgentState {
     pub tabs: Vec<AgentTab>,
 }
 
+/// The biggest tabs.json read: a few hundred pages is a few hundred KB.
+pub const MAX_TABS_FILE: u64 = 4 * 1024 * 1024;
+/// The most pages kept from either place.
+pub const MAX_TABS: usize = 2000;
+
 pub fn agent_state(bytes: &[u8]) -> Option<AgentState> {
-    serde_json::from_slice(bytes).ok()
+    let mut state: AgentState = serde_json::from_slice(bytes).ok()?;
+    state.tabs.truncate(MAX_TABS);
+    Some(state)
 }
 
 /// `panelState`'s answer: the connected Chrome profiles and their pages.
@@ -143,15 +150,12 @@ pub struct PanelState {
 /// The agents' browser's pages and the Chrome profiles' (`mergeTabs`): one
 /// each, a profile's winning a clash, in tab order.
 pub fn merge(agent: &[AgentTab], profiles: &[AgentTab]) -> Vec<AgentTab> {
-    let mut all: Vec<AgentTab> = vec![];
-    for tab in agent.iter().chain(profiles.iter().filter(|t| t.bridge == Some(true))) {
-        let id = tab.id();
-        match all.iter_mut().find(|t| t.id() == id) {
-            Some(slot) => *slot = tab.clone(),
-            None => all.push(tab.clone()),
-        }
+    let mut all: std::collections::HashMap<String, AgentTab> = std::collections::HashMap::new();
+    for tab in agent.iter().take(MAX_TABS).chain(profiles.iter().filter(|t| t.bridge == Some(true)).take(MAX_TABS)) {
+        all.insert(tab.id(), tab.clone());
     }
-    all.sort_by_key(|t| t.tab_id);
+    let mut all: Vec<AgentTab> = all.into_values().collect();
+    all.sort_by(|a, b| a.tab_id.cmp(&b.tab_id).then_with(|| a.profile_id().cmp(b.profile_id())));
     all
 }
 
@@ -190,6 +194,13 @@ pub fn address(typed: &str) -> Option<String> {
         other => format!("%{other:02X}"),
     }).collect();
     Some(format!("https://www.google.com/search?q={query}"))
+}
+
+/// Whether a handoff's reply says the tab came to Mike: its own id and an
+/// explicit `ok: true`. Anything else opens the link in the browser as usual.
+pub fn handed_off(reply: &[u8], id: u64) -> bool {
+    let Ok(message) = serde_json::from_slice::<Value>(reply) else { return false };
+    message["id"].as_u64() == Some(id) && message["ok"].as_bool() == Some(true)
 }
 
 /// Whether a link could be one an agent has open: only web pages are asked about.
@@ -365,6 +376,24 @@ mod tests {
     fn hosts() {
         assert_eq!(tab(r#"{"tabId":1,"url":"https://user@www.qantas.com:443/login?x=1","title":""}"#).shown_title(), "www.qantas.com");
         assert_eq!(tab(r#"{"tabId":1,"url":"about:blank","title":""}"#).host(), "about:blank");
+    }
+
+    #[test]
+    fn only_a_plain_yes_to_this_request_counts_as_handed_off() {
+        assert!(handed_off(br#"{"id":1,"ok":true,"result":{}}"#, 1));
+        assert!(!handed_off(br#"{"id":1}"#, 1), "no ok");
+        assert!(!handed_off(br#"{"id":1,"ok":"yes"}"#, 1));
+        assert!(!handed_off(br#"{"id":2,"ok":true}"#, 1), "another request's");
+        assert!(!handed_off(br#"{"id":1,"ok":false,"error":"no tab"}"#, 1));
+        assert!(!handed_off(b"nonsense", 1));
+    }
+
+    #[test]
+    fn a_huge_list_merges_quickly_and_is_capped() {
+        let many: Vec<AgentTab> = (0..100_000).map(|i| AgentTab { tab_id: i, url: format!("https://a{i}.com/"), ..Default::default() }).collect();
+        let started = std::time::Instant::now();
+        assert_eq!(merge(&many, &many).len(), MAX_TABS);
+        assert!(started.elapsed() < std::time::Duration::from_secs(2));
     }
 
     #[test]

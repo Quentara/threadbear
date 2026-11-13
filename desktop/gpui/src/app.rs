@@ -200,6 +200,7 @@ pub struct Threadbear {
     /// The open thread's pages handed to Mike, last looked at: the Browser
     /// pane opens by itself when it changes (agent_browser.rs).
     pub(crate) browser_handoff_seen: Option<String>,
+    browser_generation: u64,
     /// Pin requests whose highlights have been fetched once for them, so a
     /// pin unpinned since opens Highlights rather than fetching for good.
     pub(crate) pins_fetched: HashSet<String>,
@@ -334,9 +335,15 @@ impl Threadbear {
                 (app.projects.open.is_none() && app.dock.read(cx).controller.is_showing(crate::agent_browser::BROWSER)).then(|| app.pane_thread().map(|t| t.id))?
             })
         });
-        let browser_watch = cx.observe(&browser, |this, _, cx| {
-            this.browser_changed(cx);
-            cx.notify();
+        let browser_watch = cx.observe(&browser, |this, browser, cx| {
+            // Only the pages and whether BrowserBear is here are drawn by the
+            // window (the rail); the pane watches the rest itself.
+            let generation = browser.read(cx).generation;
+            if generation != this.browser_generation {
+                this.browser_generation = generation;
+                this.browser_changed(cx);
+                cx.notify();
+            }
         });
         let side = cx.new(|cx| SidePane::new(weak_app, side_client, window, cx));
         crate::viewer::viewer_handle_global(side.downgrade(), cx);
@@ -414,7 +421,11 @@ impl Threadbear {
         });
         // A pin an agent asked to show may only be in Highlights once they've
         // been fetched: their coming is a moment to try it again.
-        let side_changed = cx.observe(&side, |this: &mut Threadbear, _, cx| this.serve_panel_request(cx));
+        let side_changed = cx.observe(&side, |this: &mut Threadbear, _, cx| {
+            this.serve_panel_request(cx);
+            // Another thread on show may have a page handed to Mike.
+            this.browser_changed(cx);
+        });
         // Everything the menus say is the app's state, which notifies when it
         // changes (the dock's layout too: `dock_layout_changed`).
         // Its 20-second tick notifies too (SidebarState), so the badge's
@@ -525,6 +536,7 @@ impl Threadbear {
             dock_badge: None,
             panel_gate: Default::default(),
             browser_handoff_seen: None,
+            browser_generation: 0,
             subagent: None,
             subagent_pane: None,
             subagent_events: None,
