@@ -22,7 +22,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { APP_STORE_LIVE, APP_STORE_URL, GITHUB_PUBLIC, GITHUB_URL, LAUNCH_VIDEO_ID, SITE_URL } from "../site.mjs";
 import { markdown, readGuide, summary } from "./docs.mjs";
-import { changelogPage, readReleases } from "./changelog.mjs";
+import { changelogPage, readPeople, readReleases } from "./changelog.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = join(root, "src");
@@ -441,7 +441,7 @@ writePage("changelog", {
   title: "What's new · Threadbear",
   description: "What's new in Threadbear, a release at a time, with a look at the biggest changes.",
   path: "/changelog",
-}, changelogPage({ releases: readReleases(join(root, "changelog")), githubUrl: GITHUB_URL }));
+}, changelogPage({ releases: readReleases(join(root, "changelog")), githubUrl: GITHUB_URL, people: readPeople(join(root, "changelog")) }));
 
 // Every link and image that stays on the site has to land somewhere: a page, a file, and the
 // #anchor on it if there is one.

@@ -24,7 +24,10 @@
 //   }
 // A line is its text, or { text, credit } when it came from someone else: their PR, fork, issue
 // or report (Mike, 13 Nov: "attribute any fixes or whatever to people if it came from other
-// people"). Highlights take a credit the same way.
+// people"). Highlights take a credit the same way. Each name in a credit is linked from
+// site/changelog/people.json (a name to their X account if their GitHub profile gives one, else
+// their fork of Threadbear, else their GitHub profile), and the build refuses a credit that
+// names nobody in it.
 // Media names are relative to /media/changelog/<release>/.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -36,8 +39,24 @@ const MEDIA_NAME = /^[a-z0-9][a-z0-9-]*\.(webp|png|jpg|mp4)$/;
 /** The media address for a file of a release. */
 export const mediaPath = (release, name) => `/media/changelog/${release}/${name}`;
 
+/** site/changelog/people.json: who's thanked, and where their name links to. */
+export function readPeople(dir) {
+  const people = JSON.parse(readFileSync(join(dir, "people.json"), "utf8"));
+  for (const [name, url] of Object.entries(people)) {
+    if (!/^https:\/\/(x\.com|github\.com)\//.test(url)) throw new Error(`site/changelog/people.json: ${name}'s link should be their X or GitHub page`);
+  }
+  return people;
+}
+
+/** The names of `people` that `credit` mentions, as whole words. */
+const namesIn = (credit, people) =>
+  Object.keys(people).filter((n) => new RegExp(`(^|[^\\p{L}])${n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}])`, "u").test(credit));
+
 /** Every release file in `dir`, checked, newest first. A bad one stops the build with its name. */
-export function readReleases(dir) {
+export function readReleases(dir, people = readPeople(dir)) {
+  const checkCredit = (credit, at) => {
+    if (credit && !namesIn(credit, people).length) throw new Error(`${at}: the credit "${credit}" names nobody in site/changelog/people.json; add them there with a link`);
+  };
   const files = readdirSync(dir).filter((f) => /^\d{4}-\d{2}-\d{2}\.json$/.test(f)).sort().reverse();
   return files.map((file) => {
     const where = `site/changelog/${file}`;
@@ -68,6 +87,8 @@ export function readReleases(dir) {
       if (!(m.width > 0 && m.height > 0)) throw new Error(`${at}: media needs its width and height`);
       if (!m.alt?.trim()) throw new Error(`${at}: media needs alt text saying what it shows`);
     });
+    r.highlights.forEach((h, i) => checkCredit(h.credit, `${where} highlight ${i + 1}`));
+    for (const k of KINDS) r[k].forEach((l) => checkCredit(l.credit, `${where} ${k} line "${(l.text ?? l).slice(0, 40)}"`));
     if (!r.highlights.length && !KINDS.some((k) => r[k].length)) throw new Error(`${where} has nothing in it`);
     return r;
   });
@@ -109,7 +130,16 @@ function media(release, m) {
 }
 
 /** "Thanks to <name>" after a card's or a line's text, when it came from someone else. */
-const creditTag = (who) => (who ? ` <span class="cl-credit">Thanks to ${pageText(who)}</span>` : "");
+let people = {};
+const creditTag = (who) => {
+  if (!who) return "";
+  let html = pageText(who);
+  // Longest first, so a name inside a longer one isn't linked twice.
+  for (const name of namesIn(who, people).sort((a, b) => b.length - a.length)) {
+    html = html.replace(pageText(name), `<a href="${people[name]}">${pageText(name)}</a>`);
+  }
+  return ` <span class="cl-credit">Thanks to ${html}</span>`;
+};
 
 /** A plain line: its text, and who it came from when it says. */
 const lineHtml = (l) => (typeof l === "string" ? pageText(l) : `${pageText(l.text)}${creditTag(l.credit)}`);
@@ -125,7 +155,8 @@ function highlight(release, h) {
 }
 
 /** The page's content, for writePage. */
-export function changelogPage({ releases, githubUrl }) {
+export function changelogPage({ releases, githubUrl, people: who = {} }) {
+  people = who;
   const sections = releases.map((r, i) => {
     const { weekday, date, year } = dayName(r.release);
     const counts = KINDS.map((k) => [k, r[k].length + r.highlights.filter((h) => h.kind === k).length]).filter(([, n]) => n);
