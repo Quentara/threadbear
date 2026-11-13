@@ -61,3 +61,11 @@ Then('the transcript shows a line about {string}', async function (this: Threadb
   const row = await this.until(`a row mentioning "${words}"`, (d) => d.transcript.rows.find((r) => r.text.includes(words)));
   assert.ok(row);
 });
+
+// Each section on show and what it drew (`panels.drawn`, the GPUI dump's own):
+// "highlights", "files", "patches", "panel <id>", "preview <title>".
+type WithDrawn = Dump & { panels?: { drawn?: { id: string; draws: string }[] } | null };
+
+Then('the {string} section draws {string}', async function (this: ThreadbearWorld, id: string, draws: string) {
+  await this.until(`${id} drawing ${draws}`, (d) => (d as WithDrawn).panels?.drawn?.some((s) => s.id === id && s.draws === draws));
+});

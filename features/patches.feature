@@ -64,3 +64,18 @@ Feature: What a folder's patches give a thread
     And I show the "threadbear.patches" section of the pane
     Then the patch says threads in Ask and Auto ask before every file edit, with the command, its line and what to change
     And an Auto thread's first edit that asks says the same in the transcript
+
+  # Each section of the pane draws its own wherever the dock puts it, as the
+  # Swift app's DockPane does; the GPUI pane drew one section for both until
+  # 13 Nov. `panels.drawn` is the GPUI dump's own.
+  @pane.sections @swift-pending
+  Scenario: Highlights beside Files shows both, each its own
+    When I open the thread "Rebuild the three landing pages"
+    And I show the "threadbear.files" section of the pane
+    And I move the "files" panel to the "right" edge
+    Then the "threadbear.highlights" section draws "highlights"
+    And the "threadbear.files" section draws "files"
+    When I show the "threadbear.highlights" section of the pane
+    And I click the highlight "copy-review.md"
+    Then the "threadbear.highlights" section draws "preview copy-review.md"
+    And the "threadbear.files" section draws "files"

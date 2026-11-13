@@ -95,8 +95,10 @@ impl SidePane {
         cx.spawn(async move |this, cx| loop {
             let image = this
                 .update(cx, |t, cx| {
-                    // Or a pinned copy of it is (pinned_panels.rs), whichever thread's picked.
-                    let showing = (t.thread(cx).is_some_and(|th| th.id == thread) && t.chosen.get(&thread) == Some(&panel)) || t.pin_showing(&thread, &panel, cx);
+                    // On show in the dock, wherever it is (beside another
+                    // section counts as much as chosen), or a pinned copy of
+                    // it is (pinned_panels.rs), whichever thread's picked.
+                    let showing = (t.thread(cx).is_some_and(|th| th.id == thread) && t.dock_showing(&panel, cx)) || t.pin_showing(&thread, &panel, cx);
                     if !showing {
                         t.panels.polling.remove(&key);
                     }
@@ -116,6 +118,11 @@ impl SidePane {
             }
         })
         .detach();
+    }
+
+    /// Whether a panel's rows or picture are being asked for now and then.
+    pub(crate) fn panel_polling(&self, thread_id: &str, panel_id: &str) -> bool {
+        self.panels.polling.contains(&panel_key(thread_id, panel_id))
     }
 
     /// Keeps a pinned panel's rows or picture coming while it shows

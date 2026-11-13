@@ -254,6 +254,9 @@ pub struct Threadbear {
     pub(crate) move_sheet: Option<Entity<crate::move_sheet::MoveSheet>>,
     /// The pane beside the thread: Highlights, previews, Patches, Files (highlights.rs).
     pub(crate) side: Entity<SidePane>,
+    /// A view per pane section the dock has shown, each drawing its own
+    /// section from `side` (side_sections.rs).
+    pub(crate) side_views: HashMap<String, Entity<crate::side_sections::SectionView>>,
     /// The Threads panel's view, made the first time the dock asks for it
     /// (sidebar.rs, `SidebarView`).
     pub(crate) sidebar_view: Option<Entity<crate::sidebar::SidebarView>>,
@@ -508,6 +511,7 @@ impl Threadbear {
             slash: Default::default(),
             move_sheet: None,
             side,
+            side_views: HashMap::new(),
             sidebar_view: None,
             main_view: None,
             thread_panels: Default::default(),

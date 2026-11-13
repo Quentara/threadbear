@@ -237,8 +237,13 @@ pub(crate) struct SidePane {
     pub(crate) folders: crate::folders::FoldersState,
     pub(crate) panels: crate::patches::PanelsState,
     pub(crate) viewer: crate::viewer::ViewerState,
-    /// How wide the pane was last drawn, for the folder list's columns.
+    /// How wide the section being drawn or worked in is, for the folder
+    /// list's columns: set from `widths` as each section draws.
     pub(crate) width: f32,
+    /// How wide each section was last drawn: two side by side differ.
+    widths: HashMap<String, f32>,
+    /// What each section drew last, for the dump (`panels.drawn`).
+    pub(crate) drawn: HashMap<String, String>,
     /// Words selected in a thread, explained (explain_pane.rs).
     pub(crate) explain: crate::explain_pane::ExplainState,
     _subs: Vec<Subscription>,
@@ -271,6 +276,8 @@ impl SidePane {
             panels: Default::default(),
             viewer: crate::viewer::ViewerState::new(cx),
             width: PANE_WIDTH,
+            widths: HashMap::new(),
+            drawn: HashMap::new(),
             explain: Default::default(),
             _subs: vec![],
         };
@@ -483,7 +490,7 @@ impl SidePane {
         cx.notify();
     }
 
-    fn section_shown(&mut self, id: &str, thread_id: &str, cx: &mut Context<Self>) {
+    pub(crate) fn section_shown(&mut self, id: &str, thread_id: &str, cx: &mut Context<Self>) {
         if id == FILES {
             self.load_folder_for_files(thread_id, cx);
         } else if id != HIGHLIGHTS && id != PATCHES {
@@ -1528,47 +1535,106 @@ impl SidePane {
 
 impl Render for SidePane {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Drawn whole only where something hasn't a section of its own; the
+        // dock draws each section through its own view (side_sections.rs).
+        let section = self.thread(cx).map_or_else(|| HIGHLIGHTS.to_owned(), |t| self.section_for(&t));
+        self.render_section(&section, window, cx)
+    }
+}
+
+impl SidePane {
+    /// Whether the dock has this panel on show, in the window or one of its own.
+    pub(crate) fn dock_showing(&self, panel: &str, cx: &App) -> bool {
+        self.app.upgrade().is_some_and(|app| app.read(cx).dock.read(cx).controller.is_showing(panel))
+    }
+
+    /// The section that draws what's over the whole pane (a menu, the ⓘ
+    /// popover, the picture viewer) and holds the keys: the chosen one where
+    /// it's on show, else the first of the thread's that is. Two sections side
+    /// by side would otherwise each draw the same menu.
+    fn overlay_section(&self, thread: &ThreadSummary, cx: &App) -> String {
+        let chosen = self.section_for(thread);
+        if self.dock_showing(&chosen, cx) {
+            return chosen;
+        }
+        Self::section_ids(thread).into_iter().find(|id| self.dock_showing(id, cx)).unwrap_or(chosen)
+    }
+
+    /// A press anywhere in a section makes it the chosen one, so what's opened
+    /// from it (a file from Files, a link from Highlights) opens over it and
+    /// Back comes back to it. Nothing else changes: a preview over the section
+    /// beside it stays, as only one opening a new one replaces it.
+    pub(crate) fn section_pressed(&mut self, thread_id: &str, section: &str, cx: &mut Context<Self>) {
+        if self.chosen.get(thread_id).map(String::as_str) != Some(section) {
+            self.chosen.insert(thread_id.to_owned(), section.to_owned());
+            if let Some(width) = self.widths.get(section) {
+                self.width = *width;
+            }
+            cx.notify();
+        }
+    }
+
+    /// One section of the pane, as the dock places it: its own content, or
+    /// the preview or explanation opened over it (`DockPane`). Each section
+    /// draws on its own, so Highlights beside Files shows both.
+    pub(crate) fn render_section(&mut self, section: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = palette(cx);
         let bg = cx.theme().background;
+        if let Some(width) = self.widths.get(section) {
+            self.width = *width;
+        }
         // The folder showing is the one kept up to date (folders.rs).
         self.keep_folder_current(cx);
         let Some(thread) = self.thread(cx) else {
+            self.drawn.insert(section.to_owned(), "none".into());
             return v_flex().size_full().bg(bg).child(crate::files::pane_note("Pick a thread to see its Highlights.", p)).into_any_element();
         };
-        let section = self.section_for(&thread);
+        // A section the thread no longer has (a panel its patch took away).
+        let section = if Self::section_ids(&thread).iter().any(|id| id == section) { section.to_owned() } else { self.section_for(&thread) };
         // Only a preview has a header of its own here, for its Back and its
         // buttons. Otherwise the dock's bar above already names the section,
         // and the Swift pane has nothing between the two (PaneHeader is gone
         // from its panes); a second "Highlights" under the first looked off.
-        let previewing = self.previews.get(&thread.id).is_some_and(|pv| pv.from == section);
-        // Words explained show over the section, as a preview does (explain_pane.rs).
-        let explaining = self.explaining(&thread.id);
-        let header = if explaining { Some(self.render_explain_header(&thread, &section, cx)) } else { previewing.then(|| self.render_header(&thread, &section, cx).into_any_element()) };
-        let body = if explaining {
-            self.render_explain(&thread, window, cx)
-        } else if let Some(preview) = self.previews.get(&thread.id).filter(|pv| pv.from == section).cloned() {
-            self.render_preview(&thread, &preview, window, cx)
+        let preview = self.previews.get(&thread.id).filter(|pv| pv.from == section).cloned();
+        // Words explained show over the section they were explained over,
+        // as a preview does (explain_pane.rs).
+        let explaining = self.explaining_over(&thread.id) == Some(section.as_str());
+        let header = if explaining {
+            Some(self.render_explain_header(&thread, &section, cx))
+        } else {
+            preview.as_ref().map(|_| self.render_header(&thread, &section, cx).into_any_element())
+        };
+        let (body, drew) = if explaining {
+            (self.render_explain(&thread, window, cx), "explanation".to_owned())
+        } else if let Some(preview) = preview {
+            let drew = format!("preview {}", preview.title);
+            (self.render_preview(&thread, &preview, window, cx), drew)
         } else {
             match section.as_str() {
-                HIGHLIGHTS => self.render_highlights(&thread, window, cx),
-                PATCHES => self.render_patches(&thread, cx),
-                FILES => self.render_files_panel(&thread, window, cx),
-                id => self.render_panel(&thread, id, window, cx),
+                HIGHLIGHTS => (self.render_highlights(&thread, window, cx), "highlights".to_owned()),
+                PATCHES => (self.render_patches(&thread, cx), "patches".to_owned()),
+                FILES => (self.render_files_panel(&thread, window, cx), "files".to_owned()),
+                id => (self.render_panel(&thread, id, window, cx), format!("panel {id}")),
             }
         };
-        let menu = self.menu.as_ref().map(|m| (m.position, m.view.clone()));
-        let popover = self.why_popover(&thread, p, window, cx);
-        let viewer = self.viewer_overlay(window, cx);
-        // The pane's width as drawn, for the folder list's columns (the
+        self.drawn.insert(section.clone(), drew);
+        // What's over the whole pane is drawn once, by one section.
+        let hosts = self.overlay_section(&thread, cx) == section;
+        let menu = if hosts { self.menu.as_ref().map(|m| (m.position, m.view.clone())) } else { None };
+        let popover = if hosts { self.why_popover(&thread, p, window, cx) } else { None };
+        let viewer = if hosts { self.viewer_overlay(window, cx) } else { None };
+        // The section's width as drawn, for the folder list's columns (the
         // column hides under a width, FolderPaneView's layout).
         let measure = {
             let entity = cx.entity().downgrade();
+            let key = section.clone();
             canvas(
                 move |bounds, _, cx| {
                     let width = f32::from(bounds.size.width);
                     entity
                         .update(cx, |this, cx| {
-                            if (this.width - width).abs() >= 1. {
+                            let last = this.widths.insert(key.clone(), width);
+                            if last.is_none_or(|w| (w - width).abs() >= 1.) {
                                 this.width = width;
                                 cx.notify();
                             }
@@ -1580,12 +1646,14 @@ impl Render for SidePane {
             .absolute()
             .size_full()
         };
+        let (thread_id, pressed) = (thread.id.clone(), section.clone());
         v_flex()
-            .track_focus(&self.focus)
+            .when(hosts, |s| s.track_focus(&self.focus))
             .relative()
             .size_full()
             .bg(bg)
             .text_color(p.fg)
+            .capture_any_mouse_down(cx.listener(move |this, _: &MouseDownEvent, _, cx| this.section_pressed(&thread_id, &pressed, cx)))
             .child(measure)
             .children(header)
             .child(div().flex_1().min_h_0().child(body))
@@ -1614,7 +1682,14 @@ impl SidePane {
             items.push(json!({ "id": PATCHES, "title": "Patches", "kind": "patches", "note": summary, "active": section == PATCHES }));
         }
         let preview = self.explain_line(&thread.id).or_else(|| self.previews.get(&thread.id).map(|pv| self.preview_line(pv)));
-        json!({ "shown": true, "width": PANE_WIDTH as i64, "items": items, "preview": preview, "highlights": self.highlights_line(&thread.id), "pane": self.pane_dump(&thread, &section, cx) })
+        // Each section on show and what it drew: two side by side each draw
+        // their own (GPUI's own; the Swift dump has the one pane).
+        let drawn: Vec<Value> = Self::section_ids(&thread)
+            .into_iter()
+            .filter(|id| self.dock_showing(id, cx))
+            .map(|id| json!({ "id": id, "draws": self.drawn.get(&id).cloned().unwrap_or_default() }))
+            .collect();
+        json!({ "shown": true, "width": PANE_WIDTH as i64, "items": items, "preview": preview, "highlights": self.highlights_line(&thread.id), "pane": self.pane_dump(&thread, &section, cx), "drawn": drawn })
     }
 
     /// `highlightsLine`.
@@ -1894,7 +1969,11 @@ fn highlight_command(side: &Entity<SidePane>, thread: &ThreadSummary, cmd: &Valu
         if item.kind == HighlightKind::Commit {
             return Err("a commit doesn't open".into());
         }
-        side.update(cx, |pane, cx| pane.open_highlight(&item, thread, cx));
+        // As a click: its press lands in Highlights first (`section_pressed`).
+        side.update(cx, |pane, cx| {
+            pane.section_pressed(&thread.id, HIGHLIGHTS, cx);
+            pane.open_highlight(&item, thread, cx);
+        });
         let shown = side.read(cx).previews.get(&thread.id).map_or_else(|| "no preview".to_owned(), |p| format!("showing {}", p.title));
         return Ok(json!(format!("ok {shown}")));
     }

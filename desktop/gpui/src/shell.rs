@@ -1498,26 +1498,18 @@ impl Threadbear {
         div().size_full().flex().items_start().justify_center().pt(px(40.)).text_size(px(style::size::LABEL)).text_color(muted).child(text)
     }
 
-    /// The Highlights panel. Its content is being built in `highlights.rs`
-    /// (another branch of the port); until that lands this is the empty panel
-    /// it will replace, with the same title and id.
+    /// Whether a panel is one of the side pane's sections: Highlights, Files,
+    /// Patches or one of the thread's patch panels (highlights.rs).
     fn is_side_section(&self, panel: &str) -> bool {
         matches!(panel, HIGHLIGHTS | FILES | PATCHES) || self.pane_thread().is_some_and(|t| t.panels.iter().flatten().any(|p| p["id"].as_str() == Some(panel)))
     }
 
-    /// The side pane, showing this panel's section. Its entity draws one section
-    /// at a time, so two of them shown side by side would show the same one
-    /// (the Swift app draws each separately): for later, it needs a split of
-    /// `SidePane` into sections.
+    /// One section of the side pane, drawn by a view of its own so two side
+    /// by side each show theirs (side_sections.rs).
     fn render_side_section(&mut self, section: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        let side = self.side.clone();
+        let view = self.side_views.entry(section.to_owned()).or_insert_with(|| cx.new(|cx| crate::side_sections::SectionView::new(side, section.to_owned(), cx))).clone();
         if let Some(thread) = self.pane_thread() {
-            if self.side.read(cx).section_for(&thread) != section {
-                // Afterwards, as this runs while the app's own state is held and
-                // the pane reads that.
-                let (side, section) = (self.side.clone(), section.to_owned());
-                let thread = thread.clone();
-                cx.defer(move |cx| side.update(cx, |side, cx| side.choose_section(&thread.id, &section, cx)));
-            }
             // A page panel draws its page itself, every frame, so the page
             // follows its slot (web_panels.rs); a preview over it is the pane's.
             let previewing = self.side.read(cx).previews.get(&thread.id).is_some_and(|pv| pv.from == section);
@@ -1531,13 +1523,13 @@ impl Threadbear {
             // wouldn't do, so it's drawn afresh while one's showing. It's
             // then only a bar and the view.
             if previewing && crate::files::shows_media(self.side.read(cx), &thread.id) {
-                return AnyView::from(self.side.clone()).into_any_element();
+                return AnyView::from(view).into_any_element();
             }
         }
         // Cached, like the Threads panel, so scrolling the transcript doesn't
         // redraw it every frame: it draws again when the app changes
-        // (SidePane::app_changed) or its own state does.
-        AnyView::from(self.side.clone()).cached(StyleRefinement::default().size_full()).into_any_element()
+        // (SidePane::app_changed) or the pane's own state does.
+        AnyView::from(view).cached(StyleRefinement::default().size_full()).into_any_element()
     }
 }
 

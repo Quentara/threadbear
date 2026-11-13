@@ -90,6 +90,7 @@ mod scheduled;
 mod selection_bar;
 mod settings;
 mod settings_window;
+mod side_sections;
 mod shell;
 mod shell_blocks;
 mod sidebar;
