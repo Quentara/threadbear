@@ -83,8 +83,8 @@ test('cargo builds in a shared slot and the checkout gets the program in its own
   assert.equal(h.built('aaa'), 'one');
   // Only the programs and libraries come across, not what cargo keeps for itself.
   assert.deepEqual(fs.readdirSync(path.join(h.base, 'target-aaa', 'debug')).sort(), ['app']);
-  // Nor node_modules, which cargo never reads.
-  assert.equal(fs.existsSync(path.join(h.base, 'shared-1', 'src', 'desktop', 'node_modules')), false);
+  // node_modules isn't copied, only linked.
+  assert.ok(fs.lstatSync(path.join(h.base, 'shared-1', 'src', 'desktop', 'node_modules')).isSymbolicLink());
 });
 
 test("one checkout never gets another's build, whatever the file times say", (t) => {
@@ -254,4 +254,19 @@ test("a cargo that didn't build the app doesn't hand back another checkout's", (
   h.checkout('aaa', 'from a', 60);
   assert.equal(h.cargo('aaa', ['test'], env).status, 0);
   assert.equal(fs.existsSync(path.join(h.base, 'target-aaa', 'debug', 'app')), false, "a's files changed back in the slot, so its build there is from another generation");
+});
+
+test("the copy's node_modules are there in the slot, for the mock runner the client's tests start", (t) => {
+  const h = host(t);
+  const src = h.checkout('aaa', 'x');
+  fs.mkdirSync(path.join(src, 'app', 'Tools', 'mock-runner', 'node_modules', 'ws'), { recursive: true });
+  assert.equal(h.cargo('aaa', ['test']).status, 0);
+  const slot = path.join(h.base, 'shared-1', 'src');
+  assert.ok(fs.existsSync(path.join(slot, 'app', 'Tools', 'mock-runner', 'node_modules', 'ws')));
+  assert.equal(fs.realpathSync(path.join(slot, 'desktop', 'node_modules')), fs.realpathSync(path.join(src, 'desktop', 'node_modules')));
+  // Another checkout's run points them at its own.
+  const other = h.checkout('bbb', 'y');
+  assert.equal(h.cargo('bbb', ['test'], { THREADBEAR_REMOTE_SLOTS: '1' }).status, 0);
+  assert.equal(fs.realpathSync(path.join(slot, 'desktop', 'node_modules')), fs.realpathSync(path.join(other, 'desktop', 'node_modules')));
+  assert.equal(fs.existsSync(path.join(slot, 'app', 'Tools', 'mock-runner', 'node_modules')), false);
 });

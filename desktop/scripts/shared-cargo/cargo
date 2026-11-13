@@ -138,6 +138,14 @@ changes="$(rsync -rlpDci --delete --exclude node_modules --exclude .build --excl
   echo "shared-cargo: couldn't copy $copy into $dir/src" >&2
   exit 1
 }
+# The copy's node_modules, linked where they are there: the client's tests
+# start the mock runner (app/Tools/mock-runner) from the slot's copy, and it
+# needs its packages (Codex's review). rsync leaves what it excludes alone, so
+# the links stay through the next copy and are only made again.
+find "$dir/src" -name node_modules -prune -type l -exec rm -f {} + 2>/dev/null || true
+while IFS= read -r nm; do
+  ln -sfn "$nm" "$dir/src/${nm#"$copy"/}" 2>/dev/null || true
+done < <(find "$copy" -name node_modules -prune -type d 2>/dev/null)
 gen="$(cat "$dir/.generation" 2>/dev/null)"
 case "$gen" in ""|*[!0123456789]*) gen=0 ;; esac
 # Only lines for something written, made or deleted: macOS's openrsync also
