@@ -184,6 +184,24 @@ fi
 HOST_LIST="${1:?usage: check-remote.sh <ssh host>[,<ssh host>...] [check.sh options]}"
 shift
 read -ra HOSTS <<<"$(printf '%s' "$HOST_LIST" | tr ',' ' ')"
+# THREADBEAR_CHECK_PREFER: hosts to try first, the rest of the list still
+# behind them. tb land sets it for a group's check from what each landing in
+# it asked for (THREADBEAR_CHECK_HOST), as the check runs with the holder's
+# environment (runner/src/worktrees.ts, checkPreference). A host that can't
+# run this check is passed over as ever, so a group that needs a Mac still
+# goes to one.
+if [ -n "${THREADBEAR_CHECK_PREFER:-}" ]; then
+  ordered=()
+  for h in $(printf '%s' "$THREADBEAR_CHECK_PREFER" | tr ',' ' ') ${HOSTS[@]+"${HOSTS[@]}"}; do
+    [[ "$h" =~ ^[A-Za-z0-9][A-Za-z0-9._@-]*$ ]] || continue
+    case " ${ordered[*]+"${ordered[*]}"} " in *" $h "*) continue ;; esac
+    ordered+=("$h")
+  done
+  if [ "${#ordered[@]}" -gt 0 ]; then
+    HOSTS=("${ordered[@]}")
+    HOST_LIST="$(IFS=,; printf '%s' "${HOSTS[*]}")"
+  fi
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$ROOT/scripts/remote-guard-lib.sh"
 alive_stdin 7 || { echo "Couldn't make the pipe that tells a check host this check has gone (alive_stdin)." >&2; exit 1; }

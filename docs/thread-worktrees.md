@@ -191,6 +191,14 @@ their own.
   landed; each of the others finds its result in its entry when it gets
   the lock, moves its own branch to its commits as they landed, prints
   them and which branches were in the same check, and exits.
+- The group's check runs in the holder's tb, with its environment, so each
+  entry also keeps the check hosts its own tb asked for
+  (`THREADBEAR_CHECK_HOST`). The check gets them all, the holder's first, as
+  `THREADBEAR_CHECK_PREFER`: `scripts/check-remote.sh` tries those hosts
+  first and keeps the rest of its list behind them, so a landing that asked
+  for the cloud box gets it when it's free, and a group that needs a Mac
+  still goes to one. On 13 Nov one that asked for the cloud box was
+  checked on Tinker Desk, behind its long builds, in another's group.
 - An entry is left out, to see to itself later, if it asks for a
   different check (or reads it from another folder), its worktree has
   moved on since it asked, it doesn't go onto the stack cleanly, its tb

@@ -336,7 +336,28 @@ export type LandOptions = {
   // from the same place are checked together, so the check read on the
   // stack is the one each of them asks for.
   checkFrom?: string;
+  // The check hosts this landing asks for: THREADBEAR_CHECK_HOST if left out.
+  checkHost?: string;
 };
+
+// The hosts a landing asked for, as check.sh would take them (an ssh host
+// name each, comma-separated), or undefined for none.
+const HOST_NAME = /^[A-Za-z0-9][A-Za-z0-9._@-]*$/;
+function askedHosts(v: string | undefined): string[] {
+  return (v ?? '').split(',').map((h) => h.trim()).filter((h) => HOST_NAME.test(h));
+}
+// A group's check runs in the holder's tb, with the holder's environment, so
+// what the others asked for went nowhere: on 13 Nov a landing that set
+// THREADBEAR_CHECK_HOST=cloud to keep off Tinker Desk's long builds was
+// checked there, in another thread's group. Each entry keeps what its own
+// tb asked for, and the group's check gets them all, in line order after the
+// holder's, as THREADBEAR_CHECK_PREFER: scripts/check-remote.sh tries those
+// hosts first and keeps the rest of its list behind them, so a group that
+// needs a Mac still finds one.
+export function checkPreference(own: string | undefined, others: (string | undefined)[]): string | undefined {
+  const all = [...askedHosts(own), ...others.flatMap(askedHosts)];
+  return all.length ? [...new Set(all)].join(',') : undefined;
+}
 
 // How many lines of a failed check's output are shown.
 const CHECK_TAIL_LINES = 40;
@@ -401,7 +422,11 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
     if (!opts.dryRun && !ready.hasMerge) {
       try {
         const check = opts.readCheck ? await opts.readCheck() : t.check;
-        entry = joinQueue(common, { branch: t.branch, path: t.path, base: ready.base, commit: ready.commit, check: check ?? null, checkFrom: opts.checkFrom ?? '' });
+        const checkHost = askedHosts(opts.checkHost ?? process.env.THREADBEAR_CHECK_HOST).join(',');
+        entry = joinQueue(common, {
+          branch: t.branch, path: t.path, base: ready.base, commit: ready.commit, check: check ?? null, checkFrom: opts.checkFrom ?? '',
+          ...(checkHost ? { checkHost } : {}),
+        });
         entryHeld = await holdLock(entryLockFile(common, entry.id), false);
         if (!entryHeld) throw new Error('entry lock taken');
       } catch {
@@ -1068,7 +1093,10 @@ async function landLocked(
         startedAt: Date.now(), branches: [t.branch, ...together], pid: process.pid,
         entries: [...(times.entryId ? [times.entryId] : []), ...group.map((g) => g.entry.id)],
       });
-      const r = await runCheck(check, t.path, opts.shell);
+      const prefer = group.length
+        ? checkPreference(opts.checkHost ?? process.env.THREADBEAR_CHECK_HOST, group.map((g) => g.entry.checkHost))
+        : undefined;
+      const r = await runCheck(check, t.path, opts.shell, prefer ? { THREADBEAR_CHECK_PREFER: prefer } : {});
       setRunning(common, undefined);
       // Whether the check ran on the commit it's logged for: asked before the
       // line is written, as the runner's updater takes a passing line as
@@ -1299,7 +1327,7 @@ export function overwrittenFiles(text: string): string[] {
 
 // Runs the check through a shell, keeping the end of its output (that's
 // where a test runner says what failed).
-function runCheck(command: string, cwd: string, shell = ['/bin/sh', '-c']): Promise<{ ok: boolean; code?: number; text: string; durationMs: number }> {
+function runCheck(command: string, cwd: string, shell = ['/bin/sh', '-c'], extraEnv: NodeJS.ProcessEnv = {}): Promise<{ ok: boolean; code?: number; text: string; durationMs: number }> {
   const started = Date.now();
   // At background priority: a land's check is the full quick suite.
   const [bin, args] = inBackground(shell[0], [...shell.slice(1), command]);
@@ -1310,7 +1338,10 @@ function runCheck(command: string, cwd: string, shell = ['/bin/sh', '-c']): Prom
       text += b.toString('utf8');
       if (text.length > keep * 2) text = text.slice(-keep);
     };
-    const child = spawn(bin, args, { cwd, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] });
+    // Never one left over from whatever started this tb: only a group sets it.
+    const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
+    if (!extraEnv.THREADBEAR_CHECK_PREFER) delete env.THREADBEAR_CHECK_PREFER;
+    const child = spawn(bin, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', take);
     child.stderr.on('data', take);
     child.on('error', (e) => resolve({ ok: false, text: `${text}\n${e.message}`, durationMs: Date.now() - started }));

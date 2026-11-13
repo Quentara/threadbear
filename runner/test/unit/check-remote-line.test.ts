@@ -94,3 +94,25 @@ test('a line that clears before the first look runs there, with nothing else to 
   assert.match(r.stdout, /ran on h1 after waiting/);
   assert.doesNotMatch(r.stderr, /unbound/);
 });
+
+test("hosts a grouped landing's members asked for are tried first, the rest kept behind them", () => {
+  // Both free: h1 would win, but a member asked for h2.
+  const s = setup({ h1: { state: 'free' }, h2: { state: 'free', ...linux } });
+  fs.writeFileSync(path.join(s.repo, 'change.ts'), '\n');
+  const r = s.run('h1,h2', 3600, '', { ...ENV, THREADBEAR_CHECK_PREFER: 'h2,bad host,-oProxy' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /ran on h2 now/);
+  assert.deepEqual(r.copies, ['h2']);
+  assert.doesNotMatch(r.ssh, /oProxy|^bad /m);
+});
+
+test('a preferred host that cannot run this check is passed over for one that can', () => {
+  // The change is under ios/: only a Mac takes it, whatever was asked for.
+  const s = setup({ h1: { state: 'free' }, h2: { state: 'free', ...linux } });
+  fs.mkdirSync(path.join(s.repo, 'ios'));
+  fs.writeFileSync(path.join(s.repo, 'ios', 'x.swift'), '\n');
+  const r = s.run('h1', 3600, '', { ...ENV, THREADBEAR_CHECK_PREFER: 'h2' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /ran on h1 now/);
+  assert.deepEqual(r.copies, ['h1']);
+});

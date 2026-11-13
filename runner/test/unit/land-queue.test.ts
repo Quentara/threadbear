@@ -638,3 +638,32 @@ test("a branch that landed while its tb was stopped is moved to what landed by i
   assert.equal(sh(main, 'git log --format=%s main | grep -c "Empty on c"'), '1');
   assert.ok(!fs.existsSync(path.join(done, asked)));
 });
+
+test("a group's check hears the hosts each landing in it asked for, the holder's first", async () => {
+  // On 13 Nov a landing that asked for the cloud box was checked on Tinker
+  // Desk in another thread's group, as the check ran with the holder's
+  // environment only.
+  const { root, main } = makeRepo();
+  const [a, b, c, d] = branches(main, ['a', 'b', 'c', 'd']);
+  const check = `${slowCheck(root)}; echo "prefer=\${THREADBEAR_CHECK_PREFER-unset}" >> '${root}/prefers'`;
+  const first = land({ ...a, check }, { ...capture().opts, checkHost: 'tinker-desk' });
+  await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const caps = [capture(), capture(), capture()];
+  // b asks for cloud, c for nothing, d for something no ssh host is called.
+  const rest = [
+    land({ ...b, check }, { ...caps[0].opts, checkHost: 'cloud' }),
+    land({ ...c, check }, { ...caps[1].opts, checkHost: '' }),
+    land({ ...d, check }, { ...caps[2].opts, checkHost: '-oProxyCommand=x' }),
+  ];
+  try {
+    await until(() => caps.every((cap) => cap.out.some((l) => l.startsWith('Waiting for another landing'))), 'the others waiting');
+  } finally {
+    write(root, { release: '' });
+  }
+  assert.equal(await first, 0);
+  assert.deepEqual(await Promise.all(rest), [0, 0, 0], caps.map((cap) => cap.err.join('\n')).join('\n'));
+  // a by itself hears nothing; the group's holder (b, c or d) passes on
+  // cloud, and its own, if it's b, only once.
+  const lines = fs.readFileSync(path.join(root, 'prefers'), 'utf8').trim().split('\n');
+  assert.deepEqual(lines, ['prefer=unset', 'prefer=cloud']);
+});
