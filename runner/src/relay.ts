@@ -206,6 +206,32 @@ type Watch = {
 
 export type RelayEvent = { seq: number; ts: string; threadId: string; turnId?: string; type: string; [k: string]: unknown };
 
+// A subscriber's own sparse history, never the watch's shared `given` set.
+// Validate without expanding ranges: even a huge endpoint costs no memory.
+function relaySeen(value: unknown, after: number): [number, number][] | undefined {
+  if (value === undefined) return undefined;
+  const bad = () => new RpcError(ErrorCode.badParams, 'relaySeen must be sorted, disjoint positive seq ranges at or below afterSeq (at most 20000).');
+  if (!Array.isArray(value) || value.length > 20_000) throw bad();
+  let end = 0;
+  for (const range of value) {
+    if (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isSafeInteger) || range[0] <= end || range[1] < range[0] || range[1] > after) throw bad();
+    end = range[1];
+  }
+  return value as [number, number][];
+}
+
+function hasSeen(ranges: [number, number][], seq: number): boolean {
+  let lo = 0, hi = ranges.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    const [first, last] = ranges[mid]!;
+    if (seq < first) hi = mid;
+    else if (seq > last) lo = mid + 1;
+    else return true;
+  }
+  return false;
+}
+
 export type RelaySource = {
   post: Post;
   subscribe?: Subscribe;
@@ -710,7 +736,11 @@ export class Relay {
 
   private events(w: Watch): RelayEvent[] {
     const settled = w.stoppedAt === undefined || this.deps.clock.now() - w.stoppedAt >= SETTLE_MS;
-    return relayEvents(w.threadId, [...w.rows.values()], w.row, [...w.cards.values()], w.olderMore, this.runnerName(w.runnerId), settled, w.bodies);
+    const events = relayEvents(w.threadId, [...w.rows.values()], w.row, [...w.cards.values()], w.olderMore, this.runnerName(w.runnerId), settled, w.bodies);
+    // A hole might contain the rest of this turn, or the start of the next.
+    // Its two boundary markers aren't known yet. Keep reading and following
+    // the real messages; these markers can arrive late once the gap fills.
+    return w.hole ? events.filter((e) => e.seq !== w.hole!.after * SCALE + 7 && e.seq !== w.hole!.until * SCALE) : events;
   }
 
   // The row's open card, kept so it stays in the transcript once answered;
@@ -791,6 +821,7 @@ export class Relay {
   // threads.events, in relay seqs.
   private async page(w: Watch, p: { afterSeq?: number; beforeSeq?: number; limit?: number }) {
     await this.load(w);
+    this.retryGap(w);
     const limit = Math.max(1, Math.min(p.limit ?? 200, 2000));
     if (p.beforeSeq !== undefined) {
       // Older rows, read once each, until there are enough or none are left.
@@ -806,10 +837,13 @@ export class Relay {
       }
     }
     const all = this.events(w);
+    this.emit(w, all);
     let events: RelayEvent[];
     if (p.afterSeq !== undefined) events = all.filter((e) => e.seq > p.afterSeq! && (p.beforeSeq === undefined || e.seq < p.beforeSeq)).slice(0, limit);
     else if (p.beforeSeq !== undefined) events = all.filter((e) => e.seq < p.beforeSeq!).slice(-limit);
     else events = all.slice(-limit);
+    // Reading on one connection mustn't consume live events owed to the
+    // others. A tail can be waiting on a gap read while this page is made.
     for (const e of events) w.given.add(e.seq);
     const atStart = !w.olderMore && (events.length === 0 || events[0]!.seq === all[0]?.seq);
     return {
@@ -936,16 +970,28 @@ export class Relay {
 
   // Everything not yet given to the app from the oldest it has on: new rows,
   // and what's late (a tool's result once the next row comes, a card's answer).
-  private emit(w: Watch): void {
+  private emit(w: Watch, events?: RelayEvent[]): void {
     if (!w.loaded || !w.given.size) return;
     const from = oldestGiven(w.given);
-    for (const e of this.events(w)) {
+    for (const e of events ?? this.events(w)) {
       if (e.seq < from || w.given.has(e.seq)) continue;
       w.given.add(e.seq);
       this.deps.publish({ method: 'thread.event', params: { threadId: w.threadId, event: e } } as unknown as Notification);
     }
     // The done card's turn.completed may have come only now.
     this.noteLooseEnds(w);
+  }
+
+  // A failed fill is tried again when someone reads the thread, even if
+  // the remote thread is idle and its tail never changes. Don't hold the
+  // reader behind a long fill: the known messages can already be shown.
+  private retryGap(w: Watch): void {
+    if (!w.hole || w.filling) return;
+    const filling = this.fill(w).finally(() => {
+      if (w.filling === filling) w.filling = undefined;
+      this.emit(w);
+    });
+    w.filling = filling;
   }
 
   private sweepSoon(): void {
@@ -1153,16 +1199,20 @@ export class Relay {
       case 'threads.events':
         return this.page(w, { afterSeq: num(p.afterSeq), beforeSeq: num(p.beforeSeq), limit: num(p.limit) });
       case 'threads.subscribe': {
+        const after = num(p.afterSeq) ?? 0;
+        const seen = relaySeen(p.relaySeen, after);
         const said = w.shareSaid;
         await this.load(w);
-        const after = num(p.afterSeq) ?? 0;
+        this.retryGap(w);
+        const all = this.events(w);
+        this.emit(w, all);
         // What's past the app's last seq, and anything that can come late
         // (a tool's result, a card's answer, a turn's end) from what it was
         // given before: it may have arrived while the app was away, and the
         // app takes a seq it already has as nothing.
-        const from = w.given.size ? oldestGiven(w.given) : after;
+        const from = seen ? (seen[0]?.[0] ?? after) : (w.given.size ? oldestGiven(w.given) : after);
         const late = (seq: number) => seq % SCALE !== 0 && seq % SCALE !== 1;
-        const events = this.events(w).filter((e) => e.seq > after || (e.seq >= from && late(e.seq)));
+        const events = all.filter((e) => e.seq > after || (e.seq >= from && (seen ? !hasSeen(seen, e.seq) : late(e.seq))));
         for (const e of events) w.given.add(e.seq);
         if (!w.given.size) w.given.add(after);
         this.live(w);

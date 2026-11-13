@@ -11,7 +11,7 @@ and web" is the iPhone app and the website, which read every thread through Conv
 | What | Request | Another Mac | Phone and web |
 |---|---|---|---|
 | Reading the transcript | `threads.events` | Yes | Yes |
-| Following it live | `threads.subscribe` | Yes | Yes |
+| Following it live (relaySeen skips relay events this reader has) | `threads.subscribe` | Yes | Yes |
 | Opening a tool's output | `threads.heldBody` | Yes | Yes |
 | Sending a message, pictures too | `threads.send` | Yes | Yes |
 | Stop | `threads.interrupt` | Yes | Yes |

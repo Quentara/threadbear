@@ -21,7 +21,7 @@ export type Row = { what: string; relay: Where; phone: PhoneWhere };
 
 export const THREAD_REQUESTS: Record<string, Row> = {
   'threads.events': { what: 'Reading the transcript', relay: 'yes', phone: { via: 'messages' } },
-  'threads.subscribe': { what: 'Following it live', relay: 'yes', phone: { via: 'messages' } },
+  'threads.subscribe': { what: 'Following it live (relaySeen skips relay events this reader has)', relay: 'yes', phone: { via: 'messages' } },
   'threads.heldBody': { what: "Opening a tool's output", relay: 'yes', phone: { via: 'eventBody' } },
   'threads.send': { what: 'Sending a message, pictures too', relay: 'yes', phone: { via: 'send' } },
   'threads.interrupt': { what: 'Stop', relay: 'yes', phone: { via: 'interrupt' } },

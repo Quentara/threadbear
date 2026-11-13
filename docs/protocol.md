@@ -1123,7 +1123,7 @@ the summary and then the reply.
 | `threads.delete` | `{ threadId }` | `{}`. Stops the thread's CLI and moves its folder to `trash/` in the data dir (a Codex thread is archived in Codex too). Every client gets `thread.deleted` |
 | `threads.events` | `{ threadId, afterSeq?: number, beforeSeq?: number, limit?: number }` (default: the newest 500) | `{ events: Event[], firstSeq, lastSeq, inProgress: { itemId, type: "assistant.text" \| "reasoning", text }[] }` |
 | `threads.heldBody` | `{ threadId, seq }` | `{ state }`. Another runner's thread only: one tool's output from the backend (see "Other runners' threads through the backend") |
-| `threads.subscribe` | `{ threadId, afterSeq?: number }` | `{ events: Event[], inProgress: { itemId, type, text }[] }` (everything after `afterSeq`, and the text streamed so far for items still streaming), then pushes `thread.event` notifications. Deltas pushed after the reply carry on from `inProgress` |
+| `threads.subscribe` | `{ threadId, afterSeq?: number, relaySeen?: [number, number][] }` | `{ events: Event[], inProgress: { itemId, type, text }[] }` (everything after `afterSeq`, and the text streamed so far for items still streaming), then pushes `thread.event` notifications. Deltas pushed after the reply carry on from `inProgress` |
 | `threads.unsubscribe` | `{ threadId }` | `{}` |
 | `threads.subagent` | `{ threadId, subagentId }` | `{ subagent?: Subagent, events: Event[] }`: what the sub-agent has done so far, read from the CLI's own record of it, as events (`user.message` for its brief, then `assistant.text`, `reasoning`, `tool.call`, `tool.result`, `edit.diff`) numbered from 1, with no `turnId`. Read again for more while it runs: thread.updated says when it has done something. `subagent` is absent once the thread's list has dropped it. `-32006` when there's no record of it (an older thread, or the CLI cleaned it up) |
 | `threads.markSeen` | `{ threadId, seq }` | `{ thread: ThreadSummary }` |
@@ -5507,9 +5507,14 @@ only way the app opens another runner's thread.
   runner, with none, at `8m+3` after the newest row `m` held when it was
   first seen), and its `approval.resolved` one after it once the row no
   longer has it (with the decision if it was answered from this Mac). A
-  `threads.subscribe` replays what's past `afterSeq` and, from everything
-  given before, what can come late (results, answers, turn ends) again;
-  the app takes a seq it already has as nothing. Every page and
+  `threads.subscribe` takes optional `relaySeen: [first, last][]`, sorted,
+  disjoint inclusive ranges of the persisted relay seqs this subscriber
+  already has (at most 20,000 ranges, all at or below `afterSeq`). It sends
+  what's past `afterSeq` and missing events (including late results,
+  answers and turn ends) from the first range onward. An empty list means it has no events.
+  This keeps another subscriber's older pages out of its reply. Older
+  clients omit it and still get late events replayed from everything given
+  before; a seq the app already has does nothing. Every page and
   event is in relay seqs, and so are `afterSeq` and `beforeSeq`. A page also
   has `relay: { runnerId, runnerName, atStart? }`; `atStart` says there's
   nothing older. Events can arrive with gaps and late (a tool's result
