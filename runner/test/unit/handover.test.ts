@@ -1009,17 +1009,35 @@ test("Peers.openCards: each draining runner's own open cards, side by side, with
   assert.deepEqual(asked, ['drain.openCards', 'drain.openCards']);
 });
 
-test('Runner.openCards: a draining runner\'s kept threads with the cards nothing has answered', async () => {
+test('Runner.openCards: a draining runner\'s kept threads with the cards nothing has answered, a chunk of log at a time', async () => {
   const h = makeHarness();
   const { thread } = h.runner.create({ text: 'Clean up', accountId: 'claude-3', permissionMode: 'ask' });
   const s = h.adapter.last;
   s.init();
   const ac = new AbortController();
+  // One answered, its request and answer in different chunks, then one open.
+  const first = s.sink.requestApproval({ toolUseId: 'tu0', name: 'Bash', title: 'ls', input: { command: 'ls' }, canAlwaysAllow: true, signal: ac.signal });
+  const req = h.events(thread.id).find((e) => e.type === 'approval.requested');
+  s.text('x1', 'looking');
+  h.runner.respondApproval({ threadId: thread.id, approvalId: req.approvalId, decision: 'allow' });
+  await first;
   void s.sink.requestApproval({ toolUseId: 'tu1', name: 'Bash', title: 'rm -rf build', input: { command: 'rm -rf build' }, canAlwaysAllow: true, signal: ac.signal });
-  assert.equal(h.runner.openCards().length, 0, 'not draining: nothing kept');
-  await h.runner.beginDrain([thread.id], { onHandedOver: () => {}, backgroundMs: 30 * MIN });
-  const cards = h.runner.openCards();
-  assert.deepEqual(cards.map((c) => [c.threadId, c.events.map((e) => [e.type, (e as { title?: string }).title])]), [[thread.id, [['approval.requested', 'rm -rf build']]]]);
+  const other = h.runner.create({ text: 'Other', accountId: 'claude-3' }).thread;
+  h.adapter.last.init();
+  assert.equal((await h.runner.openCards()).length, 0, 'not draining: nothing kept');
+  await h.runner.beginDrain([thread.id, other.id], { onHandedOver: () => {}, backgroundMs: 30 * MIN });
+  const show = (cards: { threadId: string; events: PersistedEvent[] }[]) => cards.map((c) => [c.threadId, c.events.map((e) => [e.type, (e as { title?: string }).title])]);
+  const want = [[thread.id, [['approval.requested', 'rm -rf build']]], [other.id, []]];
+  assert.deepEqual(show(await h.runner.openCards(2)), want);
+  assert.deepEqual(show(await h.runner.openCards()), want);
+  // A log that can't be read costs only its own thread.
+  const store = h.runner.store;
+  const log = store.log.bind(store);
+  store.log = (id: string) => {
+    if (id === other.id) throw new Error('EIO');
+    return log(id);
+  };
+  assert.deepEqual(show(await h.runner.openCards()), [want[0]]);
   ac.abort();
 });
 

@@ -11,6 +11,9 @@ import type { ThreadRecord } from '../store.ts';
 import type { Drain, ThreadState } from '../runner.ts';
 import { DRAIN_AGENT_MS, DRAIN_BACKGROUND_MS, DRAIN_CHECK_MS, DRAIN_MAX_OLD_MS, DRAIN_SETTLE_MS, newRuntime } from '../runner.ts';
 
+// Runner.openCards: events read from a log at once (threads.events' most).
+const OPEN_CARDS_CHUNK = 10_000;
+
 // How long a handover waits for an archive's worktree cleanup (letGo).
 // Removing a big worktree can take a while, and a git change still running
 // when the wait ends can't be stopped (cleanUpWorktree's stillOurs only
@@ -66,11 +69,29 @@ export const handoversPart = {
   // drain.openCards: the cards still open on each thread a draining runner
   // keeps, read from its own logs here, so only those few events cross to
   // the primary rather than every log (THREADBEAR-1Z, Peers.openCards).
-  openCards(this: Runner): { threadId: string; events: PersistedEvent[] }[] {
-    return (this.keeping() ?? []).filter((id) => this.threads.has(id)).map((threadId) => {
-      const log = this.store.log(threadId);
-      return { threadId, events: openCardEvents(log.read(1, log.lastSeq)) };
-    });
+  // A chunk at a time with a break between, as this runner is still running
+  // those threads' turns: no longer a stall than threads.events' pages it
+  // replaces. A log that can't be read leaves that thread out, so the
+  // primary leaves its row as it is, and the rest still go.
+  async openCards(this: Runner, chunk = OPEN_CARDS_CHUNK): Promise<{ threadId: string; events: PersistedEvent[] }[]> {
+    const out: { threadId: string; events: PersistedEvent[] }[] = [];
+    for (const threadId of this.keeping() ?? []) {
+      if (!this.threads.has(threadId)) continue;
+      try {
+        const log = this.store.log(threadId);
+        const last = log.lastSeq;
+        // Requests and answers as they go: only those are kept, not the log.
+        const asked: PersistedEvent[] = [];
+        for (let from = 1; from <= last; from += chunk) {
+          asked.push(...log.read(from, Math.min(last, from + chunk - 1)).filter((e) => e.type === 'approval.requested' || e.type === 'question.requested' || e.type === 'secret.requested' || e.type === 'approval.resolved'));
+          await new Promise((r) => setImmediate(r));
+        }
+        out.push({ threadId, events: openCardEvents(asked) });
+      } catch (e) {
+        this.log.warn("could not read a kept thread's open cards for the new runner", { threadId, error: String((e as Error)?.message ?? e) });
+      }
+    }
+    return out;
   },
 
   // Whether this runner has the thread (a draining one lets them go).

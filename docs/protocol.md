@@ -1583,7 +1583,8 @@ restart wait for busy threads. It hands over instead:
   for the cards nothing has answered on its kept threads
   (`drain.openCards {}` → `{ threads: { threadId, events }[] }`, each
   thread's open request events oldest first, worked out from its whole log
-  there, so no log crosses the connection), within 5 seconds: a draining
+  there a chunk at a time, so no log crosses the connection; a thread whose
+  log can't be read is left out), within 5 seconds: a draining
   runner that stops answering costs its threads their cards, not the
   startup. A runner from before `drain.openCards` answers it "method not
   found", and its logs are read instead, a thread at a time
