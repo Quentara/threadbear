@@ -515,6 +515,12 @@ left still archives it; any other way drags the thread. The agent gets a `thread
 read the thread from, and clicking the chip once it's sent opens that
 thread. An id that isn't one of your threads pastes as plain text.
 Stop (⌘.) ends a turn that's running.
+If you stop before the agent starts reading your message, Threadbear saves
+it and its pictures and says so in the thread.
+They go with your next message, including after you switch models or restart
+Threadbear. Stop on its own doesn't retry them. Clearing the conversation
+discards them. Moving the thread to another runner keeps the original messages
+in its history, but you need to send the stopped request again there.
 
 On a Mac the composer checks your spelling as the Mac's own text boxes do. A
 misspelled word gets a red wavy line once you've finished typing it, and

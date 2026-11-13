@@ -53,8 +53,9 @@ export function cleanPresses(raw: unknown): PressNote[] | undefined {
 // summary and the start loop walk these for every thread: `presses: {}`,
 // then `queue: {}`, stopped the runner at every start (security review and
 // Muse's review of the fix, 11 Nov 2026, finding 96). True if it changed.
-const OBJECT_LISTS = ['waitingOn', 'reviews', 'buttons', 'subagents', 'projects', 'rewinds', 'queue'];
+const OBJECT_LISTS = ['waitingOn', 'reviews', 'buttons', 'subagents', 'projects', 'rewinds', 'queue', 'messageRecoveries'];
 const STRING_LISTS = ['reviewDeliveries', 'allowRules', 'pendingApprovals', 'projectsLeft', 'projectsTold'];
+const NUMBER_LISTS = ['interruptedMessages'];
 const OBJECTS = ['needs', 'looseEnds', 'stoppedWork', 'stoppedMidTurn', 'highlights', 'worktree', 'handoff', 'moved', 'startedBy', 'labReview', 'labReviewOwed', 'reviewVerdict', 'finished'];
 const NESTED: [string, string, 'object' | 'string' | 'number'][] = [
   ['needs', 'asks', 'object'],
@@ -76,7 +77,7 @@ function listOf(v: unknown, kind: 'object' | 'string' | 'number'): unknown[] | u
 export function normaliseRecord(rec: Record<string, unknown>): boolean {
   const before = JSON.stringify(rec);
   for (const k of OBJECTS) if (rec[k] !== undefined && !isObject(rec[k])) delete rec[k];
-  for (const [k, kind] of [...OBJECT_LISTS.map((k) => [k, 'object'] as const), ...STRING_LISTS.map((k) => [k, 'string'] as const)]) {
+  for (const [k, kind] of [...OBJECT_LISTS.map((k) => [k, 'object'] as const), ...STRING_LISTS.map((k) => [k, 'string'] as const), ...NUMBER_LISTS.map((k) => [k, 'number'] as const)]) {
     if (rec[k] === undefined) continue;
     const list = listOf(rec[k], kind);
     if (list) rec[k] = list;
@@ -270,6 +271,10 @@ export type ThreadRecord = {
   sample?: true; // one of the tour's sample threads (Runner.samples): made up, never sent to
   allowRules?: string[]; // "Always allow" rules, in the CLI's syntax
   queue: QueuedSend[];
+  // User message seqs in the event log, saved by an early Stop for the next send.
+  interruptedMessages?: number[];
+  // Which ordinary message carried saved rows, so an edit can undo delivery.
+  messageRecoveries?: { seq: number; messages: number[] }[];
   pendingApprovals: string[];
   turnId?: string; // turn in progress when the record was saved
   titleSet?: boolean;

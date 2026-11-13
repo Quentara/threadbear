@@ -102,6 +102,9 @@ export type TurnResult = {
 };
 
 export type AdapterOutput =
+  // The CLI's receipt for an input, before it asks the model. Cancelled
+  // without started means the message never became the agent's to read.
+  | { kind: 'messageState'; id: string; state: 'queued' | 'started' | 'cancelled' }
   | { kind: 'event'; event: EventBody }
   | { kind: 'delta'; delta: DeltaBody }
   | { kind: 'session'; nativeSessionId: string; model?: string }

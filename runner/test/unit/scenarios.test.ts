@@ -21,7 +21,6 @@ type Field = 'needs' | 'asks' | 'next' | 'looseEnds' | 'review' | 'plans' | 'mes
 const KNOWN: { route: Route; field: Field; why: string }[] = [
   { route: 'relay', field: 'pictures', why: "Pictures in messages stay on that runner; the Mac shows each one's chip in the words." },
   { route: 'phone', field: 'pictures', why: "phone:thread carries words only; the phone gets a message's pictures from phone:images." },
-  { route: 'phone', field: 'notes', why: "phone:thread carries words only, for phone apps built before API 2; the iPhone app and the website get a login's notes from phone:messages with notes (API 79)." },
   { route: 'phone', field: 'plans', why: "phone:thread carries words only; the phone gets a message's plan flag from phone:messages (API 72) and draws its own plan card." },
 ];
 

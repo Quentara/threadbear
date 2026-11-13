@@ -1110,12 +1110,12 @@ export function toMessageDoc(threadId: string, e: PersistedEvent, scrub: (text: 
   const turn = e.turnId ? { turn: e.turnId.slice(0, 8) } : {};
   if (e.type === 'tool.call') return { threadId, seq: e.seq, role: 'tool', text: toolLine(e, scrub), toolKind: e.kind, ...turn, at: e.ts };
   // A login's note (the thread moved to another login, or waits for room),
-  // and no other note: without it a thread on the Pixel that changed login
+  // or an early Stop saving a message: without it a thread on the Pixel that changed login
   // showed the limit's words on the Mac and then just carried on (13 Nov).
   // The runner's own words, a line or two: a move to another provider
   // also says which model takes over.
   if (e.type === 'system.note') {
-    const text = e.login ? scrub(e.text).trim().slice(0, NOTE_CHARS) : '';
+    const text = e.login || e.savedMessage ? scrub(e.text).trim().slice(0, NOTE_CHARS) : '';
     return text ? { threadId, seq: e.seq, role: 'note', text, ...turn, at: e.ts } : undefined;
   }
   if (e.type === 'plan.proposed') {

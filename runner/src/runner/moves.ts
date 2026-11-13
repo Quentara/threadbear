@@ -59,6 +59,12 @@ function swapHome(p: string, fromHome: string): string {
 // there. They're asked or made again on this machine. True if it changed.
 function dropMovedPowers(rec: Record<string, any>): boolean {
   let changed = false;
+  for (const key of ['interruptedMessages', 'messageRecoveries']) {
+    if (rec[key] !== undefined) {
+      delete rec[key];
+      changed = true;
+    }
+  }
   if (rec.allowRules !== undefined) {
     delete rec.allowRules;
     changed = true;

@@ -306,6 +306,14 @@ export type Turn = {
   // sent while it ran, which go straight into the CLI. The turn ends when
   // the CLI has answered them all.
   messages: string[];
+  modelOutput?: boolean;
+  dispatched?: boolean;
+  recoveredMessages?: number[];
+  recoveryInput?: string;
+  inputs?: Map<string, number>;
+  deliveryKnown?: boolean;
+  startedMessages?: Set<string>;
+  foreignOutput?: boolean;
   // The most access the CLI has had in this turn (accessOf): a Codex turn
   // keeps the mode it started with when the thread is lowered mid-turn.
   access?: PermissionMode;
@@ -1701,7 +1709,8 @@ export class Runner {
   steer(st: ThreadState, msg: QueuedSend): void {
     const { rt } = st;
     const turn = rt.turn!;
-    this.emit(st, userMessage(msg), turn.turnId);
+    const event = this.emit(st, userMessage(msg), turn.turnId);
+    (turn.inputs ??= new Map()).set(msg.turnId, event.seq);
     turn.messages.push(msg.turnId);
     // He wrote again, so the turn owes him another reply.
     turn.ended = false;
@@ -1716,7 +1725,9 @@ export class Runner {
     this.markDirty(st);
     // A change reaches a running turn too, or a clear could wait out as many
     // messages as were sent into it (Codex review).
-    this.sendWithInstructionsNews(st, { id: msg.turnId, text: this.forAgent(msg), images: msg.images });
+    turn.dispatched = true;
+    if (!turn.deliveryKnown) turn.foreignOutput = false;
+    this.sendWithInstructionsNews(st, this.withInterruptedMessages(st, msg, this.forAgent(msg)));
   }
 
   // A turn that had its end_turn, opened again once the agent has read a
@@ -1760,8 +1771,8 @@ export class Runner {
     delete rec.finished;
     // A review can be replayed after a failed turn.started append. Its
     // stable message ID keeps the original user row rather than duplicating it.
-    const hasReviewMessage = msg.reviewId && this.store.log(rec.id).read(1, rec.lastSeq).some(e => e.type === 'user.message' && e.reviewId === msg.reviewId && e.turnId === msg.turnId);
-    if (!hasReviewMessage) this.emit(st, userMessage(msg), msg.turnId);
+    const reviewMessage = msg.reviewId ? this.store.log(rec.id).read(1, rec.lastSeq).find(e => e.type === 'user.message' && e.reviewId === msg.reviewId && e.turnId === msg.turnId) : undefined;
+    const messageSeq = reviewMessage?.seq ?? this.emit(st, userMessage(msg), msg.turnId).seq;
     try {
       this.emit(st, { type: 'turn.started', turnId: msg.turnId }, msg.turnId);
     } catch (e) {
@@ -1771,6 +1782,7 @@ export class Runner {
     rt.idleTimer?.cancel();
     rt.idleTimer = undefined;
     rt.turn = { turnId: msg.turnId, startedAt: this.clock.now(), interruptRequested: false, messages: [msg.turnId], edited: new Set(), access: rec.permissionMode };
+    rt.turn.inputs = new Map([[msg.turnId, messageSeq]]);
     rt.activeAt = this.clock.now();
     rec.turnId = msg.turnId;
     rec.lastActivityAt = this.isoNow();
@@ -1822,11 +1834,16 @@ export class Runner {
     // A slash command reaches the CLI as typed: anything put in front of it
     // (the phone's line, project news) would make it words to the model.
     const command = this.commandPlan(st, msg.text);
+    if (command && /^\/clear\b/i.test(msg.text.trim())) {
+      delete rec.interruptedMessages;
+      delete rec.messageRecoveries;
+    }
     if (command && rt.turn) {
       rt.turn.command = true;
       if (/^\/(compact|review|clear)\b/i.test(msg.text.trim())) rt.turn.noSteer = true;
     }
-    let text = command ? msg.text : this.forAgent(msg);
+    const input = command ? { id: msg.turnId, text: msg.text, images: msg.images } : this.withInterruptedMessages(st, msg, this.forAgent(msg));
+    let text = input.text;
     // Claude's CLI starts a new session for /clear, which the runner follows
     // (its next init), but says nothing.
     if (command && rec.provider === 'claude' && /^\/clear\b/i.test(msg.text.trim())) {
@@ -1903,8 +1920,9 @@ export class Runner {
       delete rec.moved;
     }
     // Kept for the next message when this one is a command, as the news is.
-    if (command) rt.session!.send({ id: msg.turnId, text, images: msg.images });
-    else this.sendWithInstructionsNews(st, { id: msg.turnId, text, images: msg.images });
+    if (rt.turn) rt.turn.dispatched = true;
+    if (command) rt.session!.send({ ...input, text });
+    else this.sendWithInstructionsNews(st, { ...input, text });
     if (msg.reviewId && !rec.reviewDeliveries?.includes(msg.reviewId)) {
       (rec.reviewDeliveries ??= []).push(msg.reviewId);
       // A persisted transcript row is not proof of dispatch: both initial
@@ -2047,7 +2065,22 @@ export class Runner {
 
   onOutput(st: ThreadState, o: AdapterOutput): void {
     const { rec, rt } = st;
+    if (rt.turn?.dispatched && !rt.closing && !rt.turn.foreignOutput && ((o.kind === 'delta' && o.delta.text.length > 0) ||
+      (o.kind === 'event' && ['assistant.text', 'reasoning', 'tool.call', 'tool.result', 'edit.diff', 'image'].includes(o.event.type)))) {
+      rt.turn.modelOutput = true;
+    }
     switch (o.kind) {
+      case 'messageState': {
+        const turn = rt.turn;
+        if (!turn?.inputs?.has(o.id)) break;
+        turn.deliveryKnown = true;
+        if (o.state === 'started') {
+          (turn.startedMessages ??= new Set()).add(o.id);
+          turn.foreignOutput = false;
+          if (turn.recoveryInput === o.id) this.settleInterruptedMessages(st);
+        }
+        break;
+      }
       case 'event': {
         let ev = o.event;
         if (rt.turn) this.seeWake(rt.turn, ev);
@@ -2257,6 +2290,7 @@ export class Runner {
         break;
       }
       case 'cliTurn':
+        if (rt.turn) rt.turn.foreignOutput = true;
         // The CLI started a turn of its own. Give it a turn in the thread so
         // its output isn't loose, the status says running, and the app
         // flags it when it ends. A message the runner already sent waits
@@ -2350,6 +2384,16 @@ export class Runner {
         const r = o.result;
         const turn = rt.turn;
         if (!turn) break;
+        // A folded-in message may have no started frame of its own. The
+        // result's explicit receipts still mean the CLI took that input.
+        if (!r.own && turn.deliveryKnown) {
+          for (const id of r.answered ?? (r.answers ? [r.answers] : [])) {
+            (turn.startedMessages ??= new Set()).add(id);
+            if (turn.recoveryInput === id) this.settleInterruptedMessages(st);
+          }
+        }
+        this.saveInterruptedMessages(st, r);
+        if (!r.own && !turn.deliveryKnown && ((!turn.interruptRequested && r.outcome === 'completed') || turn.modelOutput || (r.usage && Object.values(r.usage).some(n => typeof n === 'number' && n > 0)))) this.settleInterruptedMessages(st);
         // Which of this turn's messages the CLI's turn answered. The CLI
         // lists them in sending order, so everything up to the last one
         // named went with it. A CLI without lifecycle frames can only say
@@ -2363,7 +2407,7 @@ export class Runner {
           // turn went nowhere (an error ended its queue). Say so rather than
           // wait for an answer that won't come.
           turn.messages = [];
-          this.emit(st, { type: 'system.note', text: 'A message sent during this turn was dropped by the CLI. Send it again.' }, turn.turnId);
+          if (!turn.interruptRequested) this.emit(st, { type: 'system.note', text: 'A message sent during this turn was dropped by the CLI. Send it again.' }, turn.turnId);
         }
         // Still something to answer: a turn the CLI ran by itself while
         // this thread's message waited in its queue, or a message sent
@@ -2679,6 +2723,7 @@ export class Runner {
     const { rec, rt } = st;
     const turn = rt.turn;
     if (!turn) return;
+    this.saveInterruptedMessages(st);
     this.settleInstructionsNews(st, false);
     this.persistInProgress(st, turn.turnId);
     this.expireApprovals(st, 'The turn ended.');
@@ -2807,7 +2852,11 @@ export class Runner {
             // transcript carried to a new folder that wouldn't resume gets
             // the move's note, any other thread with earlier turns the
             // not-found one.
-            let text = this.forAgent(first);
+            turn.deliveryKnown = false;
+            turn.startedMessages = undefined;
+            turn.foreignOutput = false;
+            const input = this.withInterruptedMessages(st, { turnId: turn.turnId, text: first.text, images: first.images, origin: first.origin }, this.forAgent(first));
+            let text = input.text;
             // What it was told of presses went with the session that's gone:
             // a new one hears all it was told, the old one going on only this
             // turn's (Codex's second look).
@@ -2821,7 +2870,7 @@ export class Runner {
             }
             rt.carried = undefined;
             this.startSession(st, account);
-            rt.session!.send({ id: turn.turnId, text, images: first.images });
+            rt.session!.send({ ...input, text });
             // Messages sent into the turn before the CLI went go again, in
             // order, matched to their ids when the counts agree.
             if (msgs.length === turn.messages.length) {
@@ -3387,6 +3436,82 @@ export class Runner {
   }
 
   // ----------------------------------------------------------------- snooze
+
+  // A zero-token interrupted result is not a receipt. Keep the original
+  // log rows so their pictures and origin survive without duplicate user rows.
+  saveInterruptedMessages(st: ThreadState, result?: TurnResult): void {
+    const { rec, rt } = st;
+    const turn = rt.turn;
+    if (!turn?.interruptRequested || turn.command || turn.local) return;
+    const usage = result?.usage;
+    const zero = usage?.inputTokens === 0 && usage.outputTokens === 0 &&
+      !Object.values(usage).some(n => typeof n === 'number' && n > 0);
+    if (!turn.deliveryKnown && (turn.modelOutput || (usage && !zero) || (!zero && rt.started && turn.dispatched))) return;
+    const ids = new Set(rec.interruptedMessages);
+    const before = ids.size;
+    for (const [id, seq] of turn.inputs ?? []) {
+      if (turn.startedMessages?.has(id)) continue;
+      const e = this.store.log(rec.id).read(seq, seq)[0];
+      if (e?.type === 'user.message' && fromMike(e.text, e) && !this.commandPlan(st, e.text) && !cutOut(rec, seq)) ids.add(seq);
+    }
+    if (ids.size === before) return;
+    rec.interruptedMessages = [...ids];
+    this.emit(st, { type: 'system.note', savedMessage: true, text: 'Stopped before a reply started. Your message and pictures are saved for your next message.' }, turn.turnId);
+    this.markDirty(st);
+  }
+
+  settleInterruptedMessages(st: ThreadState): void {
+    const recovered = st.rt.turn?.recoveredMessages;
+    if (!recovered?.length) return;
+    st.rec.interruptedMessages = st.rec.interruptedMessages?.filter(id => !recovered.includes(id));
+    if (!st.rec.interruptedMessages?.length) delete st.rec.interruptedMessages;
+    st.rt.turn!.recoveredMessages = undefined;
+    st.rt.turn!.recoveryInput = undefined;
+    this.markDirty(st);
+  }
+
+  withInterruptedMessages(st: ThreadState, msg: QueuedSend, text: string): UserInput {
+    const { rec, rt } = st;
+    if (!rec.interruptedMessages?.length || !fromMike(msg.text, msg) || (rt.turn?.recoveryInput && rt.turn.recoveryInput !== msg.turnId)) return { id: msg.turnId, text, images: msg.images };
+    const saved = [...new Set(rec.interruptedMessages)].filter(seq => Number.isSafeInteger(seq) && seq > 0 && seq <= rec.lastSeq).sort((a, b) => a - b).flatMap(seq => this.store.log(rec.id).read(seq, seq)).filter(e => e.type === 'user.message' && fromMike(e.text, e) && !this.commandPlan(st, e.text) && !cutOut(rec, e.seq));
+    const images: ImageRef[] = [];
+    const parts: string[] = [];
+    const media = fs.realpathSync(this.store.mediaDir(rec.id));
+    const append = (words: string, refs: ImageRef[]) => {
+      const numbers = refs.map(ref => {
+        try {
+          const file = fs.realpathSync(ref.path);
+          if (path.dirname(file) !== media || !fs.statSync(file).isFile()) return undefined;
+          images.push({ ...ref, path: file });
+          return images.length;
+        } catch { return undefined; }
+      });
+      // Give unplaced pictures a marker too, so combining messages doesn't
+      // move a later message's picture ahead of the earlier one's words.
+      const placed = new Set([...words.matchAll(/\[Picture (\d{1,3})\]/g)].map(m => Number(m[1])));
+      const marker = (n: number) => numbers[n - 1] ? `[Picture ${numbers[n - 1]}]` : `[Picture ${n} unavailable]`;
+      const unplaced = refs.flatMap((_, i) => placed.has(i + 1) ? [] : [marker(i + 1)]);
+      const shifted = words.replace(/\[Picture (\d{1,3})\]/g, (_, n) => marker(Number(n)));
+      parts.push([...unplaced, shifted].join('\n'));
+    };
+    for (const e of saved) if (e.type === 'user.message') append(this.forAgent(e), e.images ?? []);
+    if (!saved.length) {
+      delete rec.interruptedMessages;
+      return { id: msg.turnId, text, images: msg.images };
+    }
+    append(text, msg.images);
+    if (rt.turn) {
+      rt.turn.recoveredMessages = saved.map(e => e.seq);
+      rt.turn.recoveryInput = msg.turnId;
+      const seq = rt.turn.inputs?.get(msg.turnId);
+      if (seq !== undefined) {
+        const recoveries = rec.messageRecoveries ??= [];
+        if (!recoveries.some(r => r.seq === seq)) recoveries.push({ seq, messages: [...rt.turn.recoveredMessages] });
+        this.markDirty(st);
+      }
+    }
+    return { id: msg.turnId, text: '[Earlier messages stopped before a reply. Answer them along with the latest message below.]\n\n' + parts.join('\n\n'), images };
+  }
 
   // Takes back a queued message that hasn't started: the runner's own,
   // gone stale before its turn came (fix-update.ts). Whether it was there.
