@@ -138,6 +138,12 @@ gone from your fork, not just quiet.
 
 ### Core, no switch
 
+The Rust app patches published dependencies through `desktop/Cargo.toml`.
+`desktop/vendor/gpui-pre` is GPUI 0.3.11 with file drops switching to mouse
+input before hit testing, so drops still work after typing. Its first commit
+is the published crate. Preserve the `window.rs` patch when updating GPUI;
+remove its Cargo patch and vendor folder once upstream includes the fix.
+
 These are part of how threads work. Taking one out means changes across
 runner, app and phone; it's usually better to hide its entry point.
 

@@ -27,3 +27,7 @@ exclude = ["vendor"]
 [patch.crates-io]
 gpui-component = { path = "vendor/gpui-component" }
 gpui-base = { path = "vendor/gpui-base" }
+# gpui-pre 0.3.11 as published, with file drags switching out of keyboard
+# modality before hover hit tests (window.rs). Otherwise a drop after typing
+# reaches no target. Keep this patch when updating the snapshot.
+gpui-pre = { path = "vendor/gpui-pre" }

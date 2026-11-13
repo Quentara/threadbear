@@ -39,6 +39,10 @@ folder browser.
   their popup menus laid out as macOS's are, in the app's own softer look
   (`src/menu/mac_look.rs`), patched in
   from `Cargo.toml`. Why, and how to bump it: `docs/gpui-port.md`.
+- **`vendor/gpui-base/` and `vendor/gpui-pre/`**, the kit's base and GPUI
+  itself with input, text, test-support and file-drop fixes. The patches in
+  `Cargo.toml` select them; their changes are listed there and in
+  `docs/gpui-port.md`.
 - **`gpui/`, the app.** GPUI has no tokio, so the connection runs on its own
   runtime and its events cross on a channel (`main.rs`). With the `automation`
   feature (never in a release) `automation.rs` takes the same scripted commands
@@ -92,6 +96,12 @@ mock runner. Run Rust builds and suites elsewhere (`scripts/remote.sh`):
 
 ```bash
 scripts/remote.sh cloud -- bash -c 'cd desktop && cargo test -p threadbear-core'
+```
+
+The file-drop dispatch tests use GPUI's test platform, exposed by `automation`:
+
+```bash
+scripts/remote.sh cloud -- bash -c 'cd desktop && cargo test -p threadbear-gpui --features automation --test file_drop'
 ```
 
 `../check.sh` (and so `tb land`) runs `cargo test -p threadbear-core -p

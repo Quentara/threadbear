@@ -219,17 +219,23 @@ Rust. So the tricky rules (folding, inbox order, link parsing) get shared
 fixture files: event streams with expected output that every side's tests
 read, the way `desktop/test/auth-vector-*.txt` already works for sign-in.
 
-gpui-kit stock, pinned to exact versions, no fork. Ghostex forked both gpui and
-its component library and has had to re-merge them many times since. We take a
-fork only when a shim can't do the job, and write down why.
+GPUI and gpui-kit are pinned to exact versions. We vendor a dependency only
+when a shim can't reach the code that needs to change, and record why.
 
-The one so far (12 Nov): `desktop/vendor/gpui-component`, the components crate
+`desktop/vendor/gpui-component` is the components crate
 at the pinned version with its popup menus drawn as macOS draws its own. The
 kit draws every menu's rows itself (their height, padding and gaps, the tick
 in the icon's place) and nothing outside the crate reaches them, and every
 dropdown, context menu and the sidebar's menus go through it. Its first commit
 is the crate as published, so `git log -p desktop/vendor` is the whole fork;
 a gpui-kit bump copies the new version in and puts that back.
+
+`desktop/vendor/gpui-base` keeps the input, text and test-support fixes listed
+in `desktop/Cargo.toml`. `desktop/vendor/gpui-pre` is GPUI 0.3.11 with file
+drops leaving keyboard mode before hover hit tests, so dropping after typing
+still works. GPUI exposes no input-mode setter for an app shim. The published
+crates are separate commits from our changes; retain those patches on an
+update, or remove a patch once upstream includes it.
 
 ### Borrowed from Ghostex (MIT, notice kept)
 

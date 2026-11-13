@@ -345,6 +345,7 @@ From the coordinator's recheck of everything inside a thread
   goes nowhere once the box has words in it, wherever it's let go; into an
   empty box it goes in. The new drop-point scenario is `@gpui-pending` for
   it. A Mac's real drops take the native capture path in thread.rs instead.
+  Fixed later that day under "File drops after typing" below.
 - No shot of Other…'s dialog: the app's `shot` draws the window without its
   dialog layer. The typed folder was checked in the scripted app ("Starts in
   backup on bruce").
@@ -354,6 +355,31 @@ drag-out and composer-cards: 81 scenarios, all passing but the two then
 fixed or marked (remote-threads again afterwards: 27 of 27). `cargo check
 -p threadbear-gpui --features automation` on Tinker Desk. The scripted app
 in dark mode for the Runs on lines and Other….
+
+### 2026-11-13 File drops after typing (`composer.filedrop`, `composer.dropanywhere`)
+
+GPUI chose the input mode before translating a platform file drop into mouse
+events. After typing it kept keyboard mode, where `HitboxId::is_hovered`
+returns false, so no drop target took the file. An empty box worked because
+the window still started in mouse mode. Mac native capture bypassed that
+hover check; scripted drops on Mac failed the same way as Linux.
+
+`desktop/vendor/gpui-pre` is the published 0.3.11 crate with Entered, Pending
+and Submit leaving keyboard mode before dispatch. Touch mode is preserved;
+Exited and Ended keep their cleanup behavior. The input's point-to-offset
+calculation and the app's drop targets are unchanged. The drop-placement
+scenario is no longer `@gpui-pending`.
+
+Verification: the file-drop scenarios pass on Linux/Xvfb and Mac,
+including drops at the first letter, between words, on a second line,
+after a UTF-8 character, and on the transcript with words already in the
+box. Mac's native temporary-screenshot and browser-image-byte drop
+scenarios also pass.
+
+The broader Linux sending and drag-out run passed all 28 scenarios. The
+app's `file_drop` integration tests check each drop phase after typing,
+one delivery, drag cleanup and preserving touch mode. Run them with
+`cargo test -p threadbear-gpui --features automation --test file_drop`.
 
 ### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
 

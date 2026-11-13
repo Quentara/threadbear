@@ -5850,6 +5850,14 @@ impl Window {
         self.last_input_modality = match &event {
             PlatformInput::KeyDown(_) => InputModality::Keyboard,
             PlatformInput::MouseMove(_) | PlatformInput::MouseDown(_) => InputModality::Mouse,
+            // File drops become mouse moves/up below. Leave keyboard mode
+            // before hit testing, or typing leaves every target unhovered.
+            // Keep touch mode's hover suppression for a touch-initiated drag.
+            PlatformInput::FileDrop(
+                FileDropEvent::Entered { .. }
+                | FileDropEvent::Pending { .. }
+                | FileDropEvent::Submit { .. },
+            ) if self.last_input_modality == InputModality::Keyboard => InputModality::Mouse,
             PlatformInput::Touch(_) => InputModality::Touch,
             _ => self.last_input_modality,
         };
