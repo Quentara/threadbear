@@ -125,8 +125,15 @@ const scenes: Record<string, { setup: (app: Driver) => Promise<void>; act: (app:
       await until(app, 'its transcript', (d) => d.transcript.threadId === t.id && d.transcript.state === 'loaded');
     },
     act: async (app) => {
-      for (const dir of ['down', 'down', 'up']) {
-        await app.do({ cmd: 'arrow', dir });
+      // A scripted Swift app's arrows only reach a text box
+      // (navigation.feature), so it clicks the same rows, which swap the
+      // same way there.
+      const d = await app.dump();
+      const rows = d.sidebar.sections.filter((s) => !s.collapsed).flatMap((s) => s.threads);
+      const at = rows.findIndex((t) => t.id === d.selection?.id);
+      for (const [dir, step] of [['down', 1], ['down', 2], ['up', 1]] as const) {
+        if (app instanceof GpuiDriver) await app.do({ cmd: 'arrow', dir });
+        else await app.do({ cmd: 'click', tipPrefix: `${rows[at + step].title}\n` });
         await sleep(600);
       }
     },
