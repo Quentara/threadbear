@@ -1148,7 +1148,9 @@ another Mac the line says which Mac to sign in on, as Terminal here would
 only sign in this Mac.
 
 The sign-in command comes from the runner's provider list, so Cursor opens
-`agent login`, for example. If a runner sends an unreadable thread field or
+`agent login`, for example. Sign in… is offered only when the login's own
+details can be read.
+If a runner sends an unreadable thread field or
 row, readable threads still appear. An empty or partly unreadable local list
 keeps the previous rows and their Terminal shells until a complete list arrives.
 

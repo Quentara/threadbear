@@ -16,7 +16,7 @@ The audit covers every serde decode in `desktop/client/src` and
 | Accounts, models, pools, defaults | `logins.rs`: fields and nested arrays recover separately; defaults maps keep readable values. |
 | Projects, links, schedules, last runs, panels, actions, hooks and list panel items | `highlights.rs`: tolerant fields and per-entry lists, including nested Convex deployment data. |
 | Origins, wake words, dependencies and subagents | `sidebar.rs`: tolerant typed fields, independent entries. |
-| Reply buttons and their payloads, slash commands, panel requests | `reply_buttons.rs`, `slash.rs`, `panel_requests.rs`: tolerant fields and independent entries. Positional ask choices and their notes drop the whole malformed field rather than shifting another choice into its place. |
+| Reply buttons and their payloads, slash commands, panel requests | `reply_buttons.rs`, `slash.rs`, `panel_requests.rs`: tolerant display fields and independent entries. Buttons need exactly one readable action object. Run commands and folders stay nonempty; start/send strings may be empty because the relay redacts briefs and destination ids. Presses route by thread/button ids. Positional ask choices and their notes drop the whole malformed field rather than shifting another choice into its place. |
 | Convex deployment choices and login state | `convex_panel.rs`: tolerant fields and deployment entries. Deploy keys remain required and fail closed. |
 | BrowserBear host state and tabs | `browserbear.rs`: tolerant fields and independent tab entries, preserving the streaming cap and file size limit. |
 | Remote threads and runners | `remote.rs`: independent manual reads; partial and unready indexes cannot remove previous rows. A readable empty remote index is authoritative when `ready` is true or absent on an older runner, so its last deleted thread can disappear. Remote summaries retain `keywords` and `createdAt`. |
@@ -31,11 +31,15 @@ once per app session, so rendering cannot flood the log. The installed app
 routes diagnostics to its normal rotating desktop log.
 
 Account providers and patch trust metadata remain strict: the Trust prompt
-requires complete disclosures, a known source, a file and a hash. Sign-in is unavailable for a secondary
-Claude or Codex login without its configuration folder, or a provider with
-no sign-in command. Readable archive rows still stop their shells in a
+requires complete disclosures, a known source, a file and a hash. Sign-in is
+unavailable for a secondary Claude login or any Codex login without its
+configuration folder, or a provider with no sign-in command. A missing account
+never selects a fallback account or guesses its credential folder. Readable
+archive rows still stop their shells in a
 partial list; missing rows need a complete list or an explicit deletion.
 
 The fixtures in `desktop/core/tests/wire_recovery.rs` cover the failure cases,
-including nested lists, strict credentials, duplicate identities, private
-values in diagnostics, provider commands and old hellos.
+including nested lists, strict credentials, duplicate identities,
+provider commands and old hellos. The diagnostics test
+has its own process in `wire_diagnostics.rs` and requires each real path to log,
+so another test cannot consume a field's once-per-session diagnostic first.

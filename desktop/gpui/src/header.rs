@@ -964,14 +964,14 @@ impl Threadbear {
     }
 
     /// `signInAccount`: this Mac's login to sign in again. Never another
-    /// runner's thread (its login is signed in on that Mac), and an unknown
-    /// login falls back to the main one of a provider there is (sign_in.rs).
+    /// runner's thread (its login is signed in on that Mac). A missing
+    /// secondary login cannot fall back to another login (sign_in.rs).
     pub(crate) fn sign_in_account(&self, thread: &ThreadSummary, cx: &App) -> Option<SignInAccount> {
         if !self.sign_in_needed(thread, cx) {
             return None;
         }
         let known = self.logins.account(&thread.account_id).map(|a| SignInAccount { id: a.id.clone(), provider: a.provider_id().to_owned(), title: a.title.clone(), config_dir: a.config_dir.clone() });
-        let account = sign_in::account_for(&thread.provider, thread.runner_id.is_some(), known)?;
+        let account = sign_in::account_for(&thread.account_id, &thread.provider, thread.runner_id.is_some(), known)?;
         (!self.logins.login_command(&account.provider).is_empty()).then_some(account)
     }
 

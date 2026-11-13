@@ -10,21 +10,16 @@
 
 /// The thread's login to sign in again, or None: never for another runner's
 /// thread (that Mac's login is signed in on that Mac, and nothing its runner
-/// says may pick what runs here), and an unknown login falls back to the
-/// main one of a provider there is, named in fixed words (`signInAccount`).
-pub fn account_for(provider: &str, remote: bool, known: Option<SignInAccount>) -> Option<SignInAccount> {
-    if remote {
+/// says may pick what runs here). Missing metadata never selects a fallback
+/// login or guesses its credential folder.
+pub fn account_for(account_id: &str, provider: &str, remote: bool, known: Option<SignInAccount>) -> Option<SignInAccount> {
+    if remote || account_id.is_empty() {
         return None;
     }
-    if let Some(known) = known {
-        if !provider.is_empty() && known.provider != provider { return None; }
-        return known.can_sign_in().then_some(known);
-    }
-    match provider {
-        "claude" => Some(SignInAccount { id: "claude-main".into(), provider: "claude".into(), title: "Claude".into(), config_dir: String::new() }),
-        "codex" => Some(SignInAccount { id: "codex-main".into(), provider: "codex".into(), title: "Codex".into(), config_dir: String::new() }),
-        _ => None,
-    }
+    let known = known?;
+    if known.id != account_id { return None; }
+    if !provider.is_empty() && known.provider != provider { return None; }
+    known.can_sign_in().then_some(known)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -39,7 +34,8 @@ impl SignInAccount {
     pub fn can_sign_in(&self) -> bool {
         match self.provider.as_str() {
             "claude" | "" => self.id == "claude-main" || !self.config_dir.trim().is_empty(),
-            "codex" => self.id == "codex-main" || !self.config_dir.trim().is_empty(),
+            // codex-main's CODEX_HOME can also be customized by the runner.
+            "codex" => !self.config_dir.trim().is_empty(),
             _ => true,
         }
     }
@@ -137,9 +133,9 @@ mod tests {
 
     #[test]
     fn another_runners_thread_never_picks_a_sign_in_here() {
-        assert_eq!(account_for("claude", true, Some(account("claude-main", "claude", "me", ""))), None, "even with a login of that id here");
-        assert_eq!(account_for("claude$(touch /tmp/x)", false, None), None, "no such provider: no sign-in");
-        assert_eq!(account_for("codex", false, None).map(|a| a.id), Some("codex-main".into()));
+        assert_eq!(account_for("claude-main", "claude", true, Some(account("claude-main", "claude", "me", ""))), None, "even with a login of that id here");
+        assert_eq!(account_for("claude-main", "claude$(touch /tmp/x)", false, None), None, "no such provider: no sign-in");
+        assert_eq!(account_for("codex-main", "codex", false, None), None, "missing metadata must not guess a login's folder");
     }
 
     #[test]

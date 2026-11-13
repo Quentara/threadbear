@@ -8,7 +8,14 @@ upgraded first. Times are ISO 8601 strings in UTC. Ids are strings.
 Readers keep valid fields and list entries when another field or entry has
 the wrong type. An unreadable identity drops that row. Routing and authorization
 fields also fail closed when recovery would change the account being used or
-hide what a Trust action permits. Decode diagnostics name
+hide what a Trust action or reply button permits. A missing login never selects
+a fallback login or guesses its credential folder. Reply buttons need exactly
+one readable action object; an unreadable action drops that button rather than
+becoming a different action. A run's command and folder stay required and
+nonempty. Other runners deliberately redact start/send briefs and destination
+ids: those may be empty strings, since a press routes by the owning thread and
+button ids to the runner's stored action.
+Decode diagnostics name
 only the type or position, never values or user text. A failed, empty or partly
 unreadable local thread list is not evidence that previously listed threads were
 deleted: clients keep those rows and must not run missing-thread cleanup.

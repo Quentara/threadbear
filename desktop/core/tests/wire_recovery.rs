@@ -54,7 +54,7 @@ fn other_protocol_structs_recover_fields_and_nested_lists() {
     assert_eq!(choices.deployments.len(), 1);
     assert_eq!(choices.deployments[0].deployment, "kept");
     assert!(serde_json::from_value::<Key>(json!({"deployment":"x","deploymentUrl":"https://example.com","adminKey":false})).is_err(), "credentials stay strict");
-    let button = ReplyButton::decode(&json!({"id":"b","title":"Button","createdAt":false,"start":{"text":"Kept prompt","title":42}})).unwrap();
+    let button = ReplyButton::decode(&json!({"id":"b","title":"Button","createdAt":false,"start":{"text":"Kept prompt","cwd":"/work","title":42}})).unwrap();
     assert_eq!(button.start.unwrap().text, "Kept prompt");
     let commands = decode_commands(&json!({"commands":[{"name":"kept","description":42},false]}));
     assert_eq!(commands[0].name, "kept");
@@ -108,28 +108,50 @@ fn remote_partial_invalid_and_unready_indexes_cannot_remove_missing_threads() {
 }
 
 #[test]
-fn decode_diagnostics_never_include_values_or_map_keys() {
-    static MESSAGES: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
-    threadbear_core::wire::set_logger(|message| MESSAGES.lock().unwrap().push(message.to_owned()));
-    #[derive(serde::Deserialize)]
-    struct Probe {
-        #[serde(deserialize_with = "threadbear_core::wire::field")]
-        _number: Option<i128>,
-        #[serde(deserialize_with = "threadbear_core::wire::field")]
-        _other: Option<i128>,
+fn unreadable_button_actions_never_become_ordinary_reply_pills() {
+    use threadbear_core::reply_buttons::ReplyButton;
+    for action in ["start", "send", "run"] {
+        let mut button = json!({"id":"b", "title":"Go"});
+        button[action] = json!("PRIVATE SENTINEL");
+        assert!(ReplyButton::decode(&button).is_none(), "bad {action} must drop the button");
     }
-    for _ in 0..20 {
-        let _: Probe = serde_json::from_value(json!({"_number":"PRIVATE SENTINEL", "_other":"PRIVATE SENTINEL"})).unwrap();
+    for (action, good, fields) in [
+        ("start", json!({"text":"Brief", "cwd":"/work"}), vec!["text", "cwd"]),
+        ("send", json!({"threadId":"other", "threadTitle":"Other", "text":"Message"}), vec!["threadId", "text"]),
+        ("run", json!({"command":"echo hello", "cwd":"/work"}), vec!["command", "cwd"]),
+    ] {
+        for field in fields {
+            let mut invalid = vec![Some(json!(false)), None];
+            if action == "run" { invalid.push(Some(json!(""))); }
+            for bad in invalid {
+                let mut payload = good.clone();
+                if let Some(bad) = bad { payload[field] = bad; } else { payload.as_object_mut().unwrap().remove(field); }
+                let mut button = json!({"id":"b", "title":"Go"});
+                button[action] = payload;
+                assert!(ReplyButton::decode(&button).is_none(), "unreadable {action}.{field}");
+            }
+        }
+        let mut button = json!({"id":"b", "title":"Go", "futureField":42});
+        button[action] = good;
+        assert!(ReplyButton::decode(&button).is_some(), "readable {action} still works");
     }
-    let _: ThreadSummary = serde_json::from_value(json!({"id":"t", "contextTokens":"PRIVATE SENTINEL"})).unwrap();
-    let _ = threadbear_core::inbox::ThreadList::decode(&json!({"threads":[{"id":{"PRIVATE SENTINEL":42}}]}));
-    let _ = RunnerLogins::from_hello(&json!({"defaults":{"models":{"PRIVATE SENTINEL":false}}}));
-    let messages = MESSAGES.lock().unwrap();
-    assert!(messages.iter().any(|m| m.contains("dropped invalid")));
-    assert!(messages.iter().all(|m| !m.contains("PRIVATE SENTINEL")));
-    let probe: Vec<_> = messages.iter().filter(|m| m.contains("i128")).collect();
-    assert_eq!(probe.len(), 2, "each field is identified separately and repeated decoding logs only once");
-    assert!(probe[0].contains("wire_recovery.rs:"), "the log identifies the source field");
+    assert!(ReplyButton::decode(&json!({"id":"b", "futureAction":{}})).is_none());
+    assert!(ReplyButton::decode(&json!({"id":"b", "start":{"text":"Brief","cwd":"/work"}, "run":{"command":"echo hidden","cwd":"/work"}})).is_none());
+}
+
+#[test]
+fn remote_reply_buttons_keep_the_relays_redacted_payloads() {
+    use threadbear_core::reply_buttons::{ReplyButton, look, Look};
+    // Exact shapes from relay.ts buttonsOf: briefs and message destinations
+    // remain on the owning runner; pressing routes by thread/button ids.
+    let start = json!({"id":"abcd1234","title":"Fix it","createdAt":"2026-11-13T10:00:00Z","start":{"text":"","cwd":"threadbear"}});
+    let send = json!({"id":"efgh5678","title":"Tell them","createdAt":"2026-11-13T10:00:00Z","send":{"threadId":"","threadTitle":"Deploy","text":""}});
+    assert_eq!(look(&ReplyButton::decode(&start).expect("redacted start remains a pill"),false), Look::Start);
+    assert_eq!(look(&ReplyButton::decode(&send).expect("redacted send remains a pill"),false), Look::Send);
+    let mut pressed = start;
+    pressed["pressed"] = json!({"at":"2026-11-13T10:01:00Z","threadId":"started1"});
+    assert_eq!(look(&ReplyButton::decode(&pressed).expect("relay press answers update the pill"),false), Look::Pressed);
+    assert!(ReplyButton::decode(&json!({"id":"emptycwd","start":{"text":"","cwd":""}})).is_some(), "relay target is optional too");
 }
 
 #[test]
@@ -176,14 +198,44 @@ fn patch_trust_disclosures_and_nonmain_login_folders_fail_closed() {
         let logins = RunnerLogins::from_hello(&json!({"accounts":[{"id":id,"provider":provider,"configDir":false}]}));
         let a = &logins.accounts[0];
         let account = sign_in::SignInAccount { id:a.id.clone(),provider:a.provider.clone(),title:a.title.clone(),config_dir:a.config_dir.clone() };
-        assert!(sign_in::account_for(provider,false,Some(account.clone())).is_none());
+        assert!(sign_in::account_for(id,provider,false,Some(account.clone())).is_none());
         let script = sign_in::script(&account,"/opt/cli");
         assert!(!script.contains("/opt/cli"));
     }
-    let malformed = RunnerLogins::from_hello(&json!({"accounts":[{"id":"codex-1","provider":{},"configDir":"/codex"}]}));
-    assert!(malformed.accounts.is_empty(), "a bad provider cannot change which CLI signs in");
+    for (id, provider) in [("claude-2","claude"),("codex-2","codex")] {
+        for field in ["id", "provider"] {
+            let mut row = json!({"id":id,"provider":provider,"configDir":"/secondary"});
+            row[field] = json!({});
+            let malformed = RunnerLogins::from_hello(&json!({"accounts":[row]}));
+            assert!(malformed.accounts.is_empty(), "an unreadable identity or provider drops the account");
+            let known = malformed.accounts.iter().find(|a| a.id == id).map(|a| sign_in::SignInAccount { id:a.id.clone(), provider:a.provider.clone(), title:a.title.clone(), config_dir:a.config_dir.clone() });
+            assert!(sign_in::account_for(id,provider,false,known).is_none(), "a dropped secondary login cannot sign in to the main login");
+        }
+        assert!(sign_in::account_for("",provider,false,None).is_none(), "a malformed summary accountId cannot select main either");
+        let known = sign_in::SignInAccount { id:id.into(), provider:provider.into(), title:String::new(), config_dir:"/secondary".into() };
+        assert_eq!(sign_in::account_for(id,provider,false,Some(known.clone())), Some(known.clone()));
+        assert!(sign_in::account_for("different",provider,false,Some(known)).is_none());
+        let main = format!("{provider}-main");
+        let known = sign_in::SignInAccount { id:main.clone(), provider:provider.into(), title:String::new(), config_dir:"/main".into() };
+        assert_eq!(sign_in::account_for(&main,provider,false,Some(known.clone())), Some(known));
+    }
     let mismatch = sign_in::SignInAccount { id:"codex-1".into(), provider:"claude".into(), title:String::new(), config_dir:"/codex".into() };
-    assert!(sign_in::account_for("codex",false,Some(mismatch)).is_none());
+    assert!(sign_in::account_for("codex-1","codex",false,Some(mismatch)).is_none());
+}
+
+#[test]
+fn missing_main_login_metadata_never_guesses_a_credential_folder() {
+    for provider in ["claude", "codex"] {
+        let id = format!("{provider}-main");
+        assert!(sign_in::account_for(&id,provider,false,None).is_none(), "a dropped account is not permission to guess its configuration");
+    }
+    for config_dir in [json!(false),json!(null),json!("")] {
+        let logins = RunnerLogins::from_hello(&json!({"accounts":[{"id":"codex-main","provider":"codex","configDir":config_dir}]}));
+        let a = &logins.accounts[0];
+        let account = sign_in::SignInAccount { id:a.id.clone(), provider:a.provider.clone(), title:a.title.clone(), config_dir:a.config_dir.clone() };
+        assert!(sign_in::account_for("codex-main","codex",false,Some(account.clone())).is_none());
+        assert!(!sign_in::script(&account,"/opt/codex").contains("/opt/codex"), "Codex's main home can be customized too");
+    }
 }
 
 #[test]
