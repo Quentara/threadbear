@@ -244,6 +244,9 @@ the box at the bottom, and Send takes it all back to the thread.
 Pasting with the keyboard outside the reply box puts the words in it and moves
 the cursor there, so you can dictate just after ticking an option.
 
+Short tables in replies stay as wide as their words need. Wide tables fit or
+scroll inside the reply, and list items have space between their lines.
+
 Inside a thread, rest the pointer on a link for a moment, in a reply or on a
 Needs you card's buttons, to see where it goes: a picture of the file, or
 the page's address. Click it to open it (the middle mouse button works

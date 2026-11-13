@@ -4960,3 +4960,18 @@ Fixes from Codex's review of the slice before:
   popup menu. Before the fix, a pinned file opened both menus; afterwards
   it opens one, with its file actions and Remove. All five row-menu
   scenarios pass, with 39 steps, on the Linux scripted app.
+
+### 2026-11-13 Short tables fit their words and lists have room (`rich.table`, `rich.blocks`)
+
+- Reply tables stop at their measured content width, with wide tables
+  fitting or scrolling inside the available column. List items have the
+  Swift renderer's six-point gap, following the app's zoom.
+- The vendored text style opts in from the app; its defaults are preserved
+  for other text views. Painted-layout tests check a short table at wide,
+  medium and narrow parent widths, the old stretching default, and the
+  difference between list-item gaps.
+- Mac window pictures of wide and narrow replies were inspected alongside
+  the Swift renderer. Cross-lab review found nothing significant.
+- Verification: the two painted-layout tests pass on the Mac, and the two
+  scripted GPUI scenarios pass on cloud (18 steps), measuring painted cells
+  and list lines rather than matching style settings.

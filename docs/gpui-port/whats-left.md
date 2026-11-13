@@ -48,8 +48,8 @@ you go.
 - [x] Selecting text in a reply has no Explain, Quote or Copy bar, and no
   Explain pane (`rich.selectionbar`, `rich.explain`)
 - [x] ⌘C copies plain text only, without the links (`rich.copy`)
-- [ ] Tables stretch to the column's width rather than their natural widths,
-  and list items sit a little closer than Swift's (`rich.table`, `rich.blocks`)
+- [x] Tables stop at their content width, fitting or scrolling inside the
+  available space, and list items have Swift's six-point gap (`rich.table`, `rich.blocks`)
 - [x] File names in replies don't find the files the thread's tools touched,
   and this Mac's documents and pictures open in their app, not the pane
   (`rich.filerefs`, `file.host`)

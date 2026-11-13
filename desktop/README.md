@@ -51,6 +51,11 @@ folder browser.
   Support/Threadbear`, which the runner uses on Linux too), on the port from
   its `runner.json` (default 8797), as `tb` finds it.
 
+The vendored base text style has two opt-in settings for reply Markdown:
+`table_natural_width` caps short tables at their measured content width, and
+`list_item_gap` sets the space between items. The kit defaults stay unchanged;
+`gpui/src/rows/markdown.rs` enables them for Threadbear replies.
+
 ## Run it
 
 You need Rust (`rustup`) and Node 24. On a Mac you also need Xcode's command

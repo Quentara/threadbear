@@ -57,6 +57,8 @@ pub(crate) fn reading_style(cx: &App) -> TextViewStyle {
         .with_code_background(code_bg)
         .with_border(hairline)
         .with_paragraph_gap(rems(PARAGRAPH_GAP / rem))
+        .with_list_item_gap(rems(style::zoomed(6.) / rem))
+        .with_table_natural_width(true)
         .with_heading(move |level| {
             // Sizes and the 6 above / 6 below from MarkdownRenderer (the
             // paragraph before leaves 10 of the 16 above a heading).
