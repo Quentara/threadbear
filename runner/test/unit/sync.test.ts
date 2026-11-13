@@ -4051,3 +4051,23 @@ test("commands: a thread's command whose take failed still goes before the threa
   assert.deepEqual(applied.filter((a) => a.startsWith(`send ${t.id}`)).map((a) => a.split(' ')[2]), ['one', 'two']);
   await sync.stop();
 });
+
+// Daybreak 122: one entry without events (a draining runner's answer in a
+// shape not known here) threw, and every card after it was lost.
+test("handover: an entry with no events doesn't stop the cards after it", async () => {
+  const f = setupFull();
+  f.sync.start({ hold: true });
+  const here = f.h.runner.create({ text: 'go', cwd: f.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  const bad = { ...here, id: 'drain-bad', status: 'waiting' as const, needsYou: true };
+  const good = { ...here, id: 'drain-good', status: 'waiting' as const, needsYou: true };
+  const ts = '2026-11-13T00:00:00.000Z';
+  f.sync.seedCards([
+    { thread: bad, events: undefined as never },
+    { thread: good, events: [{ type: 'question.requested', seq: 5, ts, approvalId: 'q-good', questions: [] }] as never },
+  ]);
+  const pending = (f.sync as never as { pending: Map<string, { approvalId: string }> }).pending;
+  assert.equal(pending.get('drain-good')?.approvalId, 'q-good');
+  assert.equal(pending.get('drain-bad'), undefined);
+  f.sync.release();
+  await f.sync.stop();
+});

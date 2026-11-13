@@ -1065,3 +1065,47 @@ test('Peers.openCards, from a release before drain.openCards: each summary as it
   const found = await peers.openCards();
   assert.deepEqual(found.map((f) => [f.thread.id, f.thread.status]), [['t-a', 'waiting'], ['t-b', 'idle']]);
 });
+
+// Daybreak 122 (13 Nov 2026): a release from that morning answered
+// drain.openCards with every kept thread's cards, { threads: [...] }, and
+// took no threadId. Read as the new shape it was events: undefined, which
+// threw in seedCards: that runner's cards and every one after it were lost.
+test("Peers.openCards: a draining runner from the morning of 13 Nov, answering every thread at once, between two of today's", async () => {
+  const h = makeHarness();
+  const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
+  const since = new Date().toISOString();
+  writeDrainInfo(h.home, { pid: 515151, port: 1, version: 'new', since, threads: ['n1'] });
+  writeDrainInfo(h.home, { pid: 525252, port: 2, version: 'morning', since, threads: ['m1', 'm2', 'm3'] });
+  writeDrainInfo(h.home, { pid: 535353, port: 3, version: 'new', since, threads: ['n2', 'odd'] });
+  const ts = '2026-11-13T00:00:00.000Z';
+  const card = (approvalId: string, seq: number) => ({ type: 'question.requested', seq, ts, approvalId, questions: [] });
+  const threadsOf: Record<number, string[]> = { 515151: ['n1'], 525252: ['m1', 'm2', 'm3'], 535353: ['n2', 'odd'] };
+  const clientFor = (pid: number) => ({
+    call: async (method: string, p: any) => {
+      const threads = threadsOf[pid]!;
+      if (method === 'drain.hello') return { threads, version: 'x' };
+      if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
+      if (method === 'drain.openCards') {
+        // The morning's: params ignored, every thread's cards (m3 had none).
+        if (pid === 525252) return { threads: [{ threadId: 'm1', events: [card('q-m1', 4)] }, { threadId: 'm2', events: [card('q-m2', 7), { junk: true }] }] };
+        if (p.threadId === 'odd') return { something: 'else' };
+        return { events: [card(`q-${p.threadId}`, 3)] };
+      }
+      return {};
+    },
+    onNotification: () => () => {},
+    waitClosed: () => new Promise<never>(() => {}),
+    close: () => {},
+  });
+  const connect = async (_port: number, _token: string, _legacy: boolean, pid: number) => clientFor(pid) as any;
+  const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect, alive: () => true });
+  await peers.connectAll();
+  const found = await peers.openCards({ deadlineMs: 1000 });
+  const ids = (f: (typeof found)[number]) => f.events.map((e) => (e as { approvalId: string }).approvalId);
+  assert.deepEqual(found.map((f) => [f.thread.id, ids(f)]).sort(), [['m1', ['q-m1']], ['m2', ['q-m2']], ['n1', ['q-n1']], ['n2', ['q-n2']]]);
+  // And seeding them doesn't stop at one it can't read.
+  const { openCardsAnswer } = await import('../../src/handover.ts');
+  assert.equal(openCardsAnswer({ threads: [] }, 'm3'), undefined);
+  assert.equal(openCardsAnswer(null, 'x'), undefined);
+  assert.equal(openCardsAnswer({ events: 'no' }, 'x'), undefined);
+});

@@ -2426,6 +2426,9 @@ export class ConvexSync {
   // showing a card answered before the handover loses it.
   seedCards(found: { thread: ThreadSummary; events: PersistedEvent[] }[]): void {
     for (const { thread, events } of found) {
+      // One a draining runner answered in a shape not known here is skipped,
+      // not the rest with it (Daybreak 122).
+      if (!Array.isArray(events)) continue;
       let added = false;
       for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
         if (e.type === 'approval.resolved' || !('approvalId' in e)) continue;

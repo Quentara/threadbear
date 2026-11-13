@@ -159,6 +159,24 @@ export type PeersDeps = {
 };
 
 // The primary's side: one connection per draining runner.
+// What drain.openCards answered for one thread. A release from the morning
+// of 13 Nov 2026 took no threadId and answered every kept thread's cards at
+// once, as { threads: [{ threadId, events }] }; read as the new shape that
+// was events: undefined, which threw in seedCards and lost every card after
+// it (Daybreak 122). Its answer is small (open cards, not logs), so each
+// thread takes its own entry from it. Anything else is unknown: that thread
+// keeps its row as it is.
+export function openCardsAnswer(r: unknown, threadId: string): PersistedEvent[] | undefined {
+  const events = (v: unknown) => (Array.isArray(v) ? (v.filter((e) => e && typeof e === 'object' && typeof (e as { seq?: unknown }).seq === 'number' && typeof (e as { type?: unknown }).type === 'string') as PersistedEvent[]) : undefined);
+  const o = r && typeof r === 'object' ? (r as { events?: unknown; threads?: unknown }) : undefined;
+  if (Array.isArray(o?.events)) return events(o.events);
+  if (Array.isArray(o?.threads)) {
+    const t = (o.threads as unknown[]).find((x) => x && typeof x === 'object' && (x as { threadId?: unknown }).threadId === threadId) as { events?: unknown } | undefined;
+    return t ? events(t.events) : undefined;
+  }
+  return undefined;
+}
+
 export class Peers {
   private deps: PeersDeps;
   private peers = new Map<number, Peer>();
@@ -370,8 +388,11 @@ export class Peers {
       const asked = await Promise.all(
         ids.map(async (threadId): Promise<Read | undefined> => {
           try {
-            const r = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('drain.openCards', { threadId }), Math.max(1, until - Date.now()));
-            return { peer, threadId, events: r.events };
+            const r = await withTimeout(peer.client.call<unknown>('drain.openCards', { threadId }), Math.max(1, until - Date.now()));
+            const events = openCardsAnswer(r, threadId);
+            if (events) return { peer, threadId, events };
+            this.deps.log.warn("a draining runner's open cards came back in a shape not known here", { threadId, pid: peer.info.pid });
+            return undefined;
           } catch (e) {
             if (unknown(e)) old = true;
             else this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
