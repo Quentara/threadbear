@@ -123,7 +123,7 @@ impl Threadbear {
     /// the new-thread box's login and model. `from` is a thread whose
     /// composer it came from, which it then sends to unless switched.
     pub(crate) fn new_schedule(&mut self, from: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
-        let thread = from.as_ref().and_then(|id| self.threads.get(id)).cloned();
+        let thread = from.as_ref().and_then(|id| self.threads.get(id)).map(|t| (**t).clone());
         let settings = thread.clone().unwrap_or_else(|| self.draft_summary());
         let state = EditorState {
             at_ms: rules::default_once_ms(now_ms()),
@@ -150,7 +150,7 @@ impl Threadbear {
             let (text, images) = c.schedule_draft(cx);
             (text, images, c.thread_id.clone())
         };
-        let thread = thread_id.as_ref().and_then(|id| self.threads.get(id)).cloned();
+        let thread = thread_id.as_ref().and_then(|id| self.threads.get(id)).map(|t| (**t).clone());
         let settings = thread.clone().unwrap_or_else(|| self.draft_summary());
         let state = EditorState {
             text,
@@ -817,7 +817,7 @@ impl Render for ScheduleEditor {
                 let t = app.read(cx);
                 let others: Vec<(String, String, bool, &'static str)> = t.remote.all_runners.iter().filter(|r| !r.is_self).map(|r| (r.id.clone(), r.name.clone(), r.online, icons::runner_symbol(r.icon.as_deref()))).collect();
                 let mut folders: Vec<String> = vec![state.cwd.clone(), t.logins.defaults.cwd.clone()];
-                let mut threads: Vec<&threadbear_core::inbox::ThreadSummary> = t.threads.values().filter(|t| t.runner_id.is_none()).collect();
+                let mut threads: Vec<&threadbear_core::inbox::ThreadSummary> = t.threads.values().map(|t| &**t).filter(|t| t.runner_id.is_none()).collect();
                 threads.sort_by_cached_key(|t| std::cmp::Reverse(t.activity_ms()));
                 folders.extend(threads.into_iter().map(|t| t.cwd.clone()));
                 let mut recent: Vec<String> = Vec::new();

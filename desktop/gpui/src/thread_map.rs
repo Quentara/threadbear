@@ -4,14 +4,20 @@
 // changed, rather than every frame. With Mike's 1,400 threads, sorting copies
 // of them all three or four times a frame was half of every frame's work, and
 // a hover over a row is a frame (13 Nov).
+//
+// Each summary is shared (`Arc`), so working them out again, which happens
+// whenever any thread changes (many times a second while threads work),
+// copies pointers rather than summaries: 17 ms a time with Mike's 1,400
+// (core/tests/sidebar_cost.rs). Change one through `Arc::make_mut`.
 use std::cell::Cell;
 use std::collections::HashMap;
 use std::ops::{Deref, DerefMut};
+use std::sync::Arc;
 use threadbear_core::inbox::ThreadSummary;
 
 #[derive(Default)]
 pub(crate) struct ThreadMap {
-    map: HashMap<String, ThreadSummary>,
+    map: HashMap<String, Arc<ThreadSummary>>,
     changes: Cell<u64>,
 }
 
@@ -23,7 +29,7 @@ impl ThreadMap {
 }
 
 impl Deref for ThreadMap {
-    type Target = HashMap<String, ThreadSummary>;
+    type Target = HashMap<String, Arc<ThreadSummary>>;
     fn deref(&self) -> &Self::Target {
         &self.map
     }
@@ -47,10 +53,10 @@ mod tests {
         let _ = m.get("x");
         let _ = m.values().count();
         assert_eq!(m.changes(), before, "reading doesn't count");
-        m.insert("a".into(), ThreadSummary { id: "a".into(), ..Default::default() });
+        m.insert("a".into(), Arc::new(ThreadSummary { id: "a".into(), ..Default::default() }));
         let after_insert = m.changes();
         assert!(after_insert > before);
-        if let Some(t) = m.get_mut("a") {
+        if let Some(t) = m.get_mut("a").map(Arc::make_mut) {
             t.title = "x".into();
         }
         assert!(m.changes() > after_insert);

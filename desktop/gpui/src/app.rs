@@ -876,9 +876,9 @@ impl Threadbear {
                         if let Some(pane) = self.kept.get(&t.id, cx) {
                             pane.update(cx, |p, cx| p.summary_changed(&t, cx));
                         }
-                        let before = self.threads.insert(t.id.clone(), t.clone());
-                        self.note_failed_account(before.as_ref(), &t);
-                        self.thread_changed_outside(before.as_ref(), &t, cx);
+                        let before = self.threads.insert(t.id.clone(), Arc::new(t.clone()));
+                        self.note_failed_account(before.as_deref(), &t);
+                        self.thread_changed_outside(before.as_deref(), &t, cx);
                         if t.panel_request.is_some() && self.selected.as_deref() == Some(t.id.as_str()) {
                             self.serve_panel_request(cx);
                         }
@@ -985,7 +985,7 @@ impl Threadbear {
 
     /// The Dock badge: the threads waiting on Mike (`refreshDockBadge`).
     pub(crate) fn refresh_dock_badge(&mut self) {
-        let label = threadbear_core::inbox::dock_badge(threadbear_core::inbox::needs_you_count(self.threads.values(), now_ms()));
+        let label = threadbear_core::inbox::dock_badge(threadbear_core::inbox::needs_you_count(self.threads.values().map(|t| &**t), now_ms()));
         if label != self.dock_badge {
             crate::notify::set_badge(label.as_deref());
             self.dock_badge = label;
@@ -1048,7 +1048,7 @@ impl Threadbear {
                         // even when another row could not be read.
                         for thread in &list.rows { crate::terminal::thread_updated(thread, cx); }
                         let before = (*this.threads).clone();
-                        let cleanup = list.apply(&mut this.threads);
+                        let cleanup = list.apply(&mut *this.threads);
                         let reload: std::collections::HashSet<_> = confirmed.iter().filter(|id| {
                             this.remote.made.contains(*id) || before.get(*id).is_some_and(|t| t.is_remote())
                         }).cloned().collect();
@@ -1245,7 +1245,7 @@ impl Threadbear {
                 });
                 pane
             }
-            (None, None) => cx.new(|cx| ThreadPane::new(client, summary, composer.clone(), cx)),
+            (None, None) => cx.new(|cx| ThreadPane::new(client, ThreadSummary::clone(&summary), composer.clone(), cx)),
         };
         let reduce = cx.reduce_motion();
         pane.update(cx, |p, _| p.entering = crate::open_motion::Entering::new(opening, reduce));
@@ -1319,7 +1319,7 @@ impl Threadbear {
         self.close_subagent(cx);
         let (Some(summary), Some(composer)) = (self.threads.get(&thread_id).cloned(), self.composers.get(&thread_id).cloned()) else { return };
         let client = self.client.clone();
-        let pane = cx.new(|cx| ThreadPane::new_subagent(client, summary, subagent_id.clone(), composer, cx));
+        let pane = cx.new(|cx| ThreadPane::new_subagent(client, ThreadSummary::clone(&summary), subagent_id.clone(), composer, cx));
         // A thread: link in its transcript opens that thread, as in a thread's.
         self.subagent_events = Some(cx.subscribe_in(&pane, window, |this, _, event: &crate::rows::OpenThreadRequest, window, cx| this.open_thread_link(&event.0, window, cx)));
         self.subagent = Some((thread_id, subagent_id));
@@ -1361,7 +1361,7 @@ impl Threadbear {
     pub(crate) fn update_open(&mut self, change: impl FnOnce(&mut ThreadSummary), params: Value, cx: &mut Context<Self>) -> Result<(), String> {
         let Some(id) = self.selected.clone() else { return Err("no thread open".into()) };
         let before = self.threads.get(&id).cloned();
-        if let Some(t) = self.threads.get_mut(&id) {
+        if let Some(t) = self.threads.get_mut(&id).map(std::sync::Arc::make_mut) {
             change(t);
         }
         let guess = self.threads.get(&id).cloned();
@@ -1389,7 +1389,7 @@ impl Threadbear {
                 }
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    threadbear_core::inbox::roll_back(&mut this.threads, before, guess.as_ref());
+                    threadbear_core::inbox::roll_back(&mut *this.threads, before, guess.as_deref());
                 }
                 cx.notify();
             })
@@ -1652,7 +1652,7 @@ impl Threadbear {
     /// ran out since: the list, its badge and the arrow keys each ask for it,
     /// every frame, and sorting all of Mike's threads each time was half a
     /// frame's work (thread_map.rs).
-    pub(crate) fn shown_sections(&self, cx: &App, now: i64) -> Rc<Vec<inbox::Section>> {
+    pub(crate) fn shown_sections(&self, cx: &App, now: i64) -> Rc<Vec<inbox::Section<Arc<ThreadSummary>>>> {
         let query = self.search.read(cx).value().trim().to_lowercase();
         let wakes = inbox::wakes(&self.scheduled.list);
         let changes = self.threads.changes();
@@ -1661,10 +1661,11 @@ impl Threadbear {
                 return c.sections.clone();
             }
         }
+        // Shared rows: working them out again copies pointers (thread_map.rs).
         let sections = Rc::new(inbox::sections_ordered(self.threads.values().filter(|t| query.is_empty() || inbox::matches(t, &query)), now, self.sidebar.order, &wakes));
         // Until the next snooze runs out, when a thread moves out of
         // Hibernating; nothing else in the sorting goes by the clock.
-        let until = self.threads.values().filter_map(|t| t.snoozed_until_ms()).filter(|at| *at > now).min().unwrap_or(i64::MAX);
+        let until = self.threads.values().map(|t| &**t).filter_map(|t| t.snoozed_until_ms()).filter(|at| *at > now).min().unwrap_or(i64::MAX);
         *self.sections_cache.borrow_mut() = Some(SectionsCache { changes, query, order: self.sidebar.order, wakes, from: now, until, sections: sections.clone() });
         sections
     }
@@ -1795,5 +1796,5 @@ struct SectionsCache {
     /// The clock it was worked out at, and when it next needs to be again.
     from: i64,
     until: i64,
-    sections: Rc<Vec<inbox::Section>>,
+    sections: Rc<Vec<inbox::Section<Arc<ThreadSummary>>>>,
 }

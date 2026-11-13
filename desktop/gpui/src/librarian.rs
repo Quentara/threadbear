@@ -351,7 +351,7 @@ impl Threadbear {
     /// it's doing, its numbers, then its settings.
     pub(crate) fn render_librarian_home(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let status = self.librarian.status.clone();
-        let threads: Vec<&threadbear_core::inbox::ThreadSummary> = self.threads.values().collect();
+        let threads: Vec<&threadbear_core::inbox::ThreadSummary> = self.threads.values().map(|t| &**t).collect();
         let stats = status.as_ref().map(|s| rules::stats(s, self.librarian.projects_made, &threads)).unwrap_or_default();
         let mut about = v_flex().gap(px(12.)).child(home_title("Librarian", "Keeps your projects tidy as your threads go.", MORE, cx));
         if let Some(status) = &status {
@@ -454,7 +454,7 @@ impl Threadbear {
     /// The page in the main panel, for the dump (`homePage`).
     #[cfg(feature = "automation")]
     pub(crate) fn librarian_home_dump(&self) -> Value {
-        let threads: Vec<&threadbear_core::inbox::ThreadSummary> = self.threads.values().collect();
+        let threads: Vec<&threadbear_core::inbox::ThreadSummary> = self.threads.values().map(|t| &**t).collect();
         let status = self.librarian.status.as_ref();
         let stats = status.map(|s| rules::stats(s, self.librarian.projects_made, &threads)).unwrap_or_default();
         json!({

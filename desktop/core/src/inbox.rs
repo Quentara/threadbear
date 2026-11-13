@@ -2,6 +2,7 @@
 // (app/Sources/ThreadbearCore/Threads/ThreadSections.swift), which the phone's
 // InboxSections and the website's web/src/sections.ts follow too. A summary
 // is what `threads.list` gives; what a row says about it is in `sidebar.rs`.
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
@@ -29,11 +30,11 @@ impl ThreadList {
         Ok(Self { rows, complete })
     }
 
-    pub fn apply(self, threads: &mut HashMap<String, ThreadSummary>) -> bool {
+    pub fn apply<T: From<ThreadSummary>>(self, threads: &mut HashMap<String, T>) -> bool {
         // Missing rows only mean deletion in a fully readable, nonempty list.
         // In particular, never stop Terminal shells on an empty snapshot.
         if self.complete { threads.clear(); }
-        threads.extend(self.rows.into_iter().map(|t| (t.id.clone(), t)));
+        threads.extend(self.rows.into_iter().map(|t| (t.id.clone(), T::from(t))));
         self.complete
     }
 }
@@ -219,12 +220,12 @@ pub struct OpenAsk {
 /// its card away, until its next update (13 Nov 2026, the implicit state
 /// machines scan; the Swift app's `threads[threadId] == guess`). Says
 /// whether it put it back.
-pub fn roll_back(threads: &mut HashMap<String, ThreadSummary>, before: Option<ThreadSummary>, guess: Option<&ThreadSummary>) -> bool {
+pub fn roll_back<T: Borrow<ThreadSummary>>(threads: &mut HashMap<String, T>, before: Option<T>, guess: Option<&ThreadSummary>) -> bool {
     let Some(before) = before else { return false };
-    if threads.get(&before.id) != guess {
+    if threads.get(&summary(&before).id).map(summary) != guess {
         return false;
     }
-    threads.insert(before.id.clone(), before);
+    threads.insert(summary(&before).id.clone(), before);
     true
 }
 
@@ -454,12 +455,17 @@ impl InboxOrder {
     }
 }
 
+/// A sidebar section and its threads. The rows are whatever the caller keeps
+/// its threads in: the app shares them (`Arc<ThreadSummary>`), so building the
+/// sections copies pointers, not a summary's every field. The app keeps them
+/// until a thread changes, and while threads work that's many times a second:
+/// copying 1,400 real-sized summaries took 17 ms each time (sidebar_cost.rs).
 #[derive(Clone)]
-pub struct Section {
+pub struct Section<T = ThreadSummary> {
     #[allow(dead_code)] // the tests find sections by it
     pub key: &'static str,
     pub title: &'static str,
-    pub rows: Vec<ThreadSummary>,
+    pub rows: Vec<T>,
 }
 
 /// Sections in the Mac app's default order (`ThreadSections.build`), with no
@@ -559,43 +565,71 @@ pub fn thread_in_tag(tag: &str) -> Option<&str> {
 /// heading. `wakes` are the threads a schedule is due to message
 /// (`inbox::wakes`): one that's idle with nothing for Mike waits for it under
 /// Hibernating rather than sitting in the Inbox.
-pub fn sections_ordered<'a>(threads: impl IntoIterator<Item = &'a ThreadSummary>, now_ms: i64, order: InboxOrder, wakes: &HashMap<String, Wake>) -> Vec<Section> {
+pub fn sections_ordered<'a, T: Borrow<ThreadSummary> + Clone + 'a>(threads: impl IntoIterator<Item = &'a T>, now_ms: i64, order: InboxOrder, wakes: &HashMap<String, Wake>) -> Vec<Section<T>> {
     let (mut starred, mut inbox, mut running, mut hibernating, mut archived) = (vec![], vec![], vec![], vec![], vec![]);
-    for t in threads {
-        if t.is_archived() {
-            archived.push(t.clone());
-        } else if t.is_starred() {
-            starred.push(t.clone());
-        } else if t.snoozed(now_ms) {
-            hibernating.push(t.clone());
-        } else if t.review_waiting() || t.needs_answer() || t.waiting_on_mike() || (t.needs_you && !t.working_in_background()) {
-            inbox.push(t.clone());
-        } else if t.busy() || t.working_in_background() {
-            running.push(t.clone());
-        } else if t.status == "idle" && t.needs.as_deref() != Some("you") && t.waiting_for_room.is_none() && wakes.contains_key(&t.id) {
-            hibernating.push(t.clone());
-        } else {
-            inbox.push(t.clone());
-        }
+    for row in threads {
+        let section = match section_of(summary(row), now_ms, wakes) {
+            "archived" => &mut archived,
+            "starred" => &mut starred,
+            "hibernating" => &mut hibernating,
+            "running" => &mut running,
+            _ => &mut inbox,
+        };
+        section.push(row.clone());
     }
+    sort_sections(starred, inbox, running, hibernating, archived, order, wakes)
+}
+
+/// Which section a thread goes under: "starred", "inbox", "running",
+/// "hibernating" or "archived" (`sections_ordered`'s rules, for counting one
+/// without building them all).
+pub fn section_of(t: &ThreadSummary, now_ms: i64, wakes: &HashMap<String, Wake>) -> &'static str {
+    if t.is_archived() {
+        "archived"
+    } else if t.is_starred() {
+        "starred"
+    } else if t.snoozed(now_ms) {
+        "hibernating"
+    } else if t.review_waiting() || t.needs_answer() || t.waiting_on_mike() || (t.needs_you && !t.working_in_background()) {
+        "inbox"
+    } else if t.busy() || t.working_in_background() {
+        "running"
+    } else if t.status == "idle" && t.needs.as_deref() != Some("you") && t.waiting_for_room.is_none() && wakes.contains_key(&t.id) {
+        "hibernating"
+    } else {
+        "inbox"
+    }
+}
+
+/// The summary behind a row, whatever it's kept in: named, as `.borrow()`
+/// alone could mean the row itself.
+pub(crate) fn summary<T: Borrow<ThreadSummary>>(row: &T) -> &ThreadSummary {
+    row.borrow()
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sort_sections<T: Borrow<ThreadSummary>>(mut starred: Vec<T>, mut inbox: Vec<T>, mut running: Vec<T>, mut hibernating: Vec<T>, mut archived: Vec<T>, order: InboxOrder, wakes: &HashMap<String, Wake>) -> Vec<Section<T>> {
     // Sorted by keys worked out once per thread: a time is text to be read,
     // and comparing two threads by reading theirs again each time cost the
     // app more than drawing a frame does (the activity bar's badge counts the
     // Inbox with this on every frame).
     use std::cmp::Reverse;
     let newest_first = |t: &ThreadSummary| (Reverse(t.activity_ms()), t.id.clone());
-    starred.sort_by(|a, b| a.starred_at.cmp(&b.starred_at).then_with(|| a.id.cmp(&b.id)));
+    starred.sort_by(|a, b| {
+        let (a, b) = (summary(a), summary(b));
+        a.starred_at.cmp(&b.starred_at).then_with(|| a.id.cmp(&b.id))
+    });
     match order {
-        InboxOrder::NeedsYou => inbox.sort_by_cached_key(|t| (t.urgency(), newest_first(t))),
-        InboxOrder::Newest => inbox.sort_by_cached_key(newest_first),
-        InboxOrder::Oldest => inbox.sort_by_cached_key(|t| (t.activity_ms(), Reverse(t.id.clone()))),
+        InboxOrder::NeedsYou => inbox.sort_by_cached_key(|t| (summary(t).urgency(), newest_first(summary(t)))),
+        InboxOrder::Newest => inbox.sort_by_cached_key(|t| newest_first(summary(t))),
+        InboxOrder::Oldest => inbox.sort_by_cached_key(|t| (summary(t).activity_ms(), Reverse(summary(t).id.clone()))),
     }
-    running.sort_by_cached_key(newest_first);
+    running.sort_by_cached_key(|t| newest_first(summary(t)));
     // A snooze's time, or for one waiting on a schedule its next run. Back on
     // restart has no time, so it goes last.
     let wakes_at = |t: &ThreadSummary| t.snoozed_until_ms().filter(|_| t.snoozed_until_restart != Some(true)).or_else(|| wakes.get(&t.id).map(|w| w.at_ms)).unwrap_or(i64::MAX);
-    hibernating.sort_by_cached_key(|t| (wakes_at(t), newest_first(t)));
-    archived.sort_by_cached_key(|t| (Reverse(t.archived_ms()), t.id.clone()));
+    hibernating.sort_by_cached_key(|t| (wakes_at(summary(t)), newest_first(summary(t))));
+    archived.sort_by_cached_key(|t| (Reverse(summary(t).archived_ms()), summary(t).id.clone()));
     [("starred", "Starred", starred), ("inbox", "Inbox", inbox), ("running", "Running", running), ("hibernating", "Hibernating", hibernating), ("archived", "Archived", archived)]
         .into_iter()
         .filter(|(key, _, rows)| !rows.is_empty() || *key == "inbox")

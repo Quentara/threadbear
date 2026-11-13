@@ -464,7 +464,7 @@ impl Threadbear {
     /// (`BusyConfirm`); then the row slides the rest of the way off and the
     /// thread goes.
     fn finish_swipe(&mut self, id: String, action: SwipeAction, at: f32, window: &mut Window, cx: &mut Context<Self>) {
-        let busy = action == SwipeAction::Archive && self.threads.get(&id).is_some_and(threadbear_core::sidebar::needs_busy_confirm);
+        let busy = action == SwipeAction::Archive && self.threads.get(&id).map(|t| &**t).is_some_and(threadbear_core::sidebar::needs_busy_confirm);
         let Some(thread) = self.threads.get(&id).cloned().filter(|_| busy) else {
             self.slide_off(id, action, at, cx);
             return;

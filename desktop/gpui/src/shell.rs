@@ -477,7 +477,7 @@ impl Threadbear {
     }
 
     pub(crate) fn open_thread(&self) -> Option<&threadbear_core::inbox::ThreadSummary> {
-        self.selected.as_ref().and_then(|id| self.threads.get(id))
+        self.selected.as_ref().and_then(|id| self.threads.get(id)).map(|t| &**t)
     }
 
     /// `WindowDock.section(_:)` != nil: a pane section's panel, not the
@@ -980,7 +980,7 @@ impl Threadbear {
             (Some(SidebarMode::Projects), _) => "Projects".to_string(),
             (Some(_), _) => "Librarian".to_string(),
             (None, Some(t)) if t.title.is_empty() => "Untitled".to_string(),
-            (None, Some(t)) => t.title,
+            (None, Some(t)) => t.title.clone(),
             (None, None) => "New thread".to_string(),
         })
     }

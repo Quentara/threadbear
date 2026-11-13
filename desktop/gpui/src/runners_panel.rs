@@ -294,7 +294,9 @@ impl Threadbear {
     /// The threads running now, in the sidebar's Running order.
     fn running_threads(&self) -> Vec<ThreadSummary> {
         let wakes = inbox::wakes(&self.scheduled.list);
-        inbox::sections_ordered(self.threads.values(), now_ms(), self.sidebar.order, &wakes).into_iter().find(|s| s.key == "running").map(|s| s.rows).unwrap_or_default()
+        // Sectioned as shared pointers: only the Running rows are copied out
+        // (thread_map.rs; this panel redraws as often as the sidebar).
+        inbox::sections_ordered(self.threads.values(), now_ms(), self.sidebar.order, &wakes).into_iter().find(|s| s.key == "running").map(|s| s.rows.iter().map(|t| (**t).clone()).collect()).unwrap_or_default()
     }
 
     /// Where new threads start: this Mac unless Mike picked another.

@@ -77,7 +77,7 @@ impl Composer {
             });
             return ChipData { summary: Some(t.draft_summary()), logins: t.draft_logins(), is_new: true, away };
         }
-        let summary = self.thread_id.as_ref().and_then(|id| t.threads.get(id).cloned()).or_else(|| self.pane.upgrade().map(|p| p.read(cx).summary.clone()));
+        let summary = self.thread_id.as_ref().and_then(|id| t.threads.get(id).map(|t| ThreadSummary::clone(t))).or_else(|| self.pane.upgrade().map(|p| p.read(cx).summary.clone()));
         let (logins, away) = match summary.as_ref().and_then(|s| s.runner_id.clone()) {
             None => (t.logins.clone(), None),
             // Another runner's thread: its Mac's logins, once they've come.
@@ -199,7 +199,7 @@ impl Composer {
     fn recent_folders(app: &WeakEntity<Threadbear>, current: &str, default_folder: &str, cx: &App) -> Vec<String> {
         let mut folders: Vec<String> = vec![current.to_owned(), default_folder.to_owned()];
         if let Some(app) = app.upgrade() {
-            let mut threads: Vec<&ThreadSummary> = app.read(cx).threads.values().collect();
+            let mut threads: Vec<&ThreadSummary> = app.read(cx).threads.values().map(|t| &**t).collect();
             threads.sort_by_cached_key(|t| std::cmp::Reverse(t.activity_ms()));
             folders.extend(threads.into_iter().map(|t| t.cwd.clone()));
         }

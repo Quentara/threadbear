@@ -71,7 +71,7 @@ impl Threadbear {
 
     /// The cards the search leaves, in order: (title, id).
     pub(crate) fn shown_project_cards(&self, cx: &App) -> Vec<(String, String)> {
-        let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+        let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now_ms());
         let cards = rules::cards(&sections, 3, self.project_decisions_on());
         rules::matching(cards, &self.projects_query(cx).unwrap_or_default()).into_iter().map(|c| (c.project.title.clone(), c.project.id.clone())).collect()
     }
@@ -90,7 +90,7 @@ impl Threadbear {
         let decisions = self.project_decisions_on();
         let query = self.projects_query(cx);
         let (all, total, summary) = {
-            let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+            let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now_ms());
             let all = rules::cards(&sections, 3, decisions);
             let total = all.len();
             let summary = match &query {
@@ -305,7 +305,7 @@ impl Threadbear {
         if self.open_project().is_some() || self.home_page() != Some(crate::shell::SidebarMode::Projects) {
             return None;
         }
-        let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+        let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now_ms());
         let cards = rules::cards(&sections, 3, self.project_decisions_on());
         Some(
             cards

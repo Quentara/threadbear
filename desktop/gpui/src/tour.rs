@@ -205,7 +205,7 @@ impl Threadbear {
                         let samples: Vec<ThreadSummary> = v["threads"].as_array().into_iter().flatten().filter_map(|t| serde_json::from_value(t.clone()).ok()).collect();
                         this.tour.samples = samples.iter().map(|t| t.id.clone()).collect();
                         for t in samples {
-                            this.threads.insert(t.id.clone(), t);
+                            this.threads.insert(t.id.clone(), std::sync::Arc::new(t));
                         }
                         // The step on show may want one open or hovered.
                         if this.tour.tour.is_on() && this.tour.tour.intro.is_none() {

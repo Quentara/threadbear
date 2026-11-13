@@ -260,7 +260,7 @@ impl Threadbear {
     /// A project's threads (its parts' too) waiting on a card of asks, newest
     /// first, as its page lists them.
     pub(crate) fn decision_threads_for(&self, project_id: &str) -> Vec<ThreadSummary> {
-        let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+        let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now_ms());
         let Some(section) = sections.section(project_id) else { return Vec::new() };
         rules::decision_threads(&sections.threads_with_parts(section)).into_iter().cloned().collect()
     }
@@ -272,7 +272,7 @@ impl Threadbear {
             return card.clone();
         }
         let threads = &self.threads;
-        self.projects.decision_cards.retain(|id, _| threads.get(id).is_some_and(rules::is_waiting));
+        self.projects.decision_cards.retain(|id, _| threads.get(id).map(|t| &**t).is_some_and(rules::is_waiting));
         let app = cx.entity().downgrade();
         let card = cx.new(|_| DecisionCard::new(app, thread.to_owned()));
         self.projects.decision_cards.insert(thread.to_owned(), card.clone());

@@ -626,7 +626,7 @@ fn open_button(open: &Opener, _p: Palette, cx: &App) -> AnyElement {
 /// A pinned panel's are for its own thread's panel and page.
 pub(crate) fn bar_buttons(app: &Threadbear, panel_id: &str, cx: &mut App) -> Option<AnyElement> {
     let (thread, panel_id, pinned) = match threadbear_core::pinned_panels::pinned(panel_id) {
-        Some((thread, id)) => (app.threads.get(thread)?.clone(), id, true),
+        Some((thread, id)) => ((**app.threads.get(thread)?).clone(), id, true),
         None => (app.pane_thread()?, panel_id, false),
     };
     let panel = thread.panels().into_iter().find(|p| p.id == panel_id && p.kind == "url")?;

@@ -233,7 +233,7 @@ impl Threadbear {
                 match res.map(|v| serde_json::from_value::<ThreadSummary>(v["thread"].clone())) {
                     Ok(Ok(thread)) if !thread.id.is_empty() => {
                         let id = thread.id.clone();
-                        t.threads.insert(id.clone(), thread);
+                        t.threads.insert(id.clone(), std::sync::Arc::new(thread));
                         t.open(id, window, cx);
                     }
                     Ok(_) => t.show_error("The runner didn't say what thread it made.".to_owned(), cx),
@@ -288,7 +288,7 @@ impl Threadbear {
                         // thread it doesn't know; Windows lost that race).
                         if let Ok(thread) = serde_json::from_value::<ThreadSummary>(v["thread"].clone()) {
                             if !thread.id.is_empty() && !t.threads.contains_key(&thread.id) {
-                                t.threads.insert(thread.id.clone(), thread);
+                                t.threads.insert(thread.id.clone(), std::sync::Arc::new(thread));
                             }
                         }
                         match v["threadId"].as_str() {

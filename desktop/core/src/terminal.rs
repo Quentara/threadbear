@@ -62,10 +62,10 @@ pub fn target_for(thread: Option<&ThreadSummary>, home: &str, runner: Option<&st
 /// archived (`Terminals.archived`). Never the home shell. Only this Mac's own
 /// threads have shells of their own, so another runner's index can't stop one
 /// by calling a row of its own "home" and archiving it (Daybreak, 10 Nov).
-pub fn archived<'a>(keys: impl IntoIterator<Item = &'a TerminalKey>, threads: &HashMap<String, ThreadSummary>) -> Vec<TerminalKey> {
+pub fn archived<'a, T: std::borrow::Borrow<ThreadSummary>>(keys: impl IntoIterator<Item = &'a TerminalKey>, threads: &HashMap<String, T>) -> Vec<TerminalKey> {
     keys.into_iter()
         .filter(|key| match key {
-            TerminalKey::Thread(id) => threads.get(id).is_some_and(|t| !t.is_remote() && t.is_archived()),
+            TerminalKey::Thread(id) => threads.get(id).map(crate::inbox::summary).is_some_and(|t| !t.is_remote() && t.is_archived()),
             TerminalKey::Home => false,
         })
         .cloned()

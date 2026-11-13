@@ -64,6 +64,10 @@ fn sidebar_cost() {
     let wakes = HashMap::new();
     println!("1,400 threads, 80 projects");
     let one = time("inbox sections, once (copies every thread)", 200, || inbox::sections_ordered(threads.values(), now, InboxOrder::NeedsYou, &wakes));
+    // As the app keeps them (thread_map.rs): shared, so the sections copy
+    // pointers. They're worked out again whenever a thread changes.
+    let shared: HashMap<String, std::sync::Arc<ThreadSummary>> = threads.iter().map(|(k, t)| (k.clone(), std::sync::Arc::new(t.clone()))).collect();
+    time("inbox sections, once, shared rows (copies pointers)", 200, || inbox::sections_ordered(shared.values(), now, InboxOrder::NeedsYou, &wakes));
     println!("  the list, its badge and the arrow keys asked for it 3 to 4 times a frame: {:.2} to {:.2} ms a frame, now 0 unless a thread changed", one * 3., one * 4.);
     time("projects list sections", 200, || Sections::build(&projects, threads.values(), now).top_level().len());
     // The Projects list's sorts, with each comparison reading both threads'

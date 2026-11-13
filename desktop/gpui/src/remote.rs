@@ -64,7 +64,7 @@ impl Threadbear {
             }
         }
         let local = !kept.is_remote();
-        self.threads.insert(id.to_owned(), kept);
+        self.threads.insert(id.to_owned(), std::sync::Arc::new(kept));
         // A local list is authoritative for a move back to this Mac. Remote
         // routing is ready only once the destination appears in its index.
         if local { self.load_list(cx); }
@@ -172,13 +172,13 @@ impl Threadbear {
             }
             listed.insert(summary.id.clone());
             let waiting = self.remote.made.remove(&summary.id);
-            let before = self.threads.insert(summary.id.clone(), summary.clone());
+            let before = self.threads.insert(summary.id.clone(), std::sync::Arc::new(summary.clone()));
             if waiting || before.as_ref().is_some_and(|old| old.runner_id != summary.runner_id) {
                 reload.insert(summary.id.clone());
             }
-            self.note_failed_account(before.as_ref(), &summary);
+            self.note_failed_account(before.as_deref(), &summary);
         }
-        let gone: Vec<String> = self.threads.values().filter(|t| self.remote.index.can_remove_missing() && t.runner_id.is_some() && !listed.contains(&t.id) && !self.remote.made.contains(&t.id)).map(|t| t.id.clone()).collect();
+        let gone: Vec<String> = self.threads.values().map(|t| &**t).filter(|t| self.remote.index.can_remove_missing() && t.runner_id.is_some() && !listed.contains(&t.id) && !self.remote.made.contains(&t.id)).map(|t| t.id.clone()).collect();
         for id in gone {
             if !self.moved_away(&id, cx) {
                 self.threads.remove(&id);

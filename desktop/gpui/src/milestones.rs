@@ -82,7 +82,7 @@ impl Threadbear {
     fn milestone_count(&self) -> usize {
         #[cfg(feature = "automation")]
         if let Some(count) = self.milestone.count { return count; }
-        self.threads.values().filter(|t| t.sample != Some(true)).count()
+        self.threads.values().map(|t| &**t).filter(|t| t.sample != Some(true)).count()
     }
 
     fn milestone_idle_seconds(&self) -> f64 {

@@ -386,7 +386,7 @@ impl SidebarState {
                 cx.background_executor().timer(Duration::from_secs(1)).await;
                 n = n.wrapping_add(1);
                 let alive = this.update(cx, |t, cx| {
-                    let ticking = t.threads.values().any(|t| t.busy() || t.subagents.iter().flatten().any(|s| s.get("status").and_then(Value::as_str) == Some("running")));
+                    let ticking = t.threads.values().map(|t| &**t).any(|t| t.busy() || t.subagents.iter().flatten().any(|s| s.get("status").and_then(Value::as_str) == Some("running")));
                     let twentieth = n.is_multiple_of(20);
                     if twentieth || ticking {
                         cx.notify();
@@ -536,7 +536,7 @@ impl Threadbear {
     /// thread.updated) puts it right or rolls it back.
     pub(crate) fn update_thread(&mut self, id: &str, change: impl FnOnce(&mut ThreadSummary), params: Value, cx: &mut Context<Self>) {
         let before = self.threads.get(id).cloned();
-        if let Some(t) = self.threads.get_mut(id) {
+        if let Some(t) = self.threads.get_mut(id).map(std::sync::Arc::make_mut) {
             change(t);
         }
         let guess = self.threads.get(id).cloned();
@@ -550,7 +550,7 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    threadbear_core::inbox::roll_back(&mut this.threads, before, guess.as_ref());
+                    threadbear_core::inbox::roll_back(&mut *this.threads, before, guess.as_deref());
                 }
                 cx.notify();
             })
@@ -720,7 +720,7 @@ impl Threadbear {
         let next = self.neighbour_of(&id, cx, now_ms());
         self.launch_flight(&id, crate::archive_flight::Destination::Hibernate, cx);
         let before = self.threads.get(&id).cloned();
-        if let Some(t) = self.threads.get_mut(&id) {
+        if let Some(t) = self.threads.get_mut(&id).map(std::sync::Arc::make_mut) {
             t.snoozed_until = Some("9999-12-31T00:00:00.000Z".into());
             t.snoozed_until_restart = None;
             t.wake_when = Some(json!({ "said": said, "pending": true }));
@@ -734,7 +734,7 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    threadbear_core::inbox::roll_back(&mut this.threads, before, guess.as_ref());
+                    threadbear_core::inbox::roll_back(&mut *this.threads, before, guess.as_deref());
                 }
                 cx.notify();
             })

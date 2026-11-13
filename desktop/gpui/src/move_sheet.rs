@@ -53,7 +53,7 @@ impl Threadbear {
             self.show_move_sheet(request, None, window, cx);
             return;
         }
-        if let Some(t) = self.threads.get_mut(&request.thread_id) {
+        if let Some(t) = self.threads.get_mut(&request.thread_id).map(std::sync::Arc::make_mut) {
             t.moving = Some(json!({ "moveId": "", "to": request.runner_id, "toName": request.runner_name, "state": "asking" }));
         }
         cx.notify();
@@ -70,7 +70,7 @@ impl Threadbear {
                 } else {
                     // The sheet comes up instead; the guess goes back until
                     // Move is pressed there.
-                    if let (Some(t), Some(before)) = (this.threads.get_mut(&thread_id), &put_back) {
+                    if let (Some(t), Some(before)) = (this.threads.get_mut(&thread_id).map(std::sync::Arc::make_mut), &put_back) {
                         if t.moving.as_ref().is_some_and(|m| m["moveId"] == "") {
                             t.moving = before.moving.clone();
                         }
@@ -88,7 +88,7 @@ impl Threadbear {
     /// at once and goes back if the runner turns it down.
     pub(crate) fn start_move(&mut self, request: MoveRequest, cwd: Option<String>, account: Option<String>, cx: &mut Context<Self>) {
         let before = self.threads.get(&request.thread_id).cloned();
-        if let Some(t) = self.threads.get_mut(&request.thread_id) {
+        if let Some(t) = self.threads.get_mut(&request.thread_id).map(std::sync::Arc::make_mut) {
             if t.moving.is_none() {
                 t.moving = Some(json!({ "moveId": "", "to": request.runner_id, "toName": request.runner_name, "state": "asking" }));
             }
@@ -108,7 +108,7 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    if let (Some(t), Some(before)) = (this.threads.get_mut(&thread_id), &before) {
+                    if let (Some(t), Some(before)) = (this.threads.get_mut(&thread_id).map(std::sync::Arc::make_mut), &before) {
                         if t.moving.as_ref().is_some_and(|m| m["moveId"] == "") {
                             t.moving = before.moving.clone();
                         }

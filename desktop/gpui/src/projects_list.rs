@@ -130,7 +130,7 @@ impl Threadbear {
         // Worked out once for the count and the rows: it sorts every
         // project's threads.
         let items = {
-            let sections = Sections::build(&self.projects.list, self.threads.values(), now);
+            let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now);
             (sections.top_level().len(), self.projects_list_items(&sections, folding))
         };
         let (top_count, items) = items;
@@ -392,7 +392,7 @@ impl Threadbear {
     /// says how many it has.
     #[cfg(feature = "automation")]
     pub(crate) fn projects_sidebar_dump(&self) -> Value {
-        let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+        let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now_ms());
         let folding = self.project_decisions_on();
         let thread = |t: &ThreadSummary| {
             let look = RowLook::of(t, None);

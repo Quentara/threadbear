@@ -66,7 +66,7 @@ impl Threadbear {
         let (thread, id) = pinned(panel)?;
         let thread = self.threads.get(thread)?;
         let found = thread.panels().into_iter().find(|p| p.id == id)?;
-        Some((thread.clone(), found))
+        Some(((**thread).clone(), found))
     }
 
     /// Whether Pin is offered for this panel: one of the selected thread's

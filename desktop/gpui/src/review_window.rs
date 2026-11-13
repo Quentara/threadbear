@@ -196,7 +196,7 @@ impl Threadbear {
             main: window.window_handle(),
             client: self.client.clone(),
             thread_id: thread_id.to_owned(),
-            cwd: thread.map(|t| t.cwd).unwrap_or_default(),
+            cwd: thread.map(|t| t.cwd.clone()).unwrap_or_default(),
             cache: reviews(cx).drafts.clone(),
         };
         let title: SharedString = review.title.clone().into();

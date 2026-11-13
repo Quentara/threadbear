@@ -223,14 +223,14 @@ impl Threadbear {
 
     /// The panel's bar: the thread's title line (`HeaderTitle`).
     pub(crate) fn thread_panel_header(&mut self, panel: &str, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let thread = self.threads.get(pinned_thread(panel)?).cloned()?;
+        let thread = self.threads.get(pinned_thread(panel)?).map(|t| (**t).clone())?;
         Some(self.render_thread_title(thread, cx))
     }
 
     /// The end of its bar: Share and the ... menu, but no back and forward,
     /// which are the main panel's (`ShareButton(pinned:)`, `ThreadMenuButton(pinned:)`).
     pub(crate) fn thread_panel_buttons(&mut self, panel: &str, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let thread = self.threads.get(pinned_thread(panel)?).cloned()?;
+        let thread = self.threads.get(pinned_thread(panel)?).map(|t| (**t).clone())?;
         let share = self.website_url.is_some().then(|| self.render_share_button(&thread, cx));
         let more = self.render_more_button(&thread, cx);
         Some(h_flex().flex_none().items_center().children(share).child(more).into_any_element())
@@ -252,7 +252,7 @@ impl Threadbear {
                     self.load_remote_logins(runner, cx);
                 }
                 let composer = self.composer_for(&thread.id, window, cx);
-                let (client, summary) = (self.client.clone(), thread.clone());
+                let (client, summary) = (self.client.clone(), (*thread).clone());
                 // One kept loaded since it was last open shows at once.
                 let pane = match self.kept.take(&thread.id, cx) {
                     Some(pane) => {

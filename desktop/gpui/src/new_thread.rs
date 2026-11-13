@@ -196,7 +196,7 @@ impl Threadbear {
             self.remote.made.insert(thread.id.clone());
         }
         let id = thread.id.clone();
-        self.threads.insert(id.clone(), thread);
+        self.threads.insert(id.clone(), std::sync::Arc::new(thread));
         // The box drops from where it was on the page to its place under
         // the new thread (open_motion.rs).
         if let Some(box_top) = self.opening.box_top.get() {
@@ -332,7 +332,7 @@ impl Threadbear {
     /// first. Paths on that Mac, so nothing here is checked.
     fn remote_folders(&self, runner: &str) -> Vec<String> {
         let default_folder = self.remote.logins.get(runner).map_or_else(String::new, |l| l.defaults.cwd.clone());
-        let mut threads: Vec<&ThreadSummary> = self.threads.values().filter(|t| t.runner_id.as_deref() == Some(runner)).collect();
+        let mut threads: Vec<&ThreadSummary> = self.threads.values().map(|t| &**t).filter(|t| t.runner_id.as_deref() == Some(runner)).collect();
         threads.sort_by_cached_key(|t| std::cmp::Reverse(t.activity_ms()));
         let mut out = Vec::new();
         for folder in std::iter::once(default_folder).chain(threads.into_iter().map(|t| t.cwd.clone())) {

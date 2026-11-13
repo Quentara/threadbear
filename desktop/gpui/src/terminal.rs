@@ -193,7 +193,7 @@ pub(crate) fn thread_deleted(id: &str, cx: &mut App) {
 /// The runner's whole list came back (on connecting): a shell whose thread
 /// isn't in it was deleted while the app wasn't listening, and one whose
 /// thread is archived there goes too (`stopAll(except:)`, `stopArchived`).
-pub(crate) fn list_loaded(threads: &HashMap<String, threadbear_core::inbox::ThreadSummary>, cx: &mut App) {
+pub(crate) fn list_loaded(threads: &HashMap<String, std::sync::Arc<threadbear_core::inbox::ThreadSummary>>, cx: &mut App) {
     let Some(terminals) = terminals(cx) else { return };
     let keys: Vec<TerminalKey> = terminals.read(cx).sessions.keys().cloned().collect();
     let keeping: HashSet<&str> = threads.keys().map(String::as_str).collect();

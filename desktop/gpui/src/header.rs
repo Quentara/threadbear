@@ -470,7 +470,7 @@ impl Threadbear {
                 match res {
                     Ok(v) => {
                         if let Ok(t) = serde_json::from_value::<ThreadSummary>(v["thread"].clone()) {
-                            this.threads.insert(t.id.clone(), t);
+                            this.threads.insert(t.id.clone(), std::sync::Arc::new(t));
                         }
                     }
                     Err(e) => this.show_error(e.message, cx),
@@ -835,10 +835,10 @@ impl Threadbear {
     }
 
     /// The same over a new list of every thread, against the one before it.
-    pub(crate) fn note_failed_accounts(&mut self, before: &std::collections::HashMap<String, ThreadSummary>) {
-        let now: Vec<ThreadSummary> = self.threads.values().cloned().collect();
+    pub(crate) fn note_failed_accounts(&mut self, before: &std::collections::HashMap<String, std::sync::Arc<ThreadSummary>>) {
+        let now: Vec<ThreadSummary> = self.threads.values().map(|t| &**t).cloned().collect();
         for t in &now {
-            self.note_failed_account(before.get(&t.id), t);
+            self.note_failed_account(before.get(&t.id).map(|t| &**t), t);
         }
         let known: std::collections::HashSet<String> = self.threads.keys().cloned().collect();
         self.failed_on_account.retain(|id, _| known.contains(id));
@@ -1283,7 +1283,7 @@ impl Threadbear {
                         }
                         if let Ok(t) = serde_json::from_value::<ThreadSummary>(v["thread"].clone()) {
                             let id = t.id.clone();
-                            this.threads.insert(t.id.clone(), t);
+                            this.threads.insert(t.id.clone(), std::sync::Arc::new(t));
                             this.open(id, window, cx);
                         }
                     }

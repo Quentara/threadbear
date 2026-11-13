@@ -141,7 +141,7 @@ fn picture_card(image: &ImageRef, cx: &App) -> AnyElement {
 }
 
 /// The card for a thread, or None if it's gone (ThreadChipCard.make).
-pub(crate) fn thread_card(thread_id: &str, threads: &HashMap<String, ThreadSummary>, accounts: &[threadbear_core::logins::Account], cx: &App) -> Option<AnyElement> {
+pub(crate) fn thread_card(thread_id: &str, threads: &HashMap<String, Arc<ThreadSummary>>, accounts: &[threadbear_core::logins::Account], cx: &App) -> Option<AnyElement> {
     let thread = threads.get(thread_id)?;
     let title = if thread.title.is_empty() { "Untitled thread" } else { thread.title.as_str() };
     let account = (!thread.account_id.is_empty()).then(|| threadbear_core::logins::short_account_name(&thread.account_id, accounts));
@@ -534,7 +534,7 @@ pub(crate) fn peek_command(app: &Entity<crate::app::Threadbear>, cmd: &serde_jso
 /// leaves the size the same.
 static INDEX: LazyLock<Mutex<Option<(usize, Instant, Arc<ThreadIndex>)>>> = LazyLock::new(|| Mutex::new(None));
 
-pub(crate) fn thread_index(threads: &HashMap<String, ThreadSummary>) -> Arc<ThreadIndex> {
+pub(crate) fn thread_index(threads: &HashMap<String, Arc<ThreadSummary>>) -> Arc<ThreadIndex> {
     let mut cached = INDEX.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((count, at, index)) = cached.as_ref() {
         if *count == threads.len() && at.elapsed() < Duration::from_secs(2) {

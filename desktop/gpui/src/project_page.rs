@@ -27,7 +27,7 @@ impl Threadbear {
     /// The open project's page, or nothing if it's gone.
     pub(crate) fn render_project_page(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(project) = self.open_project().cloned() else { return div().into_any_element() };
-        let threads: Vec<ThreadSummary> = rules::threads_in(&project.id, self.threads.values()).into_iter().cloned().collect();
+        let threads: Vec<ThreadSummary> = rules::threads_in(&project.id, self.threads.values().map(|t| &**t)).into_iter().cloned().collect();
         let header = self.render_page_header(&project, threads.len(), window, cx);
         let mut column = v_flex().w_full().gap(px(30.)).child(header);
         // The projectDecisions experiment: the page is in two tabs, its
@@ -252,7 +252,7 @@ impl Threadbear {
     fn render_parts_section(&mut self, project: &Project, cx: &mut Context<Self>) -> Option<AnyElement> {
         let decisions_on = self.project_decisions_on();
         let parts: Vec<(Project, usize, usize)> = {
-            let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+            let sections = Sections::build(&self.projects.list, self.threads.values().map(|t| &**t), now_ms());
             sections.parts_of(&project.id).iter().map(|s: &&Section| (s.project.clone(), s.threads.len(), if decisions_on { rules::decision_count(&s.threads) } else { 0 })).collect()
         };
         if parts.is_empty() {
@@ -470,7 +470,7 @@ impl Threadbear {
     /// click opens it in Notion; the thread's chip opens the thread.
     fn render_task_card(&mut self, task: &Task, done: bool, n: usize, cx: &mut Context<Self>) -> AnyElement {
         let faint = style::faint_text(cx);
-        let thread = task.thread.as_deref().map(str::to_lowercase).filter(|t| t.chars().count() >= 6).and_then(|t| self.threads.get(&t).or_else(|| self.threads.values().find(|x| x.id.starts_with(&t))).cloned());
+        let thread = task.thread.as_deref().map(str::to_lowercase).filter(|t| t.chars().count() >= 6).and_then(|t| self.threads.get(&t).map(|t| &**t).or_else(|| self.threads.values().map(|t| &**t).find(|x| x.id.starts_with(&t))).cloned());
         let mut meta = h_flex().flex_wrap().gap(px(6.)).items_center().text_size(px(style::size::SMALL)).line_height(px(14.)).text_color(faint);
         let has_meta = !task.who.is_empty() || task.due.is_some() || thread.is_some();
         if !task.who.is_empty() {
