@@ -322,6 +322,17 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
   step "convex typecheck" "$ROOT" npm run convex:typecheck
   step "web typecheck" "$ROOT" npm run web:typecheck
   step "web tests" "$ROOT" npm run web:test
+  # The public site (site/) makes its docs pages from docs/guide.md (and the
+  # experiments list from docs/experiments.md), and its build refuses some
+  # guide content: a section with no icon in site/docs-icons.json, a link
+  # that isn't #slug or https://. Twice on 13 Nov a guide change landed that
+  # it refused, and only the next deploy found out. Plain node, no packages
+  # and no git (--check), well under a second.
+  if needed '^site/|^docs/(guide|experiments)\.md$'; then
+    step "site build" "$ROOT/site" node scripts/build.mjs --check
+  else
+    skip "site build" "nothing the site reads changed"
+  fi
 fi
 if [ "$APP_ONLY" = 0 ]; then
   runner_unit_tests

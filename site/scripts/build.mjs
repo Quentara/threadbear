@@ -13,11 +13,17 @@
 // The docs pages (/docs and /docs/<slug>) aren't in src: scripts/docs.mjs makes them from the
 // repo's docs/guide.md, a page per `## ` section, in the same layout.
 //
+// `node scripts/build.mjs --check` is ./check.sh's: the same build and checks, into a temp folder
+// that's removed after, and without git (a check host's copy of the checkout has no .git), so the
+// proof line's numbers are made up there. Twice on 13 Nov a guide change landed that this build
+// refused (a section with no icon, a link to experiments.md), and only the next deploy found it.
+//
 // It won't build if an em or en dash gets into a page, a {{placeholder}} is left over, a style=""
 // slips in (the CSP blocks it), or a link or image points at a file or #anchor that isn't there.
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { APP_STORE_LIVE, APP_STORE_URL, GITHUB_PUBLIC, GITHUB_URL, LAUNCH_VIDEO_ID, SITE_URL } from "../site.mjs";
@@ -26,7 +32,9 @@ import { changelogPage, readPeople, readReleases } from "./changelog.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const src = join(root, "src");
-const dist = join(root, "dist");
+const CHECK = process.argv.includes("--check");
+const dist = CHECK ? mkdtempSync(join(tmpdir(), "threadbear-site-check-")) : join(root, "dist");
+if (CHECK) process.on("exit", () => rmSync(dist, { recursive: true, force: true }));
 
 if (APP_STORE_LIVE && !/^https:\/\/apps\.apple\.com\/app\/id\d+$/.test(APP_STORE_URL)) {
   throw new Error("APP_STORE_LIVE is on, so site.mjs needs APP_STORE_URL (https://apps.apple.com/app/id<Apple ID>)");
@@ -40,9 +48,9 @@ if (APP_STORE_LIVE && !/^https:\/\/apps\.apple\.com\/app\/id\d+$/.test(APP_STORE
 function git(...args) {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8" }).trim();
 }
-if (git("rev-parse", "--is-shallow-repository") === "true") throw new Error("Build from a full clone: the proof line counts commits");
-const commits = Number(git("rev-list", "--count", "HEAD"));
-const firstDay = new Date(git("log", "--reverse", "--format=%aI").split("\n")[0])
+if (!CHECK && git("rev-parse", "--is-shallow-repository") === "true") throw new Error("Build from a full clone: the proof line counts commits");
+const commits = CHECK ? 1000 : Number(git("rev-list", "--count", "HEAD"));
+const firstDay = (CHECK ? new Date("2026-10-01T12:00:00Z") : new Date(git("log", "--reverse", "--format=%aI").split("\n")[0]))
   .toLocaleDateString("en-AU", { day: "numeric", month: "long", year: "numeric", timeZone: "Australia/Perth" });
 
 /**
@@ -462,4 +470,6 @@ for (const [name, { html }] of built) {
 const urls = [...built.values()].map(({ page }) => page.path).filter(Boolean).sort()
   .map((p) => `  <url><loc>${SITE_URL}${p}</loc></url>`).join("\n");
 writeFileSync(join(dist, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
-console.log(`Built ${pages.length} pages and ${guide.sections.length + 1} docs pages into site/dist (${commits} commits since ${firstDay}).`);
+console.log(CHECK
+  ? `Checked ${pages.length} pages, ${guide.sections.length + 1} docs pages and the changelog: they build.`
+  : `Built ${pages.length} pages and ${guide.sections.length + 1} docs pages into site/dist (${commits} commits since ${firstDay}).`);
