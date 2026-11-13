@@ -122,7 +122,7 @@ impl SidePane {
         body = body.child(div().id(SharedString::from(format!("board-notion-{}", task.id))).absolute().top(px(3.)).right(px(3.)).invisible().group_hover(group.clone(), |s| s.visible()).rounded(px(4.)).bg(p.hover).p(px(2.)).cursor_pointer().tip("Open in Notion").test_support().role(Role::Button).aria_label("Open in Notion")
             .child(icon("arrow.up.forward.square", 11., p.secondary)).on_click(cx.listener(move |_, _, _, cx| { cx.stop_propagation(); crate::files::open_web(&url, cx); })));
         let (mention, mention_thread) = (task.clone(), thread.id.clone());
-        let (menu_task, menu_other, menu_thread) = (task.clone(), other.map(|t| t.id), thread.id.clone());
+        let (menu_task, menu_other, menu_thread) = (task.clone(), other.map(|t| t.id.clone()), thread.id.clone());
         div().id(group.clone()).group(group).relative().rounded(px(6.)).border_1().border_color(p.card_border).bg(cx.theme().muted).hover(move |s| s.bg(p.hover)).cursor_pointer().tip("Mention this card in your message")
             .test_support().role(Role::Button).aria_label(SharedString::from(format!("Board card: {}", task.title)))
             .child(body)
