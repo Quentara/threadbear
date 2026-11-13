@@ -98,7 +98,9 @@ mock runner. Run Rust builds and suites elsewhere (`scripts/remote.sh`):
 scripts/remote.sh cloud -- bash -c 'cd desktop && cargo test -p threadbear-core'
 ```
 
-The file-drop dispatch tests use GPUI's test platform, exposed by `automation`:
+The file-drop dispatch tests use GPUI's test platform, exposed by `automation`.
+The Desktop workflow runs them explicitly on Linux, Mac and Windows. To run
+them on a check host:
 
 ```bash
 scripts/remote.sh cloud -- bash -c 'cd desktop && cargo test -p threadbear-gpui --features automation --test file_drop'
