@@ -123,9 +123,15 @@ pub(crate) struct RowGestures {
     hovered: Option<String>,
     /// When the swipe last moved, for how fast it's going (a flick).
     moved_at: Option<Instant>,
+    /// The row a click last sent off, for the dump.
+    last_slid: Option<String>,
 }
 
 impl RowGestures {
+    pub(crate) fn last_slid(&self) -> Option<&str> {
+        self.last_slid.as_deref()
+    }
+
     /// The pointer's on a row that swipes: a gesture starting now is the
     /// row's to look at too, so a page swipe doesn't hold it back.
     pub(crate) fn pointer_on_swipe_row(&self) -> bool {
@@ -518,6 +524,9 @@ impl Threadbear {
         gestures.swipe.reset();
         gestures.row = None;
         gestures.leaving = Some(Settling { row: id.clone(), action, from: at, at: Instant::now(), plain });
+        if plain {
+            gestures.last_slid = Some(id.clone());
+        }
         cx.notify();
         let (me, window) = (cx.entity().downgrade(), self.main_window);
         cx.spawn(async move |_, cx| {

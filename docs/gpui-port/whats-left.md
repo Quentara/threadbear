@@ -155,10 +155,18 @@ you go.
   (`juice.archiveflight`, `juice.hibernateflight`). A drawn card with a
   transcript's shape, not a picture of the real one, and level, as GPUI can't
   picture or turn a view
-- [ ] The bears and the little animations: the working and waking bears,
-  inbox zero, the message rising from the box,
-  the Librarian's wobble (`juice.*`, `foundation.bear`, `transcript.working`,
-  `transcript.woke`, `transcript.sendlift`, `librarian.picture`)
+- [x] The little animations Mike picked from Swift-beside-GPUI clips on 13
+  Nov: the sidebar's selection sliding, a row archived from its button
+  sliding off, a sent message rising, the send arrow's hop, an arriving card
+  settling in with the done tick drawing on, the activity bar's bounce,
+  sliding square and view settling in, and the Librarian's wobble (a sway, as
+  GPUI can't turn a picture). He passed over the bears (inbox zero, the pane
+  bear, the working, waking and sitting bears, the milestone toast's wave),
+  a finished row's wash and drawn-on tick, and the unread dot's pop
+  (`transcript.sendlift`, `librarian.picture`, `rail.activity`, `card.done`)
+- [ ] The working line's paw moving: he'd rather the paw than the bear, and
+  is picking how it moves from mockups (`transcript.working`)
+- [ ] A row pressing in while the mouse is down: GPUI can't scale a row
 - [x] The Mac's accent colour is followed, and Reduce Motion is read by the
   kit at launch and again when the app comes back to the front
   (`foundation.theme`, `foundation.reducemotion`).

@@ -1415,6 +1415,8 @@ pub(crate) struct CardArrival {
     since: Option<Instant>,
     /// The card settling in now, and when it arrived.
     arrived: Option<(i64, Instant)>,
+    /// The last card seen arriving, for the dump.
+    pub(crate) last: Option<i64>,
 }
 
 impl CardArrival {
@@ -1424,7 +1426,7 @@ impl CardArrival {
         let now = Instant::now();
         if self.thread.as_deref() != thread || self.since.is_none() {
             // A thread just opened: its card was already there.
-            *self = CardArrival { thread: thread.map(str::to_owned), seq, since: Some(now), arrived: None };
+            *self = CardArrival { thread: thread.map(str::to_owned), seq, since: Some(now), arrived: None, last: None };
             return None;
         }
         if self.seq != seq {
@@ -1432,6 +1434,9 @@ impl CardArrival {
             // Not in the first moment after opening, while its events load.
             let settled_in = self.since.is_some_and(|since| now.duration_since(since) > Duration::from_millis(600));
             self.arrived = seq.filter(|_| settled_in).map(|seq| (seq, now));
+            if let Some((seq, _)) = self.arrived {
+                self.last = Some(seq);
+            }
         }
         let (seq_now, at) = self.arrived?;
         let going = threadbear_core::juice::card_settling(at.elapsed(), reduce) || at.elapsed() < threadbear_core::juice::TICK_DRAW_END;

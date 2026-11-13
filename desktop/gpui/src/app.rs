@@ -1556,6 +1556,13 @@ impl Threadbear {
         });
         dump["milestoneNote"] = json!(self.milestone.note.map(threadbear_core::milestones::title));
         dump["systemAccent"] = json!(Rgba::from(crate::style::control_accent(cx)));
+        // The small motions, as last seen (juice.feature): the row a click
+        // last slid off (row_swipe.rs), and the card that last arrived in
+        // the box while it was on screen (composer_card.rs).
+        dump["juice"] = json!({
+            "slidOff": self.sidebar.gestures.last_slid(),
+            "cardArrived": self.composer(cx).and_then(|c| c.read(cx).card_arrival.last),
+        });
         // ⌘K's box, while it's up (open_anything.rs).
         dump["anything"] = self.open_anything_dump(cx);
         // The last time the panels moved (a panel opened or closed): where

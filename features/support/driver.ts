@@ -130,6 +130,9 @@ export type Dump = {
    * "still", under the archive flight), and from the new-thread page, how
    * far its box dropped, negative for down (GPUI only: open_motion.rs). */
   opening?: { thread: string; how: string; boxDrop: number | null } | null;
+  /** The small motions as last seen (GPUI only): the row a click last slid
+   * off, and the card that last arrived while its thread was on screen. */
+  juice?: { slidOff: string | null; cardArrived: number | null } | null;
   /** The last time the panels moved with their glide: where each panel was
    * drawn and where it is (or, in the GPUI app, is going), by panel
    * ("thread", "terminal"), and whether it's still moving (GPUI only). */
