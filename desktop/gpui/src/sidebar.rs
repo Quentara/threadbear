@@ -508,6 +508,7 @@ impl Threadbear {
         if let Some(t) = self.threads.get_mut(id) {
             change(t);
         }
+        let guess = self.threads.get(id).cloned();
         let mut params = params;
         params["threadId"] = json!(id);
         let client = self.client.clone();
@@ -518,9 +519,7 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    if let Some(before) = before {
-                        this.threads.insert(before.id.clone(), before);
-                    }
+                    threadbear_core::inbox::roll_back(&mut this.threads, before, guess.as_ref());
                 }
                 cx.notify();
             })
@@ -690,6 +689,7 @@ impl Threadbear {
             t.snoozed_until_restart = None;
             t.wake_when = Some(json!({ "said": said, "pending": true }));
         }
+        let guess = self.threads.get(&id).cloned();
         self.leave_selection(&id, next, window, cx);
         let client = self.client.clone();
         let params = json!({ "threadId": id, "said": said });
@@ -698,9 +698,7 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    if let Some(before) = before {
-                        this.threads.insert(before.id.clone(), before);
-                    }
+                    threadbear_core::inbox::roll_back(&mut this.threads, before, guess.as_ref());
                 }
                 cx.notify();
             })

@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ThreadSummary {
     pub id: String,
@@ -95,7 +95,7 @@ pub struct ThreadSummary {
     pub panel_request: Option<crate::panel_requests::PanelRequest>,
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct OpenAsk {
     pub action: String,
@@ -114,6 +114,22 @@ pub struct OpenAsk {
     pub links: Option<Vec<Value>>,
 }
 
+/// Puts back the row a failed optimistic change replaced (`before`), but
+/// only while the row is still the guess it made (`guess`): a thread.updated
+/// or a reconnect's list that came meanwhile is newer than both, and putting
+/// the click-time row over it showed a finished thread as running, or took
+/// its card away, until its next update (13 Nov 2026, the implicit state
+/// machines scan; the Swift app's `threads[threadId] == guess`). Says
+/// whether it put it back.
+pub fn roll_back(threads: &mut HashMap<String, ThreadSummary>, before: Option<ThreadSummary>, guess: Option<&ThreadSummary>) -> bool {
+    let Some(before) = before else { return false };
+    if threads.get(&before.id) != guess {
+        return false;
+    }
+    threads.insert(before.id.clone(), before);
+    true
+}
+
 impl OpenAsk {
     /// Where it's to be done, in plain words (`plainWhere`).
     pub fn where_text(&self) -> Option<String> {
@@ -127,7 +143,7 @@ fn carry_on_by_default() -> bool {
 
 /// One of a thread's projects (`ThreadProject`): who put it there, and the
 /// librarian's reason, behind the project's ⓘ in Highlights.
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Project {
     pub id: String,
@@ -789,5 +805,25 @@ mod tests {
         assert_eq!(model_label("codex", Some("gpt-6.1-sol")), "GPT-6.1 Sol");
         assert_eq!(model_label("claude", None), "Claude");
         assert_eq!(model_label("codex", Some("something-else")), "something-else");
+    }
+
+    // A star that fails rolls back; one that fails after a thread.updated
+    // brought the thread's newer state leaves that state standing.
+    #[test]
+    fn a_failed_change_rolls_back_only_while_the_row_is_still_its_guess() {
+        let before = ThreadSummary { id: "t".into(), status: "running".into(), ..Default::default() };
+        let mut guess = before.clone();
+        guess.starred_at = Some("2026-11-13T00:00:00Z".into());
+        let mut threads: HashMap<String, ThreadSummary> = HashMap::new();
+        threads.insert("t".into(), guess.clone());
+        assert!(roll_back(&mut threads, Some(before.clone()), Some(&guess)));
+        assert_eq!(threads["t"], before);
+
+        threads.insert("t".into(), guess.clone());
+        let mut newer = guess.clone();
+        newer.status = "idle".into();
+        threads.insert("t".into(), newer.clone());
+        assert!(!roll_back(&mut threads, Some(before), Some(&guess)));
+        assert_eq!(threads["t"], newer, "the newer row stands");
     }
 }

@@ -1260,6 +1260,7 @@ impl Threadbear {
         if let Some(t) = self.threads.get_mut(&id) {
             change(t);
         }
+        let guess = self.threads.get(&id).cloned();
         // A folder, login or pool change isn't guessed, so its chip spins.
         let busy = if params.get("cwd").is_some() {
             Some(format!("movingFolder/{id}"))
@@ -1284,9 +1285,7 @@ impl Threadbear {
                 }
                 if let Err(e) = res {
                     this.show_error(e.message, cx);
-                    if let Some(before) = before {
-                        this.threads.insert(before.id.clone(), before);
-                    }
+                    threadbear_core::inbox::roll_back(&mut this.threads, before, guess.as_ref());
                 }
                 cx.notify();
             })
