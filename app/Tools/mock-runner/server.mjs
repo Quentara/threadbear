@@ -749,6 +749,26 @@ async function dispatch(client, method, p) {
       setTimeout(() => fakeTurn(threadId, p.text, p.images ?? []), 10);
       return { thread: summary };
     }
+    // A fork's own Swift changes (protocol "Your changes to the old app"),
+    // as mock.updates set them.
+    case 'swiftChanges.list':
+      return { swiftChanges: updates.swiftChanges ?? { state: 'off', changes: [] } };
+    case 'swiftChanges.port':
+    case 'swiftChanges.dismiss': {
+      const sc = updates.swiftChanges ?? { state: 'off', changes: [] };
+      const c = sc.changes.find((x) => typeof p.commit === 'string' && p.commit.length >= 7 && x.commit.startsWith(p.commit));
+      if (!c) throw rpcError(-32602, "That change isn't on the list (it may be ported already).");
+      let threadId = c.threadId;
+      if (method === 'swiftChanges.dismiss') sc.changes = sc.changes.filter((x) => x !== c);
+      else if (!threadId) {
+        const made = await dispatch(client, 'threads.create', { text: `Rebuild ${c.commit} in the new app`, title: `Rebuild "${c.subject.slice(0, 60)}" in the new app`, cwd: sc.checkout });
+        threadId = c.threadId = made.thread.id;
+      }
+      updates.swiftChanges = sc;
+      if (!sc.changes.length) delete updates.swiftChanges;
+      broadcast('runner.updates', { updates });
+      return { swiftChanges: sc, ...(method === 'swiftChanges.port' ? { threadId } : {}) };
+    }
     case 'threads.send': {
       const t = need(p.threadId);
       // A message declines any secret card still open, first (docs/
@@ -1635,6 +1655,8 @@ async function dispatch(client, method, p) {
       if (p.launcherChanged) updates.launcherChanged = true;
       // Mike's releases (protocol "Mike's releases"), as given.
       if (p.upstream && typeof p.upstream === 'object') updates.upstream = p.upstream;
+      // A fork's own Swift changes (protocol "Your changes to the old app").
+      if (p.swiftChanges && typeof p.swiftChanges === 'object') updates.swiftChanges = p.swiftChanges;
       const old = new Set(updates.oldRunners.flatMap((r) => r.threads ?? []));
       for (const t of threads.values()) {
         const was = Boolean(t.summary.onOldRunner);

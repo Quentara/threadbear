@@ -18,6 +18,7 @@ import { Peers, PrimaryLink, ThreadRouter, drainChildrenName, peersElsewhere, ph
 import { RunnerUpdater, releaseTreeAt } from './update.ts';
 import { RELEASE_NOTES_SYSTEM, SETTLE_MS, Upstream } from './upstream.ts';
 import { BringIn } from './bring-in.ts';
+import { SwiftChanges } from './swift-changes.ts';
 import { UpdateFixer } from './fix-update.ts';
 import { followOriginOn } from './follow-origin.ts';
 import { bringInSetting } from './settings.ts';
@@ -772,12 +773,28 @@ async function main(): Promise<void> {
     // A release signed with a Touch ID key waits for Mike at the Mac.
     atMac: async () => isAtMac(true, await hidIdleMs()),
     onChange: () => publishUpdates(),
-    onChecked: (status) => void bringIn.consider(status),
+    onChecked: (status) => {
+      void bringIn.consider(status);
+      // A fetch may have brought in releases with their changes.
+      void swiftChanges.scan();
+    },
     // Only asked on Mike's runner, once a day as it tags a release.
     writeNotes: async (commits) => {
       const res = await models.generate({ feature: 'release-notes', cwd: thisRelease?.checkout, system: RELEASE_NOTES_SYSTEM, prompt: commits, maxTokens: 800, strong: true });
       return res.ok ? res.value : undefined;
     },
+  });
+  // A fork's own changes to the old Swift app, for rebuilding in the GPUI
+  // one (swift-changes.ts): a thread the first time the GPUI app connects,
+  // and the Updates panel's "Not in the new app yet".
+  const swiftChanges = new SwiftChanges({
+    home: cfg.home,
+    checkout: thisRelease?.checkout,
+    clock: realClock,
+    log,
+    start: (r) => startOwnThread(runner, r, thisRelease?.checkout),
+    open: openThread,
+    onChange: () => publishUpdates(),
   });
   // runner.updates: sent when what hello's `updates` says changes.
   let lastUpdates = '';
@@ -796,6 +813,8 @@ async function main(): Promise<void> {
     if (behind.length) out.behindRunners = behind;
     const up = upstream.status();
     if (up.state !== 'off' || up.published) out.upstream = up;
+    const swift = swiftChanges.status();
+    if (swift.changes.length) out.swiftChanges = swift;
     return out;
   };
   function publishUpdates(): void {
@@ -843,6 +862,23 @@ async function main(): Promise<void> {
   // another Mac (files.ts).
   Object.assign(methods, filesMethods());
   methods['upstream.check'] = async () => ({ upstream: await upstream.check() });
+  // The Updates panel's "Not in the new app yet" (docs/protocol.md, "Your
+  // changes to the old app").
+  const swiftCommit = (p: unknown): string => {
+    const c = (p as { commit?: unknown } | undefined)?.commit;
+    if (typeof c !== 'string' || !/^[0-9a-f]{7,40}$/.test(c)) throw new RpcError(ErrorCode.badParams, 'commit must be a commit id');
+    return c;
+  };
+  const swiftCall = async <T>(f: () => Promise<T>): Promise<T> => {
+    try {
+      return await f();
+    } catch (e) {
+      throw new RpcError(ErrorCode.badParams, e instanceof Error ? e.message : String(e));
+    }
+  };
+  methods['swiftChanges.list'] = async () => ({ swiftChanges: await swiftChanges.scan() });
+  methods['swiftChanges.port'] = (p) => swiftCall(() => swiftChanges.port(swiftCommit(p)));
+  methods['swiftChanges.dismiss'] = (p) => swiftCall(() => swiftChanges.dismiss(swiftCommit(p), (p as { undo?: unknown } | undefined)?.undo === true));
   const codexWarning = missingCodex(updates.codexBinary(), cfg);
   if (codexWarning) log.warn('codex CLI not found', { path: updates.codexBinary() });
   // Other runners' threads through the backend, for the Mac app (relay.ts).
@@ -1071,6 +1107,7 @@ async function main(): Promise<void> {
     callerOfPort: (port) => threadOfPort(port, { registry, known: (id) => runner.has(id) || peers.owns(id), log }),
     updates: () => (draining ? undefined : runnerUpdates()),
     appHello: (build, app) => appRestarts.appHello(build, app),
+    desktopHello: () => void swiftChanges.desktopHello().catch((e) => log.warn('swift changes: first look failed', { error: String(e) })),
     helloNotices: () => {
       // Like a missing claude: said to every client, until it's there.
       const noCodex = missingCodex(updates.codexBinary(), cfg);
@@ -1126,6 +1163,7 @@ async function main(): Promise<void> {
     restarter.proven();
     updater.start();
     upstream.start();
+    swiftChanges.start();
   });
   // Only once listening: a runner that can't listen exits, and the next
   // one should still find the resume.
@@ -1156,6 +1194,7 @@ async function main(): Promise<void> {
     cancelMarkGood();
     updater.stop();
     upstream.stop();
+    swiftChanges.stop();
     stopHousekeeping();
     log.info('runner stopping', { signal });
     // Whatever stopped it, a pending restart has now happened. A draining
@@ -1218,6 +1257,7 @@ async function main(): Promise<void> {
       cancelMarkGood();
       updater.stop();
       upstream.stop();
+      swiftChanges.stop();
       stopHousekeeping();
       scheduler.stop();
       librarian.stop();

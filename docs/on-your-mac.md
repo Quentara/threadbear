@@ -238,8 +238,8 @@ File references are where to look.
   `danger-full-access`). `"defaults": { "permissionMode": ... }` in
   `runner.json` (`"full"`, `"auto"` or `"ask"`) sets it, and each thread
   can pick its own. The threads the runner starts by itself (bringing in
-  Mike's releases and fixing a failed update to main, both below, and a
-  note about this Mac) start on that default too
+  Mike's releases, fixing a failed update to main and rebuilding your
+  changes to the old Mac app, all below, and a note about this Mac) start on that default too
   (`runner/src/own-threads.ts`); on Ask, or Codex's Auto, what they can't
   do without a yes waits on a card for you.
 - **Your phone and browser can drive the Mac.** A paired iPhone or a
@@ -342,6 +342,16 @@ File references are where to look.
   `"releases": { "bringIn": 14 }` (or `"important"`, or `"off"`) in
   `runner.json`, changes it. It keeps what it last did in
   `runner/bring-in.json` in the data folder.
+- **Your changes to the old Mac app** (`runner/src/swift-changes.ts`): a
+  couple of minutes after the runner starts, then hourly, after each
+  release check and when the new desktop app connects, it reads your
+  checkout's git history (`git log`, nothing fetched or changed) for your
+  own commits to `app/` and `dock/` that Mike's releases don't have, for
+  the Updates panel's Not in the new app yet. The first time the new
+  desktop app connects and there are some, it starts one thread (on your
+  default mode) that asks before rebuilding them; never again after that.
+  What it did and what you dismissed are in `runner/swift-changes.json` in
+  the data folder. In Mike's own copy it finds nothing.
 - **CLI updates** (`runner/src/updates/`): every hour it checks for new
   Claude Code and Codex versions and installs them. Claude Code is the one
   at `~/.local/bin/claude`, else the first `claude` on the runner's PATH

@@ -42,6 +42,67 @@ pub struct RunnerUpdates {
     pub web_runtime_problem: Option<String>,
     /// The other runners saying that of themselves (the main Mac's runner).
     pub behind_runners: Vec<BehindRunner>,
+    /// A fork's own changes to the old Swift app not yet rebuilt in this one
+    /// (protocol "Your changes to the old app"). Empty while there are none.
+    pub swift_changes: Vec<SwiftChange>,
+}
+
+/// One of someone's own commits to the old Swift app.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SwiftChange {
+    pub commit: String,
+    pub short: String,
+    pub subject: String,
+    /// The committer's date, ISO.
+    pub date: String,
+    pub files: Vec<String>,
+    pub more_files: i64,
+    /// An open thread rebuilding it.
+    pub thread_id: Option<String>,
+}
+
+impl SwiftChange {
+    fn decode(v: &Value) -> Option<SwiftChange> {
+        let commit = v["commit"].as_str().filter(|c| !c.is_empty())?.to_owned();
+        Some(SwiftChange {
+            short: v["short"].as_str().map_or_else(|| commit.chars().take(7).collect(), str::to_owned),
+            commit,
+            subject: v["subject"].as_str().unwrap_or("").to_owned(),
+            date: v["date"].as_str().unwrap_or("").to_owned(),
+            files: strings(&v["files"]),
+            more_files: v["moreFiles"].as_i64().unwrap_or(0),
+            thread_id: text(v, "threadId").filter(|t| !t.is_empty()),
+        })
+    }
+}
+
+/// The "Not in the new app yet" section's line above its list.
+pub fn swift_changes_line(n: usize) -> String {
+    if n == 1 {
+        "You changed the old app in 1 place that isn't in this one yet. Port it to rebuild it here, or dismiss it.".to_owned()
+    } else {
+        format!("You changed the old app in {n} places that aren't in this one yet. Port each to rebuild it here, or dismiss it.")
+    }
+}
+
+/// Under a change's subject: its day, short commit and files.
+pub fn swift_change_detail(c: &SwiftChange) -> String {
+    // The day where they made it, from the date's own offset.
+    let day = DateTime::parse_from_rfc3339(&c.date).ok().map(|d| d.format("%-d %b").to_string());
+    let mut files = c.files.iter().map(|f| f.rsplit('/').next().unwrap_or(f).to_owned()).collect::<Vec<_>>();
+    if files.len() > 3 {
+        let more = files.len() as i64 - 3 + c.more_files;
+        files.truncate(3);
+        files.push(format!("{more} more"));
+    } else if c.more_files > 0 {
+        files.push(format!("{} more", c.more_files));
+    }
+    let mut parts = day.into_iter().collect::<Vec<_>>();
+    parts.push(c.short.clone());
+    if !files.is_empty() {
+        parts.push(files.join(", "));
+    }
+    parts.join(" · ")
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -121,6 +182,7 @@ impl RunnerUpdates {
                 .flatten()
                 .filter_map(|b| Some(BehindRunner { name: b["name"].as_str()?.to_owned(), problem: b["problem"].as_str()?.to_owned() }))
                 .collect(),
+            swift_changes: v["swiftChanges"]["changes"].as_array().into_iter().flatten().filter_map(SwiftChange::decode).collect(),
         })
     }
 
@@ -746,6 +808,25 @@ mod tests {
     use super::*;
     use chrono::{FixedOffset, Local};
     use serde_json::json;
+
+    #[test]
+    fn swift_changes_from_a_fork() {
+        let u = RunnerUpdates::decode(&json!({ "state": "idle", "swiftChanges": { "state": "ready", "checkout": "/Users/me/threadbear", "changes": [
+            { "commit": "abc1234def", "short": "abc1234", "subject": "Orange dock badge", "date": "2026-11-02T03:00:00+08:00", "files": ["dock/Sources/Badge.swift"], "threadId": "t1" },
+            { "commit": "0123456789", "subject": "Bigger sidebar font", "date": "2026-10-20T10:00:00Z", "files": ["app/A.swift", "app/B.swift", "app/C.swift", "app/D.swift"], "moreFiles": 2 },
+            { "subject": "no commit" },
+            "junk"
+        ], "somethingNew": 1 } })).unwrap();
+        assert_eq!(u.swift_changes.len(), 2);
+        assert_eq!(u.swift_changes[0].thread_id.as_deref(), Some("t1"));
+        assert_eq!(u.swift_changes[1].short, "0123456");
+        assert_eq!(swift_change_detail(&u.swift_changes[0]), "2 Nov · abc1234 · Badge.swift");
+        assert_eq!(swift_change_detail(&u.swift_changes[1]), "20 Oct · 0123456 · A.swift, B.swift, C.swift, 3 more");
+        assert_eq!(swift_changes_line(1), "You changed the old app in 1 place that isn't in this one yet. Port it to rebuild it here, or dismiss it.");
+        assert!(swift_changes_line(2).starts_with("You changed the old app in 2 places that aren't"));
+        // Mike's own runner, or an older one, says nothing.
+        assert!(RunnerUpdates::decode(&json!({ "state": "idle" })).unwrap().swift_changes.is_empty());
+    }
 
     /// The mock runner's two CLIs (app/Tools/mock-runner/server.mjs).
     fn mock_clis() -> Vec<CliStatus> {

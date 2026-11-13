@@ -1909,6 +1909,20 @@ not sent. It only fills in what it hasn't got of its own, does it once, and
 a note at the top says what came across. The tour and Finish setting up
 aren't in it yet: its Help menu says so.
 
+If your copy has changes of your own to the old Mac app (commits to `app/`
+or `dock/` that Mike's copy doesn't have), they can't come across by
+themselves: the new app is different code, so each has to be rebuilt in it.
+The first time the new app connects, Threadbear looks for them, and if there
+are any it starts one thread that tells you in plain words what you changed
+and asks whether to rebuild them. It changes nothing until you say yes, then
+rebuilds each one in `desktop/` and shows you the new app before and after.
+Whatever's still to do is in the Updates panel under Not in the new app
+yet: Port this starts a thread for that one change, and Dismiss leaves it
+out. A change leaves the list once a commit that rebuilds it says so with a
+`Ports: <commit>` line at the end of its message (the threads add one), or
+once you dismiss it. In a copy with no changes of its own there's nothing
+to see.
+
 ### Light and dark
 
 Threadbear follows your Mac's appearance (System Settings > Appearance)

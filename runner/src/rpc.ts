@@ -148,6 +148,8 @@ export type RpcServerOptions = {
   updates?: () => unknown;
   // The Mac app's hello with its build (docs/protocol.md, "App restarts").
   appHello?: (build: { commit: string; short: string; tree: string }, app: 'mac' | 'desktop') => void;
+  // Any hello from the GPUI app, built or not (swift-changes.ts's first look).
+  desktopHello?: () => void;
   // What a connection that belongs to a thread may do (rpc-gate.ts).
   gate?: CallerGate;
   // The thread whose CLI a client port's process runs under, if any
@@ -568,6 +570,7 @@ export class RpcServer {
           && typeof build.commit === 'string' && typeof build.short === 'string' && typeof build.tree === 'string' && build.tree) {
           this.opts.appHello?.({ commit: build.commit, short: build.short, tree: build.tree }, app);
         }
+        if (app === 'desktop') this.opts.desktopHello?.();
         const updates = this.opts.updates?.();
         // The experiments on here, for the app to show what's theirs (the
         // Move to menu). Read at each hello: a switch takes effect on the

@@ -46,6 +46,8 @@ pub(crate) struct UpdatesPanelState {
     pub(crate) busy: HashSet<String>,
     /// Bring Them In or Let's Discuss is starting its thread.
     pub(crate) bringing_in: bool,
+    /// Port this on its way, by commit.
+    pub(crate) porting: HashSet<String>,
     /// The launcher's command was copied a moment ago (counts the copies, so
     /// an older one's timer leaves a newer one's word alone).
     copied: Option<u64>,
@@ -265,6 +267,70 @@ impl Threadbear {
         .detach();
     }
 
+    /// Port this: the runner starts a thread to rebuild that one change in
+    /// this app (or names the one already on it), and it opens. The button
+    /// spins and takes no clicks until then.
+    fn port_swift_change(&mut self, commit: String, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.updates_panel.porting.insert(commit.clone()) {
+            return;
+        }
+        cx.notify();
+        let client = self.client.clone();
+        cx.spawn_in(window, async move |this, cx| {
+            let res = call(client, "swiftChanges.port", json!({ "commit": commit })).await;
+            this.update_in(cx, |t, window, cx| {
+                t.updates_panel.porting.remove(&commit);
+                match res {
+                    Ok(v) => {
+                        t.take_swift_changes(&v["swiftChanges"]);
+                        match v["threadId"].as_str() {
+                            Some(id) if !id.is_empty() => t.open(id.to_owned(), window, cx),
+                            _ => t.show_error("The runner didn't say what thread it made.".to_owned(), cx),
+                        }
+                    }
+                    Err(e) => t.show_error(e.message, cx),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Dismiss: off the list at once, back with the error if the runner
+    /// refuses.
+    fn dismiss_swift_change(&mut self, commit: String, cx: &mut Context<Self>) {
+        let Some(runner) = self.updates_panel.runner.as_mut() else { return };
+        let before = runner.swift_changes.clone();
+        runner.swift_changes.retain(|c| c.commit != commit);
+        cx.notify();
+        let client = self.client.clone();
+        cx.spawn(async move |this, cx| {
+            let res = call(client, "swiftChanges.dismiss", json!({ "commit": commit })).await;
+            this.update(cx, |t, cx| {
+                match res {
+                    Ok(v) => t.take_swift_changes(&v["swiftChanges"]),
+                    Err(e) => {
+                        if let Some(r) = t.updates_panel.runner.as_mut() {
+                            r.swift_changes = before;
+                        }
+                        t.show_error(e.message, cx);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// A request's answer, ahead of the `runner.updates` that follows it.
+    fn take_swift_changes(&mut self, v: &Value) {
+        if let (Some(runner), true) = (self.updates_panel.runner.as_mut(), v.is_object()) {
+            runner.swift_changes = RunnerUpdates::decode(&json!({ "swiftChanges": v })).map(|u| u.swift_changes).unwrap_or_default();
+        }
+    }
+
     // What it shows.
 
     /// The command for a changed launch.mjs, from the checkout the runner
@@ -298,6 +364,11 @@ impl Threadbear {
                 content.extend(self.render_release(&release, cx));
             }
             sections.push(section("From Mike", content, cx));
+        }
+        // A fork's own Swift changes, to rebuild here.
+        let swift = self.updates_panel.runner.as_ref().map(|r| r.swift_changes.clone()).unwrap_or_default();
+        if !swift.is_empty() {
+            sections.push(section("Not in the new app yet", self.render_swift_changes(&swift, cx), cx));
         }
         // The CLIs' versions and whether they update by themselves. In Usage
         // until 28 Oct; they're updates, not room.
@@ -473,6 +544,38 @@ impl Threadbear {
         out
     }
 
+    /// Each change: its subject, when and what, and Port this and Dismiss,
+    /// or a link to the thread already rebuilding it.
+    fn render_swift_changes(&mut self, changes: &[rules::SwiftChange], cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let (fg, secondary) = (style::label_text(cx), style::secondary_text(cx));
+        let mut out = vec![text_line(rules::swift_changes_line(changes.len()), 12., fg).into_any_element()];
+        for c in changes {
+            let commit = c.commit.clone();
+            let mut row = v_flex()
+                .gap(px(3.))
+                .pt(px(2.))
+                .child(text_line(c.subject.clone(), 12., fg).line_clamp(2))
+                .child(text_line(rules::swift_change_detail(c), 11., secondary).truncate());
+            if let Some(id) = c.thread_id.clone() {
+                let title = format!("Being rebuilt in {}", self.thread_title(&id));
+                row = row.child(text_button(SharedString::from(format!("updates-swift-open-{commit}")), title, "Open the thread rebuilding this change", 11., true, false, cx, move |t, window, cx| t.open(id.clone(), window, cx)));
+            } else {
+                let busy = self.updates_panel.porting.contains(&commit);
+                let (port, dismiss) = (commit.clone(), commit.clone());
+                row = row.child(button_row(
+                    vec![
+                        push_button(SharedString::from(format!("updates-swift-port-{commit}")), "Port this", "Start a thread that rebuilds this change in the new app. It asks before changing anything.", true, busy, cx, move |t, window, cx| t.port_swift_change(port.clone(), window, cx)),
+                        push_button(SharedString::from(format!("updates-swift-dismiss-{commit}")), "Dismiss", "Leave this change out of the new app and off this list", true, false, cx, move |t, _, cx| t.dismiss_swift_change(dismiss.clone(), cx)),
+                    ],
+                    false,
+                    cx,
+                ));
+            }
+            out.push(row.into_any_element());
+        }
+        out
+    }
+
     /// `CliSection`: each CLI's row, then when the runner last looked and
     /// Check now.
     fn render_clis(&mut self, cx: &mut Context<Self>) -> AnyElement {
@@ -616,6 +719,19 @@ impl Threadbear {
                     lines.extend(group.into_iter().map(|l| format!("  {l}")));
                 }
                 lines.push("[Bring Them In] [Let's Discuss]".to_owned());
+            }
+        }
+        let swift = self.updates_panel.runner.as_ref().map(|r| r.swift_changes.as_slice()).unwrap_or_default();
+        if !swift.is_empty() {
+            lines.push("# Not in the new app yet".to_owned());
+            lines.push(rules::swift_changes_line(swift.len()));
+            for c in swift {
+                lines.push(format!("  {} ({})", c.subject, rules::swift_change_detail(c)));
+                lines.push(match &c.thread_id {
+                    Some(id) => format!("  > Being rebuilt in {}", self.thread_title(id)),
+                    None if self.updates_panel.porting.contains(&c.commit) => "  [Port this: starting] [Dismiss]".to_owned(),
+                    None => "  [Port this] [Dismiss]".to_owned(),
+                });
             }
         }
         lines.push("# CLIs".to_owned());

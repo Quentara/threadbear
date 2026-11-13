@@ -1335,6 +1335,9 @@ type RunnerUpdates = {
   // Mike's releases, for a fork (below). Left out while off, except on
   // Mike's own runner once it has tagged one.
   upstream?: UpstreamStatus
+  // A fork's own changes to the old Swift app not yet rebuilt in the GPUI
+  // one ("Your changes to the old app", below). Left out while there are none.
+  swiftChanges?: SwiftChanges
 }
 ```
 
@@ -1441,6 +1444,52 @@ main's tip as `release/<local date>` (SSH-signed, its message the subjects
 since the last release) and pushes it to origin, when there's no tag for
 today, main has moved since the last one, main's tip is an hour old, and the
 runner it's running is main's runner/, marked good and up for an hour.
+
+### Your changes to the old app
+
+Someone's fork may have changed the Swift Mac app (`app/`, `dock/`) before
+it froze. The GPUI app is different code, so those changes can only be
+rebuilt in `desktop/`, not copied (`runner/src/swift-changes.ts`).
+
+Theirs means a commit on the checkout's `main` that touches `app/` or
+`dock/` outside what the GPUI app still uses from there
+(`scripts/swift-freeze.sh --gpui-shared`), isn't a merge, isn't reachable
+from upstream (`refs/threadbear/upstream/*` and `refs/remotes/upstream/main`),
+and doesn't share its author, author date and subject with one of
+upstream's (a cherry-pick of Mike's, or a fix of theirs he took). In a copy
+whose `origin` is mikecann/threadbear, or with nothing of upstream's to
+compare with, it's `off` and finds nothing. A change is done once a commit
+on `main` that upstream doesn't have carries a `Ports: <commit>` trailer
+naming it (seven or more hex digits), or once it's dismissed.
+
+```ts
+type SwiftChanges = {
+  state: "off" | "ready" | "failed"
+  reason?: string     // off and failed: why
+  checkout?: string
+  changes: {          // newest first, at most 100
+    commit: string; short: string; subject: string
+    date: string      // the committer's, ISO
+    files: string[]   // its files in app/ and dock/, at most 12
+    moreFiles?: number
+    threadId?: string // an open thread rebuilding it
+  }[]
+}
+```
+
+The first `hello` from `client: "threadbear-desktop"` on a runner looks,
+once (`<home>/runner/swift-changes.json` records it): when there are
+changes it starts one thread in the checkout, titled "Bring your changes
+to the new app", `startedBy` `{ kind: "runner", label: "Threadbear" }`, on
+the install's default mode, that says in plain words what they changed and
+asks before rebuilding anything. Later hellos look again (at most once a
+minute), as do an hourly timer and each check for Mike's releases.
+
+| Request | Params | Result |
+|---|---|---|
+| `swiftChanges.list` | `{}` | `{ swiftChanges: SwiftChanges }`, after looking again |
+| `swiftChanges.port` | `{ commit }` | `{ threadId, swiftChanges }`: starts a thread to rebuild that one change, or returns the open one already on it. `-32602` for a commit not on the list |
+| `swiftChanges.dismiss` | `{ commit, undo?: true }` | `{ swiftChanges }`: leaves it off the list from now on, or with `undo` puts it back |
 
 "Pending" for a client means `building`, `waiting`, any `oldRunners`, or
 `launcherChanged`; `failed` is worth a look too, and `followProblem` or

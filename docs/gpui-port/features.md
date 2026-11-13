@@ -364,6 +364,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `connectors.panel` | Connectors panel | Services, Connect, check again | Drawn. | build | S | `ConnectorsPanel`, `ConnectorsModel`, `ConnectorsText` |
 | `updates.panel` | Updates panel | App, runner, CLIs, From Mike, Bring Them In, Discuss | Drawn. | build | M | `UpdatesPanel`, `UpdatesText` |
 | `updates.popover` | Updates popover | Right-click the Updates icon: the app's update in a line, with Restart to Update once it's ready (Return takes it) or Show the Log once a build failed | Drawn popover beside the icon. | build | S | `UpdatesPanel` (`AppUpdatePopover`) |
+| `updates.swiftchanges` | Not in the new app yet | A fork's own changes to the old Swift app not yet rebuilt here (protocol "Your changes to the old app"): each with its day, commit and files, Port this (a thread that rebuilds it, then opens) and Dismiss, or a link to the thread already on it | Drawn section in the Updates panel. The port's own: the Swift app has nothing to rebuild. | build | S | none |
 | `pocket.phoneonly` | Pocket and phone-only items | Not on the Mac | Not ported: these are phone features. | drop | none | none |
 
 ## 15. Settings

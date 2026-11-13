@@ -31,6 +31,22 @@ Feature: The Updates panel
     When I press "Start a thread that merges Mike's release into your main" in the Updates panel
     Then a thread called "Bring in Mike's release of 10 Nov" opens
 
+  # Someone's fork with changes of their own to the old Swift app (protocol
+  # "Your changes to the old app"). The Swift app has nothing to rebuild.
+  @updates.swiftchanges @swift-pending
+  Scenario: My own changes to the old app are listed, and Port this starts a thread for one
+    When my copy has 2 changes of its own to the old app
+    And I open the Updates panel
+    Then the Updates panel lists "You changed the old app in 2 places that aren't in this one yet. Port each to rebuild it here, or dismiss it."
+    And the Updates panel lists "  Orange dock badge (2 Nov · abc1234 · Badge.swift)"
+    And the Updates panel lists "  Bigger sidebar font (20 Oct · 0123456 · Sidebar.swift)"
+    # A press goes to the last button with that tip: the second change's.
+    When I press "Leave this change out of the new app" in the Updates panel
+    Then the Updates panel lists "You changed the old app in 1 place that isn't in this one yet. Port it to rebuild it here, or dismiss it."
+    When I press "Start a thread that rebuilds this change in the new app" in the Updates panel
+    Then a thread called 'Rebuild "Orange dock badge" in the new app' opens
+    And the Updates panel lists '  > Being rebuilt in Rebuild "Orange dock badge" in the new app'
+
   # The app's own update is made up (`updates` with `preview`): a scripted
   # app never follows main, as only the installed one does.
   @system.selfupdate

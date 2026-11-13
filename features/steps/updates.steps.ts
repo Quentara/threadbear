@@ -22,6 +22,14 @@ When('Mike has a release of 10 Nov with 3 new changes', async function (this: Th
   await this.app.do({ cmd: 'mock', method: 'updates', params: { state: 'idle', upstream: { state: 'available', release } } });
 });
 
+When('my copy has 2 changes of its own to the old app', async function (this: ThreadbearWorld) {
+  const changes = [
+    { commit: 'abc1234def567890abc1234def567890abc1234d', short: 'abc1234', subject: 'Orange dock badge', date: '2026-11-02T09:00:00+08:00', files: ['dock/Sources/Badge.swift'] },
+    { commit: '0123456789abcdef0123456789abcdef01234567', short: '0123456', subject: 'Bigger sidebar font', date: '2026-10-20T10:00:00+08:00', files: ['app/Sources/Threadbear/Views/Sidebar.swift'] },
+  ];
+  await this.app.do({ cmd: 'mock', method: 'updates', params: { state: 'idle', swiftChanges: { state: 'ready', checkout: '/Users/me/threadbear', changes } } });
+});
+
 // The app's own update, made up (`updates` with `preview`, as both apps'
 // screenshots use): staged is def5678 over abc1234.
 When("the app's next version, def5678, is ready", async function (this: ThreadbearWorld) {

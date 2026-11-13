@@ -6,6 +6,7 @@ import type { UserInput } from './adapters/types.ts';
 import { INSTRUCTIONS_CLEARED, INSTRUCTIONS_REWOUND } from './instructions.ts';
 import { reachable, type Reachable } from './net-probe.ts';
 import type { UpstreamStatus } from './upstream.ts';
+import type { SwiftChangesStatus } from './swift-changes.ts';
 import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import os from 'node:os';
@@ -199,6 +200,9 @@ export type RunnerUpdates = {
   webRuntimeProblem?: string;
   // The other runners that say that of themselves, on the main Mac's runner.
   behindRunners?: { name: string; problem: string }[];
+  // Someone's own changes to the old Swift app not yet rebuilt in the GPUI
+  // one (swift-changes.ts); left out while there are none.
+  swiftChanges?: SwiftChangesStatus;
 };
 
 // What the librarian (librarian.ts) hears about threads: a turn that ended,
