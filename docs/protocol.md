@@ -5411,7 +5411,11 @@ kept in `schedules.json` in the data dir.
   runner goes on using `sync:schedules`.
 - **Checks**. A schedule's `check` is a
   shell command run first, in its folder, each time it's due
-  (`src/schedule-check.ts`). It runs by itself from then on, so it's bound to
+  (`src/schedule-check.ts`). For a thread still on a draining runner, its
+  folder comes from that runner's thread summary. If the summary isn't
+  available during handover, the run waits and a new check approval is
+  refused until the folder is known; it never falls back to the runner's
+  data folder. It runs by itself from then on, so it's bound to
   what was approved: `checkDigest` in `src/patch-trust.ts` follows the command
   from its folder, as patch trust follows an action's, and hashes the command
   and every file it reaches, scripts outside the repo that it runs by a path

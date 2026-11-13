@@ -1010,6 +1010,8 @@ run goes ahead with the error, so you hear about it. A check has a minute
 to finish, or up to five if its schedule says so, for one that reads
 something slow like Slack. What a check prints is kept until a run
 carrying it has been sent, so a runner restart in between doesn't lose it.
+A runner update keeps the check in its thread's folder; during handover,
+it waits until that folder is known.
 Ask a thread to "only run when there's something new" and it writes the
 check. Run now skips it. It's bound to what it runs: if a script it
 reaches changes, or you move the schedule to another folder, it doesn't

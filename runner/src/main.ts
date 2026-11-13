@@ -418,6 +418,7 @@ async function main(): Promise<void> {
     clock: realClock,
     log,
     elsewhere: (id) => peers.owns(id) || peers.isArriving(id),
+    folderElsewhere: (id) => peers.find(id)?.cwd,
     sendElsewhere: (id, text, scheduleId, run, since) => sendScheduled(runner, peers, id, text, scheduleId, run, since),
     self: { id: syncRunnerId, name: cfg.sync.name ?? defaultRunnerName(), icon: runnerIcon, version: RUNNER_VERSION, release: RELEASE.release, startedAt },
     syncOn: Boolean(cfg.sync.enabled && cfg.sync.url && readSyncKey(cfg.home)),

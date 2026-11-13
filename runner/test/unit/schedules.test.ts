@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { makeHarness, tick } from '../helpers/fakes.ts';
+import { makeHarness, tick, tmpDir } from '../helpers/fakes.ts';
 import { describeAt, describeCron, nextRuns, parseCron } from '../../src/cron.ts';
 import { SAVE_RETRY_MS, Scheduler, scheduleMethods, type ScheduleBackend, type StoredSchedule } from '../../src/schedules.ts';
 import { buildThreadbearTools } from '../../src/threadbear-mcp.ts';
@@ -13,6 +13,7 @@ import { toOwnedScheduleDoc, SCHEDULE_POOLS_API_VERSION } from '../../src/sync.t
 import { keptCheckFile } from '../../src/schedule-check.ts';
 import { scheduledSendMethods, sendScheduled } from '../../src/handover.ts';
 import { DRAIN_MAX_OLD_MS, DRAIN_SETTLE_MS } from '../../src/runner.ts';
+import { PatchTrust } from '../../src/patch-trust.ts';
 
 const MIN = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -394,6 +395,92 @@ for (const backend of [false, true]) for (const hibernated of [false, true]) tes
     h.clock.advance(2 * MIN);
     await tick(8);
     assert.equal(session.sent.length, 2, 'sent only once');
+  } finally { sched.stop(); }
+});
+
+for (const backend of [false, true]) for (const createdAway of [false, true]) test(`a draining thread's check keeps its approved and executed folder (${backend ? 'backend' : 'local'}, created ${createdAway ? 'after' : 'before'} handover)`, async () => {
+  const home = tmpDir();
+  const cwd = path.join(home, 'project');
+  fs.mkdirSync(cwd);
+  const file = path.join(home, 'patch-trust.json');
+  const trust = () => new PatchTrust({ file, always: [cwd] });
+  const old = makeHarness(home, {}, { patchTrust: trust() });
+  // A primary skips the threads still owned by the old process. Both
+  // processes share the trust file and schedules on disk.
+  const h = makeHarness(home, {}, { patchTrust: trust() });
+  const { thread } = old.runner.create({ text: 'Measure', accountId: 'claude-3', cwd });
+  old.adapter.last.init();
+  old.adapter.last.result('completed');
+  await tick();
+  const shared = fakeBackend(h.clock, [M5]);
+  const oldSched = new Scheduler({ runner: old.runner, home, clock: old.clock, log: nullLogger, self: M5 });
+  oldSched.start();
+  if (backend) { await oldSched.attach(shared.for('old', M5.id)); await tick(6); }
+  const command = 'printf "%s" "$PWD"';
+  const params = { text: 'Inspect', cron: '* * * * *', threadId: thread.id, check: command };
+  let sc = createdAway ? undefined : await oldSched.create(params);
+  oldSched.stop();
+  let folder: string | undefined = cwd;
+  let away = true;
+  let checks = 0;
+  const sched = new Scheduler({
+    runner: h.runner, home, clock: h.clock, log: nullLogger, self: M5,
+    elsewhere: (id) => away && id === thread.id,
+    folderElsewhere: (id) => id === thread.id ? folder : undefined,
+    sendElsewhere: async (id, text) => old.runner.send(id, text),
+    runCheck: async (p) => {
+      checks++;
+      assert.equal(p.cwd, cwd, 'approval and execution must use the thread folder');
+      return { ok: true, output: p.cwd };
+    },
+  });
+  sched.start();
+  if (backend) { await sched.attach(shared.for('primary', M5.id)); await tick(6); }
+  try {
+    sc ??= await sched.create(params);
+    assert.equal(h.runner.patchTrust.checkApproved(command, cwd).approved, true);
+    assert.equal(h.runner.patchTrust.checkApproved(command, home).approved, false, 'never approve the fallback data folder');
+    h.clock.advance(MIN);
+    await tick(12);
+    assert.equal(sched.find(sc.id).runs, 1);
+    assert.ok(old.adapter.last.sent.at(-1)!.text.includes(cwd));
+    assert.doesNotMatch(old.adapter.last.sent.at(-1)!.text, /wasn't run/);
+    assert.equal(checks, 1);
+    old.adapter.last.result('completed');
+    await tick();
+
+    // No peer summary during adoption: neither approve nor run in home.
+    folder = undefined;
+    await assert.rejects(sched.update({ scheduleId: sc.id, check: command }), /folder isn't available/);
+    await assert.rejects(sched.create(params), /folder isn't available/);
+    assert.equal(h.runner.patchTrust.checkApproved(command, home).approved, false);
+    h.clock.advance(MIN);
+    await tick(12);
+    assert.equal(sched.find(sc.id).runs, 1, 'the unresolved run stays due');
+    assert.equal(checks, 1);
+    folder = cwd;
+    h.clock.advance(MIN);
+    await tick(12);
+    assert.equal(sched.find(sc.id).runs, 2, 'the due check resumes when the folder is known');
+    assert.equal(checks, 2);
+    old.adapter.last.result('completed');
+    await tick();
+
+    // A genuine move still needs approval in the new folder.
+    folder = path.join(home, 'other-project');
+    fs.mkdirSync(folder);
+    h.clock.advance(MIN);
+    await tick(12);
+    assert.equal(checks, 2, 'never execute an unapproved check after a move');
+    assert.match(old.adapter.last.sent.at(-1)!.text, /wasn't run/);
+    old.adapter.last.result('completed');
+    await tick();
+    folder = undefined;
+    away = false;
+    h.clock.advance(MIN);
+    await tick(12);
+    assert.equal(checks, 2);
+    assert.equal(sched.find(sc.id).lastRun?.outcome, 'failed', 'a deleted thread fails rather than waiting for handover forever');
   } finally { sched.stop(); }
 });
 

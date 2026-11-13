@@ -215,6 +215,7 @@ export class Scheduler {
   // Threads a draining runner still has (docs/protocol.md, "Handovers"):
   // they're real threads, just not loaded here yet.
   private elsewhere: (threadId: string) => boolean;
+  private folderElsewhere?: (threadId: string) => string | undefined;
   private sendElsewhere?: (threadId: string, text: string, scheduleId: string, run: string, since: number) => Promise<{ turnId: string }>;
   // Schedule checks (schedule-check.ts).
   private home: string;
@@ -258,6 +259,7 @@ export class Scheduler {
     log: Logger;
     zone?: () => string;
     elsewhere?: (threadId: string) => boolean;
+    folderElsewhere?: (threadId: string) => string | undefined;
     sendElsewhere?: (threadId: string, text: string, scheduleId: string, run: string, since: number) => Promise<{ turnId: string }>;
     self?: SelfRunner;
     syncOn?: boolean;
@@ -269,6 +271,7 @@ export class Scheduler {
     this.self = deps.self ?? { id: 'runner', name: 'this Mac' };
     this.syncOn = deps.syncOn ?? false;
     this.elsewhere = deps.elsewhere ?? (() => false);
+    this.folderElsewhere = deps.folderElsewhere;
     this.sendElsewhere = deps.sendElsewhere;
     this.file = path.join(deps.home, 'schedules.json');
     this.runsDir = path.join(deps.home, 'schedule-runs');
@@ -1176,6 +1179,10 @@ export class Scheduler {
   private async checked(rec: ScheduleRecord): Promise<{ skip: string } | Carried | 'later' | undefined> {
     if (!rec.check) return undefined;
     const cwd = this.checkFolder(rec);
+    // A handover can briefly have neither a local thread nor its peer's
+    // summary. Wait for its real folder rather than run or approve in home.
+    // A thread that's gone has no check to run; send records that failure.
+    if (!cwd) return rec.threadId && this.elsewhere(rec.threadId) ? 'later' : undefined;
     // What it printed last time and no run has carried yet (a restart
     // refused the send, or the runner stopped mid-check): send that rather
     // than asking again, as a check that keeps state won't print it twice.
@@ -1239,12 +1246,12 @@ export class Scheduler {
   }
 
   // Where a check runs: its thread's folder, its own, or the runner's.
-  private checkFolder(rec: ScheduleRecord): string {
+  private checkFolder(rec: ScheduleRecord): string | undefined {
     if (rec.threadId) {
       try {
         return this.runner.get(rec.threadId).cwd;
       } catch {
-        // A thread that's gone: send says so.
+        return this.folderElsewhere?.(rec.threadId);
       }
     }
     return rec.cwd ? path.resolve(expandHome(rec.cwd)) : this.home;
@@ -1256,8 +1263,10 @@ export class Scheduler {
   // only means the check is held at its next run.
   private approveCheck(rec: ScheduleRecord, card?: CheckCard): void {
     if (!rec.check) return;
+    const cwd = this.checkFolder(rec);
+    if (!cwd) throw bad("The thread's folder isn't available during handover. Try again in a moment.");
     try {
-      this.runner.patchTrust.approveCheck(rec.check, this.checkFolder(rec), card);
+      this.runner.patchTrust.approveCheck(rec.check, cwd, card);
     } catch (e) {
       // A card's approval that doesn't hold changes nothing.
       if (card) throw bad(e instanceof Error ? e.message : String(e));
