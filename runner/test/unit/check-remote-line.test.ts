@@ -34,6 +34,17 @@ test('waiting in line on a busy host, it moves to another that frees up, and its
   assert.deepEqual(r.left('h2'), []);
 });
 
+test('a withdrawal whose answer is lost is still seen as withdrawn, and the check moves', () => {
+  const s = setup({ h1: { state: 'busy', queue: 60, loseAck: true }, h2: { state: 'busy', freeAfter: 1, ...linux } });
+  fs.writeFileSync(path.join(s.repo, 'change.ts'), '\n');
+  const r = s.run('h1,h2', 3600, '', { ...ENV, THREADBEAR_CHECK_ASK_SECS: '2' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /leaving the line on h1/);
+  assert.match(r.stdout, /ran on h2 now/);
+  assert.doesNotMatch(r.stdout, /ran on h1/);
+  assert.deepEqual(r.left('h1'), []);
+});
+
 test('a check that has started on its host is never moved, even with another free', () => {
   // h1's check runs for 4 s with its copy moved out of runs/, as a started
   // one is; h2 frees up while it runs.

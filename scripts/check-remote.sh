@@ -543,32 +543,48 @@ free_elsewhere() {
 }
 # leave_line <waiter>: while the check waits in line on $HOST (the waiter
 # being its ssh), look elsewhere; true once it has left that line for a free
-# host. Leaving is a rename of the run's copy there, which is atomic, and is
-# what --on-host does first once it has the lock (mv runs/<id> src): whichever
-# renames first wins, so a check that has started is never pulled, and one
-# that's withdrawn finds no copy when its turn comes and starts nothing. The
-# lock it would have held is never taken from anything running.
+# host. Leaving is a rename of the run's copy there (runs/<id> to
+# runs/<id>.withdrawn), which is atomic, as is --on-host's first step once it
+# has the lock (runs/<id> to src): whichever renames first wins, so a check
+# that has started is never pulled, and one that's withdrawn finds no copy
+# when its turn comes and starts nothing. The lock it would have held is
+# never taken from anything running. The rename is the claim, and the host
+# is asked where the copy is to learn who won, so a reply lost on the way
+# back (a dropped ssh) is never taken for a lost race (Codex's review): the
+# next look finds runs/<id>.withdrawn and leaves then. ASK_SECS is for the
+# tests.
+ASK_SECS="${THREADBEAR_CHECK_ASK_SECS:-15}"
+where_is_copy() {
+  timed "$ASK_SECS" "${SSH[@]}" "$HOST" "if [ -d '$remote_run.withdrawn' ]; then echo withdrawn; elif [ -d '$remote_run' ]; then echo waiting; else echo started; fi" 2>/dev/null </dev/null
+}
 leave_line() {
-  local waiter="$1" next=$((SECONDS + POLL_SECS)) where
+  local waiter="$1" next=$((SECONDS + POLL_SECS)) where claimed=0
   while kill -0 "$waiter" 2>/dev/null; do
     if [ "$SECONDS" -lt "$next" ]; then sleep 1; continue; fi
-    where="$(timed 15 "${SSH[@]}" "$HOST" "if [ -d '$remote_run' ]; then echo waiting; else echo started; fi" 2>/dev/null </dev/null)"
+    next=$((SECONDS + POLL_SECS))
+    where="$(where_is_copy)"
     # Started there: it stays, however long it takes.
     [ "$where" != started ] || return 1
+    if [ "$where" = withdrawn ]; then break; fi
     # Not answering: the waiter's own watch deals with that.
-    if [ "$where" = waiting ] && free_elsewhere; then
-      if timed 15 "${SSH[@]}" "$HOST" "mv '$remote_run' '$remote_run.withdrawn' && rm -rf '$remote_run.withdrawn'" >/dev/null 2>&1 </dev/null; then
-        kill_tree "$waiter"
-        wait "$waiter" 2>/dev/null
-        echo "$FREE_HOST is free now; leaving the line on $HOST, where this check hadn't started."
-        return 0
-      fi
-      # The rename lost: it has just started there.
-      return 1
-    fi
-    next=$((SECONDS + POLL_SECS))
+    [ "$where" = waiting ] || continue
+    # Once claimed, only the host's answer says what happened.
+    [ "$claimed" = 0 ] && free_elsewhere || continue
+    claimed=1
+    timed "$ASK_SECS" "${SSH[@]}" "$HOST" "mv '$remote_run' '$remote_run.withdrawn'" >/dev/null 2>&1 </dev/null
+    where="$(where_is_copy)"
+    [ "$where" != started ] || return 1
+    [ "$where" != withdrawn ] || break
   done
-  return 1
+  # The waiter may have ended by itself after an unanswered claim (its turn
+  # came and found no copy): one more look says whether that was this.
+  [ "$where" = withdrawn ] || { [ "$claimed" = 1 ] && where="$(where_is_copy)" && [ "$where" = withdrawn ]; } || return 1
+  kill_tree "$waiter"
+  wait "$waiter" 2>/dev/null
+  # Best effort: what's left goes with the host's own clean-up (half a day).
+  timed "$ASK_SECS" "${SSH[@]}" "$HOST" "rm -rf '$remote_run.withdrawn'" >/dev/null 2>&1 </dev/null
+  echo "${FREE_HOST:-Another host} is free now; leaving the line on $HOST, where this check hadn't started."
+  return 0
 }
 
 # The files check.sh would see, less what no check reads: the pictures in

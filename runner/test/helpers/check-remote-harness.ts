@@ -127,6 +127,9 @@ case "$cmd" in
     run_copy now ;;
   *"flock -n -E 75"*) run_copy now ;;
   *"flock "*) wait_line; run_copy "after waiting" ;;
+  # A host's "lose-ack" file: a withdrawal's rename happens, but its answer
+  # never comes back.
+  "mv '"*) bash -c "$cmd"; [ ! -f "$d/lose-ack" ] || sleep 30 ;;
   *) bash -c "$cmd" ;;
 esac
 `;
@@ -153,7 +156,7 @@ export const GiB = 1024 * 1024;
 
 // df: what the host's df prints (plenty free, if not given). dfAfter: what it
 // prints once a copy or a run has failed there. os: Linux, if not a Mac.
-type Host = { state: string; lose?: number; looksFree?: boolean; base?: string; df?: string; dfAfter?: string; os?: string; hang?: boolean; hangCopy?: boolean; drop?: boolean; stubborn?: boolean; queue?: number; freeAfter?: number; slow?: number };
+type Host = { state: string; lose?: number; looksFree?: boolean; base?: string; df?: string; dfAfter?: string; os?: string; hang?: boolean; hangCopy?: boolean; drop?: boolean; stubborn?: boolean; queue?: number; loseAck?: boolean; freeAfter?: number; slow?: number };
 export function setup(hosts: Record<string, Host>, opts: { home?: string } = {}) {
   const tmp = tmpDir('check-remote-');
   const home = opts.home ?? shortHome();
@@ -179,6 +182,7 @@ export function setup(hosts: Record<string, Host>, opts: { home?: string } = {})
     if (s.drop) fs.writeFileSync(path.join(fake, h, 'drop'), '');
     if (s.queue !== undefined) fs.writeFileSync(path.join(fake, h, 'queue'), String(s.queue));
     if (s.freeAfter !== undefined) fs.writeFileSync(path.join(fake, h, 'free-after'), String(s.freeAfter));
+    if (s.loseAck) fs.writeFileSync(path.join(fake, h, 'lose-ack'), '');
     if (s.slow !== undefined) fs.writeFileSync(path.join(fake, h, 'slow'), String(s.slow));
     if (s.hangCopy) fs.writeFileSync(path.join(fake, h, 'hang-copy'), '');
     if (s.dfAfter !== undefined) fs.writeFileSync(path.join(fake, h, 'df-after'), s.dfAfter);
