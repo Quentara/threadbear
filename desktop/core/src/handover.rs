@@ -138,22 +138,25 @@ pub fn ready_pid(message: &Value) -> Option<u32> {
 
 /// "go": whether the outgoing app was in front, and what Mike did in its
 /// window while the incoming one loaded (the list showing and the thread
-/// open). Drafts go through their own file, written just before.
+/// open), and each open thread's place. Drafts and settings go through
+/// their own files, written just before.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Go {
     pub active: bool,
     pub mode: Option<String>,
     pub selection: Option<String>,
+    /// Each open thread's place as it went (gpui's `rows::live_scroll_json`).
+    pub scroll: Value,
 }
 
 impl Go {
     pub fn to_json(&self) -> Value {
-        json!({ "active": self.active, "mode": self.mode, "selection": self.selection })
+        json!({ "active": self.active, "mode": self.mode, "selection": self.selection, "scroll": self.scroll })
     }
 
     pub fn from_json(value: &Value) -> Go {
         let text = |key: &str| value[key].as_str().map(str::to_owned);
-        Go { active: value["active"].as_bool().unwrap_or(false), mode: text("mode"), selection: text("selection") }
+        Go { active: value["active"].as_bool().unwrap_or(false), mode: text("mode"), selection: text("selection"), scroll: value["scroll"].clone() }
     }
 }
 
@@ -228,7 +231,7 @@ mod tests {
         assert_eq!(read_message(&dir, READY_FILE), None);
         write_message(&dir, READY_FILE, &ready_message(77)).unwrap();
         assert_eq!(read_message(&dir, READY_FILE).as_ref().and_then(ready_pid), Some(77));
-        let go = Go { active: true, mode: Some("scheduled".into()), selection: Some("t1".into()) };
+        let go = Go { active: true, mode: Some("scheduled".into()), selection: Some("t1".into()), scroll: json!({ "t1": { "pinned": true } }) };
         write_message(&dir, GO_FILE, &go.to_json()).unwrap();
         assert_eq!(Go::from_json(&read_message(&dir, GO_FILE).unwrap()), go);
         assert_eq!(Go::from_json(&json!({})), Go::default());

@@ -1200,6 +1200,24 @@ impl ThreadPane {
         self.loaded
     }
 
+    /// Still bringing older pages in to get back to a remembered place.
+    pub(crate) fn restoring_place(&self) -> bool {
+        self.rows.pending_restore.is_some()
+    }
+
+    /// Where the outgoing app had this thread scrolled to as it handed over.
+    pub(crate) fn take_handed_memory(&mut self, memory: crate::rows::ScrollMemory, cx: &mut Context<Self>) {
+        if !self.loaded {
+            return;
+        }
+        if memory.pinned {
+            self.rows.pending_restore = None;
+            self.scroller.update(cx, |s, cx| s.scroll_to_end(cx));
+        } else {
+            self.restore_memory(Some(memory), cx);
+        }
+    }
+
     /// `captureMemory`: pinned to the bottom, or the row at the top of the
     /// view and how far down it the view starts (a row part scrolled off the
     /// top has a negative offset, as the Swift app measures it).

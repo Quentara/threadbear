@@ -155,6 +155,11 @@ impl Settings {
     /// half a file (the same as shortcuts.json's atomic write in the Swift app),
     /// and only this user's, as everything in the data folder is.
     pub fn save(&self) {
+        // A handover's incoming app: the file is the outgoing app's until
+        // this one takes over and reads it again (handover.rs).
+        if crate::handover::waiting() {
+            return;
+        }
         let _ = self.save_checked();
     }
 

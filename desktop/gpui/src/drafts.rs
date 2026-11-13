@@ -79,14 +79,19 @@ fn write(path: &std::path::Path, all: &HashMap<String, Draft>) -> std::io::Resul
 impl Threadbear {
     /// A box's draft from before, put back as the box is made (`restore`).
     pub(crate) fn restore_saved_draft(&self, key: &str, composer: &Entity<crate::composer::Composer>, cx: &mut App) {
+        // A handover's incoming app: the drafts are the outgoing app's until
+        // it takes over (`reload_drafts`), as he may still be typing there.
+        if crate::handover::waiting() {
+            return;
+        }
         if let Some(draft) = self.drafts.saved.get(key).cloned() {
             composer.update(cx, |c, cx| c.restore_draft(RestoreDraft::plain(draft.text, draft.images), cx));
         }
     }
 
     /// A handover's incoming app taking over: the drafts the outgoing app
-    /// wrote just before "go", put into every box that's empty here (what
-    /// was typed there while this app loaded).
+    /// wrote as it handed over, into every box (none had its draft put back
+    /// while it waited: `restore_saved_draft`).
     pub(crate) fn reload_drafts(&mut self, cx: &mut Context<Self>) {
         let Some(path) = self.drafts.path.clone() else { return };
         self.drafts.saved = read(&path);
@@ -114,6 +119,9 @@ impl Threadbear {
     /// made yet this run.
     pub(crate) fn save_drafts(&mut self, cx: &App) {
         self.drafts.pending = None;
+        if crate::handover::waiting() {
+            return;
+        }
         let Some(path) = self.drafts.path.clone() else { return };
         let mut all = self.drafts.saved.clone();
         let mut boxes: Vec<(String, Entity<crate::composer::Composer>)> = self.composers.iter().map(|(k, c)| (k.clone(), c.clone())).collect();

@@ -143,6 +143,30 @@ fn decode_memories(saved: &serde_json::Value) -> Vec<(String, ScrollMemory)> {
         .collect()
 }
 
+/// A handover's "go": each open thread's place as it is now, its end too,
+/// so the new copy can follow a scroll made while it loaded.
+pub(crate) fn live_scroll_json(live: &[(String, ScrollMemory)]) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    for (id, memory) in live {
+        let entry = match memory.anchor_id.as_ref().filter(|_| !memory.pinned) {
+            Some(anchor) => serde_json::json!({ "anchor": anchor, "offset": memory.offset }),
+            None => serde_json::json!({ "pinned": true }),
+        };
+        out.insert(id.clone(), entry);
+    }
+    serde_json::Value::Object(out)
+}
+
+pub(crate) fn decode_live_scroll(saved: &serde_json::Value) -> Vec<(String, ScrollMemory)> {
+    let mut all = decode_memories(saved);
+    for (id, v) in saved.as_object().into_iter().flatten() {
+        if v["pinned"].as_bool() == Some(true) {
+            all.push((id.clone(), ScrollMemory { pinned: true, anchor_id: None, offset: 0. }));
+        }
+    }
+    all
+}
+
 /// Back from a restart: each thread's place, as if it had been left there in
 /// this run, so it opens where it was rather than at its end.
 pub(crate) fn recall_scroll_memories(saved: &serde_json::Value) {
@@ -855,5 +879,13 @@ mod scroll_memory_tests {
         // What an older build saved, or nothing at all, puts nothing back.
         assert!(decode_memories(&serde_json::Value::Null).is_empty());
         assert!(decode_memories(&serde_json::json!({ "t3": { "offset": 4 } })).is_empty());
+    }
+
+    #[test]
+    fn a_handovers_go_carries_threads_at_their_end_too() {
+        let live = vec![("t1".to_owned(), ScrollMemory { pinned: false, anchor_id: Some("r".into()), offset: 3. }), ("t2".to_owned(), ScrollMemory { pinned: true, anchor_id: None, offset: 0. })];
+        let mut back = super::decode_live_scroll(&super::live_scroll_json(&live));
+        back.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(back.iter().map(|(id, m)| (id.as_str(), m.pinned, m.anchor_id.clone())).collect::<Vec<_>>(), vec![("t1", false, Some("r".to_owned())), ("t2", true, None)]);
     }
 }

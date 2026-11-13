@@ -139,6 +139,11 @@ mod mac {
     pub(super) fn take_over(window: &NSWindow, activate: bool) {
         window.setAlphaValue(1.);
         window.setIgnoresMouseEvents(false);
+        // Taking over before it was shown under the old one (the old app
+        // went early): it isn't on screen at all yet.
+        if !window.isVisible() {
+            window.orderFront(None);
+        }
         // Back to the default (NSWindowAnimationBehaviorDefault).
         let _: () = unsafe { msg_send![window, setAnimationBehavior: 0isize] };
         if activate {
@@ -241,10 +246,19 @@ impl Threadbear {
             return fallback(self, cx);
         }
         let mut fallback = Some(fallback);
+        let main = self.main_window;
         cx.spawn(async move |this, cx| {
             let began = Instant::now();
             loop {
                 cx.background_executor().timer(rules::POLL).await;
+                // The old window takes clicks and keys while the new copy
+                // loads: anything the restart would have waited for that
+                // started meanwhile (a shell, a menu, a field being typed
+                // in) holds the go, as it held the restart (Codex's review).
+                let windows = cx.update(|cx| crate::app_update::windows_now(main, cx));
+                if this.update(cx, |t, cx| t.handover_held(windows, cx)).unwrap_or(false) {
+                    continue;
+                }
                 if let Some(ready) = rules::read_message(&dir, rules::READY_FILE) {
                     let incoming_pid = rules::ready_pid(&ready);
                     this.update(cx, |t, cx| t.say_go(incoming_pid, &dir, cx)).ok();
@@ -282,16 +296,12 @@ impl Threadbear {
             mac::yield_to(pid);
         }
         let _ = incoming_pid;
-        // As at a quit: messages held for a restarting runner stay held, and
-        // what's typed goes to the file the incoming app reads at "go".
-        self.client.stop_holding();
-        self.save_drafts(cx);
-        if std::mem::take(&mut self.settings_dirty) {
-            self.settings.save();
-        }
-        HANDED_OVER.store(true, Ordering::Release);
+        self.leave_state_for_incoming(cx);
         let selection = self.selected.clone().unwrap_or_default();
-        let go = Go { active, mode: Some(self.mode.name().to_owned()), selection: Some(selection) };
+        // Where each open thread is scrolled to now, as he may have scrolled
+        // while the new copy loaded (Codex's review, 13 Nov).
+        let scroll = crate::rows::live_scroll_json(&self.live_scroll_memories(cx));
+        let go = Go { active, mode: Some(self.mode.name().to_owned()), selection: Some(selection), scroll };
         if let Err(e) = rules::write_message(dir, rules::GO_FILE, &go.to_json()) {
             log(&format!("couldn't say go: {e}"));
         }
@@ -306,8 +316,26 @@ impl Threadbear {
         .detach();
     }
 
-    fn quit_handed_over(&mut self, dir: &Path, cx: &mut Context<Self>) {
+    /// As at a quit, before this app stops writing anything: messages held
+    /// for a restarting runner stay held, what's typed goes to the drafts file
+    /// the incoming app reads as it takes over, and the settings are saved
+    /// for it to read then too, without the restart's snapshot (it took that
+    /// at launch, and a later launch mustn't restore it again).
+    fn leave_state_for_incoming(&mut self, cx: &mut Context<Self>) {
+        if HANDED_OVER.load(Ordering::Acquire) {
+            return;
+        }
+        self.client.stop_holding();
+        self.save_drafts(cx);
+        self.settings.saved.update_restore = None;
+        self.settings_dirty = false;
+        self.settings.save();
         HANDED_OVER.store(true, Ordering::Release);
+    }
+
+    fn quit_handed_over(&mut self, dir: &Path, cx: &mut Context<Self>) {
+        // The ready timeout comes here without a "go" (Codex's review).
+        self.leave_state_for_incoming(cx);
         log("handed over; quitting");
         let _ = std::fs::remove_dir_all(dir);
         #[cfg(target_os = "macos")]
@@ -320,10 +348,9 @@ impl Threadbear {
     pub(crate) fn start_incoming(&mut self, cx: &mut Context<Self>) {
         let Some(from) = incoming().cloned() else { return };
         let dir = channel(from.from);
-        if !alive(from.from) {
-            self.take_over(false, "the outgoing app had gone before launch", &dir, cx);
-            return;
-        }
+        // Never taken over from here: the window's made, and concealed, only
+        // after `Threadbear::new` returns (Codex's review, 13 Nov). The first
+        // look, 50 ms on, sees an outgoing app that's already gone.
         cx.spawn(async move |this, cx| {
             let began = Instant::now();
             let mut ready = false;
@@ -371,7 +398,8 @@ impl Threadbear {
         if !self.threads.contains_key(id) {
             return true;
         }
-        self.pane_for(id, cx).is_some_and(|p| p.read(cx).is_loaded())
+        // And its place, if that's in an older page still on its way.
+        self.pane_for(id, cx).is_some_and(|p| p.read(cx).is_loaded() && !p.read(cx).restoring_place())
     }
 
     fn show_under_outgoing(&mut self, from: &Incoming, cx: &mut Context<Self>) {
@@ -393,10 +421,17 @@ impl Threadbear {
     /// "go": what Mike did in the outgoing window while this one loaded, the
     /// drafts it saved just before, then this app is the app.
     fn go(&mut self, go: Go, dir: &Path, cx: &mut Context<Self>) {
+        // Where each open thread was scrolled to as it went: remembered for
+        // threads not open here yet, and put straight onto ones that are.
+        for (id, memory) in crate::rows::decode_live_scroll(&go.scroll) {
+            crate::rows::remember_scroll(&id, memory.clone());
+            if let Some(pane) = self.pane_for(&id, cx) {
+                pane.update(cx, |p, cx| p.take_handed_memory(memory, cx));
+            }
+        }
         if let Some(mode) = go.mode.as_deref() {
             self.restore_place(mode, go.selection.as_deref().unwrap_or(""), cx);
         }
-        self.reload_drafts(cx);
         self.take_over(go.active, "go", dir, cx);
         let _ = rules::write_message(dir, rules::DONE_FILE, &serde_json::json!({}));
     }
@@ -405,11 +440,17 @@ impl Threadbear {
         if TAKEN_OVER.swap(true, Ordering::AcqRel) {
             return;
         }
-        // Gone without a "go": what it last saved is all there is.
         if reason != "go" {
-            self.reload_drafts(cx);
             let _ = std::fs::remove_dir_all(dir);
         }
+        // What the outgoing app saved as it handed over (or last saved, if
+        // it went without a "go"): its settings, as this app's copy is from
+        // before he may have changed any there, and the drafts, which this
+        // app left alone until now (Codex's review, 13 Nov).
+        let mut fresh = crate::settings::Settings::load();
+        fresh.saved.update_restore = None;
+        self.settings = fresh;
+        self.reload_drafts(cx);
         #[cfg(target_os = "macos")]
         if let Some(ns) = self.main_ns_window(cx) {
             mac::take_over(&ns, activate);

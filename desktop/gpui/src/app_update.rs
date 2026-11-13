@@ -64,6 +64,9 @@ pub(crate) struct AppUpdater {
     /// it's the installed app.
     pub(crate) disabled: Option<String>,
     restarting: bool,
+    /// The restart under way is one the app chose by itself, not Restart to
+    /// Update: a handover's go waits for what that would have waited for.
+    pub(crate) auto_restart: bool,
     /// What the staged build's restart waits on, as the Updates panel says
     /// it, set at each once-a-second look (`consider_auto_restart`).
     pub(crate) wait: Option<rules::RestartWait>,
@@ -654,6 +657,7 @@ impl Threadbear {
         if !self.updater.preview && rules::should_auto_restart(&moment) {
             note(if moment.active { "restarting into the staged build: nothing typed, and no input for five seconds" } else { "restarting into the staged build: nothing typed, and the app isn't in front" });
             // In front it comes back in front; behind, it stays behind.
+            self.updater.auto_restart = true;
             self.restart_for_update(!moment.active, cx);
         }
     }
@@ -674,9 +678,8 @@ impl Threadbear {
         // in front, so a restart made behind another app comes back behind it.
         self.settings.saved.update_restore = Some(self.restore_state(!in_background, cx));
         self.settings.save();
-        // Saved: the incoming app takes it (and clears it) from here, so a
-        // later save of this app's settings mustn't write it back.
-        self.settings.saved.update_restore = None;
+        // Kept in memory too: the old way's quit saves the settings again.
+        // A handover drops it as it hands over (`leave_state_for_incoming`).
         // Next tick, outside whatever's being drawn or dispatched, so the
         // window can be asked where it is.
         cx.spawn(async move |this, cx| {
@@ -713,22 +716,33 @@ impl Threadbear {
         cx.quit();
     }
 
+    /// Where each thread open in a pane is scrolled to now, the ones at
+    /// their end too.
+    pub(crate) fn live_scroll_memories(&self, cx: &App) -> Vec<(String, crate::rows::ScrollMemory)> {
+        self.threads
+            .keys()
+            .filter_map(|id| {
+                let pane = self.pane_for(id, cx)?;
+                let pane = pane.read(cx);
+                pane.is_loaded().then(|| (id.clone(), pane.capture_memory(cx)))
+            })
+            .collect()
+    }
+
+    /// Something a restart by itself would have waited for, started while a
+    /// handover's new copy loaded: it holds the go (handover.rs). Not words
+    /// in a message box, which go across in the drafts file, and nothing for
+    /// a Restart to Update he chose, which never waited for these.
+    pub(crate) fn handover_held(&self, windows: WindowsNow, cx: &App) -> bool {
+        self.updater.auto_restart && (windows.held || windows.other_window_input || self.under_way(cx) || self.schedule_editor.is_some() || crate::unsent::any(cx))
+    }
+
     /// What a restart leaves for the next launch: the list and the thread
     /// showing, whether it was in front, and where each thread was scrolled
     /// to (the open ones measured now; ones opened earlier as they were
     /// left), so none of them jumps to its end.
     pub(crate) fn restore_state(&self, front: bool, cx: &App) -> serde_json::Value {
-        let mut live: Vec<(String, crate::rows::ScrollMemory)> = Vec::new();
-        let mut ids: Vec<String> = self.selected.iter().cloned().collect();
-        ids.extend(self.threads.keys().cloned());
-        for id in ids {
-            if let Some(pane) = self.pane_for(&id, cx) {
-                let pane = pane.read(cx);
-                if pane.is_loaded() {
-                    live.push((id, pane.capture_memory(cx)));
-                }
-            }
-        }
+        let live = self.live_scroll_memories(cx);
         json!({ "mode": self.mode.name(), "selection": self.selected, "front": front, "scroll": crate::rows::scroll_memories_json(&live) })
     }
 
