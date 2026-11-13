@@ -9,6 +9,7 @@ import { RELEASE } from './release.ts';
 import { gatewayBase, gatewayUrlFrom } from './connectors.ts';
 import { credentialUrlProblem } from './secure-url.ts';
 import { findGatewayClient } from './notion-tasks.ts';
+import { onPath } from './adapters/acp/agents.ts';
 import { CLI_POLICIES, isEffortLevel, isProvider, type CliPolicy, type EffortLevel, type PermissionMode, type Provider } from './protocol.ts';
 
 // <package version>+<release id>, or +source when run from a checkout.
@@ -247,6 +248,18 @@ export function expandHome(p: string): string {
   return p;
 }
 
+// Claude Code's native install (~/.local/bin/claude) first, then a claude on
+// the runner's PATH, which is where npm and Homebrew put theirs. Kept as the
+// link they made rather than where it points, so an update that moves the
+// link is followed. With neither, the native path, which the runner's notice
+// then says is missing. Only ~/.local/bin counted until 13 Nov 2026, though
+// INSTALL.md said the PATH's would do (jayehzzz's fork).
+function findClaude(pathEnv: string): string {
+  const native = path.join(os.homedir(), '.local', 'bin', 'claude');
+  if (onPath('claude', path.dirname(native))) return native;
+  return onPath('claude', pathEnv) ?? native;
+}
+
 // A runner.json that's there but doesn't read as a JSON object: a hand edit
 // with a trailing comma, a stray character, an empty file. Every write to
 // runner.json reads it first and writes back what it read plus a change, so
@@ -397,7 +410,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env, opts: { readOnl
     host: '127.0.0.1',
     maxLive: Number.isFinite(maxLive) && maxLive >= 1 ? Math.floor(maxLive) : DEFAULT_MAX_LIVE,
     logFile: expandHome(env.THREADBEAR_LOG || path.join(os.homedir(), 'Library', 'Logs', 'threadbear-runner.log')),
-    claudePath: expandHome(env.THREADBEAR_CLAUDE_PATH || json.claudePath || '~/.local/bin/claude'),
+    claudePath: expandHome(env.THREADBEAR_CLAUDE_PATH || json.claudePath || findClaude(env.PATH ?? '')),
     idleMs,
     defaults: {
       cwd: expandHome(json.defaults?.cwd || DEFAULT_CWD),

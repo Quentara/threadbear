@@ -329,7 +329,10 @@ File references are where to look.
   `runner.json`, changes it. It keeps what it last did in
   `runner/bring-in.json` in the data folder.
 - **CLI updates** (`runner/src/updates/`): every hour it checks for new
-  Claude Code and Codex versions and installs them. If you don't point it
+  Claude Code and Codex versions and installs them. Claude Code is the one
+  at `~/.local/bin/claude`, else the first `claude` on the runner's PATH
+  (an npm or Homebrew install), unless `claudePath` in `runner.json` names
+  another; its own `claude update` updates it. If you don't point it
   at your own Codex, it installs one into the data folder. It also runs
   any update commands you list under `cliUpdates.extra` in `runner.json`
   (none unless you add them), once a day each, and keeps when each last

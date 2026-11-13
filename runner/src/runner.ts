@@ -1275,7 +1275,7 @@ export class Runner {
   noticesForNewClient(): { level: 'info' | 'warning' | 'error'; message: string }[] {
     const out = this.clock.now() - this.startedAt < STARTUP_NOTICE_MS ? [...this.startupNotices] : [];
     if (!fs.existsSync(this.cfg.claudePath)) {
-      out.push({ level: 'error', message: `The claude CLI isn't at ${this.cfg.claudePath}, so no turn can start. Install Claude Code, or set claudePath in runner.json.` });
+      out.push({ level: 'error', message: `The claude CLI isn't at ${this.cfg.claudePath}, so no Claude turn can start. Install Claude Code, or set claudePath in runner.json.` });
     }
     return out;
   }
