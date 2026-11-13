@@ -82,7 +82,9 @@ test('a dropped reply says the app is still running, with its panic, log and out
   assert.match(error, /The app \(pid \d+\) is still running\./);
   assert.match(error, /panicked on its main thread at desktop\/gpui\/src\/terminal\.rs:42:9: selection out of range/);
   assert.match(error, /The end of its log:\nstarted\nterminal/);
-  assert.match(error, /The end of what it printed:\nthread 'main' panicked/);
+  // On Linux the app runs under a virtual display, whose own warnings
+  // (libEGL, xkbcomp) come before the panic in what it printed.
+  assert.match(error, /The end of what it printed:\n[\s\S]*thread 'main' panicked/);
   // Teardown removes the scenario's folder; the copy stays.
   fs.rmSync(home, { recursive: true, force: true });
   const [dir] = app.keptEvidence;
