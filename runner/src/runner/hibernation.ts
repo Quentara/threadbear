@@ -75,7 +75,7 @@ export const hibernationPart = {
       st.rec.updatedAt = this.isoNow();
       this.markDirty(st);
       this.armSnoozeTimer();
-      this.kickQueue(st);
+      if (this.bucket(st.rec) === 'inbox') this.kickQueue(st);
       throw new RpcError(ErrorCode.other, `Couldn't work out when to wake it: ${answer.error}`);
     }
     st.rec.snoozedUntil = answer.until ?? NO_WAKE_TIME;
@@ -396,6 +396,8 @@ export const hibernationPart = {
   // this isn't the one it went to sleep on, or a wake-when whose answer was
   // lost with the old runner.
   wakesOnStart(this: Runner, rec: ThreadState['rec']): boolean {
+    // Archived while hibernating: it stays put away (armSnoozeTimer says why).
+    if (rec.archivedAt) return false;
     if (rec.wakeWhen?.pending) return true;
     if (!rec.snoozedUntilRestart) return false;
     return !rec.untilRelease || rec.untilRelease !== this.release;
@@ -408,7 +410,12 @@ export const hibernationPart = {
     const now = this.clock.now();
     let next = Infinity;
     for (const st of this.threads.values()) {
-      if (!st.rec.snoozedUntil) continue;
+      // An archived thread keeps its hibernation for when it's brought
+      // back (unarchiving looks again), but doesn't wake in the archive:
+      // that gave it a "Woke up" and an unread mark there, and started any
+      // message it had queued while still archived (13 Nov 2026, the
+      // implicit state machines scan).
+      if (!st.rec.snoozedUntil || st.rec.archivedAt) continue;
       const t = Date.parse(st.rec.snoozedUntil);
       if (t <= now) this.wake(st, 'time');
       else next = Math.min(next, t);

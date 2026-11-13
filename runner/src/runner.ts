@@ -3107,6 +3107,8 @@ export class Runner {
         // (runner/quiet-inbox.ts).
         if (rec.archivedAt) rec.keptOut = true;
         delete rec.archivedAt;
+        // A hibernation that came due while it was archived wakes now.
+        if (rec.snoozedUntil) this.armSnoozeTimer();
       }
     }
     if (archiving) {

@@ -502,6 +502,29 @@ test('snooze releases the CLI, hides the thread, and brings it back unread', asy
   assert.equal(seen.woke, undefined);
 });
 
+// Archived while hibernating, it woke in the archive anyway: a "Woke up"
+// and an unread mark there, and any message it had queued started while it
+// was still archived (13 Nov 2026, the implicit state machines scan). It
+// keeps its hibernation for when it's brought back.
+test('a hibernating thread that is archived stays asleep in the archive, and wakes when brought back after its time', () => {
+  const h = makeHarness();
+  const { thread } = create(h);
+  h.adapter.last.init();
+  h.adapter.last.result();
+  h.runner.markSeen(thread.id, 99);
+  h.runner.update({ threadId: thread.id, snoozedUntil: new Date(h.clock.now() + 60 * MIN).toISOString() });
+  h.runner.update({ threadId: thread.id, archived: true });
+  h.clock.advance(2 * 60 * MIN);
+  const t = h.runner.get(thread.id);
+  assert.equal(t.woke, undefined);
+  assert.equal(t.needsYou, false);
+  assert.ok(!h.events(thread.id).some((e) => e.type === 'system.note' && e.text.startsWith('Woke up')));
+  assert.deepEqual(h.runner.list(['archived']).map((x) => x.id), [thread.id]);
+  h.runner.update({ threadId: thread.id, archived: false });
+  assert.match(h.events(thread.id).at(-1).text, /^Woke up after hibernating/);
+  assert.deepEqual(h.runner.list().map((x) => x.id), [thread.id]);
+});
+
 test('the wake note counts from when it first went away, even if the time changed', () => {
   const h = makeHarness();
   const { thread } = create(h);
