@@ -262,6 +262,48 @@ run or a screenshot from the running app. A slice with no runtime check doesn't
 count. (Ghostex's port log is where this shape comes from; its slices 214 to 268
 built parsers and gates with no launch of the app, which is the trap.)
 
+### 2026-11-13 Restarting onto the next version hands over, and threads keep their place (`system.handover`, `system.selfupdate`)
+
+- The GPUI app's restart onto a staged build was the window going and coming
+  back, and every thread opened at its end afterwards: scroll places were
+  only kept in memory. With the window plainly on screen it now hands over
+  as the Swift app's Handover.swift does: the staged bundle is swapped in,
+  started as a second copy (`open -n -g` with `--handover-from`, `-below`,
+  `-frame`), which opens its window unseen (alpha 0, no clicks) in the old
+  window's frame and just under it, loads the list and the open thread, then
+  shows itself there and says ready. The old app hands over the keys if it
+  had them, writes its drafts, says go with where it is now, and quits once
+  the new one says done (or a second later). The two talk through three
+  small files in `$TMPDIR/threadbear-handover-<old pid>`, not distributed
+  notifications. No ready in 20 s: the old app quits for a new one that's
+  still running, or restarts the old way if it isn't. The old app gone
+  without a go: the new one takes over anyway. The incoming app leaves
+  notifications and following main to the one showing until it takes over,
+  and doesn't swap at launch (the old app is running from the bundle that
+  would clear). Minimised, full screen, hidden, and Windows and Linux
+  restart as before.
+- What a restart saves now has every thread's scroll anchor that isn't at
+  its end, the open panes measured as it starts (up to 200 threads), and
+  puts them in the pane's memory before any thread opens. The Swift app
+  keeps only the open thread's.
+- Every guard the restart had still holds it: the rules and their
+  `restart_hold` wording are unchanged.
+- Files: `desktop/core/src/handover.rs` (the pure parts, with tests),
+  `desktop/gpui/src/handover.rs`, `app_update.rs`, `rows.rs`, `main.rs`,
+  `app.rs`, `drafts.rs`, `notify.rs`, `thread.rs`, `updates_panel.rs`
+  (`updates` with `restartState`, and `fresh` on `restore`),
+  `features/updates.feature`, `docs/guide.md`, `docs/on-your-mac.md`.
+- Verification: core's handover tests and the scroll memory test on Tinker
+  Desk. The new scenario (a thread scrolled up comes back where it was)
+  passes there and fails with the recall taken out. A release bundle
+  installed in a throwaway place on Tinker Desk's screen, with a staged
+  next build and the mock runner, restarted by itself after five idle
+  seconds: the new copy was ready 0.32 s after it loaded, took over in
+  front, and the old one quit; a recording at 10 frames a second shows the
+  window in place on every frame. The one visible change was that run's
+  first-run tour card fading in again, as its throwaway data folder had
+  never finished the tour.
+
 ### 2026-11-13 A project's page in tabs, with Go's Show Previous and Next Tab (`projects.tabs`)
 
 - With the projectDecisions experiment on, a project's page is in two tabs
