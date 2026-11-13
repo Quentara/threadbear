@@ -4199,6 +4199,12 @@ export class ConvexSync {
 
   private async takeAndRun(c: Command): Promise<void> {
     if (!this.running) return;
+    // An earlier command for this thread whose take failed goes again with
+    // the next heartbeat: this one waits to go after it (Codex's review).
+    if (c.threadId && [...this.untaken.values()].some((u) => u.threadId === c.threadId && u.commandId !== c.commandId && u.createdAt < c.createdAt)) {
+      this.untaken.set(c.commandId, c);
+      return;
+    }
     let taken: unknown;
     try {
       taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });

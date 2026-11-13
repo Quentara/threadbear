@@ -3834,3 +3834,30 @@ test("commands: a slow answer to a thread's first take doesn't let its next comm
   assert.deepEqual(applied.filter((a) => a.startsWith(`send ${t.id}`)).map((a) => a.split(' ')[2]), ['one', 'two']);
   await sync.stop();
 });
+
+// And from its third: a take that failed (an outage) went again with the
+// next heartbeat, after the thread's next command had already gone.
+test("commands: a thread's command whose take failed still goes before the thread's next", async () => {
+  let fail = true;
+  const { h, sync, push, applied } = setupFull({
+    apiVersion: BACKEND_API_VERSION,
+    hold: (fn, args) => (fn === 'sync:takeCommand' && args.commandId === 'first' && fail ? Promise.reject(new Error('fetch failed')) : undefined),
+  });
+  sync.start();
+  await sync.flushNow();
+  const t = h.runner.create({ text: 'hello', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await tick();
+  push([{ commandId: 'first', kind: 'send', threadId: t.id, args: { text: 'one' }, createdAt: 1 }]);
+  await tick(10);
+  push([
+    { commandId: 'first', kind: 'send', threadId: t.id, args: { text: 'one' }, createdAt: 1 },
+    { commandId: 'second', kind: 'send', threadId: t.id, args: { text: 'two' }, createdAt: 2 },
+  ]);
+  await tick(10);
+  assert.deepEqual(applied.filter((a) => a.startsWith(`send ${t.id}`)), [], 'the second waits for the first');
+  fail = false;
+  h.clock.advance(HEARTBEAT_MS);
+  await tick(20);
+  assert.deepEqual(applied.filter((a) => a.startsWith(`send ${t.id}`)).map((a) => a.split(' ')[2]), ['one', 'two']);
+  await sync.stop();
+});
