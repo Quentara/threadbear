@@ -109,7 +109,7 @@ for helper in perf-lock.pl perf-children.pl hangup-guard.sh; do
   ssh "$host" "cat > $boot/$helper" <"$root/scripts/$helper"
 done
 ssh "$host" "cat > $boot/trim-remote-cache.sh" <"$root/desktop/scripts/trim-remote-cache.sh"
-precopy="mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name 'target-$key' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -rf {} + 2>/dev/null; true
+precopy="mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name '${target##*/}' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -rf {} + 2>/dev/null; true
 cd \"\$HOME/$base\"
 bash \"\$HOME/$boot/trim-remote-cache.sh\" $key ${target##*/}"
 alive_stdin 7

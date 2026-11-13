@@ -14,9 +14,12 @@ if [ "$(cat "$marker" 2>/dev/null || true)" != "$key" ]; then
     [ ! -d "$source/app/Sources/Threadbear/Resources/$d" ] || inputs+=("$source/app/Sources/Threadbear/Resources/$d")
   done
   find "${inputs[@]}" \( -type f -o -type l \) -not -path "$source/desktop/target/*" -exec touch {} +
+  rm -f "$marker"
 fi
-rm -f "$marker"
+# Preparing an unchanged owner hasn't built anything yet. Preserve its valid
+# ownership until Cargo really starts, so the PATH wrapper keeps a warm build.
 [ "${1:-}" != --prepare ] || exit 0
+rm -f "$marker"
 "$@"
 case "${THREADBEAR_PERF_BUILD_ACTION:-build}" in
   build|check|clippy|rustc|test|run|bench)

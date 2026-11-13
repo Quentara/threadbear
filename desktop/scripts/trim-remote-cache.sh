@@ -64,6 +64,9 @@ evict() {
   key="${key#-}"
   local src=""
   [ -z "$key" ] || src="src-$key"
+  # This source is active on perf-target, not its old normal target. Count
+  # and evict that old target normally, while keeping the live source.
+  [ "$key" != "$own" ] || [ "$active_target" != perf-target ] || src=""
   recent "$1" && return 0
   [ -n "$src" ] && recent "$src" && return 0
   if [ "${2:-}" = always ]; then
@@ -130,17 +133,21 @@ evict target
 # checkout's always among them), and of the rest, those idle go.
 # This checkout's own counts as one of them whether or not it's built yet.
 limit=$MAX_TARGETS
-[ "$own" = - ] || [ "$active_target" = perf-target ] || limit=$((MAX_TARGETS - 1))
+own_target=""
+if [ "$own" != - ] && [ "$active_target" != perf-target ]; then
+  own_target="target-$own"
+  limit=$((MAX_TARGETS - 1))
+fi
 n=0
 for t in $(ls -dt target-* 2>/dev/null); do
-  case "$t" in target-gone-*|"target-$own") continue ;; esac
+  case "$t" in target-gone-*|"$own_target") continue ;; esac
   n=$((n + 1))
   [ "$n" -le "$limit" ] || evict "$t" always
 done
 # Longest since a run first: remote.sh touches each target as a run starts.
 # Names are target-<hex>, so the unquoted list is safe.
 for t in $(ls -dtr target-* 2>/dev/null); do
-  [ "$t" = "target-$own" ] || evict "$t"
+  [ "$t" = "$own_target" ] || evict "$t"
 done
 
 # A copy whose target has gone (deleted by hand, or by an older trim that left

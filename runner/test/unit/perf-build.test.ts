@@ -63,3 +63,14 @@ test('the locked prelude also protects absolute Cargo calls bypassing PATH', (t)
   assert.equal(cargo.status, 0);
   assert.equal(fs.readFileSync(h.artifact, 'utf8'), 'B');
 });
+
+test('prepare followed by PATH Cargo preserves an unchanged owner warm build', (t) => {
+  const h = setup(t);
+  assert.equal(h.build(h.b).status, 0);
+  const source = path.join(h.b, 'desktop/value.rs');
+  const before = { source: fs.statSync(source).mtimeMs, artifact: fs.statSync(h.artifact).mtimeMs };
+  assert.equal(h.build(h.b, {}, true).status, 0);
+  assert.equal(h.build(h.b).status, 0);
+  assert.equal(fs.statSync(source).mtimeMs, before.source, 'prelude must not force unchanged workspace inputs dirty');
+  assert.equal(fs.statSync(h.artifact).mtimeMs, before.artifact, 'Cargo keeps its warm artifact');
+});

@@ -326,3 +326,14 @@ test('perf mode consumes no per-checkout target slot', (t) => {
   assert.ok(!fs.existsSync(path.join(h.base, 'target-perfcheckout')));
   assert.equal(h.left().length, 4);
 });
+
+test('perf mode counts and evicts an old normal target without deleting its active source', (t) => {
+  const folders = { 'src-aaa': 20, 'target-aaa': 20, 'src-bbb': 1, 'target-bbb': 1, 'src-ccc': 2, 'target-ccc': 2, 'src-ddd': 3, 'target-ddd': 3, 'src-eee': 4, 'target-eee': 4 };
+  const h = host(t, 400, folders);
+  fs.mkdirSync(path.join(h.base, 'perf-target'));
+  const r = spawnSync('/bin/bash', [TRIM, 'aaa', 'perf-target'], { cwd: h.base, env: h.env, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(h.left().length, 4);
+  assert.ok(!fs.existsSync(path.join(h.base, 'target-aaa')));
+  assert.ok(fs.existsSync(path.join(h.base, 'src-aaa')), 'perf run still needs its source');
+});
