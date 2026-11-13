@@ -40,13 +40,24 @@ target="$base/target-$key"
 # The turn is a lock on a file this script holds open (fd 9), so it goes when
 # the script does, however it ends. Not lockf or flock running this script as
 # their child: kill that and the turn was free while this went on. ssh drops fd
-# 9 as it starts, so a kill can't end the script while ssh goes on: with the
-# trap, bash sees TERM or HUP only once the step it's waiting on has ended, and
-# exits then. (A KILL can't be held up; the run left behind can overlap the
-# next.) The folder is fixed, not TMPDIR, so every run from the checkout finds
+# 9 as it starts. The setup steps before the run are short, and a TERM or HUP
+# then is taken once the step ends. The run itself is a background ssh this
+# waits for, so a signal stops it at once: the trap kills that ssh, and
+# hangup-guard.sh on the host stops the command when its ssh goes (13 Nov: a
+# stopped --desk run went on building and recording on Tinker Desk). A KILL
+# can't be trapped, but it takes the ssh too when it's sent to the group, as
+# Ctrl-C and Claude Code's stop are, and the guard does the rest.
+# The folder is fixed, not TMPDIR, so every run from the checkout finds
 # the same file. perl for macOS, which has no flock command.
-trap 'exit 143' TERM
-trap 'exit 129' HUP
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/remote-guard-lib.sh"
+ssh_pid=""
+on_signal() {
+  [ -z "$ssh_pid" ] || kill "$ssh_pid" 2>/dev/null
+  exit "$1"
+}
+trap 'on_signal 143' TERM
+trap 'on_signal 129' HUP
+trap 'on_signal 130' INT
 if [ "$(uname -s)" = Darwin ]; then turns="$HOME/Library/Caches/Threadbear"; else turns="${XDG_CACHE_HOME:-$HOME/.cache}/threadbear"; fi
 mkdir -p "$turns/remote"
 exec 9>>"$turns/remote/$key-$(printf '%s' "$host" | tr -c 'A-Za-z0-9.-' _).lock"
@@ -94,7 +105,13 @@ rsync -rlpDcz --delete --exclude .git --exclude node_modules --exclude .build --
   "$root/" "$host:$src/"
 
 printf -v cmd '%q ' "$@"
+# The run's first argument, with --desk, is its pidfile (hangup-guard.sh):
+# Desk Runner starts it away from the guard, so it says where it is.
 read -r -d '' prelude <<PRELUDE || true
+if [ -n "\${1:-}" ]; then
+  echo \$\$ >"\$1"
+  [ ! -e "\$1.gone" ] || exit 129
+fi
 set -e
 cd "\$HOME/$src"
 # rsync changes this folder's time only when it writes into it, and the age limit above reads it.
@@ -151,11 +168,20 @@ rc=0
 $cmd || rc=\$?
 $postlude"
 
+# The run goes up as a file, as ssh's stdin is the guard's: nothing is sent on
+# it, and it ending is how the host knows this has gone.
+script="$base/run-$key-$$.sh"
+ssh "$host" "cat > $script" <<<"$run"
+alive_stdin 7
 if [ "$desk" = 1 ]; then
-  script=".cache/threadbear-check/gpui/run-$$.sh"
-  ssh "$host" "cat > $script" <<<"$run"
   # Desk Runner needs the screen awake for anything it draws.
-  ssh "$host" "caffeinate -u -t 2 >/dev/null 2>&1 || true; ~/.local/bin/desk \"bash \\\$HOME/$script\"; rc=\$?; rm -f $script; exit \$rc"
+  pidfile="$base/run-$key-$$.pid"
+  remote="caffeinate -u -t 2 >/dev/null 2>&1 || true; $(guarded_cmd "$pidfile" .local/bin/desk "perl -e 'setpgrp(0, 0); exec @ARGV' bash $script $pidfile")"
 else
-  ssh "$host" "bash -s" <<<"$run"
+  remote="$(guarded_cmd - bash "$script")"
 fi
+ssh "$host" "$remote; rc=\$?; rm -f $script; exit \$rc" <&7 &
+ssh_pid=$!
+rc=0
+wait "$ssh_pid" || rc=$?
+exit "$rc"

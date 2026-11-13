@@ -38,6 +38,9 @@
 #
 # A host that stops answering partway is dropped for the next (`watched`).
 #
+# The check there stops when this does: it runs under hangup-guard.sh, which
+# ends it when this Mac's ssh goes.
+#
 # Exit 255: no host that can run it could be reached (check.sh then runs here).
 # Hosts that were reached but have no room are exit 1, with their free space:
 # the M5 isn't the place for it either, and clearing the host is the fix.
@@ -52,6 +55,15 @@ free_cmd='df -Pk . 2>/dev/null | awk "END { print \$4 }"'
 if [ "${1:-}" = "--on-host" ]; then
   id="$2"
   shift 2
+  # --pidfile: the run is under Desk Runner (--shots), away from the
+  # hangup-guard.sh that would stop it if this Mac's ssh went, so it says
+  # where it is, and doesn't start if that ssh has already gone.
+  if [ "${1:-}" = "--pidfile" ]; then
+    case "$2" in /*) pidfile="$2" ;; *) pidfile="$HOME/$2" ;; esac
+    shift 2
+    echo $$ >"$pidfile"
+    [ ! -e "$pidfile.gone" ] || exit 129
+  fi
   base="$HOME/$BASE_REL"
   src="$base/src"
   # An ssh session's PATH has no nvm, so find-node.sh looks there too.
@@ -172,6 +184,8 @@ HOST_LIST="${1:?usage: check-remote.sh <ssh host>[,<ssh host>...] [check.sh opti
 shift
 read -ra HOSTS <<<"$(printf '%s' "$HOST_LIST" | tr ',' ' ')"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$ROOT/scripts/remote-guard-lib.sh"
+alive_stdin 7 || { echo "Couldn't make the pipe that tells a check host this check has gone (alive_stdin)." >&2; exit 1; }
 # A folder only this account can use: it exists (made here if not, mode
 # 0700), isn't a symlink, is owned by this user and has mode 0700 exactly.
 # One that's anything else is never repaired or used (Daybreak, 7 Nov: a
@@ -681,7 +695,11 @@ while :; do
   # The design screenshots go through Desk Runner, which has Screen Recording
   # there; over plain ssh they'd be drawn in-process, with the sidebar's
   # glass a flat fill.
-  [ -z "$SHOTS" ] || inner="\$HOME/.local/bin/desk $(printf '%q' "$inner")"
+  guard_pid=-
+  if [ -n "$SHOTS" ]; then
+    guard_pid="$BASE_REL/check-$id.pid"
+    inner="\$HOME/.local/bin/desk $(printf '%q' "perl -e 'setpgrp(0, 0); exec @ARGV' /bin/bash $(printf '%q' "$remote_run/scripts/check-remote.sh") --on-host $id --pidfile $guard_pid$quoted")"
+  fi
   lock="$remote_base/lock"
   # A free host is taken without waiting (75 if another check got there
   # first); otherwise this waits for its turn.
@@ -701,7 +719,13 @@ while :; do
   # A failed step's log path is on the host: its logs come back here, and the
   # path in the output is changed to match.
   local_logs="$(mktemp -d "${TMPDIR:-/tmp}/threadbear-check-remote.XXXXXX")"
-  watched "$HOST" "${SSH[@]}" "$HOST" "$remote_cmd" 2>&1 | rewrite_logs "$remote_base/tmp-$id/threadbear-check." "$local_logs"
+  # Under hangup-guard.sh, so the check stops there when this does, or when
+  # `watched` gives up on the host, rather than running on with the host's
+  # lock (13 Nov, remote.sh's run that went on recording on Tinker Desk). Its
+  # stdin is the guard's: see alive_stdin.
+  guarded="$(guarded_cmd "$guard_pid" /bin/bash -c "$remote_cmd")"
+  check_ssh() { "${SSH[@]}" "$HOST" "$guarded" <&7; }
+  watched "$HOST" check_ssh 2>&1 | rewrite_logs "$remote_base/tmp-$id/threadbear-check." "$local_logs"
   code=${PIPESTATUS[0]}
   if [ "$code" = 125 ]; then
     rmdir "$local_logs" 2>/dev/null
