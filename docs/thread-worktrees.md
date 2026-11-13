@@ -160,8 +160,13 @@ runs go one at a time, with the newest push waiting in place of any before it.
 Fix what failed first (`gh run view <id> --log-failed`). The landing that is
 that fix, or one made while main already has a fix GitHub hasn't run yet
 (main is only pushed now and then), goes in with `tb land --despite-red`.
-When `gh` isn't installed, isn't signed in or can't reach GitHub, the
-landing goes ahead and says it couldn't ask. Only `desktop.yml` has the mark
+GitHub's answer is kept in the repo's git folder
+(`threadbear-land-gate/`), shared by every worktree: one from the last
+minute is used without asking again, as a dozen threads landing at once ran
+out GitHub's shared API allowance (13 Nov). When `gh` isn't installed,
+isn't signed in or can't reach GitHub (a 403 for that allowance too), an
+answer from the last half hour still counts, saying how old it is; with
+none, the landing goes ahead and says it couldn't ask. Only `desktop.yml` has the mark
 so far.
 
 ### Landing together

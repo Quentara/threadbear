@@ -17,7 +17,7 @@ import { findWorktreePatch, isInside } from './patches.ts';
 import { TRUST_ALL } from './patch-trust.ts';
 import { checkoutTop, land, landTargetFromGit, realpath, type LandTarget } from './worktrees.ts';
 import { landRefusal } from './follow-origin.ts';
-import { landHold } from './land-gate.ts';
+import { gateCacheDir, gh, landHold } from './land-gate.ts';
 import { activityCommand } from './activity.ts';
 import { runnerKeysCommand } from './runner-keys.ts';
 import { pickRunner } from './moves.ts';
@@ -381,7 +381,7 @@ async function landCommand(cfg: ReturnType<typeof loadConfig>, dryRun: boolean, 
     // check while we waited. Running tb land asks for this patch's check.
     readCheck: async () => (await findWorktreePatch(from, undefined, undefined, undefined, TRUST_ALL, true))?.check,
     // A workflow red on main holds what it would run for (land-gate.ts).
-    hold: despiteRed ? undefined : (root, files) => landHold(root, files, (line) => console.log(line)),
+    hold: despiteRed ? undefined : (root, files) => { const dir = gateCacheDir(root); return landHold(root, files, (line) => console.log(line), gh, dir ? { dir } : undefined); },
   });
 }
 
