@@ -173,6 +173,8 @@ export async function sendScheduled(runner: Pick<Runner, 'sendScheduled' | 'has'
       if (!runner.has(threadId)) throw new RpcError(ErrorCode.busy, 'That thread is still moving to this runner; try again in a moment.');
       return runner.sendScheduled(threadId, text, scheduleId, run, since);
     }
+    // An unkeyed fallback cannot recognize a delivery after a lost reply.
+    // Keep this one-time handover wait instead of restoring that duplicate.
     if (e instanceof RpcError && e.code === ErrorCode.methodNotFound) throw new RpcError(ErrorCode.busy, 'The old runner cannot deliver scheduled messages yet; try again after its thread moves across.');
     throw e;
   }

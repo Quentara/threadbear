@@ -274,6 +274,59 @@ test('a new keyed send searches recent events and legacy sends do not scan histo
   assert.equal(ranges.length, 0);
 });
 
+test('a cached missing delivery scans only events appended since that miss', () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const st = h.runner.mustGet(thread.id);
+  const log = h.store.log(thread.id);
+  assert.equal(h.runner.findScheduledSend(thread.id, 's1', 'due:missing'), undefined);
+  let through = log.lastSeq;
+  const read = log.read.bind(log);
+  const ranges: number[] = [];
+  log.read = (from, to) => { ranges.push(from); return read(from, to); };
+  for (let retry = 0; retry < 3; retry++) {
+    h.runner.emit(st, { type: 'system.note', text: 'New streaming work' });
+    ranges.length = 0;
+    assert.equal(h.runner.findScheduledSend(thread.id, 's1', 'due:missing'), undefined);
+    assert.deepEqual(ranges, [through + 1], 'the previously scanned prefix is reused');
+    through = log.lastSeq;
+  }
+});
+
+test('a cached partial message learns about its appended turn start without rereading the row', () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const log = h.store.log(thread.id);
+  const append = log.append.bind(log);
+  log.append = (event) => {
+    if (event.type === 'turn.started') throw new Error('disk full');
+    append(event);
+  };
+  try {
+    assert.throws(() => h.runner.sendScheduled(thread.id, 'Inspect', 's1', 'due:partial'), /disk full/);
+  } finally { log.append = append; }
+  const partialSeq = log.lastSeq;
+  const sent = h.runner.sendScheduled(thread.id, 'Retry', 's1', 'due:partial');
+  const read = log.read.bind(log);
+  const ranges: number[] = [];
+  log.read = (from, to) => { ranges.push(from); return read(from, to); };
+  assert.deepEqual(h.runner.findScheduledSend(thread.id, 's1', 'due:partial'), sent);
+  assert.deepEqual(ranges, [partialSeq + 1]);
+  h.runner.emit(h.runner.mustGet(thread.id), { type: 'system.note', text: 'More work' });
+  ranges.length = 0;
+  assert.deepEqual(h.runner.findScheduledSend(thread.id, 's1', 'due:partial'), sent);
+  assert.deepEqual(ranges, [], 'an accepted delivery stays known while the log grows');
+});
+
+test('widening a cached miss time window still searches the older prefix', () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const sent = h.runner.sendScheduled(thread.id, 'Inspect', 's1', 'due:older');
+  const recovered = makeHarness(h.home);
+  assert.equal(recovered.runner.findScheduledSend(thread.id, 's1', 'due:older', h.clock.now() + 60 * MIN), undefined);
+  assert.deepEqual(recovered.runner.findScheduledSend(thread.id, 's1', 'due:older', 0), sent);
+});
+
 test('retrying a scheduled start after a failed turn.started append reuses its user message', async () => {
   const h = makeHarness();
   const { thread } = idleThread(h);
@@ -377,12 +430,17 @@ test('an old draining release leaves a run due, then it sends locally after the 
   const h = makeHarness();
   const { thread, s } = idleThread(h);
   let away = true;
+  let legacyCalls = 0;
   const sched = new Scheduler({
     runner: h.runner, home: h.home, clock: h.clock, log: nullLogger,
     elsewhere: () => away,
-    sendElsewhere: (id, text, scheduleId) => sendScheduled(h.runner, {
-      call: async () => { throw new RpcError(ErrorCode.methodNotFound, 'old release'); },
-    }, id, text, scheduleId),
+    sendElsewhere: (id, text, scheduleId, run, since) => sendScheduled(h.runner, {
+      call: async (_id, method) => {
+        if (method === 'drain.sendScheduledOnce') throw new RpcError(ErrorCode.methodNotFound, 'old release');
+        legacyCalls++;
+        return h.runner.send(id, text, [], { origin: 'schedule', scheduleId, queue: true });
+      },
+    }, id, text, scheduleId, run, since),
   });
   sched.start();
   try {
@@ -391,6 +449,7 @@ test('an old draining release leaves a run due, then it sends locally after the 
     await tick(6);
     assert.equal(sched.find(sc.id).lastRun, undefined);
     assert.equal(s.sent.length, 1);
+    assert.equal(legacyCalls, 0, 'a keyed send cannot silently give up lost-reply deduplication');
     away = false;
     h.clock.advance(MIN);
     await tick(6);

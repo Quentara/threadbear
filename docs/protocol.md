@@ -5337,7 +5337,8 @@ kept in `schedules.json` in the data dir.
   logged delivery instead of sending again after a lost reply. A message
   logged before `turn.started` failed is reused when that start is retried.
   The old method remains for older primaries; a draining release without
-  the keyed method leaves the run due until handover.
+  the keyed method leaves the run due until handover. Falling back would
+  restore duplicate deliveries after a lost reply, so it isn't used.
   An archived or snoozed thread comes back to the inbox, as with any message. One it
   brought out of the archive (`unarchivedBySchedule` on the record, with who
   had archived it) goes back, archived by them again with a `system.note`,

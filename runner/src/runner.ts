@@ -1536,25 +1536,37 @@ export class Runner {
     const cached = index.get(messageId);
     if (cached?.message?.started && cached.through <= log.lastSeq) return cached.message;
     if (cached?.through === log.lastSeq && cached.since <= since) return cached.message;
-    let started = false;
     const last = log.lastSeq;
-    for (let to = last; to >= 1; to -= 128) {
-      const events = log.read(Math.max(1, to - 127), to);
+    // A miss already checked the prefix for this time window. Streaming
+    // after it only makes the appended suffix new work. A wider window or
+    // a shorter log must search again from the beginning.
+    const reuse = cached && cached.through <= last && cached.since <= since;
+    const from = reuse ? cached.through + 1 : 1;
+    let message = reuse ? cached.message : undefined;
+    let started = message?.started ?? false;
+    const finish = () => {
+      const found = message && { ...message, started };
+      index.set(messageId, { through: last, since, message: found });
+      return found;
+    };
+    for (let to = last; to >= from; to -= 128) {
+      const events = log.read(Math.max(from, to - 127), to);
       for (let i = events.length - 1; i >= 0; i--) {
         const e = events[i];
         if (e.turnId === messageId) {
-          if (e.type === 'turn.started') started = true;
+          if (e.type === 'turn.started') {
+            started = true;
+            if (message) return finish();
+          }
           if (e.type === 'user.message' && e.origin === 'schedule') {
-            const message = { seq: e.seq, started, text: e.text, images: e.images };
-            index.set(messageId, { through: last, since, message });
-            return message;
+            message = { seq: e.seq, started, text: e.text, images: e.images };
+            return finish();
           }
         }
-        if (Date.parse(e.ts) < since) { index.set(messageId, { through: last, since }); return undefined; }
+        if (Date.parse(e.ts) < since) return finish();
       }
     }
-    index.set(messageId, { through: last, since });
-    return undefined;
+    return finish();
   }
 
   findScheduledSend(threadId: string, scheduleId: string, run?: string, since = 0): { turnId: string } | undefined {
