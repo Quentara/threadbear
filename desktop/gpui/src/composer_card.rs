@@ -14,7 +14,7 @@ use gpui_kit::*;
 use crate::style::px;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use threadbear_core::composer::{self, OWN_ANSWER};
 use threadbear_core::reducer::{Ask, AskNote, AsksCard, RowContent};
 use crate::tips::Tip as _;
@@ -376,9 +376,24 @@ impl Composer {
 
     /// The card, over a line, at the top of the box.
     pub(crate) fn render_card(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let card = self.open_card(cx)?;
+        let card = self.open_card(cx);
+        let settle = self.card_arrival.saw(self.thread_id.as_deref(), card.as_ref().map(|c| c.seq), cx.reduce_motion());
+        let card = card?;
         self.sync_card(&card);
-        let body = if card.is_done() { self.render_done_card(&card, cx) } else { self.render_asks_card(&card, window, cx) };
+        let body = if card.is_done() { self.render_done_card(&card, settle.filter(|_| !cx.reduce_motion()), window, cx) } else { self.render_asks_card(&card, window, cx) };
+        // Arriving while he's watching, it comes up from a touch below as it
+        // fades in (`ComposerCard`'s arriving card, Mike picked it 13 Nov).
+        let body = match settle {
+            Some(at) => {
+                let elapsed = at.elapsed();
+                let (fade, below) = threadbear_core::juice::card_settle(elapsed, cx.reduce_motion());
+                if threadbear_core::juice::card_settling(elapsed, cx.reduce_motion()) {
+                    window.request_animation_frame();
+                }
+                div().relative().top(px(below)).opacity(fade).child(body).into_any_element()
+            }
+            None => body,
+        };
         // Under half the window (ComposerCardHost.maxHeight), for the card
         // itself: its padding comes on top, as the Swift box adds it outside.
         let max_height = gpui_kit::px((f32::from(window.viewport_size().height) * 0.45).max(style::zoomed(200.))) + px(18.);
@@ -389,15 +404,24 @@ impl Composer {
 
     /// RowRenderer.doneText: Done, with Archive at the right, and the agent's
     /// follow-ups under "Or carry on", each a row with a tick and a "?".
-    fn render_done_card(&mut self, card: &AsksCard, cx: &mut Context<Self>) -> AnyElement {
+    fn render_done_card(&mut self, card: &AsksCard, drawing: Option<Instant>, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let mut column = v_flex().w_full();
         let this = cx.entity().downgrade();
+        // Arriving, its tick draws itself on; then it's the tick as ever.
+        let green = style::tick_green(cx);
+        let tick = match drawing.filter(|at| at.elapsed() < threadbear_core::juice::TICK_DRAW_END) {
+            Some(at) => {
+                window.request_animation_frame();
+                drawn_tick(threadbear_core::juice::tick_drawn(at.elapsed()), green).into_any_element()
+            }
+            None => crate::icons::tall_checkmark().with_size(px(16.)).text_color(green).into_any_element(),
+        };
         column = column.child(
             h_flex()
                 .w_full()
                 .h(px(metrics::PAGED_HEADING))
                 .justify_between()
-                .child(card_title(crate::icons::tall_checkmark().with_size(px(16.)).text_color(style::tick_green(cx)).into_any_element(), 2.5, "Done", cx))
+                .child(card_title(tick, 2.5, "Done", cx))
                 .child(card_button(("done-archive", 0usize), "Archive", ButtonLook::Plain, "Archive this thread", cx).on_click({
                     let this = this.clone();
                     move |_, window, cx| {
@@ -1382,6 +1406,83 @@ fn button_shadow() -> Vec<BoxShadow> {
 /// The card's button (AskButtonStyle): a rounded box with a soft shadow, the
 /// picked one in the accent with white words, the agent's pick with an
 /// accent edge, the rest a raised grey.
+/// Which card the box last showed, for one that arrives while the thread's
+/// on screen to settle in: not one that was there when the thread opened.
+#[derive(Default)]
+pub(crate) struct CardArrival {
+    thread: Option<String>,
+    seq: Option<i64>,
+    since: Option<Instant>,
+    /// The card settling in now, and when it arrived.
+    arrived: Option<(i64, Instant)>,
+}
+
+impl CardArrival {
+    /// Notes the card showing now; says when it arrived, while it's settling
+    /// or drawing its tick.
+    pub(crate) fn saw(&mut self, thread: Option<&str>, seq: Option<i64>, reduce: bool) -> Option<Instant> {
+        let now = Instant::now();
+        if self.thread.as_deref() != thread || self.since.is_none() {
+            // A thread just opened: its card was already there.
+            *self = CardArrival { thread: thread.map(str::to_owned), seq, since: Some(now), arrived: None };
+            return None;
+        }
+        if self.seq != seq {
+            self.seq = seq;
+            // Not in the first moment after opening, while its events load.
+            let settled_in = self.since.is_some_and(|since| now.duration_since(since) > Duration::from_millis(600));
+            self.arrived = seq.filter(|_| settled_in).map(|seq| (seq, now));
+        }
+        let (seq_now, at) = self.arrived?;
+        let going = threadbear_core::juice::card_settling(at.elapsed(), reduce) || at.elapsed() < threadbear_core::juice::TICK_DRAW_END;
+        (Some(seq_now) == seq && going).then_some(at)
+    }
+}
+
+/// The done card's tick, drawn `t` of the way along (0 to 1): the tall
+/// checkmark's own two strokes (icons.rs), 16 across, painted so far.
+fn drawn_tick(t: f32, colour: Hsla) -> impl IntoElement {
+    canvas(
+        |_, _, _| {},
+        move |bounds, _, window, _| {
+            let k = f32::from(bounds.size.width) / 24.;
+            let at = |x: f32, y: f32| point(bounds.origin.x + gpui_kit::px(x * k), bounds.origin.y + gpui_kit::px(y * k));
+            let points = [(4., 13.5), (9., 19.), (20., 3.5)];
+            let lengths: Vec<f32> = points.windows(2).map(|w| ((w[1].0 - w[0].0) as f32).hypot(w[1].1 - w[0].1)).collect();
+            let mut left = t.clamp(0., 1.) * lengths.iter().sum::<f32>();
+            if left <= 0. {
+                return;
+            }
+            let width = 2. * k;
+            let mut path = PathBuilder::stroke(gpui_kit::px(width));
+            path.move_to(at(points[0].0, points[0].1));
+            let mut ends = vec![points[0]];
+            for (i, length) in lengths.iter().enumerate() {
+                let (a, b) = (points[i], points[i + 1]);
+                let u = (left / length).min(1.);
+                let end = (a.0 + (b.0 - a.0) * u, a.1 + (b.1 - a.1) * u);
+                path.line_to(at(end.0, end.1));
+                ends.push(end);
+                left -= length;
+                if left <= 0. {
+                    break;
+                }
+            }
+            if let Ok(path) = path.build() {
+                window.paint_path(path, colour);
+            }
+            // Round caps and joins: a dot at each point reached.
+            for (x, y) in ends {
+                let c = at(x, y);
+                let dot = Bounds { origin: point(c.x - gpui_kit::px(width / 2.), c.y - gpui_kit::px(width / 2.)), size: size(gpui_kit::px(width), gpui_kit::px(width)) };
+                window.paint_quad(fill(dot, colour).corner_radii(gpui_kit::px(width / 2.)));
+            }
+        },
+    )
+    .size(px(16.))
+    .flex_none()
+}
+
 pub(crate) fn card_button(id: impl Into<ElementId>, title: &str, look: ButtonLook, tip: &'static str, cx: &App) -> Stateful<Div> {
     let (fill, text, edge) = match look {
         ButtonLook::Picked => (style::control_accent(cx), gpui_kit::white(), gpui_kit::transparent_black()),

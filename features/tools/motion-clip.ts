@@ -158,7 +158,7 @@ const scenes: Record<string, Scene> = {
   'archive-row': {
     setup: async (app) => scenes.archive.setup(app),
     act: async (app) => {
-      await app.do({ cmd: 'archive', id: 'demo_tidy_imports' });
+      await app.do({ cmd: 'archive', id: 'demo_tidy_imports', slide: true });
     },
     seconds: 2.5,
   },

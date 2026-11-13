@@ -12,7 +12,6 @@ mod alert;
 mod app;
 mod app_log;
 mod archive_flight;
-mod bears;
 mod app_update;
 #[cfg(feature = "automation")]
 mod automation;

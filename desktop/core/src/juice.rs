@@ -132,6 +132,55 @@ pub fn selection_slide(t: f32) -> f32 {
     cubic_bezier(0.2, 0.9, 0.25, 1., t)
 }
 
+// MARK: The activity bar
+
+/// The lit square sliding between the view buttons (`Juice.selection`:
+/// snappy, 0.2 s), and how long it's given to settle.
+pub const LIT_RESPONSE: f32 = 0.2;
+pub const LIT_SLIDE: Duration = Duration::from_millis(400);
+
+/// A button's icon after a click: pressed in to 0.82 in 0.08 s, then a
+/// bouncy spring home (`.bouncy(duration: 0.35, extraBounce: 0.25)`).
+pub const RAIL_BOUNCE: Duration = Duration::from_millis(500);
+
+/// Its scale `t` seconds after the click.
+pub fn rail_bounce(t: f32) -> f32 {
+    const PRESS: f32 = 0.08;
+    if t < PRESS {
+        return Track { start: 1., keys: &[(PRESS, 0.82)] }.at(t);
+    }
+    0.82 + 0.18 * spring(t - PRESS, 0.35, 0.45)
+}
+
+/// The sidebar's new view settling in as the activity bar switches it: up
+/// 6 points as it fades in, snappy over 0.22 s; a 0.12 s fade under Reduce
+/// Motion (SidebarView's transition).
+pub const VIEW_SETTLE_RISE: f32 = 6.;
+pub const VIEW_SETTLE: Duration = Duration::from_millis(400);
+
+/// The new view's (opacity, distance below its place) `t` seconds in.
+pub fn view_settle(t: f32, reduce: bool) -> (f32, f32) {
+    if reduce {
+        return ((t / 0.12).clamp(0., 1.), 0.);
+    }
+    let p = snappy(t, 0.22);
+    (p.clamp(0., 1.), VIEW_SETTLE_RISE * (1. - p))
+}
+
+// MARK: The Librarian's picture
+
+/// The picture's wobble when poked: a squash (x by this, y by 2 minus it)
+/// and a tilt from its feet, in degrees (HomePage's keyframes).
+pub const WOBBLE: Duration = Duration::from_millis(450);
+
+/// Its (squash, sideways sway in points) `t` seconds after the poke, for a
+/// picture `height` tall: the sway is how far its middle moves as it tilts.
+pub fn wobble(t: f32, height: f32) -> (f32, f32) {
+    let squash = Track { start: 1., keys: &[(0.045, 1.02), (0.11, 1.)] }.at(t);
+    let angle = Track { start: 0., keys: &[(0.16, -2.), (0.11, 1.5), (0.1, -0.8), (0.08, 0.)] }.at(t);
+    (squash, angle.to_radians().sin() * height / 2.)
+}
+
 // MARK: Sending
 
 /// A sent message lifting off the composer into the thread (`SendLift`):
@@ -157,6 +206,48 @@ pub fn send_lift(elapsed: Duration, reduce: bool) -> (f32, f32) {
 /// Whether a lift started at `elapsed` ago is still going.
 pub fn send_lifting(elapsed: Duration, reduce: bool) -> bool {
     elapsed < if reduce { SEND_LIFT_REDUCED } else { SEND_LIFT_DELAY + SEND_LIFT }
+}
+
+/// The send arrow's hop as Return lands: up 3 points and back.
+pub const SEND_HOP: Duration = Duration::from_millis(120);
+
+/// The arrow's offset (negative is up) `t` seconds after Return.
+pub fn send_hop(t: f32) -> f32 {
+    Track { start: 0., keys: &[(0.05, -3.), (0.07, 0.)] }.at(t)
+}
+
+// MARK: The composer's card
+
+/// A card arriving while the thread's on screen comes up from this far below
+/// as it fades in, over 0.2 s on `ease_out_settle` (`ComposerCard`'s
+/// arriving card); under Reduce Motion, a 0.15 s fade.
+pub const CARD_SETTLE_RISE: f32 = 6.;
+pub const CARD_SETTLE: Duration = Duration::from_millis(200);
+pub const CARD_SETTLE_REDUCED: Duration = Duration::from_millis(150);
+
+/// The arriving card's (opacity, distance below its place).
+pub fn card_settle(elapsed: Duration, reduce: bool) -> (f32, f32) {
+    if reduce {
+        return (progress(elapsed, CARD_SETTLE_REDUCED), 0.);
+    }
+    let eased = ease_out_settle(progress(elapsed, CARD_SETTLE));
+    (eased, CARD_SETTLE_RISE * (1. - eased))
+}
+
+pub fn card_settling(elapsed: Duration, reduce: bool) -> bool {
+    elapsed < if reduce { CARD_SETTLE_REDUCED } else { CARD_SETTLE }
+}
+
+/// The done card's tick drawing itself on as the card arrives: a beat in,
+/// then along its strokes on `cubic-bezier(.3, 0, .2, 1)`; the tick as ever
+/// from `TICK_DRAW_END`. Not under Reduce Motion.
+pub const TICK_DRAW_DELAY: Duration = Duration::from_millis(40);
+pub const TICK_DRAW: Duration = Duration::from_millis(260);
+pub const TICK_DRAW_END: Duration = Duration::from_millis(320);
+
+/// How much of the tick's drawn, 0 to 1.
+pub fn tick_drawn(elapsed: Duration) -> f32 {
+    cubic_bezier(0.3, 0., 0.2, 1., progress(elapsed.saturating_sub(TICK_DRAW_DELAY), TICK_DRAW))
 }
 
 #[cfg(test)]
@@ -203,6 +294,27 @@ mod tests {
         assert_eq!(wave.at(5.), 0.);
         assert!((timed(&[(0., 0.), (0.16, 14.), (0.38, 3.)], 0.16) - 14.).abs() < 1e-3);
         assert_eq!(timed(&[(0., 1.), (1., 2.)], 9.), 2.);
+    }
+
+    #[test]
+    fn the_rail_bounces_home() {
+        assert_eq!(rail_bounce(0.), 1.);
+        assert!((rail_bounce(0.08) - 0.82).abs() < 1e-3);
+        assert!((0..50).any(|i| rail_bounce(0.08 + i as f32 / 100.) > 1.01));
+        assert!((rail_bounce(RAIL_BOUNCE.as_secs_f32()) - 1.).abs() < 0.03);
+        assert_eq!(view_settle(0., false), (0., VIEW_SETTLE_RISE));
+        assert!(view_settle(VIEW_SETTLE.as_secs_f32(), false).1.abs() < 0.1);
+        assert_eq!(view_settle(1., true), (1., 0.));
+    }
+
+    #[test]
+    fn the_card_settles_and_its_tick_draws() {
+        assert_eq!(card_settle(Duration::ZERO, false), (0., CARD_SETTLE_RISE));
+        assert_eq!(card_settle(CARD_SETTLE, false), (1., 0.));
+        assert_eq!(card_settle(Duration::from_millis(75), true).1, 0.);
+        assert_eq!(tick_drawn(Duration::from_millis(20)), 0.);
+        assert_eq!(tick_drawn(TICK_DRAW_DELAY + TICK_DRAW), 1.);
+        assert!(TICK_DRAW_END >= TICK_DRAW_DELAY + TICK_DRAW);
     }
 
     #[test]

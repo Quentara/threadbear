@@ -779,7 +779,7 @@ impl Threadbear {
         if archived {
             self.unarchive_row(&id, cx);
         } else {
-            self.archive_row(id, window, cx);
+            self.archive_row_sliding(id, window, cx);
         }
     }
 
@@ -830,6 +830,9 @@ impl Threadbear {
         // (`showProjects`); the Inbox leaves it where it is.
         let closes_project = home && self.projects.open.is_some();
         if self.mode != mode || self.shows_home != home || closes_project {
+            if self.mode != mode {
+                self.view_switched = Some(std::time::Instant::now());
+            }
             self.mode = mode;
             self.shows_home = home;
             if closes_project {
@@ -1487,12 +1490,28 @@ impl Threadbear {
     /// What the Threads panel shows: the thread list, or the page of the
     /// rail's other modes (drawn by `SidebarView`).
     pub(crate) fn render_threads_panel(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        match self.mode {
+        let view = match self.mode {
             SidebarMode::Inbox => self.render_sidebar(cx).into_any_element(),
             SidebarMode::Scheduled => self.render_scheduled_list(cx),
             SidebarMode::Librarian => self.render_librarian_list(cx),
             SidebarMode::Projects => self.render_projects_list(cx),
-        }
+        };
+        // A view the activity bar's just switched to fades up into place
+        // (SidebarView's transition; Mike picked it, 13 Nov). Under a wrapper
+        // keyed by the switch, so each one starts over, and kept once it's
+        // done, so the view's own state isn't remade.
+        let reduce = cx.reduce_motion();
+        let Some(at) = self.view_switched else { return view };
+        let length = threadbear_core::juice::VIEW_SETTLE;
+        div()
+            .relative()
+            .size_full()
+            .child(view)
+            .with_animation(SharedString::from(format!("view-settle-{at:?}")), Animation::new(length), move |el, t| {
+                let (fade, below) = threadbear_core::juice::view_settle(t * length.as_secs_f32(), reduce);
+                el.opacity(fade).top(px(below))
+            })
+            .into_any_element()
     }
 
     /// The main panel: banners over the thread, the notes floating over it.

@@ -832,7 +832,7 @@ impl Threadbear {
     fn run_row_action(&mut self, id: String, action: MenuAction, window: &mut Window, cx: &mut Context<Self>) {
         match action {
             MenuAction::Star(on) => self.star_row(&id, on, cx),
-            MenuAction::Archive => self.archive_row(id, window, cx),
+            MenuAction::Archive => self.archive_row_sliding(id, window, cx),
             MenuAction::Unarchive => self.unarchive_row(&id, cx),
             MenuAction::Wake => self.wake_row(&id, cx),
             MenuAction::Hibernate(preset) => {
@@ -1636,7 +1636,7 @@ impl Threadbear {
                     let id = id.clone();
                     let listener = cx.listener(move |this, _: &ClickEvent, window, cx| {
                         let confirmed_id = id.clone();
-                        this.confirm_if_busy(&id, true, window, cx, move |this, window, cx| this.archive_row(confirmed_id.clone(), window, cx));
+                        this.confirm_if_busy(&id, true, window, cx, move |this, window, cx| this.archive_row_sliding(confirmed_id.clone(), window, cx));
                     });
                     icon_button(key, icon(symbol, 13., p.secondary), tip, &p, listener).into_any_element()
                 }
@@ -2092,7 +2092,13 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
         }
         "archive" => {
             let id = target(cx)?;
-            app.update(cx, |t, cx| t.archive_row(id.clone(), window, cx));
+            // `slide`: as its button does it, sliding off first. Otherwise at
+            // once, for the specs that read the list straight after.
+            if cmd["slide"].as_bool() == Some(true) {
+                app.update(cx, |t, cx| t.archive_row_sliding(id.clone(), window, cx));
+            } else {
+                app.update(cx, |t, cx| t.archive_row(id.clone(), window, cx));
+            }
             Ok(json!(format!("ok {id}")))
         }
         "snooze" => {

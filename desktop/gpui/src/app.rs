@@ -72,6 +72,9 @@ pub struct Threadbear {
     /// The pane sections Hide Panels closed, for Show Panels (`hiddenPanes`).
     pub(crate) hidden_panes: Vec<String>,
     pub(crate) mode: SidebarMode,
+    /// When the activity bar last switched the sidebar's view, for the new
+    /// one to settle in (shell.rs `render_threads_panel`).
+    pub(crate) view_switched: Option<std::time::Instant>,
     pub(crate) history: NavigationHistory<NavPlace>,
     /// shortcuts.json's keys, and the chords bound to them so far.
     pub(crate) shortcuts: ShortcutBindings,
@@ -476,6 +479,7 @@ impl Threadbear {
             frame_rate: None,
             hidden_panes: Vec::new(),
             mode: SidebarMode::Inbox,
+            view_switched: None,
             history: NavigationHistory::default(),
             shortcuts: ShortcutBindings::default(),
             bound_keys: HashMap::new(),

@@ -95,6 +95,9 @@ struct Settling {
     action: SwipeAction,
     from: f32,
     at: Instant,
+    /// Sent off by a click (its Archive button), not a swipe: no backing
+    /// behind it, and it fades as it goes (`slidingOff`).
+    plain: bool,
 }
 
 /// One row's gesture at a time, for the whole sidebar.
@@ -231,6 +234,8 @@ impl Threadbear {
         let width = gestures.width.get();
         let mut animating = false;
         let mut shown: Option<(f32, bool, SwipeAction)> = None;
+        // How much of a row sent off by a click still shows.
+        let mut fade = None;
         if let Some(leaving) = gestures.leaving.as_ref().filter(|s| s.row == id) {
             // Off the row's left edge, and a little more for its shadow
             // (`gone`), with the backing blue all the way.
@@ -239,6 +244,9 @@ impl Threadbear {
             animating = t < 1.;
             let gone = -(width + 40.);
             shown = Some((leaving.from + (gone - leaving.from) * ease_in(t), true, leaving.action));
+            if leaving.plain {
+                fade = Some(1. - ease_in(t));
+            }
         } else if let Some(spring) = gestures.spring.as_ref().filter(|s| s.row == id) {
             let t = now.saturating_duration_since(spring.at).as_secs_f32();
             let span = if reduce { SPRING_BACK_REDUCED } else { SPRING_BACK };
@@ -281,6 +289,9 @@ impl Threadbear {
                 }
             }));
         let Some((offset, armed, action)) = shown.filter(|(offset, ..)| offset.abs() >= 0.25) else { return slot.child(row).into_any_element() };
+        if let Some(fade) = fade {
+            return slot.child(div().relative().left(gpui_kit::px(offset)).opacity(fade).child(row)).into_any_element();
+        }
         let backing = (offset < 0.).then(|| {
             let fill = if armed { style::accent(cx) } else { style::primary_opacity(cx, 0.07) };
             let ink = if armed { gpui_kit::white() } else { style::secondary_text(cx) };
@@ -439,7 +450,7 @@ impl Threadbear {
         let gestures = &mut self.sidebar.gestures;
         gestures.swipe.reset();
         gestures.row = None;
-        gestures.spring = (from.abs() >= 0.5).then(|| Settling { row: id.to_owned(), action, from, at: Instant::now() });
+        gestures.spring = (from.abs() >= 0.5).then(|| Settling { row: id.to_owned(), action, from, at: Instant::now(), plain: false });
         cx.notify();
     }
 
@@ -485,11 +496,28 @@ impl Threadbear {
     /// the Archived note a swipe's archive has, `slid: true`) or put back in
     /// the Inbox.
     fn slide_off(&mut self, id: String, action: SwipeAction, at: f32, cx: &mut Context<Self>) {
+        self.send_off(id, action, at, false, cx);
+    }
+
+    /// A row archived from its button: it slides off to the left and fades,
+    /// in the time a swipe's takes, and is archived once it's gone, as the
+    /// Swift app's `slideOff` (Mike picked it, 13 Nov). Not the open thread,
+    /// whose page flies to Archived instead, nor while another row is going.
+    pub(crate) fn archive_row_sliding(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
+        let open = self.selected.as_deref() == Some(id.as_str());
+        if open || self.sidebar.gestures.leaving.is_some() {
+            self.archive_row(id, window, cx);
+        } else {
+            self.send_off(id, SwipeAction::Archive, 0., true, cx);
+        }
+    }
+
+    fn send_off(&mut self, id: String, action: SwipeAction, at: f32, plain: bool, cx: &mut Context<Self>) {
         let quick = if cx.reduce_motion() { SLIDE_OFF_REDUCED } else { SLIDE_OFF };
         let gestures = &mut self.sidebar.gestures;
         gestures.swipe.reset();
         gestures.row = None;
-        gestures.leaving = Some(Settling { row: id.clone(), action, from: at, at: Instant::now() });
+        gestures.leaving = Some(Settling { row: id.clone(), action, from: at, at: Instant::now(), plain });
         cx.notify();
         let (me, window) = (cx.entity().downgrade(), self.main_window);
         cx.spawn(async move |_, cx| {

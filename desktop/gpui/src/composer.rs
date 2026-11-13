@@ -72,12 +72,16 @@ pub struct Composer {
     /// Stop was pressed and the turn hasn't ended yet: a spinner in its place.
     /// When Stop was pressed (`still_stopping`).
     stopping: Option<i64>,
+    /// When Return last sent, for the arrow's hop (`sendNudges`).
+    sent_hop: Option<std::time::Instant>,
     /// A refused send's draft, to put back at the next render.
     restore: Option<RestoreDraft>,
     /// The model picker's search and column, kept while it's open.
     pub(crate) model_picker: Option<Entity<ModelPickerView>>,
     /// What's picked on the open card, and how the card's showing.
     pub(crate) card: CardState,
+    /// Which card was last seen arriving, for it to settle in (composer_card.rs).
+    pub(crate) card_arrival: crate::composer_card::CardArrival,
     /// The card's text style, one per appearance (`card_reading_style`).
     pub(crate) card_style: Option<((bool, u32), gpui_kit::base::TextViewStyle)>,
     shown_placeholder: SharedString,
@@ -203,9 +207,11 @@ impl Composer {
             #[cfg(feature = "automation")]
             debug_opened: None,
             stopping: None,
+            sent_hop: None,
             restore: None,
             model_picker: None,
             card: CardState::default(),
+            card_arrival: Default::default(),
             card_style: None,
             shown_placeholder: "Message".into(),
             editing: None,
@@ -504,6 +510,11 @@ impl Composer {
     /// if the runner doesn't take it.
     pub(crate) fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.loading_pictures(cx) { return; }
+        // The arrow hops as Return lands, when there's something to send
+        // (Mike picked it, 13 Nov). None under Reduce Motion.
+        if self.can_send(cx) && !cx.reduce_motion() {
+            self.sent_hop = Some(std::time::Instant::now());
+        }
         // Return still reaches here with the box locked for a move.
         if self.moving_line(cx).is_some() {
             return;
@@ -1354,9 +1365,23 @@ impl Composer {
             .aria_label("Send")
             .when(can_send, |s| s.cursor_pointer())
             .bg(bg)
-            .child(Icon::from(IconName::ArrowUp).with_size(px(14.)).text_color(fg))
+            .child(self.hopping(Icon::from(IconName::ArrowUp).with_size(px(14.)).text_color(fg).into_any_element()))
             .when(can_send, |s| s.on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.send(window, cx))))
             .tip(tip)
+            .into_any_element()
+    }
+
+    /// The send arrow, nudging up and back once after a send: 3 points in
+    /// 0.05 s and home in 0.07 (`ComposerControls`' send button).
+    fn hopping(&self, arrow: AnyElement) -> AnyElement {
+        let Some(at) = self.sent_hop.filter(|at| at.elapsed() < threadbear_core::juice::SEND_HOP) else { return arrow };
+        let length = threadbear_core::juice::SEND_HOP;
+        div()
+            .relative()
+            .child(arrow)
+            .with_animation(SharedString::from(format!("send-hop-{at:?}")), Animation::new(length), move |el, t| {
+                el.top(px(threadbear_core::juice::send_hop(t * length.as_secs_f32())))
+            })
             .into_any_element()
     }
 

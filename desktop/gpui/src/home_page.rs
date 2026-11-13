@@ -74,11 +74,13 @@ pub(crate) struct Pokes {
     /// Counts the pokes, so an old line's fade leaves a newer one alone.
     count: u64,
     fade: Option<Task<()>>,
+    /// When it was last poked, for its wobble.
+    poked: Option<std::time::Instant>,
 }
 
 impl Pokes {
     pub(crate) fn new(art: Art) -> Self {
-        Pokes { lines: PokeLines::new(art.lines()), line: None, count: 0, fade: None }
+        Pokes { lines: PokeLines::new(art.lines()), line: None, count: 0, fade: None, poked: None }
     }
 }
 
@@ -95,7 +97,30 @@ impl Threadbear {
     pub(crate) fn render_home_page(&mut self, art: Art, about: AnyElement, stats: &[HomeStat], below: Option<AnyElement>, cx: &mut Context<Self>) -> AnyElement {
         let secondary = style::secondary_text(cx);
         let line = self.pokes_mut(art).line;
+        let poked = self.pokes_mut(art).poked.filter(|at| at.elapsed() < threadbear_core::juice::WOBBLE);
         let (width, height) = art.size();
+        // Poked, it squashes and sways from its feet and settles (HomePage's
+        // keyframes). GPUI can't turn a picture, so the Swift app's tilt is a
+        // sway: the picture's middle moving as far as the tilt would take it.
+        let picture_el = match poked {
+            None => img(art.image()).size_full().object_fit(ObjectFit::Contain).into_any_element(),
+            Some(at) => {
+                let length = threadbear_core::juice::WOBBLE;
+                div()
+                    .relative()
+                    .size_full()
+                    .child(div().absolute().bottom_0().child(img(art.image()).size_full().object_fit(ObjectFit::Contain)).with_animation(
+                        SharedString::from(format!("home-wobble-{at:?}")),
+                        Animation::new(length),
+                        move |el, t| {
+                            let (squash, sway) = threadbear_core::juice::wobble(t * length.as_secs_f32(), height);
+                            let (w, h) = (width * squash, height * (2. - squash));
+                            el.w(px(w)).h(px(h)).left(px((width - w) / 2. + sway))
+                        },
+                    ))
+                    .into_any_element()
+            }
+        };
         let picture = div()
             .relative()
             .child(
@@ -106,7 +131,7 @@ impl Threadbear {
                     .w(px(width))
                     .h(px(height))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.poke_home_picture(art, cx)))
-                    .child(img(art.image()).size_full().object_fit(ObjectFit::Contain)),
+                    .child(picture_el),
             )
             // Drawn in the gap below, taking no room of its own.
             .when_some(line, |s, line| s.child(div().absolute().left_0().bottom(px(-24.)).whitespace_nowrap().text_size(px(style::size::LABEL)).line_height(px(16.)).text_color(secondary).child(line)));
@@ -139,7 +164,13 @@ impl Threadbear {
     /// The picture says something when it's clicked, and it fades after a
     /// while (`PokeablePicture.poke`). The Swift app's wobble isn't here yet.
     pub(crate) fn poke_home_picture(&mut self, art: Art, cx: &mut Context<Self>) {
+        let reduce = cx.reduce_motion();
         let pokes = self.pokes_mut(art);
+        // Every poke wobbles it, with a line or without (Mike picked it, 13 Nov).
+        if !reduce {
+            pokes.poked = Some(std::time::Instant::now());
+            cx.notify();
+        }
         let Some(line) = pokes.lines.poke() else { return };
         pokes.line = Some(line);
         pokes.count += 1;
