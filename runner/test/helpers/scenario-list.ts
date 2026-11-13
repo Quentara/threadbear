@@ -16,6 +16,20 @@ export type Scenario = { name: string; play: (p: Play) => void; shows: string[] 
 
 export const SCENARIOS: Scenario[] = [
   {
+    name: 'a Notion board card mentioned beside a draft picture',
+    shows: ['Please check', 'Pick the share button colour'],
+    play: (p) => {
+      p.say('Ready for the card.');
+      p.endTurn({ needs: 'nothing' });
+      const dir = tmpDir('tb-board-mention-');
+      const file = path.join(dir, 'draft.png');
+      fs.writeFileSync(file, makePng(4, 4));
+      p.send('Please check [Picture 1] [Pick the share button colour](https://www.notion.so/1a2b3c4d5e6f40718293a4b5c6d7e8f9) ', [{ path: file, mediaType: 'image/png' }]);
+      p.say('I will read Pick the share button colour and compare the picture.');
+      p.endTurn({ needs: 'nothing' });
+    },
+  },
+  {
     name: 'a message sent from the phone app',
     shows: ['The photo can wait until tomorrow.'],
     play: (p) => {

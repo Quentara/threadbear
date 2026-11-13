@@ -52,6 +52,7 @@ mod hang_watch;
 mod input_probe;
 mod header;
 mod highlights;
+mod highlights_board;
 mod highlights_project;
 mod highlights_store;
 mod home_page;

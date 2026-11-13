@@ -779,7 +779,7 @@ fn large_push_button(id: &'static str, symbol: &'static str, label: &'static str
 }
 
 /// Notion's colour names (`TaskColors`), for a column's dot.
-fn task_color(column: &TaskColumn, cx: &App) -> Hsla {
+pub(crate) fn task_color(column: &TaskColumn, cx: &App) -> Hsla {
     let rgb = |r: f32, g: f32, b: f32| Hsla::from(Rgba { r, g, b, a: 1. });
     match column.color.as_deref() {
         Some("blue") => rgb(0.04, 0.52, 1.),

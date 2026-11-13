@@ -133,7 +133,9 @@ you go.
 - [x] The milestone capsule shows at 100 threads and each thousand, once,
   when you are there to see it (`toast.milestone`). Mike chose a static paw
   with no entrance motion or wave.
-- [ ] Highlights: no Notion board (`highlights.board`)
+- [x] Highlights shows each project's Notion board (`highlights.board`),
+  with card mentions and links to the thread working on a card. Done folds
+  away, long columns have More, and the board scrolls sideways.
 - [ ] An image panel has no Open Simulator button; `.app`, `.icns` and PDF
   icons fall back to a symbol (`panel.image`, `patches.icons`,
   `rail.originbadge`)

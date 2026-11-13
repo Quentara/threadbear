@@ -911,9 +911,12 @@ project: what's under way first, then what's to do, with Done folded to a
 strip you can click open. If the columns don't fit, drag the bar under them,
 use its arrows, or scroll sideways, or drag the panel wider. Click a card to
 mention it in your message: it shows as a chip with the card's title, and the
-agent gets a link it can read the card from. Click the chip in a sent message
-to open the card; the arrow
-on a card, or its right-click menu, opens it in Notion. Boards are read through
+agent gets a link it can read the card from. Mentioning the same card again
+keeps one copy in the draft. Each column starts with four cards; More and
+Show fewer change how many are shown. Click the chip in a sent message to
+open the card; the arrow on a card, or its right-click menu, opens it in
+Notion. The menu also offers Copy Link and, when another thread is working
+on the card, Open the Thread Working on It. Boards are read through
 a Connectors gateway (see [Connectors](#connectors)); without one, the
 project's page says so and nothing is read.
 

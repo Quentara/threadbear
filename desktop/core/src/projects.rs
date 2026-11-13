@@ -157,7 +157,7 @@ pub struct Tasks {
 }
 
 impl Tasks {
-    fn decode(v: &Value) -> Option<Tasks> {
+    pub fn decode(v: &Value) -> Option<Tasks> {
         if !v.is_object() {
             return None;
         }

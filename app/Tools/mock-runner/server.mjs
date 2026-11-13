@@ -1591,6 +1591,14 @@ async function dispatch(client, method, p) {
       t.subagentEvents?.delete(p.subagentId);
       return { ok: true };
     }
+    case 'mock.boardMore': {
+      const t = need(p.threadId);
+      const project = needProject(t.summary.projects[0].id);
+      const count = Math.min(30, Math.max(0, Math.trunc(p.count ?? 5)));
+      for (let n = 1; n <= count; n += 1) project.tasks.items.push({ id: `board_more_${n}`, title: `Additional board card ${n}`, url: `https://www.notion.so/board_more_${n}`, status: 'To do', who: [] });
+      broadcastProjects();
+      return { ok: true };
+    }
     case 'mock.phoneOnlyPicture': {
       const t = need(p.threadId);
       const first = t.events.find((e) => e.type === 'user.message');

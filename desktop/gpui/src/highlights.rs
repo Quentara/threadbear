@@ -206,6 +206,7 @@ pub(crate) enum MenuAction {
     Remove { id: String, title: String },
     /// A picture's right-click, the file's own bytes (`copyImage`).
     CopyPicture,
+    MentionCard { task: threadbear_core::projects::Task, thread_id: String },
     // The folder browser's (`FolderPaneView.menu`).
     OpenFolderRow { key: String, entry: threadbear_core::folders::FolderEntry },
     SortFolder { key: String, sort: threadbear_core::folders::FolderSort },
@@ -256,6 +257,7 @@ pub(crate) struct SidePane {
     /// Asks being ticked, by "<thread>/<seq>/<index>".
     ticking: HashSet<String>,
     pub(crate) projects: HashMap<String, ProjectInfo>,
+    pub(crate) boards: HashMap<String, crate::highlights_board::BoardState>,
     pub(crate) schedules: Vec<Schedule>,
     /// The project whose ⓘ popover is open, and where (`projectWhyShown`).
     pub(crate) project_why: Option<(String, Point<Pixels>)>,
@@ -300,6 +302,7 @@ impl SidePane {
             flags: HashMap::new(),
             ticking: HashSet::new(),
             projects: HashMap::new(),
+            boards: HashMap::new(),
             schedules: Vec::new(),
             project_why: None,
             menu: None,
@@ -793,6 +796,7 @@ impl SidePane {
                 }
             }
             MenuAction::Reveal { path } => crate::files::reveal(&path, if thread.is_remote() { crate::open_gate::Origin::OtherMac } else { crate::open_gate::Origin::ThisMac }, cx),
+            MenuAction::MentionCard { task, thread_id } => self.mention_board_card(&task, &thread_id, window, cx),
             MenuAction::Copy { text } => cx.write_to_clipboard(ClipboardItem::new_string(text)),
             MenuAction::Remove { id, title } => self.remove_highlight(id, title, thread.id.clone(), cx),
             MenuAction::EditSchedule { id } => self.edit_schedule(&id, window, cx),
@@ -1231,7 +1235,7 @@ impl SidePane {
         self.collapsed.contains(key)
     }
 
-    fn project_block(&mut self, row: &ProjectRow, p: Palette, cx: &mut Context<Self>) -> AnyElement {
+    fn project_block(&mut self, row: &ProjectRow, thread: &ThreadSummary, p: Palette, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let key = fold::project(&row.project.id);
         let folded = self.is_folded(&key);
         let count = row.project.links.len() + row.project.open_task_count();
@@ -1253,6 +1257,9 @@ impl SidePane {
                     pr = pr.detail(Some(address));
                 }
                 list = list.child(pr.render(p, cx));
+            }
+            if let Some(tasks) = row.project.tasks.as_ref().and_then(threadbear_core::projects::Tasks::decode) {
+                list = list.child(self.task_board(&project_id, &tasks, thread, p, window, cx));
             }
         }
         list.into_any_element()
@@ -1349,7 +1356,7 @@ impl SidePane {
         // The thread's projects, each under its own icon with why it's there
         // behind an ⓘ, then the places Mike keeps going back to for it.
         for row in &projects {
-            list = list.child(self.project_block(row, p, cx));
+            list = list.child(self.project_block(row, thread, p, window, cx));
         }
         if !scheduled.is_empty() {
             let folded = self.is_folded(fold::SCHEDULED);
@@ -1494,7 +1501,7 @@ impl SidePane {
             }
         }
         let _ = window;
-        div().id("highlights-scroll").size_full().overflow_y_scroll().track_scroll(&self.scroll).child(list).into_any_element()
+        div().id("highlights-scroll").size_full().overflow_y_scroll().restrict_scroll_to_axis().track_scroll(&self.scroll).child(list).into_any_element()
     }
 
     pub(crate) fn schedule_rows(&self, thread: &ThreadSummary, cx: &App) -> Vec<core::ScheduleRow> {

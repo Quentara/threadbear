@@ -4859,3 +4859,42 @@ Fixes from Codex's review of the slice before:
   page reads showed the busy menu and copied both its first and last turns.
 - The old manual Terminal-link gap in reading-a-thread.feature was removed;
   terminal.feature now checks printed and labelled links through the gate.
+
+### 2026-11-13 Highlights task boards
+
+- Highlights draws each project's Notion board under its links. Doing
+  columns come first, then To do and Done; empty columns and an entirely
+  finished board stay out of the pane. Cards assigned to this thread come
+  first within their column, keeping Notion's order among the others.
+- Done starts folded. Four cards show in an open column, with More and
+  Show fewer. Narrow panes scroll sideways with arrows and a draggable
+  bar; wheel scrolling stays vertical and sideways gestures stay on the
+  board. Folded column names are horizontal in the compact strip; Swift
+  rotates them. The full name and count remain in the tooltip.
+- A click mentions the card once at the end of the draft, preserving its
+  words and picture chips. Pending mentions wait for a saved draft to be
+  restored and remain with that draft while an older message is edited.
+  The composer receives focus in the window drawing it; a separate
+  Highlights window does not bring another window to the front.
+- The card menu offers Mention in Message, Open in Notion, Copy Link and,
+  for another known working thread, Open the Thread Working on It. An
+  exact thread id wins; an ambiguous prefix opens no arbitrary thread.
+  Web actions still pass through the open gate.
+- A gesture begun over the board stays with its native scrollers through
+  lift. The window's Back/Forward swipe handler yields before holding those
+  events. The real-screen regression uses window-server gestures in both
+  directions on each axis, with a short window and an overflowing column.
+  It also checks page navigation on the clipped header and after a preview
+  replaces the board, including a preview moved into a floating pane.
+- Sources: `desktop/core/src/board.rs`, `highlights_board.rs`, the composer
+  queue in `composer.rs`, and `features/highlights-board.feature`. The
+  real-backend scenario checks a card reference sent beside a picture
+  through this runner, another Mac and the phone.
+- Verification: 17 focused core tests and 16 real-backend route scenarios;
+  five Mac scenarios with 44 steps, including real window-server gestures
+  under the shared performance lock. Mac pictures also checked the card's
+  menu, the working-thread link, and a draft with its picture and one card
+  mention after two clicks. Cross-lab reviews covered menu propagation,
+  scrolling, ambiguous thread ids and the composer restore/focus paths.
+  After rebasing onto current main, the board and ordinary page-navigation
+  checks passed together: 11 scenarios and 103 steps on Tinker Desk.

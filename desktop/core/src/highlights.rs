@@ -165,8 +165,8 @@ pub struct ProjectInfo {
     pub archived: bool,
     #[serde(default, deserialize_with = "crate::wire::list")]
     pub links: Vec<ProjectLink>,
-    /// The Notion board, as it came (`ProjectTasks`); only its open count is
-    /// read here for now (the board itself is `highlights.board`, not ported).
+    /// The Notion board, as it came (`ProjectTasks`). The heading reads its
+    /// open count; the board decodes its columns and cards through projects.
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub tasks: Option<Value>,
     /// A picture or a symbol, as it came (`ProjectIcon`).
