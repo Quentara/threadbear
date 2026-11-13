@@ -115,6 +115,44 @@ test('unit-test preload works without a passwd entry or an existing HOME', () =>
   assert.equal(result.status, 0, result.stderr);
 });
 
+test('unit-test workers preserve guarded caller homes across preloads', () => {
+  for (const noPasswd of [false, true]) {
+    const incoming = tmpDir();
+    const worker = path.join(incoming, 'worker.test.mjs');
+    const probe = path.join(incoming, '.claude', 'guard-probe');
+    fs.mkdirSync(path.dirname(probe));
+    fs.writeFileSync(probe, 'fixture');
+    const read = `try { fs.existsSync(${JSON.stringify(probe)}); } catch {}`;
+    fs.writeFileSync(worker, `import { test } from 'node:test'; import fs from 'node:fs'; test('a caught account probe still fails the worker', () => { ${read} });`);
+    const imports: string[] = [];
+    if (noPasswd) {
+      const bootstrap = path.join(incoming, 'no-passwd.mjs');
+      fs.writeFileSync(bootstrap, `import os from 'node:os'; os.userInfo = () => { throw new Error('uid has no passwd entry'); };`);
+      imports.push('--import', bootstrap);
+    }
+    imports.push('--import', preload);
+    for (const asTest of [false, true]) {
+      const inner = [...imports, ...(asTest ? ['--test', worker] : ['--input-type=module', '-e', `import fs from 'node:fs'; ${read}`])];
+      // Launch with the caller's HOME, then again after the first preload
+      // replaces it. --test adds its own worker preload as well.
+      const result = spawnSync(process.execPath, [...imports, '--input-type=module', '-e', `
+        import { spawnSync } from 'node:child_process';
+        const result = spawnSync(process.execPath, ${JSON.stringify(inner)}, { encoding: 'utf8', env: process.env });
+        process.stdout.write(result.stdout ?? '');
+        process.stderr.write(result.stderr ?? '');
+        process.exitCode = result.status ?? 1;
+      `], {
+        encoding: 'utf8',
+        env: { ...process.env, HOME: incoming, USERPROFILE: incoming, NODE_TEST_CONTEXT: undefined, THREADBEAR_TEST_GUARDED_HOMES: undefined },
+      });
+      const output = result.stdout + result.stderr;
+      assert.equal(result.status, 1, `noPasswd=${noPasswd}, asTest=${asTest}: ${output}`);
+      assert.match(output, /Unit tests accessed real account folders/);
+      assert.ok(output.includes(probe), output);
+    }
+  }
+});
+
 test('unit-test guard follows a fixture symlink back to a real account', () => {
   for (const replace of [
     `fs.unlinkSync(alias); fs.symlinkSync(os.userInfo().homedir, alias);`,

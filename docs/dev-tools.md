@@ -237,6 +237,8 @@ the data dir (`<home>`, normally `~/Library/Application Support/Threadbear`):
   are cleared. `private-home.ts` rejects reads of real Claude, Codex,
   Cursor, OpenCode, Token Stats and Threadbear account/data folders,
   including through symlinks; a caught read error still fails the file.
+  The original home paths stay guarded in child test processes after
+  HOME has been replaced, including for a uid without a passwd entry.
   The shared fake-runner helpers also load this setup for single-file
   `node --test` runs. Discovery fixtures supply their own `userHome` and
   `pathEnv`, so installed CLIs on the check host cannot add accounts.

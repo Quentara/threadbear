@@ -11,11 +11,18 @@ import childProcess from 'node:child_process';
 // A container's uid may have no passwd entry, or name a home that doesn't
 // exist. Preserve both the OS home and the caller's HOME when available.
 const homes = new Set([process.env.HOME, process.env.USERPROFILE].filter((p): p is string => Boolean(p)));
+// A test worker starts after its parent's preload already replaced HOME.
+// Keep the first caller's homes guarded through every later preload.
+try {
+  const inherited: unknown = JSON.parse(process.env.THREADBEAR_TEST_GUARDED_HOMES ?? '[]');
+  if (Array.isArray(inherited)) for (const home of inherited) if (typeof home === 'string' && home) homes.add(home);
+} catch { /* A standalone run can still guard its own HOME. */ }
 try { homes.add(os.userInfo().homedir); } catch { /* HOME is enough in a uid-only container. */ }
 const resolve = fs.realpathSync.native;
 for (const home of [...homes]) {
   try { homes.add(resolve(home)); } catch { /* Still guard its lexical path. */ }
 }
+process.env.THREADBEAR_TEST_GUARDED_HOMES = JSON.stringify([...homes]);
 const codeRoot = resolve(path.join(import.meta.dirname, '../../..'));
 const testHome = resolve(fs.mkdtempSync(path.join(os.tmpdir(), 'tb-unit-home-')));
 process.env.HOME = testHome;
