@@ -5,6 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 export async function ensurePerfLock(): Promise<void> {
+  // Measurement hosts use Unix locks/process groups. Keep standalone Windows
+  // screenshot tools on their existing path, without the Unix supervisor.
+  if (process.platform === 'win32') return;
   const owner = process.env.THREADBEAR_PERF_LOCK_OWNER ?? '';
   const prefix = `${os.hostname()}:`;
   const suffix = `:${process.env.HOME}`;
