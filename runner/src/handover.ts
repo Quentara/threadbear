@@ -21,7 +21,7 @@ import { atomicWriteFileSync, readJsonSync } from './fsutil.ts';
 import type { Logger } from './log.ts';
 import { RunnerClient, RpcClientError } from './client.ts';
 import { ErrorCode, RpcError } from './protocol.ts';
-import type { PermissionMode, ThreadSummary } from './protocol.ts';
+import type { PermissionMode, PersistedEvent, ThreadSummary } from './protocol.ts';
 import type { Notification, Runner } from './runner.ts';
 import type { UsageReading } from './usage.ts';
 import type { AgentApprovalRequest, ProjectControl, RemoteControl, ScheduleControl, ThreadControl } from './threadbear-mcp.ts';
@@ -108,6 +108,25 @@ function asRpcError(e: unknown): RpcError {
 // release until its turn ends.
 function marked(t: ThreadSummary): ThreadSummary {
   return { ...t, onOldRunner: true };
+}
+
+// Peers.openCards: how long startup waits for it, and its page size (the
+// most threads.events gives).
+export const OPEN_CARDS_DEADLINE_MS = 5_000;
+const OPEN_CARDS_PAGE = 10_000;
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`no answer in ${ms} ms`)), ms);
+  });
+  return Promise.race([p, late]).finally(() => clearTimeout(timer));
+}
+
+// The requests in a thread's events that nothing has answered yet.
+export function openCardEvents(events: PersistedEvent[]): PersistedEvent[] {
+  const answered = new Set(events.flatMap((e) => (e.type === 'approval.resolved' ? [e.approvalId] : [])));
+  return events.filter((e) => (e.type === 'approval.requested' || e.type === 'question.requested' || e.type === 'secret.requested') && !answered.has(e.approvalId));
 }
 
 export function isMoved(e: unknown): boolean {
@@ -327,6 +346,55 @@ export class Peers {
 
   owns(threadId: string): boolean {
     return Boolean(this.ownerOf(threadId));
+  }
+
+  // The cards (approvals, questions, secrets) still open on each draining
+  // runner's threads, oldest first, with each thread read, for the sync to
+  // put back on their rows
+  // (ConvexSync.seedCards). It subscribed from the end, so it never saw
+  // their requests, and the old runner's own sync stopped at the handover.
+  // The whole log, a page at a time from the end: a sub-agent's card can
+  // outlive the turn that asked it, with any amount of work after it
+  // (Codex's review, 13 Nov). By `deadlineMs` at most, as startup waits on
+  // it: a draining runner that has stopped answering gives what's read so
+  // far, and a thread not read at all keeps its row as it is.
+  async openCards(opts: { deadlineMs?: number; page?: number } = {}): Promise<{ thread: ThreadSummary; events: PersistedEvent[] }[]> {
+    const until = Date.now() + (opts.deadlineMs ?? OPEN_CARDS_DEADLINE_MS);
+    const size = opts.page ?? OPEN_CARDS_PAGE;
+    const read: { peer: Peer; threadId: string; events: PersistedEvent[] }[] = [];
+    for (const peer of this.peers.values()) {
+      for (const threadId of [...peer.threads.keys()]) {
+        const log: PersistedEvent[] = [];
+        try {
+          let before: number | undefined;
+          for (;;) {
+            const left = until - Date.now();
+            if (left <= 0) throw new Error('out of time');
+            const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
+            log.unshift(...page.events);
+            const first = page.events[0]?.seq;
+            // Not a short page: an edit's cut can make one short mid-log.
+            if (first === undefined || first <= 1) break;
+            before = first;
+          }
+        } catch (e) {
+          this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
+          continue;
+        }
+        read.push({ peer, threadId, events: openCardEvents(log) });
+      }
+    }
+    // Each thread as it is now, once every log is read, as the caller seeds
+    // in the same tick: one read early may have asked for a card since and
+    // said it waits, which the summary from then (idle) would undo (Codex's
+    // review). One handed over meanwhile had no card open (a thread with
+    // one isn't), and is here now.
+    const out: { thread: ThreadSummary; events: PersistedEvent[] }[] = [];
+    for (const { peer, threadId, events } of read) {
+      const now = peer.threads.get(threadId);
+      if (now) out.push({ thread: now, events });
+    }
+    return out;
   }
 
   // A thread a draining runner had when it went, until it's taken in here.

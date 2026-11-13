@@ -582,7 +582,22 @@ async function main(): Promise<void> {
     clock: realClock,
     log,
   });
-  sync.start();
+  // A handover's draining runner may have threads waiting on a card, asked
+  // for before this runner was listening. The sync listens from here but
+  // writes nothing till they're read and back on their rows: another Mac's
+  // view takes a card gone from the row as answered, and the thread would
+  // sit needing Mike with nothing to answer (13 Nov, Peers.openCards).
+  const handedOver = peers.status().length > 0;
+  sync.start({ hold: handedOver });
+  if (handedOver) {
+    try {
+      sync.seedCards(await peers.openCards());
+    } catch (e) {
+      log.warn("could not read the draining runners' open cards", { error: String(e) });
+    } finally {
+      sync.release();
+    }
+  }
   // Counts only, and off unless runner.json asks (src/secret-check.ts).
   const secretCheck = new SecretCheck({ home: cfg.home, enabled: cfg.secretCheck === true, log });
   if (secretCheck.on) {

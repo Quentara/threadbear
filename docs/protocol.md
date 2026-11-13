@@ -1575,6 +1575,22 @@ restart wait for busy threads. It hands over instead:
   draining runner's `thread.updated`, `thread.event`, `thread.deleted` and
   `runner.notice` come through the primary. `threads.list`,
   `threads.search` and `hello` include kept threads.
+- The draining runner's sync stops at the handover, and the primary only
+  hears its events from then on. So the primary's sync starts listening
+  but holds its writes while it reads each kept thread's whole log
+  (`threads.events`, a page at a time from the end, within 5 seconds: a
+  draining runner that stops answering costs a thread its card, not the
+  startup) for the cards nothing has answered, puts them back on the
+  thread's row and marks every thread it read, then writes
+  (`Peers.openCards`, `ConvexSync.seedCards`, `release`). A card asked for
+  or answered on the draining runner later reaches the row with the
+  `thread.updated` that follows it, written straight away even while the
+  sync settles, never from the summary it had before (which may say
+  idle). Without this the row went up with no card while the thread still
+  waited on one: another Mac's view takes a card gone from the row as
+  answered, so the thread sat in the inbox needing Mike with nothing to
+  answer (13 Nov 2026, a cloud runner's request to start a thread on the
+  main Mac).
 - A kept thread moves across once nothing would be cut short: no turn,
   approval or question, background work or wake grace. Background shells
   and monitors hold it for 4 hours after its last turn at most (a dev

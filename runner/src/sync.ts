@@ -1321,6 +1321,14 @@ export class ConvexSync {
   // The row has room for one card, the newest. Subagents' can be open
   // together and for a long time, so the rest wait here for it to close.
   private cardsBehind = new Map<string, PendingApproval[]>();
+  // Cards answered since this runner started (closeCard), newest last.
+  private closedCards = new Set<string>();
+  // Threads whose card changed since their row was last marked: the next
+  // mark goes through even while settling, as a card is what Mike acts on
+  // and a draining thread isn't looked at again when the settle ends.
+  private cardChanged = new Set<string>();
+  // start({ hold }) till release(): see release.
+  private holding = false;
   private earliest = new Map<string, number | null>(); // threadId -> seq of its first text message (null: none yet)
   private nexts = new Map<string, { lastSeq: number; next?: string[]; review?: LabReviewLedger; turn?: string }>(); // threadId -> its last turn's next steps, review and turn, as of lastSeq
   private lists: { projects?: Project[]; schedules?: Schedule[]; accounts?: Account[] } = {};
@@ -1520,10 +1528,11 @@ export class ConvexSync {
     }
   }
 
-  start(): void {
+  start(opts: { hold?: boolean } = {}): void {
     if (this.off || !this.deps.config.full) this.forgetBodiesNote();
     if (this.off || this.running) return;
     this.running = true;
+    this.holding = opts.hold === true;
     this.projectsSent = undefined;
     this.accountsSent = undefined;
     this.full = true;
@@ -2258,6 +2267,21 @@ export class ConvexSync {
       this.scheduleFlush();
       return;
     }
+    if (!this.noteCard(threadId, e)) return;
+    try {
+      this.mark(this.deps.runner.get(threadId));
+      this.scheduleFlush();
+    } catch {
+      // Still on the release that handed over: its thread.updated comes
+      // after this event and marks the row then (cardChanged), as what it
+      // last said may be from before (idle, which would forget the card).
+      // Or gone between the event and now, when its row goes with it.
+    }
+  }
+
+  // A card the thread now waits on, or one that's been answered, onto what
+  // its row shows. False for an event that's neither.
+  private noteCard(threadId: string, e: PersistedEvent): boolean {
     if (e.type === 'approval.requested' && e.name === START_CARD) {
       // A request for a thread on another runner (cross-runner.ts) is
       // answered only on the main Mac, whose runner starts it: the phone's
@@ -2286,24 +2310,60 @@ export class ConvexSync {
     } else if (e.type === 'secret.requested') {
       // forBackend drops it for a backend older than SECRETS_API_VERSION.
       const box = this.deps.secretBox;
-      if (!box) return;
+      if (!box) return false;
       let key: string;
       try {
         key = box.publicKey();
       } catch (err) {
         this.deps.log.warn('no key for secrets from the phone', { error: String(err) });
-        return;
+        return false;
       }
       this.addCard(threadId, { approvalId: e.approvalId, kind: 'secret', seq: e.seq, label: e.label, reason: e.reason, ...(e.placeholder ? { placeholder: e.placeholder } : {}), key });
     } else if (e.type === 'approval.resolved') {
       this.closeCard(threadId, e.approvalId);
-    } else return;
-    try {
-      this.mark(this.deps.runner.get(threadId));
-      this.scheduleFlush();
-    } catch {
-      // The thread went between the event and now; its row goes with it.
+    } else return false;
+    this.cardChanged.add(threadId);
+    return true;
+  }
+
+  // The cards still open on a draining runner's threads after a handover
+  // (handover.ts, Peers.openCards), read while this sync listened but held
+  // its writes (start's hold). Their requests came before this runner was
+  // listening, so without this its first write of each row leaves the card
+  // off: the thread sits in the inbox needing Mike, and the phone and the
+  // main Mac have nothing to answer (13 Nov, a cloud runner's request to
+  // start a thread on the main Mac). A card already here from the live
+  // events, or answered since, is left as it is. Every thread read is
+  // marked, with what the draining runner says of it now, so a row still
+  // showing a card answered before the handover loses it.
+  seedCards(found: { thread: ThreadSummary; events: PersistedEvent[] }[]): void {
+    for (const { thread, events } of found) {
+      let added = false;
+      for (const e of [...events].sort((a, b) => a.seq - b.seq)) {
+        if (e.type === 'approval.resolved' || !('approvalId' in e)) continue;
+        const shown = [this.pending.get(thread.id), ...(this.cardsBehind.get(thread.id) ?? [])].some((c) => c?.approvalId === e.approvalId);
+        if (!shown && !this.closedCards.has(e.approvalId)) added = this.noteCard(thread.id, e) || added;
+      }
+      // Older than one that came live meanwhile: behind it, as if they'd
+      // all come live (the newest on the row, the rest in order behind).
+      if (added) {
+        const all = [...(this.cardsBehind.get(thread.id) ?? []), this.pending.get(thread.id)].filter((c): c is PendingApproval => c !== undefined).sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+        this.pending.set(thread.id, all.pop()!);
+        if (all.length) this.cardsBehind.set(thread.id, all);
+        else this.cardsBehind.delete(thread.id);
+      }
+      this.cardChanged.add(thread.id);
+      this.mark(thread);
     }
+    this.scheduleFlush();
+  }
+
+  // While a handover's cards are read (main.ts): listening, but nothing
+  // written, so no row goes up without its card first.
+  release(): void {
+    if (!this.holding) return;
+    this.holding = false;
+    this.scheduleFlush();
   }
 
   private addCard(threadId: string, card: PendingApproval): void {
@@ -2321,6 +2381,10 @@ export class ConvexSync {
   }
 
   private closeCard(threadId: string, approvalId: string): void {
+    // For seedCards: one answered while a handover read the draining
+    // runner's log mustn't come back open. A few hundred at most.
+    this.closedCards.add(approvalId);
+    if (this.closedCards.size > 500) this.closedCards.delete(this.closedCards.values().next().value!);
     const behind = (this.cardsBehind.get(threadId) ?? []).filter((c) => c.approvalId !== approvalId);
     if (this.pending.get(threadId)?.approvalId === approvalId) {
       const next = behind.pop();
@@ -2347,6 +2411,7 @@ export class ConvexSync {
   }
 
   private mark(t: ThreadSummary, now_ = false): void {
+    if (this.cardChanged.delete(t.id)) now_ = true;
     this.missing.delete(t.id);
     if (this.removedFromFile.delete(t.id)) {
       this.removed.delete(t.id);
@@ -2923,7 +2988,7 @@ export class ConvexSync {
   }
 
   private scheduleFlush(): void {
-    if (!this.running || this.flushTimer) return;
+    if (!this.running || this.flushTimer || this.holding) return;
     // Project pictures waiting (picturesDue) count too: one an upload
     // allowance held back goes once its pause is over, idle or not.
     const picturesWaiting = this.picturesDue && (this.backendApiVersion ?? 0) >= ICONS_API_VERSION && !this.picturesPaused();

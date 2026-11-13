@@ -722,6 +722,109 @@ test('approvals: the row carries what the thread waits on until it is answered',
   assert.deepEqual(last.pendingApproval, { approvalId: 'q1', kind: 'question', questions: [{ question: 'Which?', multiSelect: false, options: [{ label: 'A' }, { label: 'B', description: 'the other' }] }] });
 });
 
+test("handover: a draining runner's open card stays on its thread's row", async () => {
+  // 13 Nov: a cloud runner restarted onto a new main while a thread waited
+  // on its request to start a thread on the main Mac. The new runner's
+  // first write of the row left the card off, so the Mac showed nothing to
+  // answer and the thread sat in the inbox needing Mike.
+  const f = setupFull();
+  const docs = () => f.calls.filter((c) => c.fn === 'sync:upsertThreads').flatMap((c) => c.args.threads as ThreadDoc[]);
+  const here = f.h.runner.create({ text: 'go', cwd: f.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  const draining = { ...here, id: 'drain-1', status: 'waiting' as const, needsYou: true };
+  const ts = '2026-11-13T00:00:00.000Z';
+  f.sync.start({ hold: true });
+  // Held: nothing goes up while the cards are read.
+  await tick();
+  f.h.clock.advance(SYNC_COALESCE_MS);
+  await tick();
+  assert.equal(f.calls.filter((c) => c.fn === 'sync:upsertThreads').length, 0);
+  f.sync.seedCards([
+    {
+      thread: draining,
+      events: [
+        { type: 'approval.requested', seq: 641, ts, approvalId: 'start-1', name: 'threadbear.start_thread', title: 'Start a thread on main?', input: {}, options: ['allow', 'deny'] },
+        { type: 'question.requested', seq: 650, ts, approvalId: 'q-1', questions: [{ question: 'Which?', multiSelect: false, options: [{ label: 'A' }] }] },
+      ] as never,
+    },
+  ]);
+  f.sync.release();
+  await f.sync.flushNow();
+  const rows = docs().filter((d) => d.threadId === 'drain-1');
+  // Its first row has the card. The newest is on it, the other behind, as when they came live.
+  // (No seq: this fake backend is older than the relay's.)
+  assert.deepEqual(rows[0]!.pendingApproval, { approvalId: 'q-1', kind: 'question', questions: [{ question: 'Which?', multiSelect: false, options: [{ label: 'A' }] }] });
+  // Seeding again (or a card the live events already put up) changes nothing.
+  f.sync.seedCards([{ thread: draining, events: [{ type: 'question.requested', seq: 650, ts, approvalId: 'q-1', questions: [] }] as never }]);
+  const behind = (f.sync as never as { cardsBehind: Map<string, { approvalId: string; title?: string }[]> }).cardsBehind.get('drain-1');
+  assert.deepEqual(behind?.map((c) => [c.approvalId, c.title]), [['start-1', 'Start a thread on main? Answer it on the Mac.']]);
+  await f.sync.stop();
+});
+
+test('handover: a card answered while the log was read is not put back', async () => {
+  const f = setupFull();
+  f.sync.start({ hold: true });
+  const here = f.h.runner.create({ text: 'go', cwd: f.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  const draining = { ...here, id: 'drain-2', status: 'waiting' as const, needsYou: true };
+  const ts = '2026-11-13T00:00:00.000Z';
+  // Its answer comes live (Peers publishes the draining runner's events)
+  // after the read saw the card open.
+  f.h.runner.publish({ method: 'thread.event', params: { threadId: 'drain-2', event: { type: 'approval.resolved', seq: 11, ts, approvalId: 'a', decision: 'deny' } } } as never);
+  f.sync.seedCards([{ thread: draining, events: [{ type: 'approval.requested', seq: 10, ts, approvalId: 'a', name: 'Bash', title: 'Run a command', input: { command: 'ls' }, options: ['allow', 'deny'] }] as never }]);
+  assert.equal((f.sync as never as { pending: Map<string, unknown> }).pending.get('drain-2'), undefined);
+  f.sync.release();
+  await f.sync.stop();
+});
+
+test('handover: an older card seeded goes behind a newer one that came live', async () => {
+  const f = setupFull();
+  const here = f.h.runner.create({ text: 'go', cwd: f.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  const draining = { ...here, id: 'drain-4', status: 'waiting' as const, needsYou: true };
+  const ts = '2026-11-13T00:00:00.000Z';
+  f.sync.start({ hold: true });
+  f.h.runner.publish({ method: 'thread.event', params: { threadId: 'drain-4', event: { type: 'question.requested', seq: 30, ts, approvalId: 'newer', questions: [] } } } as never);
+  f.sync.seedCards([
+    {
+      thread: draining,
+      events: [
+        { type: 'question.requested', seq: 10, ts, approvalId: 'older', questions: [] },
+        { type: 'question.requested', seq: 30, ts, approvalId: 'newer', questions: [] },
+      ] as never,
+    },
+  ]);
+  const inner = f.sync as never as { pending: Map<string, { approvalId: string }>; cardsBehind: Map<string, { approvalId: string }[]> };
+  assert.equal(inner.pending.get('drain-4')?.approvalId, 'newer');
+  assert.deepEqual(inner.cardsBehind.get('drain-4')?.map((c) => c.approvalId), ['older']);
+  f.sync.release();
+  await f.sync.stop();
+});
+
+test("handover: a draining thread's row follows its cards from its next update, settling or not, never a stale one", async () => {
+  // Seeded from the file, so the start settles: a row already sent waits
+  // for the settle, but a card change mustn't (Codex's review, 13 Nov).
+  const f = setupFull();
+  const docs = () => f.calls.filter((c) => c.fn === 'sync:upsertThreads').flatMap((c) => c.args.threads as ThreadDoc[]);
+  const here = f.h.runner.create({ text: 'go', cwd: f.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  const ts = '2026-11-13T00:00:00.000Z';
+  const as = (status: 'idle' | 'waiting' | 'running') => ({ ...here, id: 'drain-3', status, needsYou: status === 'waiting' });
+  f.sync.start({ hold: true });
+  f.sync.seedCards([{ thread: as('idle'), events: [] }]);
+  f.sync.release();
+  await f.sync.flushNow();
+  (f.sync as never as { settling: boolean }).settling = true;
+  // A background sub-agent asks: the event comes before the update saying
+  // it waits, and the summary the primary has still says idle.
+  f.h.runner.publish({ method: 'thread.event', params: { threadId: 'drain-3', event: { type: 'question.requested', seq: 20, ts, approvalId: 'q', questions: [] } } } as never);
+  f.h.runner.publish({ method: 'thread.updated', params: { thread: as('waiting') } } as never);
+  await f.sync.flushNow();
+  assert.equal((docs().filter((d) => d.threadId === 'drain-3').at(-1)!.pendingApproval as { approvalId: string } | undefined)?.approvalId, 'q');
+  // Answered there: off the row with the update that follows.
+  f.h.runner.publish({ method: 'thread.event', params: { threadId: 'drain-3', event: { type: 'approval.resolved', seq: 21, ts, approvalId: 'q', decision: 'answered' } } } as never);
+  f.h.runner.publish({ method: 'thread.updated', params: { thread: as('running') } } as never);
+  await f.sync.flushNow();
+  assert.equal(docs().filter((d) => d.threadId === 'drain-3').at(-1)!.pendingApproval, undefined);
+  await f.sync.stop();
+});
+
 test('plans: the ExitPlanMode card names the plan row it waits on, from API 72', async () => {
   for (const [backend, named] of [[PLAN_API_VERSION, true], [PLAN_API_VERSION - 1, false]] as const) {
     const f = setupFull({ apiVersion: backend });
