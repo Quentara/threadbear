@@ -746,6 +746,10 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
                 Err("this build can't measure frames: build it with --features frame-stats".into())
             }
         }
+        // When hovers and presses were handled and the frame after each
+        // painted (input_probe.rs): `start` records from now, then a bare
+        // one hands it back.
+        "input-probe" => Ok(crate::input_probe::report(cmd["start"].as_bool().unwrap_or(false), cx)),
         "menu-key" => {
             let mut key = String::new();
             for m in cmd["modifiers"].as_array().into_iter().flatten().filter_map(Value::as_str) {

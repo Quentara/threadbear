@@ -46,6 +46,7 @@ mod folders;
 #[cfg(feature = "frame-stats")]
 mod frame_stats;
 mod hang_watch;
+mod input_probe;
 mod header;
 mod highlights;
 mod highlights_project;
@@ -109,6 +110,7 @@ mod swipe_nav;
 mod terminal;
 mod terminal_element;
 mod thread;
+mod thread_map;
 mod tips;
 mod thread_panels;
 mod tour;

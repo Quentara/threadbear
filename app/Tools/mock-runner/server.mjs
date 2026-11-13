@@ -3096,6 +3096,34 @@ function membersOf(projectId) {
   return [...threads.values()].map((t) => t.summary).filter((s) => s.projects?.some((x) => x.id === projectId));
 }
 
+/** Made-up patches, panels, actions and hooks of a real summary's size. */
+function perfExtras(project, i) {
+  const slug = project.title.toLowerCase().replace(/ /g, '-');
+  const file = (id) => `/Users/mike/dev/me/${slug}/.threadbear/patches/${id}.ts`;
+  return {
+    keywords: `${slug} task ${i + 1} build release fix tidy`,
+    patches: [
+      { id: 'convex', source: 'builtin' },
+      { id: 'store', source: 'project', file: file('store'), icon: 'pawprint', liveError: 'node scripts/status.mjs failed (exit 1): "links" was not found' },
+      { id: 'checks', source: 'project', file: file('checks'), icon: 'pawprint' },
+      { id: 'worktree', source: 'builtin' },
+    ],
+    panels: [
+      { id: 'convex.dashboard', title: 'Convex', kind: 'url', url: 'https://dashboard.convex.dev', icon: 'cylinder.split.1x2', patch: 'convex', note: 'No deployment in .env.local yet' },
+      { id: 'checks.worktrees', title: 'Worktrees', kind: 'list', patch: 'checks', icon: 'arrow.triangle.branch' },
+      { id: 'store.status', title: 'Store status', kind: 'url', url: `https://example.com/${slug}/status`, icon: 'app.badge', patch: 'store', summary: 'Waiting for review since Tuesday' },
+    ],
+    actions: [
+      { id: 'store.website', title: 'Website', kind: 'url', patch: 'store', url: `https://example.com/${slug}/`, icon: 'safari' },
+      { id: 'store.console', title: 'Console', kind: 'url', patch: 'store', url: `https://example.com/${slug}/console/distribution`, icon: 'app.badge' },
+      { id: 'store.errors', title: 'Errors', kind: 'url', patch: 'store', url: `https://example.com/${slug}/issues/?project=${1000 + i}`, icon: 'exclamationmark.triangle' },
+      { id: 'worktree.land', title: 'Land', kind: 'command', command: 'tb land', patch: 'worktree', icon: 'arrow.down.to.line' },
+    ],
+    hooks: [{ id: 'checks.typecheck', title: 'Typecheck', on: 'turn.end', command: 'npx tsc --noEmit -p .', tell: 'failures', patch: 'checks', edited: 'src/**/*.ts' }],
+    startedBy: { kind: 'thread', threadId: `th_perf_${i + 1}`, title: `${project.title} task ${i + 2}` },
+  };
+}
+
 function addPerfProjects(count) {
   const now = Date.now();
   const ago = (minutes) => new Date(now - minutes * 60_000).toISOString();
@@ -3125,6 +3153,10 @@ function addPerfProjects(count) {
       recap: `Moves ${project.title} task ${i + 1} along.\n- Halfway there`,
       ...(open ? {} : { archivedAt: at }),
       ...(asking ? { needs: 'you', asks, asksSeq: 2 } : {}),
+      // What a real summary carries besides (3.5 KB each on Mike's install,
+      // 13 Nov): its folder's patches, panels, actions and hooks. The app
+      // copies summaries about as it draws, so a light one hides that cost.
+      ...perfExtras(project, i),
     };
     join(summary, project, 'librarian', false, at);
     if (i % 13 === 0) join(summary, made[(i + 1) % made.length], 'agent', false, at);

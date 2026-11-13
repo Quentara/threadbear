@@ -560,6 +560,16 @@ fn newest_first(a: &ThreadSummary, b: &ThreadSummary) -> Ordering {
     b.activity_ms().cmp(&a.activity_ms()).then_with(|| a.id.cmp(&b.id))
 }
 
+/// Sorts as `newest_first` does, reading each thread's time once: comparing
+/// read both times again each time, and the Projects list sorts every
+/// project's threads, archived ones too (1,150 of Mike's), as it draws.
+fn sort_newest_first<'a>(threads: &mut [&'a ThreadSummary]) {
+    threads.sort_by_cached_key(|t| {
+        let t: &'a ThreadSummary = t;
+        (std::cmp::Reverse(t.activity_ms()), t.id.as_str())
+    });
+}
+
 impl<'a> Sections<'a> {
     /// Archived projects are left out, and so are archived and hibernating
     /// threads, as in the inbox (archived ones go in `archived`). A thread in
@@ -594,11 +604,11 @@ impl<'a> Sections<'a> {
             .into_iter()
             .map(|project| {
                 let mut threads = members.remove(project.id.as_str()).unwrap_or_default();
-                threads.sort_by(|a, b| newest_first(a, b));
+                sort_newest_first(&mut threads);
                 // A thread in a project twice (a summary a moment behind) is listed once.
                 threads.dedup_by(|a, b| a.id == b.id);
                 let mut put_away = archived.remove(project.id.as_str()).unwrap_or_default();
-                put_away.sort_by(|a, b| newest_first(a, b));
+                sort_newest_first(&mut put_away);
                 put_away.dedup_by(|a, b| a.id == b.id);
                 let own = project.last_activity_ms.unwrap_or(project.updated_ms);
                 let last_activity_ms = newest.get(project.id.as_str()).copied().unwrap_or(i64::MIN).max(own);
@@ -606,7 +616,7 @@ impl<'a> Sections<'a> {
             })
             .collect();
         sections.sort_by(|a, b| b.last_activity_ms.cmp(&a.last_activity_ms).then_with(|| standard_compare(&a.project.title, &b.project.title)));
-        unfiled.sort_by(|a, b| newest_first(a, b));
+        sort_newest_first(&mut unfiled);
         Sections::with_parts(sections, unfiled)
     }
 
@@ -653,7 +663,7 @@ impl<'a> Sections<'a> {
     pub fn threads_with_parts(&self, section: &Section<'a>) -> Vec<&'a ThreadSummary> {
         let mut seen = HashSet::new();
         let mut out: Vec<&ThreadSummary> = std::iter::once(section).chain(self.parts_of(section.id())).flat_map(|s| s.threads.iter().copied()).filter(|t| seen.insert(t.id.as_str())).collect();
-        out.sort_by(|a, b| newest_first(a, b));
+        sort_newest_first(&mut out);
         out
     }
 
@@ -671,7 +681,7 @@ impl<'a> Sections<'a> {
 /// its page.
 pub fn threads_in<'a>(project_id: &str, threads: impl IntoIterator<Item = &'a ThreadSummary>) -> Vec<&'a ThreadSummary> {
     let mut out: Vec<&ThreadSummary> = threads.into_iter().filter(|t| t.projects.iter().flatten().any(|m| m.id == project_id)).collect();
-    out.sort_by(|a, b| newest_first(a, b));
+    sort_newest_first(&mut out);
     out
 }
 
@@ -808,7 +818,7 @@ pub fn open_asks(t: &ThreadSummary) -> usize {
 /// threads, which already leave out archived and hibernating ones.
 pub fn decision_threads<'a>(threads: &[&'a ThreadSummary]) -> Vec<&'a ThreadSummary> {
     let mut out: Vec<&ThreadSummary> = threads.iter().copied().filter(|t| is_waiting(t)).collect();
-    out.sort_by(|a, b| newest_first(a, b));
+    sort_newest_first(&mut out);
     out
 }
 

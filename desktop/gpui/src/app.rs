@@ -29,7 +29,7 @@ pub struct Threadbear {
     pub(crate) milestone: crate::milestones::Milestones,
     pub(crate) client: Arc<Client>,
     pub(crate) status: Status,
-    pub(crate) threads: HashMap<String, ThreadSummary>,
+    pub(crate) threads: crate::thread_map::ThreadMap,
     /// Why the thread list couldn't load, under the search box until a
     /// load works. Only that: it has no Dismiss, so a failed action (a
     /// rename, archive, move, Continue now on) goes to the error bar
@@ -101,6 +101,9 @@ pub struct Threadbear {
     /// The Threads button's badge, kept until the app next changes (the same
     /// observer clears it), as working it out sorts every thread.
     pub(crate) inbox_count_cache: std::cell::Cell<Option<usize>>,
+    /// The sections as last worked out, and what they were worked out from
+    /// (`shown_sections`).
+    sections_cache: std::cell::RefCell<Option<SectionsCache>>,
     pub(crate) last_window_title: String,
     pub(crate) archived_note: Option<ArchivedNote>,
     pub(crate) inbox_end_note: Option<InboxEndNote>,
@@ -458,7 +461,7 @@ impl Threadbear {
             milestone: crate::milestones::Milestones::new(window.is_window_active()),
             client,
             status,
-            threads: HashMap::new(),
+            threads: Default::default(),
             list_error: None,
             selected: None,
             pane: None,
@@ -493,6 +496,7 @@ impl Threadbear {
             failed_on_account: HashMap::new(),
             limit_pick: HashMap::new(),
             inbox_count_cache: Default::default(),
+            sections_cache: Default::default(),
             last_window_title: String::new(),
             archived_note: None,
             inbox_end_note: None,
@@ -1036,8 +1040,8 @@ impl Threadbear {
                 match res {
                     Ok(v) => {
                         let list: Vec<ThreadSummary> = serde_json::from_value(v["threads"].clone()).unwrap_or_default();
-                        let before = std::mem::take(&mut this.threads);
-                        this.threads = list.into_iter().map(|t| (t.id.clone(), t)).collect();
+                        let before = std::mem::take(&mut *this.threads);
+                        *this.threads = list.into_iter().map(|t| (t.id.clone(), t)).collect();
                         let confirmed: std::collections::HashSet<_> = this.threads.keys().cloned().collect();
                         let reload: std::collections::HashSet<_> = confirmed.iter().filter(|id| {
                             this.remote.made.contains(*id) || before.get(*id).is_some_and(|t| t.is_remote())
@@ -1637,10 +1641,26 @@ impl Threadbear {
     }
 
     /// The sections with the search applied, as they're drawn.
-    pub(crate) fn shown_sections(&self, cx: &App, now: i64) -> Vec<inbox::Section> {
+    /// The sidebar's sections as they stand. Worked out again only when the
+    /// threads, the search, the order or the schedules changed, or a snooze
+    /// ran out since: the list, its badge and the arrow keys each ask for it,
+    /// every frame, and sorting all of Mike's threads each time was half a
+    /// frame's work (thread_map.rs).
+    pub(crate) fn shown_sections(&self, cx: &App, now: i64) -> Rc<Vec<inbox::Section>> {
         let query = self.search.read(cx).value().trim().to_lowercase();
         let wakes = inbox::wakes(&self.scheduled.list);
-        inbox::sections_ordered(self.threads.values().filter(|t| query.is_empty() || inbox::matches(t, &query)), now, self.sidebar.order, &wakes)
+        let changes = self.threads.changes();
+        if let Some(c) = self.sections_cache.borrow().as_ref() {
+            if c.changes == changes && c.query == query && c.order == self.sidebar.order && c.wakes == wakes && c.from <= now && now < c.until {
+                return c.sections.clone();
+            }
+        }
+        let sections = Rc::new(inbox::sections_ordered(self.threads.values().filter(|t| query.is_empty() || inbox::matches(t, &query)), now, self.sidebar.order, &wakes));
+        // Until the next snooze runs out, when a thread moves out of
+        // Hibernating; nothing else in the sorting goes by the clock.
+        let until = self.threads.values().filter_map(|t| t.snoozed_until_ms()).filter(|at| *at > now).min().unwrap_or(i64::MAX);
+        *self.sections_cache.borrow_mut() = Some(SectionsCache { changes, query, order: self.sidebar.order, wakes, from: now, until, sections: sections.clone() });
+        sections
     }
 
     /// The connection as the Swift app tells it (`ConnectionState`). While it
@@ -1758,4 +1778,16 @@ impl Render for Threadbear {
         let anything = self.render_open_anything();
         self.render_shell(window, cx).children(open_menu).children(anything).child(pages).child(media).child(crate::tips::window_presses())
     }
+}
+
+/// What `shown_sections` last worked out, and from what.
+struct SectionsCache {
+    changes: u64,
+    query: String,
+    order: inbox::InboxOrder,
+    wakes: HashMap<String, inbox::Wake>,
+    /// The clock it was worked out at, and when it next needs to be again.
+    from: i64,
+    until: i64,
+    sections: Rc<Vec<inbox::Section>>,
 }

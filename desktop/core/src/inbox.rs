@@ -348,6 +348,7 @@ impl InboxOrder {
     }
 }
 
+#[derive(Clone)]
 pub struct Section {
     #[allow(dead_code)] // the tests find sections by it
     pub key: &'static str,
@@ -628,9 +629,15 @@ pub fn parse_ms(iso: &str) -> Option<i64> {
     }
     let num = |r: std::ops::Range<usize>| iso.get(r)?.parse::<i64>().ok();
     let (y, mo, d, h, mi, s) = (num(0..4)?, num(5..7)?, num(8..10)?, num(11..13)?, num(14..16)?, num(17..19)?);
+    // Up to three digits of a fraction as milliseconds (".5" is 500), read
+    // in place: it's read for every thread as lists sort.
     let frac = if b.get(19) == Some(&b'.') {
-        let digits: String = iso[20..].chars().take_while(|c| c.is_ascii_digit()).take(3).collect();
-        format!("{digits:0<3}").parse::<i64>().unwrap_or(0)
+        let (mut ms, mut n) = (0i64, 0);
+        for c in b[20..].iter().take_while(|c| c.is_ascii_digit()).take(3) {
+            ms = ms * 10 + i64::from(c - b'0');
+            n += 1;
+        }
+        ms * [1000, 100, 10, 1][n]
     } else {
         0
     };
@@ -790,6 +797,9 @@ mod tests {
     #[test]
     fn dates_and_folders() {
         assert_eq!(parse_ms("1970-01-01T00:00:01.5Z"), Some(1500));
+        assert_eq!(parse_ms("1970-01-01T00:00:01.25Z"), Some(1250));
+        assert_eq!(parse_ms("1970-01-01T00:00:01.123456Z"), Some(1123));
+        assert_eq!(parse_ms("1970-01-01T00:00:01.Z"), Some(1000));
         assert_eq!(parse_ms("2026-11-06T12:00:00Z").unwrap() - parse_ms("2026-11-06T11:00:00Z").unwrap(), 3_600_000);
         assert_eq!(folder_name("/home/mike/dev/x/"), "x");
         assert_eq!(folder_name(r"C:\Users\mike\dev\y"), "y");

@@ -1288,8 +1288,7 @@ impl SidePane {
             return crate::files::pane_note("This runner doesn't keep highlights yet.", p).into_any_element();
         }
         // The first fetch is quick; a spinner would only flash.
-        let Some(fetched) = self.highlights.get(&thread.id).cloned() else { return div().size_full().into_any_element() };
-        let sections = HighlightSections::build(&fetched);
+        let Some(sections) = self.highlights.get(&thread.id).map(HighlightSections::build) else { return div().size_full().into_any_element() };
         let projects = core::project_rows(thread, |id| self.projects.get(id).cloned());
         let scheduled = self.schedule_rows(thread, cx);
         let clock = side::local_now();
@@ -1491,9 +1490,12 @@ impl SidePane {
     }
 
     pub(crate) fn schedule_rows(&self, thread: &ThreadSummary, cx: &App) -> Vec<core::ScheduleRow> {
-        let threads = self.app.upgrade().map(|a| a.read(cx).threads.clone()).unwrap_or_default();
+        // Read in place: a copy of every thread, made each time the pane
+        // drew, was most of the pane's time in a frame (Mike has 1,400).
+        let app = self.app.upgrade();
+        let threads = app.as_ref().map(|a| &a.read(cx).threads);
         core::schedule_rows(thread, &self.schedules, now_ms(), |s| match s.thread_id.as_deref() {
-            Some(id) => threads.get(id).map_or_else(|| "A thread that's gone".to_owned(), |t| if t.title.is_empty() { "Untitled".to_owned() } else { t.title.clone() }),
+            Some(id) => threads.and_then(|t| t.get(id)).map_or_else(|| "A thread that's gone".to_owned(), |t| if t.title.is_empty() { "Untitled".to_owned() } else { t.title.clone() }),
             None => format!("New thread in {}", threadbear_core::inbox::folder_name(s.cwd.as_deref().unwrap_or(""))),
         })
     }
@@ -1870,8 +1872,11 @@ impl SidePane {
         let projects = core::project_rows(thread, |id| self.projects.get(id).cloned());
         let scheduled = self.schedule_rows(thread, cx);
         let (clock, now) = (side::local_now(), now_ms());
-        let threads = self.app.upgrade().map(|a| a.read(cx).threads.clone()).unwrap_or_default();
-        let started = core::started_rows(thread, threads.values(), now);
+        let app = self.app.upgrade();
+        let started = match &app {
+            Some(app) => core::started_rows(thread, app.read(cx).threads.values(), now),
+            None => vec![],
+        };
         let subagents = core::subagents_for_highlights(thread);
         let asks = thread.asks.clone().unwrap_or_default();
         let tools: HashSet<String> = thread.patches().into_iter().filter(|p| !p.matched.clone().unwrap_or_default().is_empty()).map(|p| p.id).collect();

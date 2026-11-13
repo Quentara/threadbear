@@ -989,7 +989,7 @@ impl Threadbear {
     /// one in the Inbox, or the Inbox's first; past the last one, a note.
     pub(crate) fn next_inbox_thread(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let now = crate::now_ms();
-        let inbox: Vec<String> = self.shown_sections(cx, now).into_iter().find(|s| s.key == "inbox").map(|s| s.rows.into_iter().map(|t| t.id).collect()).unwrap_or_default();
+        let inbox: Vec<String> = self.shown_sections(cx, now).iter().find(|s| s.key == "inbox").map(|s| s.rows.iter().map(|t| t.id.clone()).collect()).unwrap_or_default();
         let next = match self.selected.as_ref().and_then(|s| inbox.iter().position(|id| id == s)) {
             Some(i) => inbox.get(i + 1).cloned(),
             None => inbox.first().cloned(),

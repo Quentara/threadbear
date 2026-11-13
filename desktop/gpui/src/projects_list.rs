@@ -60,8 +60,7 @@ fn under(t: &ThreadSummary, heading: &str) -> ThreadSummary {
 
 impl Threadbear {
     /// What the list draws, top to bottom.
-    fn projects_list_items(&self, folding: bool) -> Vec<Item> {
-        let sections = Sections::build(&self.projects.list, self.threads.values(), now_ms());
+    fn projects_list_items(&self, sections: &Sections, folding: bool) -> Vec<Item> {
         let open = &self.projects.open_rows;
         let shows = |id: &str| !folding || open.contains(id);
         let mut items = Vec::new();
@@ -128,10 +127,16 @@ impl Threadbear {
         let now = now_ms();
         let clock = threadbear_core::sidebar::local_now();
         let folding = self.project_decisions_on();
-        let top_count = Sections::build(&self.projects.list, self.threads.values(), now).top_level().len();
+        // Worked out once for the count and the rows: it sorts every
+        // project's threads.
+        let items = {
+            let sections = Sections::build(&self.projects.list, self.threads.values(), now);
+            (sections.top_level().len(), self.projects_list_items(&sections, folding))
+        };
+        let (top_count, items) = items;
         let mut list = v_flex().px(px(OUTER_INSET)).pb(px(32.));
         if self.sidebar.loaded {
-            for (n, item) in self.projects_list_items(folding).into_iter().enumerate() {
+            for (n, item) in items.into_iter().enumerate() {
                 let el = match item {
                     Item::Heading { project, count, part } => self.render_project_heading(&project, count, part, &p, cx),
                     Item::Fold { id, title, project, count, decisions, part } => self.render_project_fold(&id, &title, project.as_ref(), count, decisions, part, &p, cx),
@@ -191,13 +196,15 @@ impl Threadbear {
 
     /// Notes the pointer over one of the view's own controls.
     fn hover_listener(&self, key: String, cx: &mut Context<Self>) -> Box<dyn Fn(&bool, &mut Window, &mut App) + 'static> {
-        Box::new(cx.listener(move |this, hovered: &bool, _, cx| {
+        Box::new(cx.listener(move |this, hovered: &bool, window, cx| {
             if *hovered {
+                crate::input_probe::input("hover", window);
                 this.projects.hovered = Some(key.clone());
             } else if this.projects.hovered.as_deref() == Some(key.as_str()) {
                 this.projects.hovered = None;
             }
-            cx.notify();
+            // Only the list draws it (the project page has hovers of its own).
+            this.notify_threads_panel(cx);
         }))
     }
 

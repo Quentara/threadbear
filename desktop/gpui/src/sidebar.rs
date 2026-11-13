@@ -21,6 +21,7 @@ use gpui_kit::*;
 use crate::style::px;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
+use std::rc::Rc;
 use std::time::Duration;
 
 use threadbear_core::inbox::{iso_time, InboxOrder, ThreadSummary};
@@ -89,6 +90,19 @@ pub(crate) fn bind_keys(cx: &mut App) {
 }
 
 impl Threadbear {
+    /// For a change only the Threads panel draws, like a row's hover: has
+    /// that panel drawn again, and nothing else. Notifying the app redraws
+    /// every view that watches it (the transcript, the side pane, the menus'
+    /// model), which made each row the pointer crossed a whole window's work
+    /// (Mike, 13 Nov: "a noticeable delay on the highlighting").
+    pub(crate) fn notify_threads_panel(&self, cx: &mut Context<Self>) {
+        match &self.sidebar_view {
+            Some(view) => view.update(cx, |_, cx| cx.notify()),
+            // Not drawn through its own view yet: the app draws it.
+            None => cx.notify(),
+        }
+    }
+
     /// The threads the arrow keys walk, top to bottom, as drawn: a folded
     /// section's rows aren't, unless a search draws them, and Archived only
     /// its few (`order` in SidebarView).
@@ -96,7 +110,7 @@ impl Threadbear {
         let now = now_ms();
         let searching = !self.search.read(cx).value().trim().is_empty();
         let mut out = Vec::new();
-        for section in self.shown_sections(cx, now) {
+        for section in self.shown_sections(cx, now).iter() {
             if !searching && self.folded.contains(section.key) {
                 continue;
             }
@@ -107,7 +121,7 @@ impl Threadbear {
             } else {
                 total
             };
-            out.extend(section.rows.into_iter().take(shown).map(|t| t.id));
+            out.extend(section.rows.iter().take(shown).map(|t| t.id.clone()));
         }
         out
     }
@@ -538,7 +552,7 @@ impl Threadbear {
     /// The Starred, Inbox and Running rows in order (`sections.all`), for
     /// picking what to open when the open thread goes away.
     fn live_row_ids(&self, cx: &App, now: i64) -> Vec<String> {
-        self.shown_sections(cx, now).into_iter().filter(|s| matches!(s.key, "starred" | "inbox" | "running")).flat_map(|s| s.rows.into_iter().map(|t| t.id)).collect()
+        self.shown_sections(cx, now).iter().filter(|s| matches!(s.key, "starred" | "inbox" | "running")).flat_map(|s| s.rows.iter().map(|t| t.id.clone())).collect()
     }
 
     /// The row after this one, or before it when it's the last
@@ -1076,9 +1090,12 @@ impl Threadbear {
         let searching = !query.is_empty();
         let mut sections = self.shown_sections(cx, now);
         // A thread whose page is on its way to Archived or Hibernating isn't
-        // listed or counted there until it lands (archive_flight.rs).
-        for section in &mut sections {
-            section.rows.retain(|t| !self.flight.holds(section.key, &t.id));
+        // listed or counted there until it lands (archive_flight.rs). Only
+        // then a copy, as most frames have nothing in flight.
+        if !self.flight.flying.is_empty() {
+            for section in Rc::make_mut(&mut sections) {
+                section.rows.retain(|t| !self.flight.holds(section.key, &t.id));
+            }
         }
         // Where flights can aim, noted afresh as the list draws.
         crate::archive_flight::sidebar_drawing();
@@ -1099,7 +1116,7 @@ impl Threadbear {
         } else if searching && sections.iter().all(|s| s.rows.is_empty()) {
             list = list.child(div().pl(px(LEADING)).pt(px(10.)).text_size(px(style::size::SIDEBAR_PREVIEW)).text_color(p.secondary).child("No threads match."));
         } else {
-            for section in &sections {
+            for section in sections.iter() {
                 // Empty sections other than Inbox are left out, and Inbox too
                 // while searching (`ThreadSection`).
                 if section.rows.is_empty() && (section.key != "inbox" || searching) {
@@ -1567,14 +1584,15 @@ impl Threadbear {
             // Not while it slides here: `selection_marker` draws it then.
             .when(selected && !self.sidebar.selection_sliding, |s| s.bg(bg_sel))
             .when(!selected && show_buttons, |s| s.bg(bg_hover))
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+            .on_hover(cx.listener(move |this, hovered: &bool, window, cx| {
                 if *hovered {
+                    crate::input_probe::input("hover", window);
                     this.sidebar.hovered = Some(hover_id.clone());
                 } else if this.sidebar.hovered.as_deref() == Some(hover_id.as_str()) {
                     this.sidebar.hovered = None;
                 }
                 this.sidebar.gestures.row_hovered(&hover_id, *hovered, swipe_action);
-                cx.notify();
+                this.notify_threads_panel(cx);
             }))
             // Selects on mouse down, as Mail does (`ThreadRowView`); a click
             // waits for the mouse to come back up. The press is watched to see
