@@ -729,6 +729,62 @@ pub fn fold_layout(sections: &Sections, open: &HashSet<String>) -> Vec<String> {
     rows
 }
 
+// ---------------------------------------------------------------- the page's tabs
+
+/// A project's page in two tabs (the projectDecisions experiment), a port of
+/// ThreadbearCore's ProjectTabs.swift: its decisions, and everything else
+/// about it. Mike, 12 Nov 2026: "tabbed at the top so you can swap between
+/// coordinator and project info".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ProjectTab {
+    Decisions,
+    Project,
+}
+
+impl ProjectTab {
+    pub const ALL: [ProjectTab; 2] = [ProjectTab::Decisions, ProjectTab::Project];
+
+    pub fn title(self) -> &'static str {
+        match self {
+            ProjectTab::Decisions => "Decisions",
+            ProjectTab::Project => "Project",
+        }
+    }
+
+    /// The name a script and the dump use: "decisions" or "project".
+    pub fn name(self) -> &'static str {
+        match self {
+            ProjectTab::Decisions => "decisions",
+            ProjectTab::Project => "project",
+        }
+    }
+
+    pub fn from_name(name: &str) -> Option<ProjectTab> {
+        ProjectTab::ALL.into_iter().find(|t| t.name() == name)
+    }
+
+    /// The tab a page opens on when none has been picked for it: Decisions
+    /// when something's waiting, else Project.
+    pub fn opening(decisions: usize) -> ProjectTab {
+        if decisions > 0 { ProjectTab::Decisions } else { ProjectTab::Project }
+    }
+
+    /// The tab showing: the one last picked for this project, else the one
+    /// it opened on this visit. Never worked out again from the decisions
+    /// while it's open, so the page doesn't jump under the pointer as they
+    /// come and go.
+    pub fn current(picked: Option<ProjectTab>, opened_on: Option<ProjectTab>, decisions: usize) -> ProjectTab {
+        picked.or(opened_on).unwrap_or_else(|| ProjectTab::opening(decisions))
+    }
+
+    /// The tab beside this one, for ⇧⌘[ (-1) and ⇧⌘] (1): they stop at the
+    /// ends rather than wrapping, as there are only two.
+    pub fn step(self, by: i32) -> ProjectTab {
+        let at = ProjectTab::ALL.iter().position(|t| *t == self).unwrap_or(0) as i32;
+        ProjectTab::ALL[(at + by).clamp(0, ProjectTab::ALL.len() as i32 - 1) as usize]
+    }
+}
+
 // ---------------------------------------------------------------- decisions
 
 /// The thread is waiting on Mike with a card of asks he hasn't finished
@@ -1268,6 +1324,27 @@ mod tests {
     use super::*;
     use crate::inbox::{iso_time, OpenAsk};
     use chrono::FixedOffset;
+
+    #[test]
+    fn a_page_opens_on_its_decisions_when_something_waits() {
+        assert_eq!(ProjectTab::opening(3), ProjectTab::Decisions);
+        assert_eq!(ProjectTab::opening(0), ProjectTab::Project);
+        // What it opened on holds while the decisions come and go.
+        assert_eq!(ProjectTab::current(None, Some(ProjectTab::Decisions), 0), ProjectTab::Decisions);
+        // A tab picked wins over both.
+        assert_eq!(ProjectTab::current(Some(ProjectTab::Project), Some(ProjectTab::Decisions), 4), ProjectTab::Project);
+        assert_eq!(ProjectTab::current(None, None, 2), ProjectTab::Decisions);
+    }
+
+    #[test]
+    fn the_tab_keys_stop_at_the_ends() {
+        assert_eq!(ProjectTab::Decisions.step(1), ProjectTab::Project);
+        assert_eq!(ProjectTab::Project.step(1), ProjectTab::Project);
+        assert_eq!(ProjectTab::Project.step(-1), ProjectTab::Decisions);
+        assert_eq!(ProjectTab::Decisions.step(-1), ProjectTab::Decisions);
+        assert_eq!(ProjectTab::from_name("project"), Some(ProjectTab::Project));
+        assert_eq!(ProjectTab::from_name("other"), None);
+    }
 
     const NOW: i64 = 1_000_000_000;
 

@@ -437,6 +437,8 @@ impl Threadbear {
             this.menus_stale = true;
             this.inbox_count_cache.set(None);
             this.projects.pane_cache.take();
+            // A project's page opened anew works out the tab it opens on.
+            this.note_project_visit();
         });
         // Tabs opened beside the main panel for what it showed go when it
         // moves on (thread_panels.rs, `mainContextChanged`).

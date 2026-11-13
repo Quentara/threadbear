@@ -339,21 +339,34 @@ impl Threadbear {
 
     /// `DecisionsSection`: at the top of a project's page, with the
     /// projectDecisions experiment on, its threads' open cards of asks.
-    pub(crate) fn render_decisions_section(&mut self, project: &Project, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        if !self.project_decisions_on() {
-            return None;
-        }
+    /// The page's Decisions tab (`DecisionsSection` with `tabbed`): the tab
+    /// names it, so a quiet line of how many rather than a heading. When
+    /// they've all been answered it says so where it is, with a way to the
+    /// Project tab, rather than the page jumping away under the pointer.
+    pub(crate) fn render_decisions_tab(&mut self, project: &Project, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let threads = self.decision_threads_for(&project.id);
         if threads.is_empty() {
-            return None;
+            let id = project.id.clone();
+            return h_flex()
+                .gap(px(6.))
+                .pt(px(4.))
+                .text_size(px(style::size::LABEL))
+                .line_height(px(16.))
+                .child(div().text_color(style::faint_text(cx)).child("Nothing waiting."))
+                .child(
+                    crate::highlights::tipped(div().id("decisions-show-project").cursor_pointer().text_color(style::link_text(cx)).hover(|s| s.underline()), "Its goals, state, notes and threads")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_project_tab(&id, rules::ProjectTab::Project, cx)))
+                        .child("Show the project"),
+                )
+                .into_any_element();
         }
         let refs: Vec<&ThreadSummary> = threads.iter().collect();
         let detail = rules::decision_heading(rules::decision_count(&refs), threads.len());
-        let mut section = v_flex().w_full().gap(px(12.)).child(crate::project_page::page_heading("Decisions", Some(detail), None, cx));
+        let mut section = v_flex().w_full().gap(px(12.)).child(div().text_size(px(style::size::SMALL)).line_height(px(14.)).text_color(style::faint_text(cx)).child(detail));
         for t in &threads {
             section = section.child(self.render_decision_card(t, window, cx));
         }
-        Some(section.into_any_element())
+        section.into_any_element()
     }
 
     /// `DecisionCard`: the thread's title and how long ago, a line on what
@@ -435,6 +448,25 @@ impl Threadbear {
                 .collect(),
         )
     }
+}
+
+/// `projectTab`, as the Swift command: `tab` ("decisions" or "project") picks
+/// a tab on the open project's page as a click does; `step` 1 or -1 is ⇧⌘]
+/// or ⇧⌘[. Says the tab showing after.
+#[cfg(feature = "automation")]
+pub(crate) fn tab_automation(app: &Entity<Threadbear>, cmd: &Value, cx: &mut App) -> Result<Value, String> {
+    let id = {
+        let t = app.read(cx);
+        t.open_project().filter(|_| t.project_decisions_on()).map(|p| p.id.clone()).ok_or("no project page in tabs open")?
+    };
+    if let Some(raw) = cmd["tab"].as_str() {
+        let tab = rules::ProjectTab::from_name(raw).ok_or("tab is decisions or project")?;
+        app.update(cx, |t, cx| t.pick_project_tab(&id, tab, cx));
+    }
+    if let Some(by) = cmd["step"].as_i64() {
+        app.update(cx, |t, cx| t.step_project_tab(by as i32, cx));
+    }
+    Ok(json!(format!("ok {}", app.read(cx).project_tab(&id).name())))
 }
 
 /// `decision`: a decision on the open project's page, through the card's own

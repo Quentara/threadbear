@@ -262,6 +262,31 @@ run or a screenshot from the running app. A slice with no runtime check doesn't
 count. (Ghostex's port log is where this shape comes from; its slices 214 to 268
 built parsers and gates with no launch of the app, which is the trap.)
 
+### 2026-11-13 A project's page in tabs, with Go's Show Previous and Next Tab (`projects.tabs`)
+
+- With the projectDecisions experiment on, a project's page is in two tabs
+  under its header, as the Swift app's (`ProjectTabBar`): Decisions, with
+  how many are waiting (its parts' too) in orange, and Project, everything
+  else. A page opens on Decisions when something's waiting and on Project
+  otherwise, however it was opened (the list, Back, a link); the tab picked
+  is kept for each project while the app runs, and picking the one showing
+  isn't kept as a choice. When every decision's been answered the tab says
+  "Nothing waiting." with Show the project, rather than jumping away. Before,
+  the GPUI page showed Decisions as a section at its top.
+- Go > Show Previous Tab and Show Next Tab on ⇧⌘[ and ⇧⌘], always in the
+  menu and greyed out away from a page in tabs, stopping at the ends; both
+  are in Settings > Keyboard (`previousTab`, `nextTab`, shortcuts.json's
+  names in the Swift app).
+- The `projectTab` command and `project.tab` in the dump, as the Swift app's.
+- Files: `desktop/core/src/{projects,shortcuts,keyboard}.rs`,
+  `desktop/gpui/src/{project_page,project_decisions,projects,shell,app,automation}.rs`,
+  `features/projects.feature`.
+- Verification: TB_APP=gpui cucumber `@projects.tabs`, `@projects.decisions`
+  and `@menu.file` on Tinker Desk, 11 of 11 (the tabs' scenario was
+  `@gpui-pending` before); core's tab and shortcut tests; dark pictures of a
+  scripted app on the mock's Threadbear project, on each tab, with Go's
+  items greyed at the ends.
+
 ### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
 
 - The Swift app now sends everyone to this one, so for other people the
@@ -765,9 +790,9 @@ Fixes from Codex's review of the slice before:
   window opens.
 - Right-click Updates: the app's update in a line, with Restart to Update
   (Return) once one's staged, or Show the Log after a failed build.
-- Not done: the project page's Show Previous and Next Tab, as this app's
-  project page has no tabs; Help's Take the Tour and Finish Setting Up, which
-  aren't ported, still say so.
+- Not done: Help's Take the Tour and Finish Setting Up, which aren't ported,
+  still say so. (The project page's Show Previous and Next Tab came on 13
+  Nov, with its tabs: see the log.)
 - Files: `desktop/gpui/src/{window_menu,about_window}.rs`,
   `desktop/gpui/src/{shell,sidebar,row_motion,rails,settings_window,updates_panel,automation,app,main}.rs`,
   `desktop/gpui/icons/bear-wave.svg`, `desktop/core/src/{den,updates,inbox}.rs`,

@@ -17,7 +17,7 @@ use gpui_kit::*;
 use threadbear_core::highlights::patches::{gives, source_name};
 use threadbear_core::inbox::ThreadSummary;
 use threadbear_core::new_thread::abbreviate_home;
-use threadbear_core::projects::{self as rules, Project, Section, Sections, Task, TaskColumn, TaskKind, Tasks, TextField};
+use threadbear_core::projects::{self as rules, Project, ProjectTab, Section, Sections, Task, TaskColumn, TaskKind, Tasks, TextField};
 use threadbear_core::sidebar::local_now;
 
 /// The page's column (`ProjectPage`'s maxWidth).
@@ -30,10 +30,18 @@ impl Threadbear {
         let threads: Vec<ThreadSummary> = rules::threads_in(&project.id, self.threads.values()).into_iter().cloned().collect();
         let header = self.render_page_header(&project, threads.len(), window, cx);
         let mut column = v_flex().w_full().gap(px(30.)).child(header);
-        // The projectDecisions experiment: its threads' open cards of asks
-        // first, as that's what's waiting on Mike (project_decisions.rs).
-        if let Some(decisions) = self.render_decisions_section(&project, window, cx) {
-            column = column.child(decisions);
+        // The projectDecisions experiment: the page is in two tabs, its
+        // decisions (its parts' too) and everything else (Mike, 12 Nov). Off,
+        // it's the page as it always was. A half-typed edit of the goals,
+        // state or notes lives in `projects.editing`, so it's still there on
+        // the way back from Decisions.
+        if self.project_decisions_on() {
+            let tab = self.project_tab(&project.id);
+            column = column.child(self.render_project_tab_bar(&project, tab, cx));
+            if tab == ProjectTab::Decisions {
+                column = column.child(self.render_decisions_tab(&project, window, cx));
+                return self.project_page_scroller(&project, column);
+            }
         }
         if let Some(parts) = self.render_parts_section(&project, cx) {
             column = column.child(parts);
@@ -46,6 +54,11 @@ impl Threadbear {
             .child(self.render_folders_section(&project, cx))
             .child(self.render_threads_section(&project, &threads, cx))
             .child(self.render_patches_section(&project, &threads, cx));
+        self.project_page_scroller(&project, column)
+    }
+
+    /// The page's column in its scroll view, centred.
+    fn project_page_scroller(&self, project: &Project, column: Div) -> AnyElement {
         div()
             .id(SharedString::from(format!("project-page-{}", project.id)))
             .size_full()
@@ -53,6 +66,110 @@ impl Threadbear {
             .track_scroll(&self.projects.page_scroll)
             .child(h_flex().w_full().justify_center().child(v_flex().w_full().max_w(px(PAGE_WIDTH + 64.)).px(px(32.)).pt(px(28.)).pb(px(48.)).child(column)))
             .into_any_element()
+    }
+
+    /// `ProjectTabBar`: Decisions and Project under the header. The
+    /// decisions' count is in the needs-you orange, as everywhere they're
+    /// counted; the rest is quiet. A click shows the tab at once; ⇧⌘[ and
+    /// ⇧⌘] step between them (Go menu).
+    fn render_project_tab_bar(&self, project: &Project, tab: ProjectTab, cx: &mut Context<Self>) -> AnyElement {
+        let decisions = self.project_decision_count(&project.id);
+        let mut bar = h_flex().w_full().gap(px(2.)).pb(px(4.)).border_b(gpui_kit::px(0.5)).border_color(style::hairline(cx));
+        for each in ProjectTab::ALL {
+            let selected = each == tab;
+            let count = (each == ProjectTab::Decisions && decisions > 0).then_some(decisions);
+            let tip = match each {
+                ProjectTab::Decisions => "What its threads are waiting on you for (⇧⌘[)",
+                ProjectTab::Project => "Its goals, state, notes and threads (⇧⌘])",
+            };
+            let id = project.id.clone();
+            let label = div()
+                .text_size(px(style::size::LABEL))
+                .line_height(px(16.))
+                .text_color(if selected { cx.theme().foreground } else { style::secondary_text(cx) })
+                .when(selected, |s| s.font_semibold())
+                .child(each.title());
+            let button = crate::highlights::tipped(div().id(SharedString::from(format!("project-tab-{}", each.name()))), tip)
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap(px(6.))
+                .px(px(10.))
+                .py(px(5.))
+                .rounded(px(6.))
+                .cursor_pointer()
+                .when(selected, |s| s.bg(style::primary_opacity(cx, 0.08)))
+                .when(!selected, |s| s.hover(|s| s.bg(style::sidebar_hover(cx))))
+                .child(label)
+                .when_some(count, |s, n| s.child(div().text_size(px(style::size::DETAIL)).line_height(px(15.)).font_semibold().text_color(style::needs_you(cx)).child(n.to_string())))
+                .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.pick_project_tab(&id, each, cx)));
+            bar = bar.child(button);
+        }
+        bar.into_any_element()
+    }
+
+    // ---- The page's tabs (the projectDecisions experiment) ----
+
+    /// Decisions waiting in the project and its parts.
+    pub(crate) fn project_decision_count(&self, id: &str) -> usize {
+        let threads = self.decision_threads_for(id);
+        rules::decision_count(&threads.iter().collect::<Vec<_>>())
+    }
+
+    /// The tab showing on a project's page (`ProjectTabs.current`).
+    pub(crate) fn project_tab(&self, id: &str) -> ProjectTab {
+        match self.projects.tabs_picked.get(id).or(self.projects.tabs_opened_on.get(id)) {
+            Some(tab) => *tab,
+            None => ProjectTab::opening(self.project_decision_count(id)),
+        }
+    }
+
+    /// A new visit to a project's page, however it came (the list, Back, a
+    /// link): the tab it opens on, unless one was picked for it before
+    /// (`projectPageOpened`). Called whenever the app changes; does nothing
+    /// unless the page showing has.
+    pub(crate) fn note_project_visit(&mut self) {
+        let now = self.open_project().map(|p| p.id.clone());
+        if now == self.projects.tab_visit {
+            return;
+        }
+        if let Some(id) = now.as_deref().filter(|_| self.project_decisions_on()) {
+            let tab = ProjectTab::opening(self.project_decision_count(id));
+            self.projects.tabs_opened_on.insert(id.to_owned(), tab);
+        }
+        self.projects.tab_visit = now;
+    }
+
+    /// A tab picked: kept for the project while the app runs. Picking the
+    /// one showing changes nothing, so it isn't kept as a choice either (a
+    /// press that did nothing would later hold the page there).
+    pub(crate) fn pick_project_tab(&mut self, id: &str, tab: ProjectTab, cx: &mut Context<Self>) {
+        if tab == self.project_tab(id) {
+            return;
+        }
+        self.projects.tabs_picked.insert(id.to_owned(), tab);
+        cx.notify();
+    }
+
+    /// Whether ⇧⌘[ (-1) or ⇧⌘] (1) has a tab to go to: only on a project's
+    /// page in tabs, and they stop at the ends.
+    pub(crate) fn can_step_project_tab(&self, by: i32, _cx: &App) -> bool {
+        if !self.project_decisions_on() {
+            return false;
+        }
+        let Some(project) = self.open_project() else { return false };
+        let tab = self.project_tab(&project.id);
+        tab.step(by) != tab
+    }
+
+    /// ⇧⌘[ and ⇧⌘] on a project's page.
+    pub(crate) fn step_project_tab(&mut self, by: i32, cx: &mut Context<Self>) {
+        if !self.can_step_project_tab(by, cx) {
+            return;
+        }
+        let Some(id) = self.open_project().map(|p| p.id.clone()) else { return };
+        let tab = self.project_tab(&id).step(by);
+        self.pick_project_tab(&id, tab, cx);
     }
 
     /// The icon (a menu to choose another), the title, who made it and

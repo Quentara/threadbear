@@ -416,6 +416,7 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         // page's search, and the sidebar's folded project rows.
         "project" | "projectParent" => crate::projects::automation(app, cmd, window, cx),
         "decision" => crate::project_decisions::automation(app, cmd, window, cx),
+        "projectTab" => crate::project_decisions::tab_automation(app, cmd, cx),
         "search" if cmd["projects"].as_bool() == Some(true) => crate::projects::automation(app, cmd, window, cx),
         "expand" | "collapse" if cmd.get("projectRow").is_some() => crate::projects_list::fold_automation(app, cmd, cx),
         "schedule" | "close-schedule" => crate::scheduled::editor_automation(app, cmd, window, cx),

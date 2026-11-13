@@ -74,6 +74,14 @@ pub(crate) struct ProjectsState {
     /// Each picture icon's blurred copy for its card's backdrop, by path;
     /// None while it's being made or when it can't be (projects_page.rs).
     pub(crate) backdrops: HashMap<String, Option<std::sync::Arc<Image>>>,
+    /// The tab last picked on each project's page, kept while the app runs,
+    /// and the one each opened on this visit (`projectTabsPicked`,
+    /// `projectTabsOpenedOn`; project_page.rs).
+    pub(crate) tabs_picked: HashMap<String, rules::ProjectTab>,
+    pub(crate) tabs_opened_on: HashMap<String, rules::ProjectTab>,
+    /// The page the last visit was to, so a new visit (opened from the list,
+    /// Back, a link) works out again which tab it opens on.
+    pub(crate) tab_visit: Option<String>,
 }
 
 /// The title field on a project's page, for that project.
@@ -874,6 +882,8 @@ impl Threadbear {
             "title": project.title,
             "parent": project.parent_id.as_deref().and_then(|p| self.project(p)).map(|p| p.title.clone()),
             "parts": sections.parts_of(&project.id).iter().map(|s| s.project.title.clone()).collect::<Vec<_>>(),
+            // The tab showing, while the page is in tabs (projectDecisions).
+            "tab": self.project_decisions_on().then(|| self.project_tab(&project.id).name()),
             "folders": project.folders,
             "threads": threads.iter().map(|t| t.id.clone()).collect::<Vec<_>>(),
             "patches": rules::patches_across(project, &threads).iter().map(|(p, _)| p.id.clone()).collect::<Vec<_>>(),

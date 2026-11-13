@@ -51,7 +51,7 @@ pub fn group(command: ShortcutCommand) -> Group {
     use ShortcutCommand::*;
     match command {
         NewThread | Archive | Hibernate | Stop | CopyTranscript => Group::Threads,
-        Back | Forward | NextInboxThread | OpenAnything | OpenAnythingAlso | ShowInbox | ShowScheduled | ShowProjects | ShowLibrarian | ShowHibernating | ShowArchived | Settings => Group::Go,
+        Back | Forward | NextInboxThread | OpenAnything | OpenAnythingAlso | ShowInbox | ShowScheduled | ShowProjects | ShowLibrarian | ShowHibernating | ShowArchived | PreviousTab | NextTab | Settings => Group::Go,
         ZoomIn | ZoomOut | ActualSize | ToggleThreads | TogglePanels | ToggleTerminal | ResetPanelLayout | CollapseThreads => Group::View,
     }
 }
