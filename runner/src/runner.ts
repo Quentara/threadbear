@@ -1523,42 +1523,54 @@ export class Runner {
   // origin "runner" marks a message the runner sends by itself (restart.ts),
   // "schedule" one a schedule sent (schedules.ts). `queue` keeps it out of a
   // running turn: it waits and starts its own.
-  // Built lazily and extended only by new events. A scheduled retry after
-  // adoption must consult the durable log, without rescanning it each run.
-  private scheduledMessages = new WeakMap<EventLog, { through: number; messages: Map<string, { seq: number; started: boolean }> }>();
+  // Cache only the keys looked up. New deliveries search backwards through
+  // their possible lifetime, rather than parsing the thread's whole history.
+  private scheduledMessages = new WeakMap<EventLog, Map<string, { through: number; since: number; message?: { seq: number; started: boolean; text: string; images: ImageRef[] } }>>();
 
-  private scheduledMessage(st: ThreadState, messageId: string): { seq: number; started: boolean } | undefined {
+  private scheduledMessage(st: ThreadState, messageId: string, since: number) {
     const log = this.store.log(st.rec.id);
     let index = this.scheduledMessages.get(log);
-    if (!index || index.through > log.lastSeq) {
-      index = { through: 0, messages: new Map() };
-      this.scheduledMessages.set(log, index);
-    }
+    if (!index) { index = new Map(); this.scheduledMessages.set(log, index); }
+    const cached = index.get(messageId);
+    if (cached?.message?.started && cached.through <= log.lastSeq) return cached.message;
+    if (cached?.through === log.lastSeq && cached.since <= since) return cached.message;
+    let started = false;
     const last = log.lastSeq;
-    for (let from = index.through + 1; from <= last; from += 512) {
-      for (const e of log.read(from, Math.min(from + 511, last))) {
-        if (e.type === 'user.message' && e.origin === 'schedule' && e.turnId) index.messages.set(e.turnId, { seq: e.seq, started: false });
-        if (e.type === 'turn.started' && e.turnId) {
-          const message = index.messages.get(e.turnId);
-          if (message) message.started = true;
+    for (let to = last; to >= 1; to -= 128) {
+      const events = log.read(Math.max(1, to - 127), to);
+      for (let i = events.length - 1; i >= 0; i--) {
+        const e = events[i];
+        if (e.turnId === messageId) {
+          if (e.type === 'turn.started') started = true;
+          if (e.type === 'user.message' && e.origin === 'schedule') {
+            const message = { seq: e.seq, started, text: e.text, images: e.images };
+            index.set(messageId, { through: last, since, message });
+            return message;
+          }
         }
+        if (Date.parse(e.ts) < since) { index.set(messageId, { through: last, since }); return undefined; }
       }
     }
-    index.through = last;
-    return index.messages.get(messageId);
-  }
-
-  findScheduledSend(threadId: string, scheduleId: string, run?: string): { turnId: string } | undefined {
-    if (!run) return undefined;
-    const st = this.mustGet(threadId);
-    const turnId = scheduledMessageId(threadId, scheduleId, run);
-    if (st.rec.queue.some((q) => q.turnId === turnId) || this.scheduledMessage(st, turnId)?.started) return { turnId };
+    index.set(messageId, { through: last, since });
     return undefined;
   }
 
-  sendScheduled(threadId: string, text: string, scheduleId: string, run?: string): { turnId: string } {
-    const prior = this.findScheduledSend(threadId, scheduleId, run);
-    return prior ?? this.send(threadId, text, [], { origin: 'schedule', scheduleId, queue: true, ...(run ? { messageId: scheduledMessageId(threadId, scheduleId, run) } : {}) });
+  findScheduledSend(threadId: string, scheduleId: string, run?: string, since = 0): { turnId: string } | undefined {
+    if (!run) return undefined;
+    const st = this.mustGet(threadId);
+    const turnId = scheduledMessageId(threadId, scheduleId, run);
+    if (st.rec.queue.some((q) => q.turnId === turnId) || this.scheduledMessage(st, turnId, since)?.started) return { turnId };
+    return undefined;
+  }
+
+  sendScheduled(threadId: string, text: string, scheduleId: string, run?: string, since = 0): { turnId: string } {
+    const prior = this.findScheduledSend(threadId, scheduleId, run, since);
+    if (prior) return prior;
+    const messageId = run ? scheduledMessageId(threadId, scheduleId, run) : undefined;
+    const logged = messageId ? this.scheduledMessage(this.mustGet(threadId), messageId, since) : undefined;
+    // A partial start retries the original logged input, including its check
+    // output, so the model reads exactly what the transcript shows.
+    return this.send(threadId, logged?.text ?? text, logged?.images ?? [], { origin: 'schedule', scheduleId, queue: true, ...(messageId ? { messageId, scheduledSince: since } : {}) });
   }
 
   send(threadId: string, text: string, images: ImageRef[] = [], opts: SendOptions = {}): { turnId: string } {
@@ -1640,6 +1652,7 @@ export class Runner {
     const msg: QueuedSend = { turnId, text, images: refs };
     if (opts.origin) msg.origin = opts.origin;
     if (opts.scheduleId) msg.scheduleId = opts.scheduleId;
+    if (opts.scheduledSince !== undefined) msg.scheduledSince = opts.scheduledSince;
     if (opts.answers?.length) msg.answers = opts.answers;
     if (opts.editOf) msg.editOf = opts.editOf;
     rec.lastActivityAt = this.isoNow();
@@ -1811,7 +1824,7 @@ export class Runner {
     // A review can be replayed after a failed turn.started append. Its
     // stable message ID keeps the original user row rather than duplicating it.
     const reviewMessage = msg.reviewId ? this.store.log(rec.id).read(1, rec.lastSeq).find(e => e.type === 'user.message' && e.reviewId === msg.reviewId && e.turnId === msg.turnId) : undefined;
-    const scheduledMessage = msg.origin === 'schedule' ? this.scheduledMessage(st, msg.turnId) : undefined;
+    const scheduledMessage = msg.scheduledSince !== undefined ? this.scheduledMessage(st, msg.turnId, msg.scheduledSince) : undefined;
     const messageSeq = reviewMessage?.seq ?? scheduledMessage?.seq ?? this.emit(st, userMessage(msg), msg.turnId).seq;
     try {
       this.emit(st, { type: 'turn.started', turnId: msg.turnId }, msg.turnId);
@@ -4209,7 +4222,7 @@ export function stoppedWorkMessage(what: string[], last: boolean): string {
   ].join('\n');
 }
 
-export type SendOptions = { origin?: MessageOrigin; scheduleId?: string; queue?: boolean; answers?: AskAnswer[]; editOf?: number; messageId?: string };
+export type SendOptions = { origin?: MessageOrigin; scheduleId?: string; queue?: boolean; answers?: AskAnswer[]; editOf?: number; messageId?: string; scheduledSince?: number };
 
 // A UUID-shaped id in the existing message/turn field, so it survives every
 // runner handover and crash without adding metadata for clients to mirror.

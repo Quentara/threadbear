@@ -112,10 +112,10 @@ for (const backend of [false, true]) for (const crashed of [false, true]) for (c
   const sched = new Scheduler({
     runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
     elsewhere: () => away,
-    sendElsewhere: async (id, text, scheduleId, run) => {
+    sendElsewhere: async (id, text, scheduleId, run, since) => {
       const methods = scheduledSendMethods(old.runner);
       const deliver = methods['drain.sendScheduledOnce'] ?? methods['drain.sendScheduled'];
-      deliver({ threadId: id, text, scheduleId, run });
+      deliver({ threadId: id, text, scheduleId, run, since });
       throw new RpcError(ErrorCode.busy, 'connection closed before the reply');
     },
   });
@@ -160,6 +160,45 @@ test('explicit cron runs remain distinct from each other and the next due slot',
   } finally { sched.stop(); }
 });
 
+test('rearming a consumed one-off at the same time sends the edited text again', async () => {
+  const { h, sched } = setup();
+  const { thread, s } = idleThread(h);
+  try {
+    const at = iso(h.clock.now() - MIN);
+    const sc = await sched.create({ text: 'First', at, threadId: thread.id });
+    await tick(8);
+    s.result('completed');
+    await tick();
+    await sched.update({ scheduleId: sc.id, at, text: 'Edited' });
+    await tick(8);
+    assert.equal(s.sent.at(-1)?.text.includes('Edited'), true);
+    assert.equal(sched.find(sc.id).runs, 2);
+    const messages = h.events(thread.id).filter((e) => e.type === 'user.message' && e.scheduleId === sc.id);
+    assert.equal(messages.length, 2);
+    assert.notEqual(messages[0].turnId, messages[1].turnId);
+  } finally { sched.stop(); }
+});
+
+test('a new keyed send searches recent events and legacy sends do not scan history', async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const st = h.runner.mustGet(thread.id);
+  for (let i = 0; i < 1024; i++) h.runner.emit(st, { type: 'system.note', text: 'Earlier work' });
+  h.clock.advance(MIN);
+  const log = h.store.log(thread.id);
+  const read = log.read.bind(log);
+  const ranges: number[] = [];
+  log.read = (from, to) => { ranges.push(from); return read(from, to); };
+  h.runner.sendScheduled(thread.id, 'Inspect', 'schedule-1', 'due:slot#0', h.clock.now());
+  assert.equal(ranges.length, 1);
+  assert.ok(ranges[0] > 1, 'old history is not parsed to prove a fresh key absent');
+  h.adapter.last.result('completed');
+  await tick();
+  ranges.length = 0;
+  h.runner.sendScheduled(thread.id, 'Legacy', 'schedule-2');
+  assert.equal(ranges.length, 0);
+});
+
 test('retrying a scheduled start after a failed turn.started append reuses its user message', async () => {
   const h = makeHarness();
   const { thread } = idleThread(h);
@@ -173,11 +212,12 @@ test('retrying a scheduled start after a failed turn.started append reuses its u
     assert.throws(() => h.runner.sendScheduled(thread.id, 'Inspect', 'schedule-1', 'due:slot-1'), /disk full/);
   } finally { log.append = append; }
   const recovered = makeHarness(h.home);
-  const sent = recovered.runner.sendScheduled(thread.id, 'Inspect', 'schedule-1', 'due:slot-1');
+  const sent = recovered.runner.sendScheduled(thread.id, 'Changed retry', 'schedule-1', 'due:slot-1');
   await tick(8);
   const events = recovered.store.log(thread.id).read(1, recovered.store.log(thread.id).lastSeq);
   assert.equal(events.filter((e) => e.type === 'user.message' && e.scheduleId === 'schedule-1').length, 1);
   assert.equal(events.filter((e) => e.type === 'turn.started' && e.turnId === sent.turnId).length, 1);
+  assert.equal(recovered.adapter.last.sent.at(-1)?.text, 'Inspect', 'retry uses the original logged input');
   assert.deepEqual(recovered.runner.findScheduledSend(thread.id, 'schedule-1', 'due:slot-1'), sent);
 });
 
@@ -192,12 +232,12 @@ for (const backend of [false, true]) for (const hibernated of [false, true]) tes
   const sched = new Scheduler({
     runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
     elsewhere: (id) => id === thread.id,
-    sendElsewhere: (id, text, scheduleId, run) => sendScheduled(h.runner, {
+    sendElsewhere: (id, text, scheduleId, run, since) => sendScheduled(h.runner, {
       call: async (_id, method, params) => {
         assert.equal(method, 'drain.sendScheduledOnce');
         return scheduledSendMethods(old.runner)['drain.sendScheduledOnce'](params);
       },
-    }, id, text, scheduleId, run),
+    }, id, text, scheduleId, run, since),
   });
   sched.start();
   if (backend) { await sched.attach(fakeBackend(h.clock, [M5]).for('primary', M5.id)); await tick(6); }
