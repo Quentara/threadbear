@@ -281,7 +281,12 @@ export function runningLooseEnds(tasks: BackgroundTask[]): LooseEnd[] {
       const undotted = flat.replace(/\.+$/, '');
       const what = undotted.length < flat.length && !isSafeSlice(flat, 0, undotted.length) ? flat : undotted;
       const short = cutSafely(what, MAX_JOB_CHARS, '…');
-      return { kind: 'running' as const, text: `Still running: ${short || 'a background job'}. Archiving stops it.` };
+      // Cut, its words go last, ending in the "…": a key the scrub learns
+      // of only after this line was made (a .env still being read) is then
+      // a cut-off value at the very end, which it does take out (Codex's
+      // review). Words after it hid it from that.
+      if (short !== what) return { kind: 'running' as const, text: `Still running (archiving stops it): ${short}` };
+      return { kind: 'running' as const, text: `Still running: ${what || 'a background job'}. Archiving stops it.` };
     });
 }
 

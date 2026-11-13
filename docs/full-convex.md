@@ -225,10 +225,13 @@ on this backend (`remoteThreads.updated` with runners), or either is already tru
 few minutes after it starts (`sync:listTokens` and the other-runners list). The
 question names what happened ("You've paired your phone. Want it to show this
 Mac's tool output and diffs too, even when the Mac's asleep?"). It then notes
-`sync.fullAsked` and `sync.fullAskedThread` so it never asks again. Mike's pick on
-that thread's card sets the answer: the runner does it itself, from the message's
-`answers` (Runner's `answered`, `fullSyncAnswerer`), and forgets the thread so it
-happens once (no answer leaves it off). The thread's agent can't set it unless it's
+`sync.fullAsked`, `sync.fullAskedThread` and `sync.fullAskedQuestion` so it never
+asks again. Mike's pick on that thread's card sets the answer: the runner does it
+itself, from the message's `answers` (Runner's `answered`, `fullSyncAnswerer`), only
+on an ask with exactly the noted question, the two options and what they do, and
+nothing else (the agent writes the card, and another thread could talk it into the
+same options under other words), and forgets the thread so it happens once (no
+answer leaves it off). The thread's agent can't set it unless it's
 on Full: an agent only reads the answer as words, and until 13 Nov any thread of the
 same mode could send it those words and have it run `tb settings full on` (Daybreak
 121). Agents' messages never carry `answers` (`src/rpc-gate.ts` takes them out). An install with `sync.full`

@@ -221,7 +221,7 @@ export type RunnerJson = {
   // usageWarning: false hides tb status's warning near Convex's Free limits.
   // pastedPictures: false keeps pictures you paste off your Convex deployment
   // (docs/on-your-mac.md).
-  sync?: { enabled?: boolean; url?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean; fullAsked?: string; fullAskedThread?: string; usageWarning?: boolean };
+  sync?: { enabled?: boolean; url?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean; fullAsked?: string; fullAskedThread?: string; fullAskedQuestion?: string; usageWarning?: boolean };
   secretCheck?: { enabled?: boolean };
   // Days after a thread is archived that housekeeping clears its pictures
   // (housekeeping.ts). Absent: they're kept. Mike's runners set 30.

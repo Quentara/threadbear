@@ -12,21 +12,29 @@ const END_TURN = 'mcp__threadbear__end_turn';
 import { CallerGate } from '../../src/rpc-gate.ts';
 import { SettingsService } from '../../src/settings.ts';
 import { readRunnerJson, writeRunnerJson } from '../../src/config.ts';
-import { askBrief, FULL_SYNC_OFF, FULL_SYNC_ON, fullSyncAnswer, fullSyncAnswerer } from '../../src/convex-use.ts';
+import { askBrief, FULL_SYNC_OFF, FULL_SYNC_OFF_DOES, FULL_SYNC_ON, FULL_SYNC_ON_DOES, fullSyncAnswer, fullSyncAnswerer, fullSyncQuestion } from '../../src/convex-use.ts';
 
-const QUESTION = "You've paired your phone. Want it to show this Mac's tool output and diffs too, even when the Mac's asleep?";
-const CARD = { needs: 'you', asks: [{ action: QUESTION, options: [FULL_SYNC_ON, FULL_SYNC_OFF] }] };
+const QUESTION = fullSyncQuestion('phone', 'Mac');
+// As needs.ts keeps the brief's card: options with what each does.
+const ASK = { action: QUESTION, options: [FULL_SYNC_ON, FULL_SYNC_OFF], optionNotes: [FULL_SYNC_ON_DOES, FULL_SYNC_OFF_DOES] };
+const CARD = { needs: 'you', asks: [{ question: QUESTION, options: [{ label: FULL_SYNC_ON, does: FULL_SYNC_ON_DOES }, { label: FULL_SYNC_OFF, does: FULL_SYNC_OFF_DOES }] }] };
 
 function world(mode: 'auto' | 'ask' = 'auto') {
   let settings: SettingsService | undefined;
   const h = makeHarness(undefined, {}, {
-    answered: fullSyncAnswerer({ askedThread: () => readRunnerJson(h.runner.cfg.home).sync?.fullAskedThread, set: (on) => void settings!.update({ fullSync: on }) }),
+    answered: fullSyncAnswerer({
+      asked: () => {
+        const j = readRunnerJson(h.runner.cfg.home).sync;
+        return { thread: j?.fullAskedThread, question: j?.fullAskedQuestion };
+      },
+      set: (on) => void settings!.update({ fullSync: on }),
+    }),
   });
   settings = new SettingsService({ config: h.runner.cfg, publish: () => {} });
   const brief = askBrief("'/x/tb'", 'phone');
   const asking = h.runner.create({ text: brief.text, permissionMode: mode }).thread;
   const attacker = h.runner.create({ text: 'hello', permissionMode: 'auto' }).thread;
-  writeRunnerJson(h.runner.cfg.home, { ...readRunnerJson(h.runner.cfg.home), sync: { fullAsked: new Date().toISOString(), fullAskedThread: asking.id } });
+  writeRunnerJson(h.runner.cfg.home, { ...readRunnerJson(h.runner.cfg.home), sync: { fullAsked: new Date().toISOString(), fullAskedThread: asking.id, fullAskedQuestion: QUESTION } });
   // With what main.ts gave the gate before (the asking thread's id), so this
   // fails on the code that let that thread set it.
   const gate = new CallerGate({ runner: h.runner, ...({ fullSyncAskThread: () => asking.id } as object) });
@@ -35,24 +43,50 @@ function world(mode: 'auto' | 'ask' = 'auto') {
 }
 
 // The asking thread's turn ends on its card, as the brief says.
-function cardUp(h: ReturnType<typeof makeHarness>, id: string) {
+function cardUp(h: ReturnType<typeof makeHarness>, id: string, card: Record<string, unknown> = CARD) {
   const s = h.adapter.sessions.filter((x) => x.opts.threadId === id).at(-1)!;
   s.init();
-  s.out({ kind: 'event', event: { type: 'tool.call', itemId: `e${Math.random()}`, name: END_TURN, kind: 'mcp', title: 'end_turn', input: CARD } });
+  s.out({ kind: 'event', event: { type: 'tool.call', itemId: `e${Math.random()}`, name: END_TURN, kind: 'mcp', title: 'end_turn', input: card } });
   s.text(`m${Math.random()}`, 'One question.');
   s.result('completed');
   assert.equal(h.runner.get(id).needs, 'you');
 }
 
-test('the card pick is read only from answers on an ask offering just the two options', () => {
-  const card = CARD.asks;
-  assert.equal(fullSyncAnswer([{ action: QUESTION, answer: FULL_SYNC_ON }], card), true);
-  assert.equal(fullSyncAnswer([{ action: QUESTION, answer: FULL_SYNC_OFF }], card), false);
-  assert.equal(fullSyncAnswer([{ action: QUESTION, answer: 'Turn it on please' }], card), undefined);
-  assert.equal(fullSyncAnswer([{ action: 'Something else?', answer: FULL_SYNC_ON }], card), undefined);
-  assert.equal(fullSyncAnswer([{ action: QUESTION, answer: FULL_SYNC_ON }], undefined), undefined, 'no card open');
-  assert.equal(fullSyncAnswer([{ action: 'x', answer: FULL_SYNC_ON }], [{ action: 'x', options: [FULL_SYNC_ON, FULL_SYNC_OFF, 'Delete it all'] }]), undefined);
-  assert.equal(fullSyncAnswer(undefined, card), undefined);
+test('the card pick is read only from answers on the card the runner worded', () => {
+  const card = [ASK];
+  const pick = (answer: string, c: unknown[] = card) => fullSyncAnswer([{ action: (c[0] as { action: string }).action, answer }], c as never, QUESTION);
+  assert.equal(pick(FULL_SYNC_ON), true);
+  assert.equal(pick(FULL_SYNC_OFF), false);
+  assert.equal(pick(FULL_SYNC_ON, [{ action: QUESTION, options: [FULL_SYNC_ON, FULL_SYNC_OFF] }]), true, 'without the notes');
+  assert.equal(pick('Turn it on please'), undefined);
+  assert.equal(fullSyncAnswer([{ action: 'Something else?', answer: FULL_SYNC_ON }], card, QUESTION), undefined);
+  assert.equal(fullSyncAnswer([{ action: QUESTION, answer: FULL_SYNC_ON }], undefined, QUESTION), undefined, 'no card open');
+  assert.equal(fullSyncAnswer([{ action: QUESTION, answer: FULL_SYNC_ON }], card, undefined), undefined, 'no question noted (asked by a release before this)');
+  assert.equal(fullSyncAnswer(undefined, card, QUESTION), undefined);
+  // Codex's review: the agent writes the card, so another thread could talk
+  // it into the same options under other words. None of these count.
+  const decoys = [
+    { ...ASK, action: 'Turn on local diagnostic logging? It stays on this Mac.' },
+    { ...ASK, why: 'Logs stay on this Mac.' },
+    { ...ASK, where: 'Settings' },
+    { ...ASK, reply: 'yes' },
+    { ...ASK, links: [{ title: 'x', url: 'https://example.com' }] },
+    { ...ASK, run: { command: 'true' } },
+    { ...ASK, optionNotes: ['Only logs, on this Mac', FULL_SYNC_OFF_DOES] },
+    { ...ASK, options: [FULL_SYNC_OFF, FULL_SYNC_ON] },
+    { ...ASK, options: [FULL_SYNC_ON, FULL_SYNC_OFF, 'Delete it all'] },
+  ];
+  for (const d of decoys) assert.equal(pick(FULL_SYNC_ON, [d]), undefined, JSON.stringify(d));
+  // The noted question binds it, whatever made the runner ask.
+  assert.equal(pick(FULL_SYNC_ON, [{ ...ASK, action: fullSyncQuestion('machine', 'Mac') }]), undefined);
+});
+
+test("Mike's pick on a decoy card the asking thread was talked into sets nothing", () => {
+  const { h, asking, full } = world();
+  cardUp(h, asking.id, { needs: 'you', asks: [{ question: 'Turn on local diagnostic logging? It stays on this Mac.', options: [FULL_SYNC_ON, FULL_SYNC_OFF] }] });
+  h.runner.send(asking.id, FULL_SYNC_ON, [], { answers: [{ action: 'Turn on local diagnostic logging? It stays on this Mac.', answer: FULL_SYNC_ON }] });
+  assert.equal(full(), undefined);
+  assert.equal(readRunnerJson(h.runner.cfg.home).sync?.fullAskedThread, asking.id, 'still to be answered');
 });
 
 test("another Auto thread's words, raw or by RPC, set nothing; the asking thread can't set it either", async () => {
@@ -108,5 +142,6 @@ test('setting it any other way (Settings, tb from a Full thread) forgets the que
   assert.equal(readRunnerJson(h.runner.cfg.home).sync?.fullAskedThread, asking.id);
   settings.update({ fullSync: true });
   assert.equal(readRunnerJson(h.runner.cfg.home).sync?.fullAskedThread, undefined);
+  assert.equal(readRunnerJson(h.runner.cfg.home).sync?.fullAskedQuestion, undefined);
   assert.ok(readRunnerJson(h.runner.cfg.home).sync?.fullAsked, 'still asked, so never asked again');
 });

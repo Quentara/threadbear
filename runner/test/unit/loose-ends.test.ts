@@ -453,7 +453,7 @@ test('looseEnds: a running job cut short never sends part of a key the runner kn
     ];
     for (const description of cases) {
       const [end] = runningLooseEnds([{ kind: 'shell', description }]);
-      assert.ok(end.text.endsWith('. Archiving stops it.'), end.text);
+      assert.ok(end.text.endsWith('. Archiving stops it.') || end.text.startsWith('Still running (archiving stops it): '), end.text);
       const sent = scrubber.doc({ looseEnds: [{ kind: end.kind, text: end.text }] }).looseEnds[0].text;
       assert.ok(!leaks(sent, key), sent);
       assert.ok(!leaks(sent, dotted.replace(/\.+$/, '')), sent);
@@ -462,8 +462,17 @@ test('looseEnds: a running job cut short never sends part of a key the runner kn
     // Still cut to about the same length, and plain words are cut where they were.
     const plain = runningLooseEnds([{ kind: 'shell', description: 'w '.repeat(100) }])[0].text;
     assert.ok(plain.length < 160, plain);
-    assert.match(plain, /^Still running: (w )+w…\. Archiving stops it\.$/);
+    assert.match(plain, /^Still running \(archiving stops it\): (w )+w…$/);
   } finally {
     useScrubForCuts(scrubText);
   }
+  // Codex's review: a key the runner learns of only after the line was made
+  // (a .env still being read when the turn ended). Cut, the line ends with
+  // the cut words, so the scrub's check for a value cut off at the end sees it.
+  const late = new Scrubber({ env: {}, folders: false });
+  const lateKey = 'f0e1d2c3b4a5968778695a4b3c2d1e0ff0e1d2c3b4a5968778695a4b3c2d1e0f';
+  const [made] = runningLooseEnds([{ kind: 'shell', description: `curl -H "X-Token: ${'q'.repeat(20)}" ${lateKey} --retry 3` }]);
+  late.known.add(lateKey);
+  const out = late.doc({ text: made.text }).text;
+  for (let i = 0; i + 8 <= lateKey.length; i++) assert.ok(!out.includes(lateKey.slice(i, i + 8)), out);
 });

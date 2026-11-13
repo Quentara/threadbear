@@ -145,7 +145,7 @@ export class SettingsService {
     // an answer, so the runner never asks about it again (convex-use.ts).
     // And the question's thread can't answer it again (Daybreak 121).
     if (u.fullSync !== undefined) {
-      const { fullAskedThread: _t, ...sync } = json.sync ?? {};
+      const { fullAskedThread: _t, fullAskedQuestion: _q, ...sync } = json.sync ?? {};
       json.sync = { ...sync, full: u.fullSync };
     }
     if (folders !== undefined || pool !== undefined) {

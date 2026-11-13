@@ -3510,7 +3510,10 @@ itself), the runner checks:
   monitor, a sub-agent; the summary's `background`, less any that's
   finished and waiting to be read), at most three: "Still running: Land
   the fix on main. Archiving stops it.", as archiving stops the CLI and
-  its jobs with it. Checked again when the list of jobs changes.
+  its jobs with it. A job's words past 100 characters are cut where no
+  secret is split, and then end the line ("Still running (archiving stops
+  it): <words>…"), so a key the scrub learns of later is still seen cut
+  off at the end. Checked again when the list of jobs changes.
 
 Until 13 Nov 2026 there was also `open`: up to three lines the agent wrote
 itself, through an `open` argument on end_turn (added 11 Nov, offered

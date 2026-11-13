@@ -42,7 +42,7 @@ import { ClaudeAdapter } from './adapters/claude/adapter.ts';
 import { ProcessRegistry } from './proc.ts';
 import { Runner } from './runner.ts';
 import { startOwnThread } from './own-threads.ts';
-import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncAnswerer, fullSyncReason } from './convex-use.ts';
+import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncAnswerer, fullSyncQuestion, fullSyncReason } from './convex-use.ts';
 // How long after starting the runner looks for a reason to ask about full sync,
 // and how long after a pairing or a new machine it asks (convex-use.ts).
 const ASK_FULL_SYNC_AFTER_MS = 5 * 60_000;
@@ -320,7 +320,13 @@ async function main(): Promise<void> {
     threadKey: (id) => makeThreadKey(token, id),
     // Mike's pick on the full sync question's card sets it, once: the asking
     // thread's agent can't (Daybreak 121, convex-use.ts fullSyncAnswer).
-    answered: fullSyncAnswerer({ askedThread: () => readRunnerJson(cfg.home).sync?.fullAskedThread, set: (on) => void settings.update({ fullSync: on }) }),
+    answered: fullSyncAnswerer({
+      asked: () => {
+        const s = readRunnerJson(cfg.home).sync;
+        return { thread: s?.fullAskedThread, question: s?.fullAskedQuestion };
+      },
+      set: (on) => void settings.update({ fullSync: on }),
+    }),
     standingInstructions: () => instructions.given(),
     projects,
     atMac: () => atMac,
@@ -709,6 +715,9 @@ async function main(): Promise<void> {
   // when it would help: a phone or browser paired, or another machine here
   // (convex-use.ts FullSyncOffer). An install with sync.full set either way is
   // never asked. Noted in runner.json once the thread is open, so it's once.
+  // The question the asking thread was given, noted with its id: Mike's
+  // pick counts only on a card that asks exactly that (fullSyncAnswer).
+  let fullSyncQuestionAsked: string | undefined;
   const fullSyncOffer = new FullSyncOffer({
     read: () => {
       const j = readRunnerJson(cfg.home);
@@ -718,12 +727,14 @@ async function main(): Promise<void> {
       // The checkout's tb, as this release's folder is pruned after a few more.
       const tbPath = thisRelease?.checkout ? path.join(thisRelease.checkout, 'runner', 'bin', 'tb') : path.join(import.meta.dirname, '..', 'bin', 'tb');
       const tb = `'${tbPath.replace(/'/g, `'\\''`)}'`;
-      return startOwnThread(runner, askBrief(tb, reason, process.platform === 'darwin' ? 'Mac' : 'machine'), thisRelease?.checkout);
+      const machine = process.platform === 'darwin' ? 'Mac' : 'machine';
+      fullSyncQuestionAsked = fullSyncQuestion(reason, machine);
+      return startOwnThread(runner, askBrief(tb, reason, machine), thisRelease?.checkout);
     },
     note: (threadId, clear) => {
       const json = readRunnerJson(cfg.home);
-      const { fullAsked: _a, fullAskedThread: _t, ...rest } = json.sync ?? {};
-      json.sync = clear ? rest : { ...rest, fullAsked: new Date().toISOString(), ...(threadId ? { fullAskedThread: threadId } : {}) };
+      const { fullAsked: _a, fullAskedThread: _t, fullAskedQuestion: _q, ...rest } = json.sync ?? {};
+      json.sync = clear ? rest : { ...rest, fullAsked: new Date().toISOString(), ...(threadId ? { fullAskedThread: threadId, ...(fullSyncQuestionAsked ? { fullAskedQuestion: fullSyncQuestionAsked } : {}) } : {}) };
       writeRunnerJson(cfg.home, json);
     },
     later: (fn, ms) => void setTimeout(fn, ms).unref?.(),
