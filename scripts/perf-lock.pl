@@ -9,6 +9,7 @@ use Fcntl qw(:flock);
 use Errno qw(EAGAIN EWOULDBLOCK EINTR);
 use File::Path qw(make_path);
 use FindBin;
+use File::Spec;
 use IO::Select;
 use POSIX qw(WNOHANG dup2);
 use Sys::Hostname qw(hostname);
@@ -16,12 +17,15 @@ use Sys::Hostname qw(hostname);
 my $desk = @ARGV && $ARGV[0] eq '--desk' ? shift(@ARGV) : '';
 my $pidfile = shift(@ARGV) // die "perf-lock: missing pidfile or -\n";
 @ARGV or die "perf-lock: missing command\n";
+die "perf-lock: --desk needs a pidfile\n" if $desk && $pidfile eq '-';
+$pidfile = File::Spec->rel2abs($pidfile) if $pidfile ne '-';
 my $home = $ENV{HOME} // die "perf-lock: no HOME\n";
 my $host = hostname();
 my $owner = $ENV{THREADBEAR_PERF_LOCK_OWNER} // '';
 # A marker only belongs to this host and home, and to a living lock holder.
 # Desk Runner gets it explicitly below, since its service has its own env.
-if ($owner =~ /^\Q$host\E:(\d+):\Q$home\E$/ && kill(0, $1)) {
+if ($owner =~ /^\Q$host\E:(\d+):\Q$home\E$/ && $1 > 0 && kill(0, $1)) {
+    die "perf-lock: --desk starts a remote run; call its workload directly inside an existing run\n" if $desk;
     exec { $ARGV[0] } @ARGV or die "perf-lock: exec: $!\n";
 }
 
@@ -46,27 +50,38 @@ make_path("$home/.cache/threadbear-check");
 my @locks;
 for my $spec (["$home/.cache/threadbear-perf.lock", 'another build or measurement'],
               ["$home/.cache/threadbear-check/lock", 'another check']) {
-    open(my $lock, '>>', $spec->[0]) or die "perf-lock: $spec->[0]: $!\n";
     my $said = 0;
     # Keep the lock we actually acquired, including while waiting for the next
     # one. A free probe followed by a build races a check starting after it.
-    while (!flock($lock, LOCK_EX | LOCK_NB)) {
-        die "perf-lock: lock $spec->[0]: $!\n" unless $! == EAGAIN || $! == EWOULDBLOCK || $! == EINTR;
+    for (;;) {
+        open(my $lock, '>>', $spec->[0]) or die "perf-lock: $spec->[0]: $!\n";
+        while (!flock($lock, LOCK_EX | LOCK_NB)) {
+            die "perf-lock: lock $spec->[0]: $!\n" unless $! == EAGAIN || $! == EWOULDBLOCK || $! == EINTR;
+            exit $cancelled if stopping();
+            print STDERR "Waiting for $spec->[1] on $host ($spec->[0])...\n" unless $said++;
+            select(undef, undef, undef, 0.1);
+        }
         exit $cancelled if stopping();
-        print STDERR "Waiting for $spec->[1] on $host ($spec->[0])...\n" unless $said++;
-        select(undef, undef, undef, 0.1);
+        # Old lockf calls without -k unlink on exit. A waiter can then own a
+        # deleted inode while a new caller owns its replacement. Reopen it.
+        my @opened = stat($lock);
+        my @named = stat($spec->[0]);
+        next unless @named && $opened[0] == $named[0] && $opened[1] == $named[1];
+        push @locks, $lock;
+        last;
     }
-    push @locks, $lock;
-    exit $cancelled if stopping();
 }
 $ENV{THREADBEAR_PERF_LOCK_OWNER} = "$host:$$:$home";
 
 my @command = @ARGV;
 if ($desk) {
+    die "perf-lock: --desk needs a fresh pidfile\n" if $pidfile eq '-' || -e $pidfile || -e "$pidfile.gone";
     my $quote = sub { my $s = shift; $s =~ s/'/'\\''/g; return "'$s'"; };
     my $line = join(' ', map { $quote->($_) }
         ('env', "THREADBEAR_PERF_LOCK_OWNER=$ENV{THREADBEAR_PERF_LOCK_OWNER}",
-         'perl', '-e', 'setpgrp(0, 0); exec @ARGV', @command));
+         'perl', '-e', 'setpgrp(0, 0); exec @ARGV', '/bin/bash', '-c',
+         'echo $$ >"$1"; [ ! -e "$1.gone" ] || exit 129; shift; exec "$@"',
+         'perf-desk', $pidfile, @command));
     @command = ("$home/.local/bin/desk", $line);
 }
 # The guard gets a pipe of its own. Only this supervisor writes it; closing it
@@ -74,6 +89,10 @@ if ($desk) {
 pipe(my $read, my $write) or die "perf-lock: pipe: $!\n";
 my $child = fork() // die "perf-lock: fork: $!\n";
 if (!$child) {
+    # A terminal/group cancellation must reach this supervisor, whose pipe
+    # then asks the guard to clean up. It mustn't kill the guard and watcher.
+    setpgrp(0, 0);
+    $SIG{PIPE} = 'DEFAULT';
     close $write;
     # The guard keeps copies too: even KILL of this supervisor must leave the
     # locks held while EOF makes the guard stop its command. Use high fds,

@@ -25,8 +25,8 @@ function host(t: TestContext) {
     for (const child of children) await child.done;
     fs.rmSync(home, { recursive: true, force: true });
   });
-  function run(args: string[], extra: NodeJS.ProcessEnv = {}, deskPid?: string) {
-    const child = spawn('perl', [helper, ...(deskPid ? ['--desk', deskPid] : ['-']), ...args], { env: { ...env, ...extra }, stdio: ['pipe', 'pipe', 'pipe'] });
+  function run(args: string[], extra: NodeJS.ProcessEnv = {}, deskPid?: string, detached = false) {
+    const child = spawn('perl', [helper, ...(deskPid ? ['--desk', deskPid] : ['-']), ...args], { env: { ...env, ...extra }, stdio: ['pipe', 'pipe', 'pipe'], detached });
     const result = child as ChildProcess & { output: string; done: Promise<number | null> };
     result.output = '';
     child.stdout!.on('data', (s) => { result.output += s; });
@@ -170,9 +170,38 @@ test('Desk Runner receives lock ownership explicitly through a fresh service env
   fs.mkdirSync(bin, { recursive: true });
   fs.writeFileSync(path.join(bin, 'desk'), '#!/bin/sh\nexec env -i HOME="$HOME" PATH="$PATH" /bin/bash -c "$1"\n', { mode: 0o755 });
   const entry = path.join(h.home, "desk entry's test.mjs");
-  fs.writeFileSync(entry, `import fs from 'node:fs'; import { ensurePerfLock } from ${JSON.stringify(path.join(root, 'features/tools/perf-lock.ts'))}; await ensurePerfLock(); fs.writeFileSync(process.argv[2], String(process.pid)); console.log('desk inherited');`);
+  fs.writeFileSync(entry, `import fs from 'node:fs'; import { ensurePerfLock } from ${JSON.stringify(path.join(root, 'features/tools/perf-lock.ts'))}; await ensurePerfLock(); if (fs.readFileSync(process.argv[2], 'utf8').trim() !== String(process.pid)) throw Error('wrapper did not record desk pid'); console.log('desk inherited');`);
   const child = h.run([process.execPath, entry, path.join(h.home, 'desk.pid')], {}, path.join(h.home, 'desk.pid'));
   assert.equal(await child.done, 0, child.output);
   assert.match(child.output, /desk inherited/);
   assert.doesNotMatch(child.output, /Waiting/);
+});
+
+test('an old unlinking lockf owner cannot strand the helper on a deleted inode', { skip: process.platform !== 'darwin' }, async (t) => {
+  const h = host(t);
+  fs.mkdirSync(path.join(h.home, '.cache'), { recursive: true });
+  const lock = path.join(h.home, '.cache/threadbear-perf.lock');
+  const legacy = spawn('/usr/bin/lockf', [lock, 'sh', '-c', 'echo ready; sleep 1']);
+  let output = '';
+  legacy.stdout!.on('data', (s) => { output += s; });
+  await until(() => output.includes('ready'), 'legacy job did not start');
+  const measured = h.run(['sh', '-c', 'echo measuring; sleep 1']);
+  await until(() => measured.output.includes('Waiting'), 'measurement did not wait');
+  await until(() => measured.output.includes('measuring'), 'measurement did not acquire current inode');
+  assert.equal(spawnSync('/usr/bin/lockf', ['-k', '-t', '0', lock, 'true']).status, 75);
+  assert.equal(await measured.done, 0, measured.output);
+});
+
+test('a whole process-group TERM leaves the guard alive to stop its workload', async (t) => {
+  const h = host(t);
+  const pidfile = path.join(h.home, 'pid');
+  const first = h.run(['sh', '-c', 'trap "" TERM; echo $$ > "$1"; echo ready; while :; do sleep 1; done', 'sh', pidfile], {}, undefined, true);
+  await until(() => first.output.includes('ready'), 'child did not start');
+  const pid = Number(fs.readFileSync(pidfile, 'utf8'));
+  process.kill(-first.pid!, 'SIGTERM');
+  const next = h.run(['sh', '-c', 'echo next']);
+  await until(() => next.output.includes('Waiting'), 'turn released before cleanup');
+  await first.done;
+  assert.equal(await next.done, 0);
+  assert.throws(() => process.kill(pid, 0));
 });
