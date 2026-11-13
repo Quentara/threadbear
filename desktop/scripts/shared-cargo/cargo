@@ -1,0 +1,176 @@
+#!/bin/bash
+# The `cargo` remote.sh's runs find first on their PATH: every checkout's
+# builds on a host share a few warm target folders instead of one each.
+#
+# One target per checkout filled the 75 GB cloud box on 13 Nov: six of them,
+# 1.3 to 8.4 GB each, 34 GB, all used within the hour, so remote.sh refused
+# every run for want of room. A cargo target can be shared as long as builds
+# take turns, so a host keeps a few slots (THREADBEAR_REMOTE_SLOTS, 2 by
+# default), each with a lock, a copy of the source and a target:
+#
+#   <base>/shared-<n>.lock    held (flock) for the whole cargo command
+#   <base>/shared-<n>/src     what cargo builds from
+#   <base>/shared-<n>/target  the warm target
+#
+# Cargo can't build from the checkout's own copy (src-<key>) into a shared
+# target. It calls a crate fresh when none of its files is newer than its
+# last build, and file times are per copy: a checkout whose edit was copied
+# over before another checkout's build would get that build. And env!
+# ("CARGO_MANIFEST_DIR") and dep-info paths name the folder it was built
+# from. So under the lock the checkout's copy is copied by content into the
+# slot's own src (rsync -c, no -t: a file that differs gets the time of now,
+# one that doesn't keeps its own), which is the rule remote.sh's own copy
+# keeps (test-remote-freshness.sh), and cargo runs there, in the same folder
+# relative to the copy, with the same arguments (a path into the checkout's
+# copy is pointed at the slot's).
+#
+# CARGO_TARGET_DIR as the run sees it stays the checkout's own folder
+# (target-<key>), and before the lock goes, the programs and libraries the
+# slot's target holds at the top of each profile (debug/threadbear-gpui,
+# release/threadbear-web-helper) are copied there: spec.sh, dev-app.ts,
+# stage-update.sh and install-app.sh read them from there after cargo
+# returns, when another checkout's build may already be replacing the slot's.
+# Each is copied beside the old one and moved over it, so a dev app or spec
+# run still using the old file never sees it half written. Only what's
+# changed is copied, so a fresh build costs nothing.
+#
+# What this doesn't cover: `cargo run` and `cargo test` run their programs
+# from the slot's src, holding the slot while they run, and a file such a
+# program writes into the folder it's run from lands in the slot's copy,
+# which the next sync deletes. Scripts here build, then run what was copied.
+#
+# The lock is an flock on a file this script holds open, inherited by cargo,
+# so it goes when both have gone, however they end (remote.sh's guard stops a
+# run's whole process group when its ssh goes). Nothing to clean up after a kill.
+#
+# Outside a remote.sh run (no THREADBEAR_SHARED_CARGO_BASE), or inside a
+# cargo this already started, it's plain cargo.
+set -uo pipefail
+
+self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The next cargo on the PATH, without this folder: rustup's, or another shim
+# (9c00a5ed's priority one) that in turn finds the real one.
+path_without_self() {
+  local out="" dir rest="$PATH:"
+  while [ -n "$rest" ]; do
+    dir="${rest%%:*}"; rest="${rest#*:}"
+    [ -n "$dir" ] || continue
+    [ "$(cd "$dir" 2>/dev/null && pwd)" = "$self_dir" ] && continue
+    out="${out:+$out:}$dir"
+  done
+  printf '%s' "$out"
+}
+PATH="$(path_without_self)"
+export PATH
+command -v cargo >/dev/null 2>&1 || { echo "shared-cargo: no cargo on the PATH after this one" >&2; exit 127; }
+
+base="${THREADBEAR_SHARED_CARGO_BASE:-}"
+copy="${THREADBEAR_SHARED_CARGO_SRC:-}"
+if [ -z "$base" ] || [ -z "$copy" ] || [ -n "${THREADBEAR_SHARED_CARGO_HELD:-}" ]; then
+  exec cargo "$@"
+fi
+# Commands that read the sources but build nothing don't need a slot.
+case "${1:-}" in
+  -V|--version|version|help|--help|-h|fmt|metadata|locate-project|tree|pkgid|read-manifest|verify-project) exec cargo "$@" ;;
+esac
+here="$(pwd -P)"
+named="${copy%/}"
+copy="$(cd "$copy" && pwd -P)" || exec cargo "$@"
+case "$here/" in
+  "$copy"/*) rel="${here#"$copy"}" ;;
+  # Not in the checkout's copy: nothing to build from a slot.
+  *) exec cargo "$@" ;;
+esac
+out="${CARGO_TARGET_DIR:-$copy/desktop/target}"
+key="${THREADBEAR_SHARED_CARGO_KEY:-$(basename "$copy")}"
+slots="${THREADBEAR_REMOTE_SLOTS:-2}"
+case "$slots" in ""|*[!0123456789]*|0) slots=2 ;; esac
+
+# Takes the lock on fd 8, without waiting (try) or waiting (wait).
+lock() {
+  if command -v flock >/dev/null 2>&1; then
+    if [ "$1" = try ]; then flock -n 8; else flock 8; fi
+  else
+    # macOS has no flock command. A dup of fd 8 shares its lock, which stays
+    # once perl exits, as this script (and cargo after it) holds fd 8.
+    perl -e 'use Fcntl ":flock"; open(my $f, ">&=", 8) or exit 2; flock($f, $ARGV[0] eq "try" ? LOCK_EX | LOCK_NB : LOCK_EX) or exit 1' "$1"
+  fi
+}
+
+# The slot this checkout used last first: its src and target are nearest to
+# what this build wants. Then the others, in order.
+order=()
+for ((n = 1; n <= slots; n++)); do
+  if [ "$(cat "$base/shared-$n/.last-key" 2>/dev/null)" = "$key" ]; then order=("$n" ${order[@]+"${order[@]}"}); else order+=("$n"); fi
+done
+slot=""
+for n in "${order[@]}"; do
+  exec 8>>"$base/shared-$n.lock"
+  if lock try; then slot="$n"; break; fi
+  exec 8>&-
+done
+if [ -z "$slot" ]; then
+  slot="${order[0]}"
+  echo "Waiting for one of this host's $slots shared build folders (another checkout is building)..." >&2
+  exec 8>>"$base/shared-$slot.lock"
+  lock wait || { echo "shared-cargo: couldn't lock $base/shared-$slot.lock" >&2; exit 1; }
+fi
+dir="$base/shared-$slot"
+mkdir -p "$dir/src" "$dir/target" "$out"
+printf '%s\n' "$key" >"$dir/.last-key" 2>/dev/null || true
+# trim-remote-cache.sh reads a slot as in use while its lock is held; this is
+# for a human looking, and for which checkout is building there.
+touch "$dir/.in-use" "$dir/target" 2>/dev/null || true
+
+# The checkout's copy, by content. The same leave-outs as remote.sh's copy,
+# and node_modules, which cargo never reads and is most of a copy's size.
+if ! rsync -rlpDc --delete --exclude node_modules --exclude .build --exclude target --exclude reports \
+  --exclude .fixtures --exclude .swiftpm --exclude dist --exclude DerivedData --exclude .DS_Store \
+  "$copy/" "$dir/src/"; then
+  echo "shared-cargo: couldn't copy $copy into $dir/src" >&2
+  exit 1
+fi
+
+# Arguments naming the checkout's copy name the slot's.
+args=()
+for a in "$@"; do
+  for c in "$copy" "$named"; do
+    case "$a" in
+      "$c"/*) a="$dir/src/${a#"$c"/}"; break ;;
+      *=*"$c"/*) a="${a%%"$c"/*}$dir/src/${a#*"$c"/}"; break ;;
+    esac
+  done
+  args+=("$a")
+done
+
+rc=0
+(
+  cd "$dir/src$rel" || exit 1
+  CARGO_TARGET_DIR="$dir/target" THREADBEAR_SHARED_CARGO_HELD=1 exec cargo ${args[@]+"${args[@]}"}
+) || rc=$?
+
+# The programs and libraries at the top of each profile folder (the ones with
+# a deps folder: debug, release, a custom profile, <triple>/debug), copied to
+# the checkout's own target unless that already has the same file.
+while IFS= read -r deps; do
+  prof="${deps%/deps}"
+  to="$out/${prof#"$dir/target/"}"
+  for f in "$prof"/*; do
+    [ -f "$f" ] || continue
+    case "$f" in
+      *.dylib|*.so|*.dll|*.exe) ;;
+      *.d|*.rlib|*.rmeta|*.a|*.lib|*.pdb) continue ;;
+      *) [ -x "$f" ] || continue ;;
+    esac
+    name="${f##*/}"
+    # cp -p keeps the time, so the same time and size is the same build.
+    if [ -f "$to/$name" ] && [ ! "$f" -nt "$to/$name" ] && [ ! "$f" -ot "$to/$name" ] \
+      && [ "$(wc -c <"$f")" = "$(wc -c <"$to/$name")" ]; then continue; fi
+    mkdir -p "$to" && cp -p "$f" "$to/.$name.new" && mv -f "$to/.$name.new" "$to/$name" || {
+      echo "shared-cargo: couldn't copy $name into $to" >&2
+      rm -f "$to/.$name.new"
+      [ "$rc" != 0 ] || rc=1
+    }
+  done
+done < <(find "$dir/target" -maxdepth 3 -type d -name deps 2>/dev/null)
+exit "$rc"

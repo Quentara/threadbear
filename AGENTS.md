@@ -322,8 +322,8 @@ if `tb` isn't found (an older runner, or outside a thread), use
 
 - `./check.sh` runs every check (`--quick`: the runner's typecheck and
   unit tests, about a minute, the Mac app's release build when `app/`
-  or `dock/` changed, and the GPUI port's core and client tests when
-  `desktop/` changed, with the full run adding a `cargo check` of the
+  or `dock/` changed, and the GPUI port's core and client tests and a
+  `cargo check` of the GPUI app when `desktop/` changed, with the full run adding a `cargo check` of the
   whole workspace; `--app`: the app's build and tests, for a
   change outside `runner/`). With a check host set it copies the checkout
   there, runs it, brings back failed steps' logs and deletes the copy

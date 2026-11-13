@@ -366,7 +366,8 @@ fi
 # landed on main, exactly what core's open_gate_source test is there to catch.
 # --quick runs the small crates' tests (the core logic, the golden
 # transcripts, the open-gate source check, the client against the mock),
-# which build without GPUI. The full check also builds everything else
+# which build without GPUI, and a cargo check of the GPUI app when
+# something it builds from changed. The full check also builds everything else
 # (cargo check of the GPUI app, the dock and every test), a few minutes from
 # cold. On a check host cargo's target folder is kept between runs
 # (scripts/check-remote.sh), so --quick stays about a minute.
@@ -446,6 +447,16 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
       step "mock runner packages" "$ROOT/app/Tools/mock-runner" npm ci --no-audit --no-fund
     fi
     cargo_step "desktop core tests" test --locked --no-fail-fast -p threadbear-core -p threadbear-client
+    # The GPUI app itself, which the core tests never build: main's app
+    # stopped compiling twice in the week to 13 Nov (tour.rs's
+    # panel_available, fixed in 92c48ee73) with every landing's --quick
+    # green. With automation on, as the specs and dev apps build it, and its
+    # tests, so a test module that stopped compiling fails here too. Only
+    # when something it builds from changed: the runner code the mock
+    # imports can't break it.
+    if [ "$QUICK" = 1 ] && needed '^desktop/|^app/Sources/Threadbear/Resources/(Art|Rich)/|^features/support/sample\.png$'; then
+      cargo_step "desktop app check" check --locked -p threadbear-gpui --features automation --all-targets
+    fi
     [ "$QUICK" = 1 ] || cargo_step "desktop build" check --locked --workspace --all-targets
   fi
 fi
