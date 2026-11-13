@@ -152,9 +152,8 @@ test('outside a remote run, or outside the copy, it is plain cargo', (t) => {
   delete (env as Record<string, string | undefined>).THREADBEAR_SHARED_CARGO_BASE;
   spawnSync('cargo', ['build'], { cwd: path.join(h.base, 'src-aaa', 'desktop'), env, encoding: 'utf8' });
   spawnSync('cargo', ['build'], { cwd: h.root, env: h.envFor('aaa'), encoding: 'utf8' });
-  spawnSync('cargo', ['build'], { cwd: path.join(h.base, 'src-aaa', 'desktop'), env: h.envFor('aaa', { THREADBEAR_PERF_BUILD_KEY: 'aaa' }), encoding: 'utf8' });
   spawnSync('cargo', ['--version'], { cwd: path.join(h.base, 'src-aaa', 'desktop'), env: h.envFor('aaa'), encoding: 'utf8' });
-  assert.equal(h.logLines().length, 4);
+  assert.equal(h.logLines().length, 3);
   assert.ok(h.logLines().every((l) => !/shared-\d/.test(l)), h.logLines().join('\n'));
   assert.equal(fs.existsSync(path.join(h.base, 'shared-1')), false);
 });
@@ -286,4 +285,26 @@ test("a program cargo's own list says is up to date comes back, though other fil
   const r = h.cargo('bbb', ['build'], env);
   assert.match(r.stderr, /fresh/);
   assert.equal(h.built('bbb'), 'same app');
+});
+
+// 14 Nov: --perf builds went straight from each checkout's copy into
+// perf-target, so every change of checkout rebuilt the vendored GPUI kits.
+test('a --perf build uses a source copy of its own and builds straight into perf-target', (t) => {
+  const h = host(t);
+  h.checkout('aaa', 'same', 60);
+  h.checkout('bbb', 'same', 30);
+  const perfTarget = path.join(h.base, 'perf-target');
+  const perf = (key: string) => h.cargo(key, ['build'], { THREADBEAR_PERF_BUILD_KEY: key, CARGO_TARGET_DIR: perfTarget });
+  assert.equal(perf('aaa').status, 0);
+  const [line] = h.logLines();
+  assert.ok(line.includes(`${fs.realpathSync(h.base)}/perf-slot/src/desktop ${perfTarget} 1 build`), line);
+  assert.equal(spawnSync(path.join(perfTarget, 'debug', 'app'), { encoding: 'utf8' }).stdout.trim(), 'same');
+  // Another checkout with the same files: nothing rebuilds.
+  const r = perf('bbb');
+  assert.match(r.stderr, /fresh/);
+  // One with a change: that rebuilds, whatever its file's time.
+  h.checkout('aaa', 'changed', 3600);
+  assert.match(perf('aaa').stderr, /compiling/);
+  assert.equal(spawnSync(path.join(perfTarget, 'debug', 'app'), { encoding: 'utf8' }).stdout.trim(), 'changed');
+  assert.equal(fs.existsSync(path.join(h.base, 'shared-1')), false, 'ordinary slots untouched');
 });

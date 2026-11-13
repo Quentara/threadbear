@@ -70,9 +70,7 @@ command -v cargo >/dev/null 2>&1 || { echo "shared-cargo: no cargo on the PATH a
 
 base="${THREADBEAR_SHARED_CARGO_BASE:-}"
 copy="${THREADBEAR_SHARED_CARGO_SRC:-}"
-# A --perf run (THREADBEAR_PERF_BUILD_KEY, from 9c00a5ed's perf-build.sh)
-# builds in its own stable target, which keeps benchmark builds comparable.
-if [ -z "$base" ] || [ -z "$copy" ] || [ -n "${THREADBEAR_SHARED_CARGO_HELD:-}" ] || [ -n "${THREADBEAR_PERF_BUILD_KEY:-}" ]; then
+if [ -z "$base" ] || [ -z "$copy" ] || [ -n "${THREADBEAR_SHARED_CARGO_HELD:-}" ]; then
   exec cargo "$@"
 fi
 # Commands that read the sources but build nothing don't need a slot.
@@ -103,9 +101,27 @@ lock() {
   fi
 }
 
+mkdir -p "$base" || { echo "shared-cargo: couldn't make $base" >&2; exit 1; }
+# A --perf run (THREADBEAR_PERF_BUILD_KEY, scripts/perf-build.sh) keeps its
+# own target, perf-target, so benchmark builds stay apart from everyone's.
+# It builds from a source copy of its own too, perf-slot/src, taken over by
+# content like a slot's: built straight from each checkout's copy, every
+# change of checkout made perf-build.sh touch every file, and cargo rebuilt
+# the vendored GPUI kits each time, most of the night's queue on 14 Nov
+# (879afc1e). Here only what differs between the checkouts gets a new time.
+# Nothing to hand back: CARGO_TARGET_DIR is perf-target itself.
+if [ -n "${THREADBEAR_PERF_BUILD_KEY:-}" ]; then
+  dir="$base/perf-slot"
+  exec 8>>"$dir.lock"
+  if ! lock try; then
+    echo "Waiting for another --perf build on this host..." >&2
+    lock wait || { echo "shared-cargo: couldn't lock $dir.lock" >&2; exit 1; }
+  fi
+  target="$out"
+  handback=0
+else
 # The slot this checkout used last first: its src and target are nearest to
 # what this build wants. Then the others, in order.
-mkdir -p "$base" || { echo "shared-cargo: couldn't make $base" >&2; exit 1; }
 order=()
 for ((n = 1; n <= slots; n++)); do
   if [ "$(cat "$base/shared-$n/.last-key" 2>/dev/null)" = "$key" ]; then order=("$n" ${order[@]+"${order[@]}"}); else order+=("$n"); fi
@@ -123,11 +139,14 @@ if [ -z "$slot" ]; then
   lock wait || { echo "shared-cargo: couldn't lock $base/shared-$slot.lock" >&2; exit 1; }
 fi
 dir="$base/shared-$slot"
-mkdir -p "$dir/src" "$dir/target" "$out"
+target="$dir/target"
+handback=1
+fi
+mkdir -p "$dir/src" "$target" "$out"
 printf '%s\n' "$key" >"$dir/.last-key" 2>/dev/null || true
 # trim-remote-cache.sh reads a slot as in use while its lock is held; this is
 # for a human looking, and for which checkout is building there.
-touch "$dir/.in-use" "$dir/target" 2>/dev/null || true
+touch "$dir/.in-use" "$target" 2>/dev/null || true
 
 # The checkout's copy, by content. The same leave-outs as remote.sh's copy,
 # and node_modules, which cargo never reads and is most of a copy's size.
@@ -161,10 +180,11 @@ artifacts() {
       esac
       printf '%s\n' "$f"
     done
-  done < <(find "$dir/target" -maxdepth 3 -type d -name deps 2>/dev/null)
+  done < <(find "$target" -maxdepth 3 -type d -name deps 2>/dev/null)
 }
 signatures() { artifacts | perl -ne 'chomp; my @s = stat $_ or next; print "$s[1] $s[9] $s[7] $_\n"'; }
-before="$(signatures)"
+before=""
+[ "$handback" = 0 ] || before="$(signatures)"
 
 # Arguments naming the checkout's copy name the slot's.
 args=()
@@ -181,7 +201,7 @@ done
 rc=0
 (
   cd "$dir/src$rel" || exit 1
-  CARGO_TARGET_DIR="$dir/target" THREADBEAR_SHARED_CARGO_HELD=1 exec cargo ${args[@]+"${args[@]}"}
+  CARGO_TARGET_DIR="$target" THREADBEAR_SHARED_CARGO_HELD=1 exec cargo ${args[@]+"${args[@]}"}
 ) || rc=$?
 
 # What goes back to the checkout's own target: a program this cargo built,
@@ -211,7 +231,7 @@ up_to_date() {
 }
 while IFS= read -r line; do
   f="${line#* * * }"
-  rel="${f#"$dir/target/"}"
+  rel="${f#"$target/"}"
   grep -qxF "$line" <<<"$before" && ! up_to_date "$f" && continue
   to="$out/$rel"
   # cp -p keeps the time, so the same time and size is the same build.
@@ -224,5 +244,5 @@ while IFS= read -r line; do
     rm -f "${to%/*}/.${to##*/}.new"
     [ "$rc" != 0 ] || rc=1
   }
-done < <(signatures)
+done < <([ "$handback" = 0 ] || signatures)
 exit "$rc"

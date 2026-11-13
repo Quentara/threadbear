@@ -193,9 +193,10 @@ else
   # target per checkout, up to 8 GB each, filled the cloud box on 13 Nov. The
   # checkout's own target-<key> holds only the programs each build hands back,
   # so CARGO_TARGET_DIR still names where a run finds what it built. A --perf
-  # run keeps its own stable target, and the shim steps aside for it.
-  export THREADBEAR_SHARED_CARGO_BASE="\$HOME/$base" THREADBEAR_SHARED_CARGO_SRC="\$HOME/$src" THREADBEAR_SHARED_CARGO_KEY="$key"
+  # run keeps its own stable target.
 fi
+# A --perf run goes through it too, from a source copy of its own into perf-target.
+export THREADBEAR_SHARED_CARGO_BASE="\$HOME/$base" THREADBEAR_SHARED_CARGO_SRC="\$HOME/$src" THREADBEAR_SHARED_CARGO_KEY="$key"
 # Debug builds keep line numbers (enough for a panic's backtrace) but not the
 # rest of the debug info, which was most of a target: one checkout's reached
 # 15 GB in an hour on the 75 GB cloud box, the threadbear-gpui test binary
