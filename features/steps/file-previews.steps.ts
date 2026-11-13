@@ -137,7 +137,13 @@ type LocalPage = { key: string; title: string; hidden: boolean; loading: boolean
 const localPages = (d: unknown) => ((d as { webPanels?: { pages?: LocalPage[] } }).webPanels?.pages ?? []).filter((p) => p.key.startsWith('preview:'));
 
 Then('the local page in the pane is titled {string}', { timeout: 120_000 }, async function (this: ThreadbearWorld, title: string) {
-  await this.until(`a local page on show titled "${title}"`, (d) => localPages(d).some((p) => !p.hidden && !p.loading && p.title === title), 90_000);
+  try {
+    await this.until(`a local page on show titled "${title}"`, (d) => localPages(d).some((p) => !p.hidden && !p.loading && p.title === title), 90_000);
+  } catch (e) {
+    // What the pool and the pane had, to say why.
+    const d = await this.app.dump();
+    throw new Error(`${(e as Error).message}\nwebPanels: ${JSON.stringify((d as { webPanels?: unknown }).webPanels)}\npane: ${JSON.stringify(pane(d))}`);
+  }
 });
 
 When('I press Run them over the page in the pane', async function (this: ThreadbearWorld) {

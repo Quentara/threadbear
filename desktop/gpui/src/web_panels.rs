@@ -1119,6 +1119,8 @@ pub(crate) fn dump(cx: &App) -> Value {
         "pages": p.pages.iter().map(|k| page_dump(&k.key, Some(k), frame)).collect::<Vec<_>>(),
         "left": p.left,
         "covered": p.covered,
+        // Why a page couldn't be made, by its key.
+        "failed": p.failed,
         "edits": EDITS.with(|e| e.borrow().clone()),
     })
 }

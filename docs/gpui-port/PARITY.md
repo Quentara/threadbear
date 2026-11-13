@@ -270,6 +270,59 @@ Verification: `features/pinned-panels.feature` (3 scenarios) passes on the
 cloud box (Linux) with `TB_APP=gpui`, as do `@dock.threadpanel`, `@panel.list`
 and `@panel.image`; `cargo test` for `pinned_panels` (core) and
 `rename_keeps_a_panels_place_selection_window_and_hidden_title` (dock layout).
+### 2026-11-13 Local pages in the pane and on the review stage, sealed, with Run them (`file.htmlpreview`, `file.runthem`, `review.media`)
+
+- A local `.html` file opens in the pane as a page, not in the browser, and
+  a review's page shot shows in place on the stage: through the web runtime,
+  under the Swift app's seal (LocalPreviewSite, LocalPreviewSchemeHandler,
+  PreviewSandbox), ported. `threadbear_core::local_preview` is the site's
+  rules with their tests: the page and the passive assets its markup and
+  CSS name, in its folder, read with no symlink followed and one link,
+  nothing a script names. The open gate's rule for pages (`decide_page`):
+  this Mac's own, a real page after its symlinks.
+- Each view gets an origin of its own, `https://<token>.preview.threadbear.invalid`,
+  in the sealed pages' context (no network, keeps nothing), answered only
+  from its site by the view's own handler (`threadbear_web::preview_rules`,
+  `mac/preview.rs`); every other request is cancelled before it starts, the
+  main frame shows its page and nothing else, and every answer carries a
+  CSP. No popups, downloads, drops or cookies.
+- Scripts are off. A page with some has the bar over it (This page has
+  scripts, the why behind ⓘ, Run them), and Run them reloads it with them on
+  for those bytes only, kept in `gpui-prefs.json`: the page is served only
+  while its bytes match, and the clipboard and copy guards go in through
+  DevTools before its scripts (the page doesn't load if either fails). The
+  review stage's page is always scripts off, as in the Swift window.
+- The mock's landing pages thread has `mockups/drawn.html`, whose script
+  writes what it could fetch into its title: the logo it names, a picture it
+  doesn't, a dotfile, a web page, and whether the guards reached a blank
+  frame it made.
+- The specs' bar words, title and Run them read GPUI's dump only, so the
+  pane's are `@swift-pending`; the stage's runs on both.
+- Cross-lab review: REVIEW-PENDING.
+- Files: `desktop/core/src/local_preview.rs`, `desktop/web/src/preview_rules.rs`,
+  `desktop/web/src/mac/preview.rs`, `desktop/web/src/mac/panel.rs`,
+  `desktop/gpui/src/files.rs`, `desktop/gpui/src/web_panels.rs`,
+  `desktop/gpui/src/review_window/stage.rs`, `desktop/gpui/src/prefs.rs`,
+  `app/Tools/mock-runner/server.mjs`.
+- Verification: VERIFY-PENDING
+
+### 2026-11-13 Pane sections side by side each draw their own (`pane.sections`)
+
+- Highlights beside Files, Patches or a list panel drew one section for
+  both: the side pane was one view showing the chosen section, and the two
+  dock slots took turns choosing. Each section now has a view of its own
+  over the one pane model (`side_sections.rs`), as the Swift app's DockPane
+  is one per section. A press in a section makes it the chosen one, so a
+  file opened from Files opens over Files, with Back there; an explanation
+  stays over the section it was asked over; menus, the ⓘ popover and the
+  picture viewer are drawn once, by the chosen section (or the first one on
+  show). A list or picture panel asks for fresh rows while the dock has it
+  on show, wherever that is, and starts again when it's shown again.
+- The dump's `panels.drawn` (GPUI's own) says what each section on show drew.
+- Files: `desktop/gpui/src/side_sections.rs`, `desktop/gpui/src/highlights.rs`,
+  `desktop/gpui/src/shell.rs`, `desktop/gpui/src/explain_pane.rs`,
+  `desktop/gpui/src/patches.rs`.
+- Verification: VERIFY1-PENDING
 
 ### 2026-11-12 The limit box asks: Continue now on (`banner.limit`)
 

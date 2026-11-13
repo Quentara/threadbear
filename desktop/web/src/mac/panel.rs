@@ -61,6 +61,10 @@ pub(crate) struct Shared {
     /// A page to load once DevTools has answered this message: the Convex
     /// dashboard, once its credentials script is sure to run in it.
     load_after: Mutex<Option<(i32, String)>>,
+    /// DevTools messages that must succeed before `load_after` loads: a
+    /// local page's guards. One failing and the page never loads, rather
+    /// than running its scripts without them.
+    required: Mutex<Vec<i32>>,
     gone: AtomicBool,
 }
 
@@ -155,6 +159,7 @@ impl PanelPage {
             events: Mutex::new(Some(tx)),
             calls: Mutex::new(HashMap::new()),
             load_after: Mutex::new(None),
+            required: Mutex::new(Vec::new()),
             gone: AtomicBool::new(false),
         });
         // Alloy (no Chrome toolbar or menus), a native child view.
@@ -243,11 +248,14 @@ impl PanelPage {
                 // own; the page loads once DevTools has both, as the Convex
                 // dashboard does.
                 drop(page.devtools("Page.enable", json!({})));
-                drop(page.devtools("Page.addScriptToEvaluateOnNewDocument", json!({ "source": crate::preview_rules::CLIPBOARD_GUARD })));
-                let id = page.next.load(Ordering::Relaxed);
-                if let Ok(mut after) = page.shared.load_after.lock() {
-                    *after = Some((id, preview.page_url()));
+                let first = page.next.load(Ordering::Relaxed);
+                if let Ok(mut required) = page.shared.required.lock() {
+                    required.extend([first, first + 1]);
                 }
+                if let Ok(mut after) = page.shared.load_after.lock() {
+                    *after = Some((first + 1, preview.page_url()));
+                }
+                drop(page.devtools("Page.addScriptToEvaluateOnNewDocument", json!({ "source": crate::preview_rules::CLIPBOARD_GUARD })));
                 drop(page.devtools("Page.addScriptToEvaluateOnNewDocument", json!({ "source": crate::preview_rules::COPY_GUARD, "worldName": "threadbear-guard" })));
             }
             return Ok((page, rx));
@@ -698,6 +706,12 @@ wrap_dev_tools_message_observer! {
             // it events while it's still telling its observers this answer,
             // which Chromium flags ("Check failed: !check_reentrancy"), and
             // the app went down soon after (11 Nov).
+            // A guard that didn't go in: the page it was for never loads.
+            if success != 1 && self.shared.required.lock().is_ok_and(|r| r.contains(&message_id)) {
+                if let Ok(mut after) = self.shared.load_after.lock() {
+                    after.take();
+                }
+            }
             let then = self.shared.load_after.lock().ok().and_then(|mut after| after.take_if(|(id, _)| *id == message_id));
             if let (Some((_, url)), Some(browser)) = (then, browser) {
                 let mut task = LoadLater::new(browser.clone(), url);

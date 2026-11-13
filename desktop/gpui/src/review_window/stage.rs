@@ -60,6 +60,11 @@ struct Zoomed {
 }
 
 impl StageState {
+    /// Why the last page shot couldn't show in place, for the dump.
+    pub(crate) fn page_failed_reason(&self) -> Option<String> {
+        self.page_failed.as_ref().map(|(_, why)| why.clone())
+    }
+
     pub(crate) fn zoom_requested(&mut self, step: ZoomStep) {
         match &mut self.zoom {
             Some(z) => z.zoom.apply(step),

@@ -1348,6 +1348,8 @@ impl ReviewWindow {
                 (_, Some(shot)) if shot.media.is_some() => "still",
                 _ => "picture",
             },
+            // Why a page shot on show isn't in place (GPUI's own).
+            "pageFailed": self.stage.page_failed_reason(),
             // What Open live would open, for the option on show.
             "live": s.shown_option().filter(|_| s.mode == ReviewMode::Single).and_then(|o| o.url.clone()).unwrap_or_default(),
         })

@@ -3471,7 +3471,12 @@ The new hero is shorter, and every page now leads with what the app does.
 <script>
 (async () => {
   const status = async (u) => { try { return String((await fetch(u)).status); } catch (e) { return 'blocked'; } };
-  document.title = 'named ' + await status('logo.png') + ', unnamed ' + await status('notes.png') + ', dotfile ' + await status('.env') + ', away ' + await status('https://example.com/');
+  // A blank frame of its own is a fresh copy of the browser's objects: the
+  // app's clipboard guard has to be in there too.
+  const frame = document.body.appendChild(document.createElement('iframe'));
+  const w = frame.contentWindow;
+  const guarded = w.navigator.clipboard === undefined && Object.getOwnPropertyDescriptor(w.Document.prototype, 'execCommand').configurable === false;
+  document.title = 'named ' + await status('logo.png') + ', unnamed ' + await status('notes.png') + ', dotfile ' + await status('.env') + ', away ' + await status('https://example.com/') + ', frame guarded ' + (guarded ? 'yes' : 'no');
 })();
 </script>`);
     file('mockups/logo.png', { copy: path.join(here, 'fixtures/demo-upload-resume/media/progress-before.png') });

@@ -141,4 +141,4 @@ Feature: Files opened in the side pane
     When I open the thread "Rebuild the three landing pages"
     And I open "mockups/drawn.html" in the thread's folder in the pane
     And I press Run them over the page in the pane
-    Then the local page in the pane is titled "named 200, unnamed 404, dotfile 404, away blocked"
+    Then the local page in the pane is titled "named 200, unnamed 404, dotfile 404, away blocked, frame guarded yes"
