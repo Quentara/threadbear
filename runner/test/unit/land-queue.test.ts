@@ -8,7 +8,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { land, landTargetFromGit, type LandTarget } from '../../src/worktrees.ts';
 import { joinQueue, leaveQueue, queueDir, readRunning, setRunning, waiting, waitingLine, writeEntry } from '../../src/land-queue.ts';
-import { capture, commit, makeBranch, makeRepo, sh, until, write } from '../helpers/worktrees-harness.ts';
+import { capture, commit, makeBranch, makeRepo, sh, until, wrapGit, write } from '../helpers/worktrees-harness.ts';
 
 // A check that writes down which of the files it saw, and holds the first
 // landing (a.txt alone) until the test lets it go, so the rest queue up.
@@ -285,7 +285,7 @@ test('a worktree left detached by a tb killed during a group check is put back b
   const [a] = branches(main, ['a']);
   const own = sh(a.path, 'git rev-parse HEAD');
   const gitDir = sh(a.path, 'git rev-parse --absolute-git-dir');
-  fs.writeFileSync(path.join(gitDir, 'threadbear-land-checking.json'), JSON.stringify({ branch: a.branch, own }));
+  fs.writeFileSync(path.join(gitDir, 'threadbear-land-checking.json'), JSON.stringify({ branch: a.branch, own, top: sh(main, 'git rev-parse main') }));
   sh(a.path, 'git checkout -q --detach main');
   const c = capture();
   assert.equal(await land({ ...a, check: 'true' }, c.opts), 0, c.err.join('\n'));
@@ -372,6 +372,39 @@ test('a commit made in the holder while its group check runs is carried onto its
   assert.equal(sh(h.path, 'git rev-parse --abbrev-ref HEAD'), h.branch);
   assert.equal(sh(h.path, `git log --format=%s main..${h.branch}`).split('\n').at(-1), `Add ${i ? 'c' : 'b'}`, 'only its own commits under the fix');
   assert.ok(!fs.existsSync(path.join(main, 'fix.txt')));
+});
+
+test('a commit made while the carried commits are picked stops the put-back rather than drop it', async () => {
+  const { main } = makeRepo();
+  const [a] = branches(main, ['a']);
+  stackedOn(a);
+  commit(a.path, { 'a.txt': 'fixed\n' }, 'Fix a');
+  // The second fix lands on HEAD as the first is being carried.
+  const once = path.join(a.path, '..', `once-${path.basename(a.path)}`);
+  const restore = wrapGit('commit-tree', `if [ ! -e '${once}' ]; then touch '${once}'; echo two > '${a.path}/two.txt'; "$REAL" -C '${a.path}' add two.txt; "$REAL" -C '${a.path}' commit -qm 'Fix two'; fi`);
+  const c = capture();
+  try {
+    assert.equal(await land({ ...a, check: 'true' }, c.opts), 1);
+  } finally {
+    restore();
+  }
+  assert.match(c.err.join('\n'), /moved to .* while tb land was putting/);
+  assert.equal(sh(a.path, 'git log --format=%s -1 HEAD'), 'Fix two', 'HEAD left on the new commit');
+  assert.equal(sh(a.path, `git log --format=%s -1 ${a.branch}`), 'Fix a', 'the first fix is on the branch');
+});
+
+test('a marker from before the stack was written down never checks out over HEAD', async () => {
+  const { main } = makeRepo();
+  const [a] = branches(main, ['a']);
+  const { own, gitDir } = stackedOn(a);
+  fs.writeFileSync(path.join(gitDir, 'threadbear-land-checking.json'), JSON.stringify({ branch: a.branch, own }));
+  commit(a.path, { 'a.txt': 'fixed\n' }, 'Fix a');
+  const head = sh(a.path, 'git rev-parse HEAD');
+  const c = capture();
+  assert.equal(await land({ ...a, check: 'true' }, c.opts), 1);
+  assert.match(c.err.join('\n'), /can't tell whether commits were made on it/);
+  assert.equal(sh(a.path, 'git rev-parse HEAD'), head);
+  assert.ok(fs.existsSync(path.join(gitDir, 'threadbear-land-checking.json')));
 });
 
 test('a commit made in the holder after its group check passed, before main moves, is kept on its branch', async () => {

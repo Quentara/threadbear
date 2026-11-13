@@ -540,31 +540,51 @@ const detachedMarker = (gitDir: string): string => path.join(gitDir, 'threadbear
 async function leaveStack(t: LandTarget, own: string, top: string | undefined): Promise<{ ok: true; carried?: string } | { ok: false; reason: string }> {
   const head = await gitOut(t.path, ['rev-parse', 'HEAD']);
   const detached = (await gitOut(t.path, ['rev-parse', '--abbrev-ref', 'HEAD'])) === 'HEAD';
-  if (detached && top && head && head !== top) {
-    const keep = `Nothing was moved, so they're safe where HEAD is. To keep them: git checkout ${t.branch}, then git cherry-pick ${top.slice(0, 9)}..${head.slice(0, 9)} in ${t.path}, then run tb land again.`;
-    const made = (await git(t.path, ['merge-base', '--is-ancestor', top, head])).ok
-      ? await gitOut(t.path, ['rev-list', '--reverse', `${top}..${head}`])
-      : undefined;
-    if (made === undefined) {
-      return { ok: false, reason: `HEAD in ${t.path} was moved off the checked group (${top.slice(0, 9)}) to ${head.slice(0, 9)} while tb land had it, so ${t.branch} wasn't checked out again, in case that has work of yours on it. Check out ${t.branch} there when it's safe, then run tb land again.` };
-    }
-    const list = made.split('\n').filter(Boolean);
-    const merges = await gitOut(t.path, ['rev-list', '--merges', `${top}..${head}`]);
-    const tip = merges === '' ? await pick(t.path, list, own) : undefined;
-    const ids = (await gitOut(t.path, ['log', '--oneline', '--no-decorate', `${top}..${head}`])) ?? list.join('\n');
-    if (!tip) {
-      return { ok: false, reason: [`Commits were made in ${t.path} on top of the checked group, which isn't ${t.branch}, and they don't go onto ${t.branch} cleanly:`, ...ids.split('\n').map((l) => `  ${l}`), keep].join('\n') };
-    }
-    if (!(await git(t.path, ['update-ref', `refs/heads/${t.branch}`, tip, own])).ok) {
-      return { ok: false, reason: [`Commits were made in ${t.path} on top of the checked group, and ${t.branch} couldn't be moved to take them:`, ...ids.split('\n').map((l) => `  ${l}`), keep].join('\n') };
-    }
-    const carried = `Commits made on the checked group while tb land had this worktree were moved onto ${t.branch}, as the group itself isn't yours to land:\n${ids.split('\n').map((l) => `  ${l}`).join('\n')}`;
+  if (!detached || !head) {
     const back = await git(t.path, ['checkout', '-q', t.branch]);
-    if (!back.ok) return { ok: false, reason: `${carried}\nBut ${t.branch} couldn't be checked out in ${t.path}: ${firstLine(back.stderr || back.stdout)}. Check it out there, then run tb land again.` };
-    return { ok: true, carried };
+    return back.ok ? { ok: true } : { ok: false, reason: `${t.branch} couldn't be checked out in ${t.path}: ${firstLine(back.stderr || back.stdout)}` };
   }
-  const back = await git(t.path, ['checkout', '-q', t.branch]);
-  return back.ok ? { ok: true } : { ok: false, reason: `${t.branch} couldn't be checked out in ${t.path}: ${firstLine(back.stderr || back.stdout)}` };
+  // A marker from before `top` was written down can't tell the stack from
+  // commits made on it, so it never checks out over them (Codex, 13 Nov).
+  if (!top) {
+    return { ok: false, reason: `HEAD in ${t.path} is detached at ${head.slice(0, 9)}, and tb land can't tell whether commits were made on it. If any are yours, keep them (git log there, then git cherry-pick them onto ${t.branch}); then git checkout ${t.branch} there and run tb land again.` };
+  }
+  // The checkout, only from `from`: HEAD is read again just before, and the
+  // reflog after says what it really moved from, as a commit can be made
+  // in between (Codex, 13 Nov).
+  const checkoutFrom = async (from: string, carried?: string): Promise<{ ok: true; carried?: string } | { ok: false; reason: string }> => {
+    const pre = carried ? `${carried}\nBut ` : '';
+    const now = await gitOut(t.path, ['rev-parse', 'HEAD']);
+    if (now !== from) {
+      return { ok: false, reason: `${pre}HEAD in ${t.path} moved to ${now?.slice(0, 9) ?? '?'} while tb land was putting ${t.branch} back, so it's left there. Keep anything of yours on it (git cherry-pick ${from.slice(0, 9)}..${now?.slice(0, 9) ?? 'HEAD'} onto ${t.branch}), then git checkout ${t.branch} and run tb land again.` };
+    }
+    const back = await git(t.path, ['checkout', '-q', t.branch]);
+    if (!back.ok) return { ok: false, reason: `${pre}${t.branch} couldn't be checked out in ${t.path}: ${firstLine(back.stderr || back.stdout)}. Check it out there, then run tb land again.` };
+    const left = await gitOut(t.path, ['rev-parse', 'HEAD@{1}']);
+    if (left !== from) {
+      return { ok: false, reason: `${pre}A commit was made in ${t.path} just as ${t.branch} was checked out again, and it's on no branch now: ${left?.slice(0, 9) ?? 'see git reflog'}. Keep it with git cherry-pick ${from.slice(0, 9)}..${left?.slice(0, 9) ?? '<it>'}, then run tb land again.` };
+    }
+    return { ok: true, ...(carried ? { carried } : {}) };
+  };
+  if (head === top) return checkoutFrom(head);
+  const keep = `Nothing was moved, so they're safe where HEAD is. To keep them: git checkout ${t.branch}, then git cherry-pick ${top.slice(0, 9)}..${head.slice(0, 9)} in ${t.path}, then run tb land again.`;
+  const made = (await git(t.path, ['merge-base', '--is-ancestor', top, head])).ok
+    ? await gitOut(t.path, ['rev-list', '--reverse', `${top}..${head}`])
+    : undefined;
+  if (made === undefined) {
+    return { ok: false, reason: `HEAD in ${t.path} was moved off the checked group (${top.slice(0, 9)}) to ${head.slice(0, 9)} while tb land had it, so ${t.branch} wasn't checked out again, in case that has work of yours on it. Check out ${t.branch} there when it's safe, then run tb land again.` };
+  }
+  const list = made.split('\n').filter(Boolean);
+  const merges = await gitOut(t.path, ['rev-list', '--merges', `${top}..${head}`]);
+  const tip = merges === '' ? await pick(t.path, list, own) : undefined;
+  const ids = (await gitOut(t.path, ['log', '--oneline', '--no-decorate', `${top}..${head}`])) ?? list.join('\n');
+  if (!tip) {
+    return { ok: false, reason: [`Commits were made in ${t.path} on top of the checked group, which isn't ${t.branch}, and they don't go onto ${t.branch} cleanly:`, ...ids.split('\n').map((l) => `  ${l}`), keep].join('\n') };
+  }
+  if (!(await git(t.path, ['update-ref', `refs/heads/${t.branch}`, tip, own])).ok) {
+    return { ok: false, reason: [`Commits were made in ${t.path} on top of the checked group, and ${t.branch} couldn't be moved to take them:`, ...ids.split('\n').map((l) => `  ${l}`), keep].join('\n') };
+  }
+  return checkoutFrom(head, `Commits made on the checked group while tb land had this worktree were moved onto ${t.branch}, as the group itself isn't yours to land:\n${ids.split('\n').map((l) => `  ${l}`).join('\n')}`);
 }
 
 // A number is the exit code to stop with: the branch couldn't be put back.
