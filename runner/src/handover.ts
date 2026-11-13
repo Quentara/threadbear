@@ -110,10 +110,15 @@ function marked(t: ThreadSummary): ThreadSummary {
   return { ...t, onOldRunner: true };
 }
 
-// Peers.openCards: how long startup waits for it, and its page size (the
-// most threads.events gives).
+// Peers.openCards: how long startup waits for it, its page size, and how
+// many reads it has out on one draining runner at once. A runner closes a
+// connection with 32 MiB waiting to go out (rpc.ts CLOSE_BYTES), which
+// every thread's 10,000-event page at once could reach, and the primary
+// would take that runner for gone; four pages of 1,000 stay well under
+// (another lab's review of THREADBEAR-1Z).
 export const OPEN_CARDS_DEADLINE_MS = 5_000;
-const OPEN_CARDS_PAGE = 10_000;
+const OPEN_CARDS_PAGE = 1_000;
+const OPEN_CARDS_AT_ONCE = 4;
 
 function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
   let timer: NodeJS.Timeout | undefined;
@@ -358,12 +363,14 @@ export class Peers {
   // (Codex's review, 13 Nov). By `deadlineMs` at most, as startup waits on
   // it: a draining runner that has stopped answering gives what's read so
   // far, and a thread not read at all keeps its row as it is.
-  // Every thread at once, each with the whole deadline: read one after
-  // another, the first slow answer (a busy startup) used it up and every
-  // thread after it on both draining runners went unread (THREADBEAR-1Z).
-  async openCards(opts: { deadlineMs?: number; page?: number } = {}): Promise<{ thread: ThreadSummary; events: PersistedEvent[] }[]> {
+  // Draining runners side by side, a few threads at a time on each, all
+  // against the one deadline: read one after another, the first slow answer
+  // (a busy startup) used it up and every thread after it on both draining
+  // runners went unread (THREADBEAR-1Z).
+  async openCards(opts: { deadlineMs?: number; page?: number; atOnce?: number } = {}): Promise<{ thread: ThreadSummary; events: PersistedEvent[] }[]> {
     const until = Date.now() + (opts.deadlineMs ?? OPEN_CARDS_DEADLINE_MS);
     const size = opts.page ?? OPEN_CARDS_PAGE;
+    const atOnce = Math.max(1, opts.atOnce ?? OPEN_CARDS_AT_ONCE);
     const readOne = async (peer: Peer, threadId: string): Promise<{ peer: Peer; threadId: string; events: PersistedEvent[] } | undefined> => {
       const log: PersistedEvent[] = [];
       try {
@@ -384,8 +391,21 @@ export class Peers {
       }
       return { peer, threadId, events: openCardEvents(log) };
     };
-    const reads = await Promise.all([...this.peers.values()].flatMap((peer) => [...peer.threads.keys()].map((threadId) => readOne(peer, threadId))));
-    const read = reads.filter((r) => r !== undefined);
+    // Each runner's threads in their order, `atOnce` workers taking the next.
+    const readPeer = async (peer: Peer) => {
+      const ids = [...peer.threads.keys()];
+      const got: ({ peer: Peer; threadId: string; events: PersistedEvent[] } | undefined)[] = new Array(ids.length);
+      let next = 0;
+      const worker = async () => {
+        while (next < ids.length) {
+          const i = next++;
+          got[i] = await readOne(peer, ids[i]);
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(atOnce, ids.length) }, worker));
+      return got;
+    };
+    const read = (await Promise.all([...this.peers.values()].map(readPeer))).flat().filter((r) => r !== undefined);
     // Each thread as it is now, once every log is read, as the caller seeds
     // in the same tick: one read early may have asked for a card since and
     // said it waits, which the summary from then (idle) would undo (Codex's

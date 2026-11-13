@@ -974,31 +974,49 @@ test('Peers.openCards: reads the whole log a page at a time, and gives up on a r
 
 // THREADBEAR-1Z: read one at a time, the first slow thread took the whole
 // budget and every thread after it, on both draining runners, went "out of
-// time" with its card unread.
-test("Peers.openCards: one slow thread doesn't cost the others theirs", async () => {
+// time" with its card unread. Not all at once either: a runner closes a
+// connection with too much waiting to go out.
+test("Peers.openCards: one slow thread doesn't cost the others theirs, with a few reads out at once", async () => {
   const h = makeHarness();
   const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
   const since = new Date().toISOString();
-  writeDrainInfo(h.home, { pid: 474747, port: 1, version: 'older', since, threads: ['t-hung', 't-a'] });
+  const older = ['t-hung', 't-a', 't-a2', 't-a3', 't-a4'];
+  writeDrainInfo(h.home, { pid: 474747, port: 1, version: 'older', since, threads: older });
   writeDrainInfo(h.home, { pid: 484848, port: 2, version: 'old', since, threads: ['t-b'] });
   const ts = '2026-11-13T00:00:00.000Z';
-  const clientFor = (threads: string[]) => ({
-    call: async (method: string, p: any) => {
-      if (method === 'drain.hello') return { threads, version: 'old' };
-      if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
-      if (method === 'threads.events' && p.threadId === 't-hung') return new Promise(() => {});
-      if (method === 'threads.events') return { events: [{ type: 'question.requested', seq: 1, ts, approvalId: `q-${p.threadId}`, questions: [] }] };
-      return {};
-    },
-    onNotification: () => () => {},
-    waitClosed: () => new Promise<never>(() => {}),
-    close: () => {},
-  });
-  const connect = async (_port: number, _token: string, _legacy: boolean, pid: number) => clientFor(pid === 474747 ? ['t-hung', 't-a'] : ['t-b']) as any;
+  const most = new Map<number, number>();
+  const clientFor = (pid: number, threads: string[]) => {
+    let out = 0;
+    return {
+      call: async (method: string, p: any) => {
+        if (method === 'drain.hello') return { threads, version: 'old' };
+        if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
+        if (method !== 'threads.events') return {};
+        if (p.threadId === 't-hung') {
+          out++;
+          most.set(pid, Math.max(most.get(pid) ?? 0, out));
+          return new Promise(() => {});
+        }
+        out++;
+        most.set(pid, Math.max(most.get(pid) ?? 0, out));
+        await new Promise((r) => setTimeout(r, 10));
+        out--;
+        return { events: [{ type: 'question.requested', seq: 1, ts, approvalId: `q-${p.threadId}`, questions: [] }] };
+      },
+      onNotification: () => () => {},
+      waitClosed: () => new Promise<never>(() => {}),
+      close: () => {},
+    };
+  };
+  const connect = async (_port: number, _token: string, _legacy: boolean, pid: number) => clientFor(pid, pid === 474747 ? older : ['t-b']) as any;
   const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect, alive: () => true });
   await peers.connectAll();
-  const found = await peers.openCards({ deadlineMs: 300 });
-  assert.deepEqual(found.map((f) => [f.thread.id, f.events.map((e) => (e as { approvalId: string }).approvalId)]).sort(), [['t-a', ['q-t-a']], ['t-b', ['q-t-b']]]);
+  const found = await peers.openCards({ deadlineMs: 300, atOnce: 2 });
+  assert.deepEqual(
+    found.map((f) => [f.thread.id, f.events.map((e) => (e as { approvalId: string }).approvalId)]),
+    [['t-a', ['q-t-a']], ['t-a2', ['q-t-a2']], ['t-a3', ['q-t-a3']], ['t-a4', ['q-t-a4']], ['t-b', ['q-t-b']]],
+  );
+  assert.equal(most.get(474747), 2);
 });
 
 test('Peers.openCards: each summary as it is once every log is read', async () => {
