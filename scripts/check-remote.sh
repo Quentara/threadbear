@@ -76,7 +76,7 @@ if [ "${1:-}" = "--on-host" ]; then
   rm -rf "$src" "$TMPDIR"
   # Anything a run cut short left (a copy that never got the lock, logs
   # nobody fetched) goes after half a day.
-  find "$base/runs" "$base" -mindepth 1 -maxdepth 1 \( -name '[0-9]*' -o -name 'tmp-*' -o -name 'kept-*' -o -name 'shots-*' \) \
+  find "$base/runs" "$base" -mindepth 1 -maxdepth 1 \( -name '[0-9]*' -o -name 'tmp-*' -o -name 'kept-*' -o -name 'shots-*' -o -name 'check-*.pid*' \) \
     -mmin +720 -exec rm -rf {} + 2>/dev/null
   # A checkout's mirror that hasn't sent a run for a week (a removed worktree).
   find "$base/mirror" -mindepth 1 -maxdepth 1 -type d -mtime +7 -exec rm -rf {} + 2>/dev/null
@@ -579,6 +579,17 @@ finish() {
   [ -z "$sentinels" ] || rm -rf "$sentinels"
 }
 trap finish EXIT
+# A signal stops everything this started, the ssh to the check host among
+# them, so the check there stops too (hangup-guard.sh). Without it the
+# ssh lived on, and the check with it.
+on_signal() {
+  local kid
+  for kid in $(pgrep -P $$ 2>/dev/null); do kill_tree "$kid"; done
+  exit "$1"
+}
+trap 'on_signal 143' TERM
+trap 'on_signal 129' HUP
+trap 'on_signal 130' INT
 # Each line with `from` and the letters and digits after it (a log folder's
 # mktemp suffix) changed to `to`, as the check runs, line by line. Both are
 # plain text, read from the environment so neither is ever part of a
@@ -725,8 +736,12 @@ while :; do
   # stdin is the guard's: see alive_stdin.
   guarded="$(guarded_cmd "$guard_pid" /bin/bash -c "$remote_cmd")"
   check_ssh() { "${SSH[@]}" "$HOST" "$guarded" <&7; }
-  watched "$HOST" check_ssh 2>&1 | rewrite_logs "$remote_base/tmp-$id/threadbear-check." "$local_logs"
-  code=${PIPESTATUS[0]}
+  # In the background with a wait, so a TERM, HUP or INT to this script is
+  # taken at once (on_signal) rather than once the check ends: bash holds a
+  # trap until a pipeline it's waiting on has finished (Codex's review).
+  ( watched "$HOST" check_ssh 2>&1 | rewrite_logs "$remote_base/tmp-$id/threadbear-check." "$local_logs"; exit "${PIPESTATUS[0]}" ) &
+  wait $!
+  code=$?
   if [ "$code" = 125 ]; then
     rmdir "$local_logs" 2>/dev/null
     # Still waiting for the host's lock, the check never started: its copy is

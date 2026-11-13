@@ -76,5 +76,60 @@ test('a command Desk Runner started away from the guard goes too, by its pidfile
   ssh.stdin.end();
   await until('the run to stop', () => away.exitCode !== null || away.signalCode !== null);
   await done;
-  assert.ok(!fs.existsSync(pidfile) && !fs.existsSync(`${pidfile}.gone`), 'the guard cleaned up after itself');
+  // Left for a run that starts late to find (the last test here).
+  assert.ok(fs.existsSync(`${pidfile}.gone`), 'the .gone marker stays');
+});
+
+test('a command that ends just as the ssh goes still has its Desk Runner run stopped', async (t) => {
+  const dir = tmp(t);
+  const pidfile = path.join(dir, 'run.pid');
+  const flag = path.join(dir, 'flag');
+  const away = spawn('/bin/bash', ['-c', `echo $$ >"${pidfile}"; sleep 300`], { detached: true, stdio: 'ignore' });
+  t.after(() => {
+    try {
+      process.kill(-away.pid!, 'SIGKILL');
+    } catch {}
+  });
+  await until('the run to start', () => fs.existsSync(pidfile));
+  // The desk client, which dies writing to the channel that's gone: here it
+  // ends as the ssh does, so the guard sees the command end and the channel
+  // close at about the same moment.
+  const ssh = spawn('/bin/sh', ['-c', guarded(pidfile, 'bash', '-c', `until [ -e "${flag}" ]; do sleep 0.02; done`)], { stdio: ['pipe', 'ignore', 'ignore'] });
+  await new Promise((r) => setTimeout(r, 300));
+  ssh.stdin.end();
+  fs.writeFileSync(flag, '');
+  await until('the run to stop', () => away.exitCode !== null || away.signalCode !== null);
+});
+
+test('something forked into the group as it stops, ignoring TERM, is still killed', async (t) => {
+  const dir = tmp(t);
+  const late = path.join(dir, 'late');
+  const ready = path.join(dir, 'ready');
+  const script = `trap 'bash -c "trap \\"\\" TERM; echo \\$\\$ >${late}; sleep 300" & sleep 0.3; exit 0' TERM; : >"${ready}"; while :; do sleep 0.1; done`;
+  const ssh = spawn('/bin/sh', ['-c', guarded('-', 'bash', '-c', script)], { stdio: ['pipe', 'ignore', 'ignore'] });
+  t.after(() => ssh.kill('SIGKILL'));
+  await until('the command to start', () => fs.existsSync(ready));
+  ssh.stdin.end();
+  await until('the late worker to start', () => fs.existsSync(late) && fs.readFileSync(late, 'utf8').trim() !== '');
+  const pid = Number(fs.readFileSync(late, 'utf8').trim());
+  t.after(() => {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {}
+  });
+  await until('the late worker to be killed', () => !alive(pid), 15_000);
+});
+
+test('a Desk Runner run that starts after the ssh has gone never runs', async (t) => {
+  const dir = tmp(t);
+  const pidfile = path.join(dir, 'run.pid');
+  const ran = path.join(dir, 'ran');
+  const ssh = spawn('/bin/sh', ['-c', guarded(pidfile, 'sleep', '300')], { stdio: ['pipe', 'ignore', 'ignore'] });
+  const done = new Promise<void>((r) => ssh.on('exit', () => r()));
+  await new Promise((r) => setTimeout(r, 300));
+  ssh.stdin.end();
+  await done;
+  const r = spawnSync('/bin/bash', ['-c', `echo $$ >"${pidfile}"; [ ! -e "${pidfile}.gone" ] || exit 129; : >"${ran}"`]);
+  assert.equal(r.status, 129);
+  assert.ok(!fs.existsSync(ran));
 });

@@ -51,8 +51,14 @@ target="$base/target-$key"
 # the same file. perl for macOS, which has no flock command.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/remote-guard-lib.sh"
 ssh_pid=""
+# The turn is kept for 6 s after: the guard there takes up to 5 to stop a
+# command that ignores TERM, and the next run mustn't copy over its folder
+# while it's still going (Codex's review).
 on_signal() {
-  [ -z "$ssh_pid" ] || kill "$ssh_pid" 2>/dev/null
+  if [ -n "$ssh_pid" ]; then
+    kill "$ssh_pid" 2>/dev/null
+    sleep 6
+  fi
   exit "$1"
 }
 trap 'on_signal 143' TERM
@@ -81,7 +87,7 @@ fi
 # Exit 9 is that touch failing; any other failure here is let go, as before (a
 # marker not written, on a full disk, just means touching them again next time).
 rc=0
-ssh "$host" "mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name 'target-$key' -exec rm -rf {} + 2>/dev/null; true" || rc=$?
+ssh "$host" "mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name 'target-$key' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -f {} + 2>/dev/null; true" || rc=$?
 if [ "$rc" = 9 ]; then
   echo "Couldn't mark this checkout's copy on $host to build again, so it may hold a stale build. Not running." >&2
   exit 1
@@ -170,12 +176,15 @@ $postlude"
 
 # The run goes up as a file, as ssh's stdin is the guard's: nothing is sent on
 # it, and it ending is how the host knows this has gone.
-script="$base/run-$key-$$.sh"
+# Named by this run alone: a stopped --desk run's .gone file stays there (the
+# guard's comment says why) until the clear-out above, half a day on.
+tag="$key-$$-$RANDOM$RANDOM"
+script="$base/run-$tag.sh"
 ssh "$host" "cat > $script" <<<"$run"
 alive_stdin 7
 if [ "$desk" = 1 ]; then
   # Desk Runner needs the screen awake for anything it draws.
-  pidfile="$base/run-$key-$$.pid"
+  pidfile="$base/run-$tag.pid"
   remote="caffeinate -u -t 2 >/dev/null 2>&1 || true; $(guarded_cmd "$pidfile" .local/bin/desk "perl -e 'setpgrp(0, 0); exec @ARGV' bash $script $pidfile")"
 else
   remote="$(guarded_cmd - bash "$script")"
