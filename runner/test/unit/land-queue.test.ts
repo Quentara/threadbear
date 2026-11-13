@@ -88,6 +88,7 @@ test('a group check that fails is narrowed down, and only the one that broke it 
   assert.ok(caps.some((x) => x.out.some((l) => /Checking them in smaller groups/.test(l))));
   // The group holder reports what failed before starting a smaller check,
   // while each landing still gets its own eventual result.
+  assert.ok(caps.some((cap) => cap.out.some((line) => line.startsWith('The check failed with'))), 'the holder prints the grouped failure diagnostic');
   for (const cap of caps) {
     for (const [i, line] of cap.out.entries()) {
       if (!line.startsWith('The check failed with')) continue;
