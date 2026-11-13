@@ -323,7 +323,7 @@ const devicesRefusal = () => {
 
 let mockInstructions = { text: '' };
 const settings = {
-  defaultCwd: defaults.cwd, idleMinutes: 30, maxLiveCLIs: 6, followMain: true, bulletReplies: true, oneReply: true, labReview: true, keepAwake: true,
+  defaultCwd: defaults.cwd, idleMinutes: 30, maxLiveCLIs: 6, followMain: true, bulletReplies: true, oneReply: true, labReview: true, keepAwake: true, fullSync: false,
   models: {
     pool: 'claude',
     privateFolders: ['~/dev/clients/acme'],
@@ -1499,6 +1499,7 @@ async function dispatch(client, method, p) {
       if (p.bulletReplies !== undefined) settings.bulletReplies = Boolean(p.bulletReplies);
       if (p.labReview !== undefined) settings.labReview = Boolean(p.labReview);
       if (p.keepAwake !== undefined) settings.keepAwake = Boolean(p.keepAwake);
+      if (p.fullSync !== undefined) settings.fullSync = Boolean(p.fullSync);
       const m = p.models ?? {};
       if (m.pool !== undefined) {
         if (m.pool !== null && !poolOf(m.pool)) throw rpcError(-32602, `No pool called ${m.pool}`);

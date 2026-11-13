@@ -585,6 +585,10 @@ impl SettingsWindow {
                 cx,
             ));
         }
+        if let Some(on) = settings.full_sync {
+            let switch = self.switch("settings-full-sync", on, "Send tool output and diffs to your Convex deployment", cx, |this, on, cx| this.update(json!({ "fullSync": on }), cx));
+            sections.push(section("settings-full-sync", "Full sync", FULL_SYNC_ABOUT, FULL_SYNC_ASK, vec![row("Send tool output to Convex", switch, cx)], cx));
+        }
         if settings.bring_in_supported && self.app.upgrade().is_some_and(|a| a.read(cx).upstream_on) {
             let current = settings.bring_in;
             let choices: Vec<(String, bool, Value)> = BringIn::choices(current).into_iter().map(|b| (b.title(), b == current, json!({ "bringIn": b.json() }))).collect();
@@ -978,6 +982,12 @@ fn waiting_text(app: &WeakEntity<Threadbear>, cx: &App) -> String {
 
 /// `SettingsSection`: its title, with what it is and what to ask your agent
 /// behind the ⓘ, over its rows in a rounded group.
+// Full sync's ⓘ, kept here in one place so its wording is easy to change.
+// The benefit first, then what goes up and what doesn't (docs/full-convex.md).
+// The runner reads sync.full when it starts, hence the last sentence.
+const FULL_SYNC_ABOUT: &str = "Lets your phone, the website and your other machines show a thread's tool output and diffs, even when the machine that ran it is off.\n\nTool output, inputs and diffs go to your own Convex deployment, with secrets scrubbed out first, and are kept for 30 days. Screenshots, and tools reading things like .env files and keys, stay on this Mac. Scrubbing isn't a guarantee. A change takes effect when the runner next starts.";
+const FULL_SYNC_ASK: &str = "explain what goes up, or turn it on or off for you.";
+
 fn section(id: &'static str, title: &str, about: &str, ask: &str, rows: Vec<AnyElement>, cx: &App) -> AnyElement {
     section_with_body(id, title, about, ask, rows_with_dividers(rows, cx), cx)
 }
@@ -1115,6 +1125,7 @@ impl SettingsWindow {
             "appearance": style::appearance().name(),
             "defaultFolder": settings.as_ref().map(|s| s.default_cwd.clone()),
             "keepAwake": settings.as_ref().and_then(|s| s.keep_awake),
+            "fullSync": settings.as_ref().and_then(|s| s.full_sync),
             "labReview": settings.as_ref().map(|s| s.lab_review),
             "privateFolders": settings.as_ref().map(|s| s.private_folders.clone()),
             "smallJobsPool": settings.as_ref().and_then(|s| s.pool.clone()),

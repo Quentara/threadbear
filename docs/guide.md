@@ -1949,8 +1949,9 @@ looks like a secret is scrubbed out of the text on the way up, which helps
 but isn't a guarantee. With full sync on, which it is for a new install, each
 tool's output, its input and diffs go up too, after the same scrubbing, and are
 kept 30 days; output from files and commands that usually hold secrets stays on
-your Mac, and so do tool screenshots. `tb settings full off` keeps all tool output
-on your Mac. `tb status` estimates how much of Convex's Free plan you're using and
+your Mac, and so do tool screenshots. `tb settings full off`, or turning off
+Send tool output to Convex in Settings (⌘,) > General > Full sync, keeps all tool
+output on your Mac from the runner's next start. `tb status` estimates how much of Convex's Free plan you're using and
 warns before you get near its limits. Pictures you paste into
 a message go up as they are, so your website can show them, and nothing can
 scrub a secret out of a picture: `"sync": { "pastedPictures": false }` in
