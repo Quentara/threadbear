@@ -276,7 +276,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 }
                 // After the tour's had its look, so the two never overlap.
                 if !perf && !screenshots {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { NewAppOffer.shared.setUp(scripted: scripted) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { NewAppOffer.shared.setUp(app: app, scripted: scripted) }
                 }
             }
             // What was in each box when the app last quit (DraftStore).

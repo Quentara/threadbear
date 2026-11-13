@@ -1,73 +1,77 @@
 import AppKit
 import SwiftUI
+import ThreadbearCore
 
 /// The Swift app telling people about the GPUI app (`desktop/`), which is
 /// replacing it, with one button that starts using it (Mike's pick, 13 Nov
 /// 2026: mockups A and C in the GPUI port thread). Two pieces:
 ///
 /// - A window over the main one, once, when the app starts (`NewAppWindow`):
-///   what the new app is, "Not now" and "Start using the new app".
+///   what the new app is, that this one is frozen, "Not now" and "Start
+///   using the new app".
 /// - A card at the top of the sidebar (`NewAppCard`) whose "Start using it"
-///   brings that window up again; "Later" hides the card for a week.
+///   brings that window up again; "Later" hides it for a week. Once the
+///   switch has started, the card shows its thread instead.
 ///
-/// Starting runs `desktop/scripts/switch-from-swift.sh` from the checkout's
-/// main: Rust if it's missing, the build, the move into ~/Applications,
-/// threadbear:// links, then it opens the new app, which brings over this
-/// one's settings and drafts itself. This app stays and keeps working.
+/// Starting doesn't run anything here: it starts a thread in the app's own
+/// checkout with a brief (`brief(checkout:)`), as Investigate does, so an
+/// agent runs `desktop/scripts/switch-from-swift.sh`, works out and fixes
+/// whatever stops it (no Xcode tools, Rust, disk, a build error), and asks
+/// before switching (Mike, 13 Nov: "a thread does it"). The script stays
+/// the thread's tool, so the steps are the same whoever runs them.
 ///
 /// Offered only while the GPUI app isn't installed, from an app that knows
-/// its checkout (build.json) and whose main has the script.
+/// its checkout and whose main has the script.
 @MainActor
 @Observable
 final class NewAppOffer {
     static let shared = NewAppOffer()
 
-    enum Stage: Equatable {
-        case idle
-        /// What it's doing ("Building the new app") and the latest line under it.
-        case working(step: String, detail: String)
-        case failed(String)
-        case done
-    }
-
-    var stage: Stage = .idle
     /// The window over the main one.
     var windowShown = false
+    /// The thread's being made: the window's button spins and won't take
+    /// another click.
+    private(set) var starting = false
+    /// Why the thread couldn't be made, in the window.
+    private(set) var startError: String?
     /// Whether this Mac can be offered it at all.
     private(set) var offered = false
+    /// The thread doing the switch, once there is one (kept across launches).
+    private(set) var threadId: String?
     private var hiddenUntil: Date?
     private var checkout: String?
-    /// The script's latest line that wasn't a step, for a failure's message.
-    private var lastLine = ""
+    @ObservationIgnored weak var app: AppModel?
 
     static let seenKey = "newAppPromptSeen"
     static let laterKey = "newAppCardHiddenUntil"
+    static let threadKey = "newAppThreadId"
     static let target = URL(fileURLWithPath: NSHomeDirectory() + "/Applications/Threadbear GPUI.app")
-    static let logPath = NSHomeDirectory() + "/Library/Logs/threadbear-new-app.log"
-    static let script = "desktop/scripts/switch-from-swift.sh"
+    nonisolated static let script = "desktop/scripts/switch-from-swift.sh"
     /// Which features the new app has yet, from its behaviour specs.
     static let parityURL = URL(string: "https://github.com/mikecann/threadbear/blob/main/docs/gpui-port/PARITY.md")!
 
-    /// The card: offered, not put off with Later, or under way.
+    /// The card: a switch under way, or offered and not put off with Later.
     var cardShown: Bool {
+        if threadId != nil { return true }
         guard offered else { return false }
-        if stage != .idle { return true }
         return (hiddenUntil ?? .distantPast) < Date()
-    }
-
-    var working: Bool {
-        if case .working = stage { return true }
-        return false
     }
 
     /// At launch, once the threads are in. A scripted run never shows the
     /// window by itself (the automation's `newApp` does).
-    func setUp(scripted: Bool) {
+    func setUp(app: AppModel, scripted: Bool) {
+        self.app = app
         hiddenUntil = UserDefaults.standard.object(forKey: Self.laterKey) as? Date
-        guard !FileManager.default.fileExists(atPath: Self.target.path),
-              let info = BuildInfo.read(bundle: Bundle.main.bundleURL),
-              FileManager.default.fileExists(atPath: info.checkout + "/.git") else { return }
-        let checkout = info.checkout
+        // A switch already started: its card stays until the thread's archived.
+        if let id = UserDefaults.standard.string(forKey: Self.threadKey) {
+            if let thread = app.threads[id], thread.archivedAt == nil {
+                threadId = id
+                return
+            }
+            UserDefaults.standard.removeObject(forKey: Self.threadKey)
+        }
+        guard !FileManager.default.fileExists(atPath: Self.target.path), let checkout = app.ownCheckout,
+              FileManager.default.fileExists(atPath: checkout + "/.git") else { return }
         Task {
             // main has the script: a fork that hasn't brought it in yet
             // would only get an error.
@@ -85,6 +89,7 @@ final class NewAppOffer {
 
     func notNow() {
         windowShown = false
+        startError = nil
     }
 
     func later() {
@@ -93,139 +98,87 @@ final class NewAppOffer {
         UserDefaults.standard.set(until, forKey: Self.laterKey)
     }
 
+    /// Starts the thread that builds and switches. The window closes once
+    /// it's made, and the card shows it.
     func start() {
-        guard let checkout, !working else { return }
-        windowShown = true
-        stage = .working(step: "Getting ready", detail: "")
-        let log = Self.openLog()
-        log.write("\n== \(Date()) starting from \(checkout)\n".data(using: .utf8)!)
-        let process = Process()
-        // The script as main has it, never the working tree, like the app's
-        // own updates: whatever an agent has in the checkout stays out.
-        process.executableURL = URL(fileURLWithPath: "/usr/sbin/taskpolicy")
-        process.arguments = ["-b", "/bin/bash", "-c", """
-            set -e
-            f="$(mktemp)"; trap 'rm -f "$f"' EXIT
-            git -C "$1" show "refs/heads/main:\(Self.script)" > "$f"
-            /bin/bash "$f" "$1"
-            """, "switch-from-swift", checkout]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        lastLine = ""
-        let splitter = LineSplitter()
-        // The handler runs on one queue at a time, so the splitter's
-        // buffer is only ever touched from there.
-        pipe.fileHandleForReading.readabilityHandler = { handle in
-            let data = handle.availableData
-            guard !data.isEmpty else { return }
-            log.write(data)
-            let lines = splitter.feed(data)
-            guard !lines.isEmpty else { return }
-            Task { @MainActor in
-                for line in lines { self.read(line) }
+        guard let app, let client = app.client, let checkout, !starting else { return }
+        var request = app.newThreadRequest(text: Self.brief(checkout: checkout), images: [])
+        request.cwd = checkout
+        // It installs Rust, builds and moves an app into ~/Applications.
+        request.permissionMode = .full
+        request.title = "Switch to the new Threadbear app"
+        starting = true
+        startError = nil
+        Task {
+            defer { starting = false }
+            do {
+                let thread = try await client.createThread(request)
+                app.threads[thread.id] = thread
+                threadId = thread.id
+                UserDefaults.standard.set(thread.id, forKey: Self.threadKey)
+                windowShown = false
+            } catch {
+                startError = "The thread couldn't be started: \(error.localizedDescription)"
             }
         }
-        process.terminationHandler = { finished in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            let status = finished.terminationStatus
-            Task { @MainActor in
-                log.write("== exit \(status)\n".data(using: .utf8)!)
-                try? log.close()
-                self.finished(status: status, lastLine: self.lastLine)
-            }
-        }
-        do {
-            try process.run()
-        } catch {
-            stage = .failed("It couldn't start: \(error.localizedDescription)")
-        }
     }
 
-    private func read(_ raw: String) {
-        let line = raw.trimmingCharacters(in: .whitespaces)
-        guard !line.isEmpty, case .working(let step, _) = stage else { return }
-        if line.hasPrefix("STEP ") {
-            stage = .working(step: String(line.dropFirst(5)), detail: "")
-            return
-        }
-        lastLine = line
-        stage = .working(step: step, detail: Self.detail(line))
+    func openThread() {
+        guard let app, let threadId else { return }
+        app.select(threadId)
     }
 
-    /// Cargo's "Compiling gpui v0.2.0 (…)" as "Compiling gpui"; anything else
-    /// as it is.
-    static func detail(_ line: String) -> String {
-        let words = line.split(separator: " ")
-        if words.count >= 2, ["Compiling", "Downloaded", "Downloading"].contains(words[0]) { return "\(words[0]) \(words[1])" }
-        return line
-    }
+    /// The first message of the thread that does the switch. Plain steps an
+    /// agent can follow on someone else's Mac, with the script as its tool.
+    nonisolated static func brief(checkout: String) -> String {
+        let run = "f=\"$(mktemp)\"; git -C \"\(checkout)\" show refs/heads/main:\(script) > \"$f\"; taskpolicy -b /bin/bash \"$f\" \"\(checkout)\""
+        return """
+        I pressed Start using the new app in the Threadbear Mac app. Please install the new Threadbear desktop app on this Mac beside the current one, then ask me before switching to it. docs/guide.md, "Moving to the new desktop app", says what it is.
 
-    private func finished(status: Int32, lastLine: String) {
-        switch status {
-        case 0:
-            stage = .done
-            offered = false
-        case 3:
-            stage = .failed("Another build of the new app is running. Try again in a few minutes.")
-        case 5:
-            stage = .failed("This Mac keeps big builds off itself (runner.json has check hosts). Name a Mac you trust to build it in \"updateBuildHosts\" there, then try again.")
-        default:
-            stage = .failed(lastLine.isEmpty ? "It stopped before the new app was ready." : "It stopped: \(lastLine)")
-        }
-    }
+        1. Build and install it from what's committed on main, never the working tree, in the background with the longest timeout (the first build takes about 10 minutes, longer on a busy Mac; its STEP lines say where it's got to):
 
-    func openLog() {
-        NSWorkspace.shared.open(URL(fileURLWithPath: Self.logPath))
+           \(run) --no-open
+
+        2. If it fails, find out why from its output (also in ~/Library/Caches/Threadbear/update-desktop) and fix it, then run it again. The usual causes: Xcode's command line tools missing (`xcode-select --install` opens Apple's installer, which needs me to press Install), Rust (the script installs it with rustup if there's no cargo), too little disk space (it needs about 3 GB free), or a build error on main. Don't change the repo's code to get past a build error: tell me what failed. Exit 3 means another build of it is running, so wait and try again. Exit 5 means runner.json has check hosts but no updateBuildHosts, so ask me which Mac should build it.
+
+        3. When ~/Applications/Threadbear GPUI.app is installed, end your turn asking me whether to switch now, with the answers Switch now and Later. Don't switch before I answer: I may be typing in this app.
+
+        4. When I say Switch now, run the same command without --no-open:
+
+           \(run)
+
+           It skips the build, makes the new app the one threadbear:// links open, and opens it. The new app brings over this app's settings and drafts by itself, and this app stays installed. If I say Later, end the turn; I'll come back to this thread when I'm ready.
+        """
     }
 
     /// For the automation's `newApp`: shows the pieces without a checkout or
-    /// a build behind them.
-    func preview(_ c: [String: Any]) {
+    /// a thread behind them. {"window": true, "thread": "<id>", "error": "..."}
+    func preview(_ c: [String: Any], app: AppModel) {
+        self.app = app
         offered = true
         hiddenUntil = nil
-        switch c["stage"] as? String {
-        case "working": stage = .working(step: "Building the new app", detail: "Compiling gpui")
-        case "failed": stage = .failed("It stopped: error: could not compile `gpui`")
-        case "done": stage = .done
-        default: stage = .idle
-        }
+        startError = c["error"] as? String
+        threadId = c["thread"] as? String
         if let shown = c["window"] as? Bool { windowShown = shown }
-    }
-
-    private static func openLog() -> FileHandle {
-        let url = URL(fileURLWithPath: logPath)
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        if !FileManager.default.fileExists(atPath: logPath) { FileManager.default.createFile(atPath: logPath, contents: nil) }
-        let handle = (try? FileHandle(forWritingTo: url)) ?? FileHandle.nullDevice
-        _ = try? handle.seekToEnd()
-        return handle
-    }
-}
-
-/// Bytes from a pipe in, whole lines out.
-private final class LineSplitter: @unchecked Sendable {
-    private var pending = Data()
-
-    func feed(_ data: Data) -> [String] {
-        pending.append(data)
-        var lines: [String] = []
-        while let newline = pending.firstIndex(of: 10) {
-            lines.append(String(decoding: pending[pending.startIndex..<newline], as: UTF8.self))
-            pending = Data(pending[pending.index(after: newline)...])
-        }
-        return lines
     }
 }
 
 private enum NewAppCopy {
     static let windowTitle = "Try the new Threadbear app"
     static let windowBody = "It looks and works exactly like this one, and it runs on Windows and Linux as well as the Mac."
+    /// When the Swift app stops being updated. Set it (say "1 December")
+    /// once the GPUI app's remaining gaps and the carry-over of people's own
+    /// Swift changes have landed, and both pieces say so.
+    static let retirementDate: String? = nil
+    static var frozen: String {
+        let base = "This app no longer gets new features: everything new goes into the new app"
+        return retirementDate.map { "\(base), and this one stops being updated on \($0)." } ?? "\(base)."
+    }
     static let windowCarry = "It opens with your threads, settings and drafts, and this app stays installed so you can come back to it any time."
-    static let windowBuild = "The first time, it's built on this Mac, which takes about 10 minutes in the background (and installs Rust first if you need it)."
+    static let windowBuild = "Starting it begins a thread that builds it on this Mac (about 10 minutes, installing Rust first if you need it), fixes anything that gets in the way, and asks you before it switches."
     static let windowGaps = "A few things still only work here."
     static let cardTitle = "A new Threadbear app"
-    static let cardBody = "It looks and works like this one, and runs on Windows and Linux too."
+    static let cardBody = "It looks and works like this one, and runs on Windows and Linux too. This one no longer gets new features."
 }
 
 @MainActor private var gpuiIcon: some View {
@@ -259,108 +212,55 @@ struct NewAppWindow: View {
         }
     }
 
-    @ViewBuilder private var card: some View {
+    private var card: some View {
         VStack(spacing: zoomed(12)) {
             gpuiIcon
                 .frame(width: zoomed(72), height: zoomed(72))
                 .clipShape(RoundedRectangle(cornerRadius: zoomed(14), style: .continuous))
             Text(NewAppCopy.windowTitle)
                 .font(.system(size: TypeScale.scaled(17), weight: .semibold))
-            switch offer.stage {
-            case .idle: idle
-            case .working(let step, let detail): working(step: step, detail: detail)
-            case .failed(let message): failed(message)
-            case .done: done
-            }
-        }
-        .multilineTextAlignment(.center)
-    }
-
-    private var idle: some View {
-        VStack(spacing: zoomed(10)) {
-            Text(NewAppCopy.windowBody)
-            Text(NewAppCopy.windowCarry)
-            Text(NewAppCopy.windowBuild)
-                .foregroundStyle(.secondary)
-            HStack(spacing: zoomed(4)) {
-                Text(NewAppCopy.windowGaps).foregroundStyle(.secondary)
-                Link("See which", destination: NewAppOffer.parityURL)
-                    .tip("What the new app does so far, feature by feature")
-            }
-            HStack(spacing: zoomed(10)) {
-                Button("Not now") { offer.notNow() }
-                    .keyboardShortcut(.cancelAction)
-                    .buttonStyle(NewAppPrimary(quiet: true))
-                    .tip("Close this. The card at the top of the sidebar can bring it back")
-                Button("Start using the new app") { offer.start() }
+            VStack(spacing: zoomed(10)) {
+                Text(NewAppCopy.windowBody)
+                Text(NewAppCopy.frozen)
+                Text(NewAppCopy.windowCarry)
+                Text(NewAppCopy.windowBuild)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: zoomed(4)) {
+                    Text(NewAppCopy.windowGaps).foregroundStyle(.secondary)
+                    Link("See which", destination: NewAppOffer.parityURL)
+                        .tip("What the new app does so far, feature by feature")
+                }
+                if let error = offer.startError {
+                    Text(error).foregroundStyle(.red)
+                }
+                HStack(spacing: zoomed(10)) {
+                    Button("Not now") { offer.notNow() }
+                        .keyboardShortcut(.cancelAction)
+                        .buttonStyle(NewAppPrimary(quiet: true))
+                        .tip("Close this. The card at the top of the sidebar can bring it back")
+                    Button { offer.start() } label: {
+                        HStack(spacing: zoomed(6)) {
+                            if offer.starting { SpinnerMark(color: .white).frame(width: zoomed(12), height: zoomed(12)) }
+                            Text("Start using the new app")
+                        }
+                    }
                     .keyboardShortcut(.defaultAction)
                     .buttonStyle(NewAppPrimary())
-                    .controlSize(.large)
-                    .tip("Install the new app beside this one, bring over your settings and drafts, and open it")
-            }
-            .padding(.top, zoomed(6))
-        }
-        .font(.system(size: TypeScale.label))
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private func working(step: String, detail: String) -> some View {
-        VStack(spacing: zoomed(10)) {
-            HStack(spacing: zoomed(8)) {
-                SpinnerMark().frame(width: zoomed(14), height: zoomed(14))
-                Text(step).font(.system(size: TypeScale.label, weight: .medium))
-            }
-            Text(detail.isEmpty ? " " : detail)
-                .font(.system(size: TypeScale.detail, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .lineLimit(1).truncationMode(.middle)
-            Text("You can keep using this app while it builds.")
-                .font(.system(size: TypeScale.label))
-                .foregroundStyle(.secondary)
-            Button("Hide") { offer.notNow() }
-                .controlSize(.large)
-                .tip("Keep building in the background. The card in the sidebar shows how it's going")
+                    .disabled(offer.starting)
+                    .tip("Start a thread that installs the new app beside this one and asks you before switching")
+                }
                 .padding(.top, zoomed(6))
-        }
-    }
-
-    private func failed(_ message: String) -> some View {
-        VStack(spacing: zoomed(10)) {
-            Text(message)
-                .font(.system(size: TypeScale.label))
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: zoomed(10)) {
-                Button("Close") { offer.notNow() }
-                    .controlSize(.large)
-                    .tip("Close this")
-                Button("Show the log") { offer.openLog() }
-                    .controlSize(.large)
-                    .tip("Open what the install printed, in Console")
-                Button("Try again") { offer.start() }
-                    .buttonStyle(NewAppPrimary())
-                    .controlSize(.large)
-                    .tip("Run the install again")
             }
-            .padding(.top, zoomed(6))
+            .font(.system(size: TypeScale.label))
+            .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var done: some View {
-        VStack(spacing: zoomed(10)) {
-            Text("The new app is open. This one keeps working too, so you can come back any time.")
-                .font(.system(size: TypeScale.label))
-                .fixedSize(horizontal: false, vertical: true)
-            Button("Close") { offer.notNow() }
-                .keyboardShortcut(.defaultAction)
-                .controlSize(.large)
-                .tip("Close this")
-                .padding(.top, zoomed(6))
-        }
+        .multilineTextAlignment(.center)
     }
 }
 
 /// Mockup C: at the top of the sidebar, above Starred.
 struct NewAppCard: View {
+    @Environment(AppModel.self) private var app
     @Bindable var offer = NewAppOffer.shared
 
     var body: some View {
@@ -370,22 +270,12 @@ struct NewAppCard: View {
                     gpuiIcon
                         .frame(width: zoomed(30), height: zoomed(30))
                         .clipShape(RoundedRectangle(cornerRadius: zoomed(7), style: .continuous))
-                    Text(NewAppCopy.cardTitle)
+                    Text(offer.threadId == nil ? NewAppCopy.cardTitle : "Switching to the new app")
                         .font(.system(size: TypeScale.sidebarTitle, weight: .semibold))
                 }
-                switch offer.stage {
-                case .working(let step, _):
-                    HStack(spacing: zoomed(6)) {
-                        SpinnerMark().frame(width: zoomed(12), height: zoomed(12))
-                        Text(step).font(.system(size: TypeScale.sidebarPreview)).foregroundStyle(.secondary)
-                    }
-                    Button("Show") { offer.windowShown = true }
-                        .tip("Show how the install is going")
-                case .failed:
-                    Text("The install stopped.").font(.system(size: TypeScale.sidebarPreview)).foregroundStyle(.secondary)
-                    Button("Show") { offer.windowShown = true }
-                        .tip("See why, and try again")
-                default:
+                if let id = offer.threadId {
+                    switching(app.threads[id])
+                } else {
                     Text(NewAppCopy.cardBody)
                         .font(.system(size: TypeScale.sidebarPreview))
                         .foregroundStyle(.secondary)
@@ -411,13 +301,35 @@ struct NewAppCard: View {
             .transition(.opacity)
         }
     }
+
+    /// The thread doing the switch: what it's up to, and Open.
+    @ViewBuilder private func switching(_ thread: ThreadSummary?) -> some View {
+        let (line, busy) = Self.status(thread)
+        HStack(spacing: zoomed(6)) {
+            if busy { SpinnerMark().frame(width: zoomed(12), height: zoomed(12)) }
+            Text(line).font(.system(size: TypeScale.sidebarPreview)).foregroundStyle(.secondary)
+        }
+        Button { offer.openThread() } label: {
+            Text("Open the thread").frame(maxWidth: .infinity)
+        }
+        .buttonStyle(NewAppPrimary(quiet: true))
+        .tip("Open the thread that's installing the new app")
+    }
+
+    static func status(_ thread: ThreadSummary?) -> (String, Bool) {
+        guard let thread else { return ("A thread is installing it", false) }
+        if thread.needsYou { return ("It needs you", false) }
+        if thread.status.isBusy { return ("Installing it", true) }
+        if thread.status == .error { return ("It stopped with an error", false) }
+        return ("Done for now: open it to see where it got to", false)
+    }
 }
 
 /// The blue button in both mockups. `.borderedProminent` goes grey whenever
 /// the window isn't the key one, which a window over the app at launch
 /// often isn't.
 private struct NewAppPrimary: ButtonStyle {
-    /// The grey one beside it ("Not now").
+    /// The grey one ("Not now", "Open the thread").
     var quiet = false
     @Environment(\.isEnabled) private var enabled
 

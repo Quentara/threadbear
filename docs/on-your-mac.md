@@ -59,16 +59,17 @@ File references are where to look.
   them with (`--keep-links` leaves them where they are), and
   `desktop/scripts/thread-links.sh swift` gives them back to the Swift app.
 - **Rust, only if you start using the new app** (the Swift app's Start
-  using the new app, `desktop/scripts/switch-from-swift.sh`): the new app is
-  built on your Mac from your checkout's `main`, so if there's no `cargo`
+  using the new app, which starts a thread that runs
+  `desktop/scripts/switch-from-swift.sh`; that thread is an agent on your
+  own login, so it uses your Claude or Codex tokens like any other thread):
+  the new app is built on your Mac from your checkout's `main`, so if there's no `cargo`
   it installs Rust first, with rustup's own installer from
   `https://sh.rustup.rs` (the minimal profile, about 850 MB with the crates
   the build fetches, in `~/.rustup` and `~/.cargo`; it doesn't touch your
   shell's startup files). The build runs at background priority, takes
   about 10 minutes the first time, and keeps about 1.6 GB in
   `~/Library/Caches/Threadbear/update-desktop`, which its updates reuse. Its
-  output goes to `~/Library/Logs/threadbear-new-app.log`. `rustup self
-  uninstall` takes Rust off again.
+  output is in that thread. `rustup self uninstall` takes Rust off again.
 - **The GPUI app's web runtime, only if you install it** (its Install web
   runtime button, or Settings > General > Web runtime; nothing is fetched
   until you press one): Chromium, as CEF's official minimal build 156.0.26,

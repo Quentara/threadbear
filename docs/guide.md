@@ -1847,22 +1847,32 @@ turn it off, in Settings (⌘,) > General > Updates from Mike.
 ### Moving to the new desktop app
 
 The Mac app is being replaced by a new desktop app that looks and works the
-same and runs on Windows and Linux too. The Mac app tells you about it once
-when it starts, in a window with Not now and Start using the new app, and
-keeps a card at the top of the sidebar until you start or press Later
-(which hides it for a week); the card's Start using it brings the window
-back. Start using the new app builds it on your Mac from your checkout's
-`main`, at background priority, which takes about 10 minutes the first time
-and installs Rust first if there's no `cargo` (docs/on-your-mac.md says
-what that puts where). The window shows how it's going, and you can hide it
-and keep working; the card shows it too. Then it installs the app as
-`~/Applications/Threadbear GPUI.app`, makes it the one `threadbear://`
-links open, and opens it. If your `runner.json` has check hosts, it builds
-on a Mac named in `updateBuildHosts` instead, as its updates do. The Mac
-app stays installed and keeps working, and
-`desktop/scripts/thread-links.sh swift` gives the links back to it. A few
-things still only work in the Mac app: `docs/gpui-port/PARITY.md` lists
-them. Neither shows once the new app is installed.
+same and runs on Windows and Linux too. The Mac app is frozen now: it no
+longer gets new features, and everything new goes into the new app. There's
+no date yet for when it stops being updated; once there is, the window and
+the card below say it too.
+
+The Mac app tells you about it once when it starts, in a window with Not now
+and Start using the new app, and keeps a card at the top of the sidebar until
+you start or press Later (which hides it for a week); the card's Start using
+it brings the window back. Start using the new app starts a thread, "Switch
+to the new Threadbear app", in your checkout, and the window closes once it's
+made. The card then shows that thread, what it's doing and Open the thread.
+The thread builds the new app on your Mac from your checkout's `main` with
+`desktop/scripts/switch-from-swift.sh`, at background priority, which takes
+about 10 minutes the first time and installs Rust first if there's no
+`cargo` (docs/on-your-mac.md says what that puts where). If something stops
+it (Xcode's command line tools, Rust, disk space, a build error) the thread
+works out why and fixes it, or asks you. When the app's installed it asks
+whether to switch now, with Switch now and Later, and only switches when you
+say: it makes the new app the one `threadbear://` links open, and opens it.
+If your `runner.json` has check hosts, it builds on a Mac named in
+`updateBuildHosts` instead, as its updates do. The Mac app stays installed
+and keeps working, and `desktop/scripts/thread-links.sh swift` gives the
+links back to it. A few things still only work in the Mac app:
+`docs/gpui-port/PARITY.md` lists them. Neither the window nor the card shows
+once the new app is installed, except the card for a switch thread that
+isn't archived yet.
 
 The first time the new desktop app opens, it
 brings across what the Mac app remembers: the zoom, folded sections, the
