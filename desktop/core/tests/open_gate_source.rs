@@ -29,6 +29,7 @@ const OPENERS: &[&str] = &[
     // The Mac's own video and PDF views (gpui/native/media_views.m): what
     // makes one reads the file, so only the gate's `show_media` does.
     "tb_media_open",
+    "tb_file_icon_png(",
     // And nothing in the Objective-C beside the app opens anything either.
     "openURL:",
     "openFile:",
@@ -65,6 +66,8 @@ const ALLOWED_LINES: &[(&str, &str, usize)] = &[
     ("gpui/src/app_update.rs", "let started = Command::new(\"/bin/sh\").arg(\"-c\").arg(wait).arg(\"sh\").args(open).stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn();", 1),
     ("gpui/src/app_update.rs", "let out = Command::new(\"/usr/bin/git\").args(rules::rev_parse_arguments(checkout)).stdin(Stdio::null()).output().ok()?;", 1),
     ("gpui/src/app_update.rs", "let child = Command::new(program).args(arguments).current_dir(installed::home_dir()).stdin(Stdio::null()).stdout(out).stderr(err).spawn();", 1),
+    // Encodes the gate's checked descriptor or already-read application icon.
+    ("gpui/native/file_icons.m", "int tb_file_icon_png(int fd, long long length, void *applicationIcon, void **output) {", 1),
     // Where the video and PDF views are made, called only from the gate.
     ("gpui/native/media_views.m", "void *tb_media_open(void *nativeParent, int fd, long long length, const char *path, int kind, bool muted, float volume) {", 1),
     ("gpui/src/swift_import.rs", "let out = Command::new(\"/usr/bin/defaults\").args([\"export\", \"com.mikerosoft.threadbear\", \"-\"]).stderr(Stdio::null()).output().map_err(|e| format!(\"couldn't run defaults: {e}\"))?;", 1),

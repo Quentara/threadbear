@@ -208,7 +208,19 @@ impl SidePane {
                     self.refresh_panel(&thread.id, id, cx);
                 }
                 match picture {
-                    Some(image) => div().size_full().flex().items_center().justify_center().p(px(16.)).child(img(ImageSource::Image(image)).size_full().object_fit(ObjectFit::Contain)).into_any_element(),
+                    Some(image) => {
+                        let picture = div().size_full().flex().items_center().justify_center().p(px(16.)).child(img(ImageSource::Image(image)).size_full().object_fit(ObjectFit::Contain));
+                        #[cfg(target_os = "macos")]
+                        {
+                            let opening = self.app.upgrade().is_some_and(|app| app.read(cx).busy_notes.iter().any(|(key, _)| key == "opening-simulator"));
+                            tipped(picture.id("panel-simulator-picture"), "Open Simulator")
+                                .when(!opening, |s| s.cursor_pointer().on_click(cx.listener(|_, _: &ClickEvent, _, cx| crate::open_gate::open_simulator(cx))))
+                                .when(opening, |s| s.relative().child(div().absolute().inset_0().flex().items_center().justify_center().child(Spinner::new().with_size(px(20.)))))
+                                .into_any_element()
+                        }
+                        #[cfg(not(target_os = "macos"))]
+                        { picture.into_any_element() }
+                    },
                     None => {
                         let note = self.panels.renders.get(&key).and_then(|r| r.note.clone()).unwrap_or_else(|| "Taking a screenshot…".to_owned());
                         crate::files::pane_note(&note, p).into_any_element()
@@ -312,15 +324,19 @@ impl SidePane {
         let show_headings = groups.len() > 1;
         for group in groups {
             if show_headings {
+                let project_id = group.project_id.clone();
+                let heading = div().pb(px(4.)).border_b_1().border_color(p.hairline).text_size(px(style::size::DETAIL)).font_semibold().text_color(p.secondary).child(group.title.clone().unwrap_or_else(|| "This thread's folder".to_owned()));
+                let heading = if let Some(project_id) = project_id {
+                    tipped(heading.id(SharedString::from(format!("patch-project-{project_id}"))).cursor_pointer().hover(|s| s.underline()), "Open the project")
+                        .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| {
+                            if let Some(app) = this.app.upgrade() {
+                                app.update(cx, |app, cx| app.open_project_page(&project_id, cx));
+                            }
+                        }))
+                        .into_any_element()
+                } else { heading.into_any_element() };
                 list = list.child(
-                    div()
-                        .pb(px(4.))
-                        .border_b_1()
-                        .border_color(p.hairline)
-                        .text_size(px(style::size::DETAIL))
-                        .font_semibold()
-                        .text_color(p.secondary)
-                        .child(group.title.clone().unwrap_or_else(|| "This thread's folder".to_owned())),
+                    heading,
                 );
             }
             for patch in group.patches {
@@ -614,7 +630,7 @@ impl SidePane {
             chip_tip(action),
         )
         .when(running, |s| s.child(Spinner::new().with_size(px(11.)).color(p.secondary)))
-        .when(!running, |s| s.child(crate::patch_icons::patch_icon(action.icon_file.as_deref(), &symbol, 11., Some(p.secondary))))
+        .when(!running, |s| s.child(crate::patch_icons::patch_icon(action.icon_file.as_deref(), &symbol, 11., Some(p.secondary), thread.is_remote())))
         .child(div().text_size(px(style::size::CHIP)).text_color(p.fg).whitespace_nowrap().child(action.title.clone()))
         .when_some(action.badge, |s, n| s.child(div().px(px(5.)).rounded_full().bg(style::primary_opacity(cx, 0.08)).text_size(px(style::size::SMALL)).font_weight(FontWeight::SEMIBOLD).text_color(p.secondary).child(badge_text(n))))
         .when(!running, |s| s.on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.run_action(&action2, thread_id.clone(), cx))))

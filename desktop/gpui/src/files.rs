@@ -9,8 +9,9 @@
 // read-only editor, coloured by its highlighter; any text with the find bar
 // over it (file_find.rs). On a Mac a video plays and a PDF shows in the
 // system's own view over the pane (media_view.rs), read from this Mac's own
-// file once the open gate has checked it; on Windows and Linux, and for
-// everything else, the pane says it opens in its app (`file.quicklook`). A
+// file once the open gate has checked it. Office and iWork documents show a
+// read-only Quick Look thumbnail. On Windows and Linux these open in their
+// own app (`file.quicklook`). A
 // local web page shows sealed in the web runtime, its scripts off until Run
 // them (`file.htmlpreview`, `file.runthem`: web_panels.rs `local_page`).
 use crate::file_edit::{FileEdit, SaveFile};
@@ -184,7 +185,7 @@ impl LocalPage {
 }
 
 /// Which of the system's views a file in the pane shows in, by its name: a
-/// video or a PDF, on a Mac. None elsewhere, where they open in their app.
+/// video, PDF or document thumbnail, on a Mac. None elsewhere, where they open in their app.
 pub(crate) fn media_kind(path: &str) -> Option<crate::media_view::Kind> {
     use crate::media_view::Kind;
     use threadbear_core::open_policy::Media;
@@ -194,6 +195,7 @@ pub(crate) fn media_kind(path: &str) -> Option<crate::media_view::Kind> {
     threadbear_core::open_policy::media_kind(path).map(|m| match m {
         Media::Video => Kind::PaneVideo,
         Media::Pdf => Kind::PaneDocument,
+        Media::Office => Kind::PaneQuickLook,
     })
 }
 
@@ -1123,6 +1125,11 @@ impl SidePane {
                         if let Some(why) = crate::media_view::failure_of(&key) {
                             pane.insert("previewKind".into(), json!("note"));
                             pane.insert("previewText".into(), json!(why));
+                        } else if *kind == crate::media_view::Kind::PaneQuickLook {
+                            pane.insert("previewKind".into(), json!("quickLook"));
+                            if let Some(state) = crate::media_view::state_of(&key).filter(|s| !s.loading && s.width > 0. && s.height > 0.) {
+                                pane.insert("previewText".into(), json!(format!("Quick Look thumbnail {}x{}", state.width.round(), state.height.round())));
+                            }
                         } else if *kind == crate::media_view::Kind::PaneDocument {
                             pane.insert("previewKind".into(), json!("pdf"));
                             if let Some(state) = crate::media_view::state_of(&key).filter(|s| !s.loading) {

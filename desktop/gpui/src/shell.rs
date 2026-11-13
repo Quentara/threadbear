@@ -156,9 +156,9 @@ impl DockContent for Panels {
             return Some(icons::symbol(symbol).with_size(px(13.)).text_color(color).into_any_element());
         }
         // A patch's panel: its own picture or symbol, as on the rail.
-        let (found, _) = self.patch_panel(panel, cx)?;
+        let (found, thread) = self.patch_panel(panel, cx)?;
         let symbol = threadbear_core::highlights::panel_symbol(&found).to_owned();
-        let icon = crate::patch_icons::patch_icon(found.icon_file.as_deref(), &symbol, 13., Some(color));
+        let icon = crate::patch_icons::patch_icon(found.icon_file.as_deref(), &symbol, 13., Some(color), thread.is_remote());
         // A pinned one has a pin before it (pinned_panels.rs).
         Some(if crate::pinned_panels::pinned(panel).is_some() { crate::pinned_panels::tab_icon(icon, cx) } else { icon })
     }
@@ -1183,6 +1183,11 @@ impl Threadbear {
         if signature != self.menu_signature {
             self.menu_signature = signature;
             cx.set_menus(gpui_menus(&menus));
+            #[cfg(target_os = "macos")]
+            unsafe {
+                extern "C" { fn tb_menu_icons(); }
+                tb_menu_icons();
+            }
         }
     }
 

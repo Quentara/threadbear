@@ -300,6 +300,12 @@ icons, with thumbnails of pictures and videos, and the list sorts by whichever c
 you click. It works for folders on your other Macs too, though only this
 Mac's files have thumbnails and Quick Look.
 
+On a Mac, Office and iWork documents in the pane show a read-only Quick Look
+thumbnail. Videos have playback controls and PDFs can be read and scrolled.
+The thumbnail cannot follow links or run document actions. Open the document
+in its own app to work on it. Files from another Mac stay on that machine.
+Documents over 256 MB can be opened in their own app instead.
+
 Files, the folder on a thread's right-hand rail, opens the thread's own
 folder that way, without a link to it. Click it again to close it.
 
@@ -940,7 +946,8 @@ the pool is out of room it waits, and with only Codex logins it doesn't
 run at all. Threads in a private folder (Settings › Models) are never sent
 to it.
 
-The Librarian view lists what it did and what it will look at next. Hover
+The Librarian view lists what it did and what it will look at next. Click a
+project name in its log to open that project's page. Hover
 a row to see why it filed a thread where it did. Turn
 off Look at threads there to pause it; what's queued waits until you turn
 it back on. If it files a thread wrongly, take the thread out of the
@@ -1699,6 +1706,9 @@ that has changed a panel's page can have it load afresh as it shows you
 Chromium it draws diagrams with: until that's installed the panel asks for
 it (Install web runtime, or Not now) and has Open in browser, and there a
 link to another site always opens in your browser.
+
+On a Mac, click a Simulator picture panel to open Simulator. A patch can use
+an application's icon, an icns file or a PDF for its buttons and panels too.
 
 Buttons sit on shelves along the top edge of the message box, one shelf
 for each place they came from, starting with the same badge the panels

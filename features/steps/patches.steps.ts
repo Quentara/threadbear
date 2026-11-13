@@ -13,6 +13,24 @@ When('I show the {string} section of the pane', async function (this: Threadbear
 
 const patch = (d: Dump, id: string) => pane(d)?.patches?.find((p) => p.id === id);
 
+When('I follow the project heading in Patches', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'click', tip: 'Open the project' });
+});
+
+Then("the patch's project page is open", async function (this: ThreadbearWorld) {
+  await this.until('the project page for Walkies', (d) => (d as unknown as { project?: { title: string } }).project?.title === 'Walkies');
+});
+
+When('I open Simulator from the picture', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'opened' });
+  await this.app.do({ cmd: 'click', tip: 'Open Simulator' });
+});
+
+Then('Simulator was opened through the app', async function (this: ThreadbearWorld) {
+  const opened = await this.app.do({ cmd: 'opened' });
+  assert.ok(JSON.stringify(opened).includes('com.apple.iphonesimulator'), JSON.stringify(opened));
+});
+
 Then('the patch {string} comes from {string}', async function (this: ThreadbearWorld, id: string, source: string) {
   await this.until(`${id} from ${source}`, (d) => patch(d, id)?.source === source);
 });

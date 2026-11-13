@@ -1,8 +1,36 @@
-import { Then, When } from '@cucumber/cucumber';
+import { After, Then, When } from '@cucumber/cucumber';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { sampleOffice } from '../support/office-document.ts';
 import assert from 'node:assert/strict';
 import type { ThreadbearWorld } from '../support/world.ts';
 import { pane, previewLine } from '../support/pane.ts';
 import { okValue } from '../support/driver.ts';
+
+const officeFolders = new WeakMap<ThreadbearWorld, string>();
+When('I open a sample Office document in the pane', async function (this: ThreadbearWorld) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-office-preview-'));
+  officeFolders.set(this, folder);
+  const document = sampleOffice(folder);
+  await this.app.do({ cmd: 'opened' });
+  await this.app.do({ cmd: 'preview', path: document });
+});
+
+After(function (this: ThreadbearWorld) {
+  const folder = officeFolders.get(this);
+  if (folder) fs.rmSync(folder, { recursive: true, force: true });
+});
+
+Then('the pane shows a Quick Look thumbnail', async function (this: ThreadbearWorld) {
+  await this.until('a Quick Look document thumbnail', (d) => pane(d)?.previewKind === 'quickLook' && Boolean(pane(d)?.previewText), 30_000);
+});
+
+Then('the document has not opened another app', async function (this: ThreadbearWorld) {
+  const opened = await this.app.do({ cmd: 'opened' });
+  const text = typeof opened === 'string' ? opened.replace(/^ok /, '') : JSON.stringify(opened);
+  assert.deepEqual(JSON.parse(text), []);
+});
 
 When('I click the highlight {string}', async function (this: ThreadbearWorld, title: string) {
   await this.until(`a highlight called "${title}"`, (d) => pane(d)?.sections?.some((s) => s.rows.some((r) => r.title === title)));

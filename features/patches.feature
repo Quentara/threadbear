@@ -15,6 +15,13 @@ Feature: What a folder's patches give a thread
     And the patch "convex" comes from "built in"
 
   @patches.list
+  Scenario: A project heading in Patches opens the project
+    When I open the thread "Add dark mode to the dashboard"
+    And I show the "threadbear.patches" section of the pane
+    And I follow the project heading in Patches
+    Then the patch's project page is open
+
+  @patches.list
   Scenario: A patch that isn't trusted waits, and Trust brings it in
     When I open the thread "Pick a colour for the new Share button"
     And I show the "threadbear.patches" section of the pane
@@ -35,6 +42,15 @@ Feature: What a folder's patches give a thread
     When I open the thread "Pick a colour for the new Share button"
     And I show the "xcode.simulator" section of the pane
     Then the image panel shows a picture
+
+  # Swift launches Simulator directly and cannot record this scripted open.
+  @panel.image @swift-pending @windows-pending @linux-pending
+  Scenario: The simulator picture opens Simulator
+    When I open the thread "Pick a colour for the new Share button"
+    And I show the "xcode.simulator" section of the pane
+    Then the image panel shows a picture
+    When I open Simulator from the picture
+    Then Simulator was opened through the app
 
   @manual @panel.web
   Scenario: A url panel's link to another site doesn't take over the panel

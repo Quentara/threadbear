@@ -1053,6 +1053,7 @@ impl SidePane {
     #[allow(clippy::too_many_arguments)]
     fn leave_folder(&mut self, key: &str, path: String, name: String, is_folder: bool, memory: crate::highlights::FolderMemory, thread: &ThreadSummary, preview: &PanePreview, cx: &mut Context<Self>) {
         let _ = key;
+        let iwork_package = cfg!(target_os = "macos") && !thread.is_remote() && std::path::Path::new(&path).extension().is_some_and(|e| matches!(e.to_string_lossy().to_ascii_lowercase().as_str(), "key" | "pages" | "numbers"));
         let mut current = preview.clone();
         current.memory = memory;
         let back_stack = {
@@ -1060,7 +1061,7 @@ impl SidePane {
             back.push(current.clone());
             back
         };
-        if is_folder {
+        if is_folder && !iwork_package {
             let mut next = PanePreview::new(Target::Folder(path), name, preview.from.clone());
             next.back = back_stack;
             self.show_preview(next, &thread.id, cx);

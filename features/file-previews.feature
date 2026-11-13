@@ -118,6 +118,16 @@ Feature: Files opened in the side pane
     And I open "docs/launch-brief.pdf" in the thread's folder in the pane
     Then the pane shows the PDF
 
+  # Read-only Quick Look thumbnails on the Mac. Other systems still offer
+  # the document's own app, through the open gate. Swift's frozen dump only
+  # names its full Quick Look view; it cannot confirm a rendered thumbnail.
+  @file.quicklook @swift-pending @windows-pending @linux-pending
+  Scenario: An Office document previews without launching another app
+    When I open the thread "Rebuild the three landing pages"
+    And I open a sample Office document in the pane
+    Then the pane shows a Quick Look thumbnail
+    And the document has not opened another app
+
   # A link in a PDF goes through the app's open gate, as any link in a
   # thread does, never straight to the system: PDFKit's own handling would
   # open a file link to a program without asking (Codex's review, 12 Nov).

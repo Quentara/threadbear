@@ -13,8 +13,7 @@ use crate::style::px;
 use std::path::PathBuf;
 use threadbear_core::highlights::PanelOrigin;
 
-/// A picture this app can draw as it is. An `.icns`, a PDF or an app's own
-/// icon (`.app`) needs AppKit to turn into one; those fall back to the symbol.
+/// A picture this app can draw as it is.
 fn drawable(path: &str) -> bool {
     let ext = path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
     matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg")
@@ -36,7 +35,15 @@ pub(crate) fn glyph(symbol: &str, size: f32, color: Option<Hsla>) -> AnyElement 
 
 /// A panel's or a chip's icon: its patch's own picture, in colour, when it has
 /// one this app can draw, else its symbol.
-pub(crate) fn patch_icon(icon_file: Option<&str>, symbol: &str, size: f32, color: Option<Hsla>) -> AnyElement {
+pub(crate) fn patch_icon(icon_file: Option<&str>, symbol: &str, size: f32, color: Option<Hsla>, remote: bool) -> AnyElement {
+    if remote { return glyph(symbol, size, color); }
+    #[cfg(target_os = "macos")]
+    if let Some(path) = icon_file.filter(|p| matches!(p.rsplit('.').next().unwrap_or("").to_ascii_lowercase().as_str(), "app" | "icns" | "pdf")) {
+        let path = PathBuf::from(path);
+        let source = ImageSource::Custom(std::sync::Arc::new(move |window, cx| window.use_asset::<MacIcon>(&path, cx)));
+        let symbol = symbol.to_owned();
+        return img(source).size(px(size + 1.)).object_fit(ObjectFit::Contain).with_fallback(move || glyph(&symbol, size, color)).into_any_element();
+    }
     match icon_file.filter(|p| !p.is_empty() && drawable(p)) {
         Some(path) => {
             let symbol = symbol.to_owned();
@@ -47,6 +54,40 @@ pub(crate) fn patch_icon(icon_file: Option<&str>, symbol: &str, size: f32, color
                 .into_any_element()
         }
         None => glyph(symbol, size, color),
+    }
+}
+
+// The asset cache does the decode off the drawing thread and shares it among
+// the rail, tabs and chips. Only the gate reads the file or bundle.
+#[cfg(target_os = "macos")]
+struct MacIcon;
+#[cfg(target_os = "macos")]
+impl Asset for MacIcon {
+    type Source = PathBuf;
+    type Output = Result<std::sync::Arc<RenderImage>, ImageCacheError>;
+    fn load(path: Self::Source, cx: &mut App) -> impl std::future::Future<Output = Self::Output> + Send + 'static {
+        let renderer = cx.svg_renderer();
+        // Only the AppKit call needs the main thread. Canonicalization,
+        // metadata and file reads run in the asset's worker future first.
+        let (request, receive) = futures::channel::oneshot::channel::<crate::open_gate::CheckedIcon>();
+        let (reply, application) = futures::channel::oneshot::channel();
+        cx.spawn(async move |cx| {
+            if let Ok(icon) = receive.await {
+                let result = cx.update(|_| crate::open_gate::icon_png(icon));
+                let _ = reply.send(result);
+            }
+        }).detach();
+        async move {
+            let icon = crate::open_gate::read_icon(&path, crate::open_gate::Origin::ThisMac)?;
+            let png = if icon.is_application() {
+                request.send(icon).map_err(|_| std::io::Error::other("The application icon read was cancelled"))?;
+                application.await.map_err(|_| std::io::Error::other("The application icon read was cancelled"))??
+            } else {
+                drop(request);
+                crate::open_gate::icon_png(icon)?
+            };
+            Image::from_bytes(ImageFormat::Png, png).to_image_data(renderer).map_err(Into::into)
+        }
     }
 }
 
@@ -116,7 +157,7 @@ pub(crate) fn panel_face(panel: &threadbear_core::highlights::Panel, thread: &th
         .flex()
         .items_center()
         .justify_center()
-        .child(patch_icon(panel.icon_file.as_deref(), &symbol, size, None))
+        .child(patch_icon(panel.icon_file.as_deref(), &symbol, size, None, thread.is_remote()))
         .children(badge)
         .into_any_element()
 }

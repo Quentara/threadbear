@@ -162,6 +162,10 @@ File references are where to look.
   side pane, so what you drop it on gets the file you were watching; a
   clone that takes no space where the disk can make one, cleared after a
   day);
+  `~/Library/Caches/Threadbear/previews` (private, read-only snapshots of
+  Office and iWork documents, so Quick Look reads the file the open gate
+  checked; removed after the thumbnail is made, with interrupted copies
+  cleared after a day when another preview is made);
   `~/Library/Caches/Threadbear/rich` (pictures of the ```` ```mermaid ```` and
   ```` ```html ```` blocks in replies, and each one's page for the side pane,
   newest 900 files kept). They're drawn on this Mac in web views that load
@@ -438,6 +442,10 @@ File references are where to look.
 
 ## What it reads
 
+- When you click a picture panel to open Simulator, the GPUI app looks up
+  Apple's Simulator and runs `/usr/bin/codesign --verify --strict` with its
+  Apple signature and bundle-id requirement before opening it. This runs
+  off the main thread and does not launch an app with a copied bundle id.
 - From your Claude and Codex logins: which account each is (the email in
   `~/.claude.json`), a few settings, and the token counts in your session
   transcripts, so it can show how much room each login has

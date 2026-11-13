@@ -8,6 +8,8 @@
 // They read only that open file, never its path again: a film through an
 // asset whose bytes come from it (TBFileSource), with QuickTime's references
 // to other files forbidden; a PDF from its bytes, read off the main thread.
+// Office and iWork thumbnails use Quick Look on a private snapshot of that
+// descriptor, then a plain image view without links or document actions.
 // A PDF's links go back to the open gate, never to the system, from a click
 // or from its right-click menu, and a film dragged out is a copy of the open
 // file, never its path (Codex's reviews, 12 Nov).
@@ -21,6 +23,7 @@
 #import <AVKit/AVKit.h>
 #import <AppKit/AppKit.h>
 #import <PDFKit/PDFKit.h>
+#import <QuickLookThumbnailing/QuickLookThumbnailing.h>
 #include <stdbool.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -32,6 +35,7 @@ enum {
   TBStageVideo = 1,
   TBCellVideo = 2,
   TBPaneDocument = 3,
+  TBPaneQuickLook = 4,
 };
 
 // What a view is showing, for the scripted app's dump (media_view.rs's
@@ -58,6 +62,7 @@ extern void tb_media_said_changed(void);
 // named `name`, for a drag out (threadbear_core::private_file::snapshot), its
 // path written into `out`; false if it couldn't be made.
 extern bool tb_media_snapshot(int fd, const char *name, char *out, int capacity);
+extern int tb_preview_snapshot(int fd, const char *name, char *out, int capacity);
 
 // The biggest PDF read into memory to show.
 static const long long TBDocumentLimit = 256LL * 1024 * 1024;
@@ -626,6 +631,67 @@ static NSData *tb_read_all(int fd, long long length) {
   return bytes;
 }
 
+// A thumbnail has no document actions, links, services or Open button.
+// Quick Look only sees a private snapshot of the descriptor the gate checked.
+@interface TBQuickLookView : NSImageView
+@property(nonatomic) BOOL loading;
+@property(nonatomic) BOOL wantsHidden;
+@property(nonatomic, copy) NSString *failure;
+@property(nonatomic, strong) QLThumbnailGenerationRequest *request;
+@end
+
+@implementation TBQuickLookView
+- (void)dealloc {
+  if (_request) [[QLThumbnailGenerator sharedGenerator] cancelRequest:_request];
+}
+@end
+
+static TBQuickLookView *tb_quicklook(int fd, long long length, NSString *file) {
+  TBQuickLookView *view = [[TBQuickLookView alloc] initWithFrame:NSZeroRect];
+  view.imageScaling = NSImageScaleProportionallyUpOrDown;
+  view.loading = YES;
+  view.wantsHidden = YES;
+  __weak TBQuickLookView *weakView = view;
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    char snapshot[4096] = {0};
+    int copied = length > TBDocumentLimit ? -1 : tb_preview_snapshot(fd, file.lastPathComponent.UTF8String, snapshot, sizeof(snapshot));
+    close(fd);
+    NSString *path = copied == 1 ? [NSString stringWithUTF8String:snapshot] : nil;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      TBQuickLookView *me = weakView;
+      if (!path || !me || !me.loading) {
+        if (path) [[NSFileManager defaultManager] removeItemAtPath:path.stringByDeletingLastPathComponent error:nil];
+        if (me && me.loading) {
+          me.loading = NO;
+          me.failure = copied == -1 ? @"it's over 256 MB, too big to show here." : @"a private preview couldn't be made.";
+          tb_media_said_changed();
+        }
+        return;
+      }
+      QLThumbnailGenerationRequest *request = [[QLThumbnailGenerationRequest alloc] initWithFileAtURL:[NSURL fileURLWithPath:path] size:CGSizeMake(1600, 1200) scale:1 representationTypes:QLThumbnailGenerationRequestRepresentationTypeThumbnail];
+      me.request = request;
+      [[QLThumbnailGenerator sharedGenerator] generateBestRepresentationForRequest:request completionHandler:^(QLThumbnailRepresentation *thumbnail, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+          TBQuickLookView *current = weakView;
+          if (current && current.loading) {
+            current.loading = NO;
+            current.request = nil;
+            if (thumbnail) {
+              current.image = thumbnail.NSImage;
+              current.hidden = current.wantsHidden;
+            } else {
+              current.failure = @"Quick Look couldn't make a preview of this document.";
+            }
+            tb_media_said_changed();
+          }
+          [[NSFileManager defaultManager] removeItemAtPath:path.stringByDeletingLastPathComponent error:nil];
+        });
+      }];
+    });
+  });
+  return view;
+}
+
 // ---------------------------------------------------------------- the calls
 
 // A view for the checked file open as `fd` (`length` bytes, at the real
@@ -645,7 +711,9 @@ void *tb_media_open(void *nativeParent, int fd, long long length, const char *pa
     return NULL;
   }
   NSView *view = nil;
-  if (kind == TBPaneDocument) {
+  if (kind == TBPaneQuickLook) {
+    view = tb_quicklook(fd, length, file);
+  } else if (kind == TBPaneDocument) {
     TBDocumentView *pdf = [[TBDocumentView alloc] initWithFrame:NSZeroRect];
     pdf.links = [TBDocumentLinks new];
     pdf.links.base = file.stringByDeletingLastPathComponent;
@@ -738,6 +806,10 @@ void tb_media_set_hidden(void *nativeView, bool hidden) {
     TBDocumentView *pdf = (TBDocumentView *)view;
     pdf.wantsHidden = hidden;
     hidden = hidden || pdf.loading || pdf.failure != nil;
+  } else if ([view isKindOfClass:[TBQuickLookView class]]) {
+    TBQuickLookView *preview = (TBQuickLookView *)view;
+    preview.wantsHidden = hidden;
+    hidden = hidden || preview.loading || preview.failure != nil;
   }
   if (view.hidden != hidden) {
     view.hidden = hidden;
@@ -761,6 +833,11 @@ void tb_media_close(void *nativeView) {
     // A read still under way gives nothing to it when it's done.
     pdf.loading = NO;
     pdf.delegate = nil;
+  } else if ([view isKindOfClass:[TBQuickLookView class]]) {
+    TBQuickLookView *preview = (TBQuickLookView *)view;
+    preview.loading = NO;
+    if (preview.request) [[QLThumbnailGenerator sharedGenerator] cancelRequest:preview.request];
+    preview.request = nil;
   }
   [view removeFromSuperview];
 }
@@ -799,6 +876,13 @@ void tb_media_state(void *nativeView, TBMediaState *out) {
       out->width = bounds.size.width;
       out->height = bounds.size.height;
     }
+  } else if ([view isKindOfClass:[TBQuickLookView class]]) {
+    TBQuickLookView *preview = (TBQuickLookView *)view;
+    out->loading = preview.loading;
+    out->failed = preview.failure != nil;
+    out->width = preview.image.size.width;
+    out->height = preview.image.size.height;
+    out->pages = preview.image ? 1 : 0;
   }
 }
 
@@ -806,6 +890,7 @@ void tb_media_state(void *nativeView, TBMediaState *out) {
 bool tb_media_failure(void *nativeView, char *buffer, int capacity) {
   NSView *view = (__bridge NSView *)nativeView;
   NSString *failure = [view isKindOfClass:[TBPlayerView class]] ? ((TBPlayerView *)view).failure : [view isKindOfClass:[TBDocumentView class]] ? ((TBDocumentView *)view).failure : nil;
+  if ([view isKindOfClass:[TBQuickLookView class]]) failure = ((TBQuickLookView *)view).failure;
   if (!failure || capacity <= 0) {
     return false;
   }

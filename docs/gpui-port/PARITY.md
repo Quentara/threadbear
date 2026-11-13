@@ -429,6 +429,57 @@ The broader Linux sending and drag-out run passed all 28 scenarios. The
 app's `file_drop` integration tests check each drop phase after typing,
 one delivery, drag cleanup and preserving touch mode. Run them with
 `cargo test -p threadbear-gpui --features automation --test file_drop`.
+### 2026-11-13 The remaining script commands (`system.testharness`)
+
+- Older scripts can use `size`, `window`, `point` (click, drag, wheel and
+  hold), `room`, `account-ids`, `streaming`, `debug-info`, `convex` and
+  `runners-front`. Window targets include Settings, a review and a floating
+  panel. GPUI sheets and popovers share their parent's native window.
+- Input stays in the scripted window and copied text stays on its private
+  clipboard. Convex selection uses the same offered deployments as its menu.
+- Verification: the automation build and the focused four-file run passed
+  on cloud, 21 scenarios and 209 steps, including coordinates, window size,
+  anonymous login names, live text, row diagnostics and deployment selection.
+  Project tabs and handover commands remain with their own parity slice.
+
+### 2026-11-13 Office previews, patch icons and Simulator (`file.quicklook`, `patches.icons`, `panel.image`, `patches.list`)
+
+- Office and iWork files use read-only Quick Look thumbnails on the Mac.
+  iWork packages are cloned or copied through held directory descriptors, with bounds
+  on size, depth and entry count; nested links and special files are refused.
+  Quick Look sees a private snapshot, without document links or actions.
+- App, icns and PDF patch icons draw in colour. Application icons stay on
+  AppKit's main thread after their paths are checked on a worker; file icons
+  use ImageIO and CoreGraphics, fitting small vector pages to the icon. The picture
+  panel opens Apple's signed Simulator through the gate, with feedback
+  while its signature is checked. Patches' project headings open their pages.
+- Menu bar items have the Swift app's system symbols.
+- Verification: 27 open-policy tests, the iWork package classification test
+  and the package/source guards passed on cloud. The final
+  [native Mac check](https://github.com/mikecann/threadbear/actions/runs/43412494682)
+  passed 17 focused Rust tests and 25 scenarios (246 steps), including the
+  Office thumbnail, Simulator signature checks, locked-file snapshots and
+  icon decoding. Window-only screenshots confirmed the document and all
+  three patch icons draw. Offscreen checks confirmed PDF crop, rotation and
+  upscaling; an oversized icns accepted by the old decoder is now refused.
+  Claude reviewed the gate, package traversal and native ownership changes.
+  Mac, Windows and Linux had compiled and passed Rust tests before the final
+  Mac-specific review fixes; these final fixes were checked on the Mac.
+
+### 2026-11-13 Panel switches, project links and the smaller tooltip gaps (`librarian.log`, `librarian.page`, `usage.pools`, `settings.general`)
+
+- Librarian log project names open their pages. Librarian and Usage use the
+  shared Mac switch's outside-form size, with their existing busy and
+  optimistic states: a 44×20 track and 26×16 knob, measured from the Swift
+  control in an offscreen NSHostingView on macOS 27.
+- The unread dot says Needs you; a remote row's tip names its runner and
+  offline state. Settings' three explanatory texts, the pool name field,
+  the worktree destination and another runner's schedule folder say what
+  the Swift app says.
+- Verification: 21 focused scenarios passed on cloud, then 22 on the Mac,
+  including clicks on both switches and project links. Native window shots
+  of Librarian and Usage were inspected beside the measured Swift switch
+  reference. The combined table above remains the earlier four-platform run.
 
 ### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
 

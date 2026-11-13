@@ -40,6 +40,8 @@ pub(crate) enum Kind {
     CellVideo = 2,
     /// A PDF in the pane, in place of Quick Look.
     PaneDocument = 3,
+    /// Read-only Quick Look thumbnail, with no links or document actions.
+    PaneQuickLook = 4,
 }
 
 /// What a view is showing, for the scripted app's dump.
@@ -264,26 +266,55 @@ fn drag_folder() -> Option<std::path::PathBuf> {
 #[cfg(target_os = "macos")]
 #[no_mangle]
 pub extern "C" fn tb_media_snapshot(fd: i32, name: *const std::ffi::c_char, out: *mut std::ffi::c_char, capacity: i32) -> bool {
+    let Some(folder) = drag_folder() else { return false };
+    snapshot_fd(fd, name, out, capacity, &folder, DRAG_COPY_LIMIT).is_ok()
+}
+
+/// Quick Look reads a private copy too, made off the main thread. It is
+/// removed after thumbnail generation; interrupted copies expire in a day.
+#[cfg(target_os = "macos")]
+#[no_mangle]
+pub extern "C" fn tb_preview_snapshot(fd: i32, name: *const std::ffi::c_char, out: *mut std::ffi::c_char, capacity: i32) -> i32 {
+    let Some(folder) = drag_folder().and_then(|p| p.parent().map(|p| p.join("previews"))) else { return 0 };
+    match snapshot_fd(fd, name, out, capacity, &folder, 256 * 1024 * 1024) {
+        Ok(()) => 1,
+        Err(error) if error.kind() == std::io::ErrorKind::FileTooLarge => -1,
+        Err(_) => 0,
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn snapshot_fd(fd: i32, name: *const std::ffi::c_char, out: *mut std::ffi::c_char, capacity: i32, folder: &std::path::Path, limit: u64) -> std::io::Result<()> {
     use std::os::fd::FromRawFd as _;
     use std::os::unix::ffi::OsStrExt as _;
     if fd < 0 || name.is_null() || out.is_null() || capacity <= 0 {
-        return false;
+        return Err(std::io::Error::other("No snapshot destination"));
     }
     let name = unsafe { std::ffi::CStr::from_ptr(name) }.to_string_lossy().into_owned();
     // Borrowed: the view still owns and closes it.
     let file = std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_fd(fd) });
-    let Some(folder) = drag_folder() else { return false };
-    let Ok(path) = threadbear_core::private_file::snapshot(&file, &folder, &name, DRAG_COPY_LIMIT) else { return false };
+    let meta = file.metadata()?;
+    // Drag exports use an unlimited clone (limit 0); previews have a hard
+    // byte cap even on APFS, where a clone itself needn't copy any bytes.
+    if limit > 0 && meta.is_file() && meta.len() > limit {
+        return Err(std::io::Error::new(std::io::ErrorKind::FileTooLarge, "The document is too big to preview"));
+    }
+    let path = if meta.is_dir() {
+        threadbear_core::private_file::snapshot_package(&file, folder, &name, limit)
+    } else {
+        threadbear_core::private_file::snapshot(&file, folder, &name, limit)
+    }?;
+    let too_big = limit > 0 && std::fs::metadata(&path).is_ok_and(|m| m.is_file() && m.len() > limit);
     let bytes = path.as_os_str().as_bytes();
-    if bytes.len() + 1 > capacity as usize || bytes.contains(&0) {
-        let _ = std::fs::remove_file(&path);
-        return false;
+    if too_big || bytes.len() + 1 > capacity as usize || bytes.contains(&0) {
+        if let Some(parent) = path.parent() { let _ = std::fs::remove_dir_all(parent); }
+        return Err(std::io::Error::new(if too_big { std::io::ErrorKind::FileTooLarge } else { std::io::ErrorKind::InvalidInput }, "The document couldn't be previewed"));
     }
     unsafe {
         std::ptr::copy_nonoverlapping(bytes.as_ptr().cast(), out, bytes.len());
         *out.add(bytes.len()) = 0;
     }
-    true
+    Ok(())
 }
 
 fn frame_of(window: WindowId) -> u64 {
@@ -306,14 +337,14 @@ pub(crate) fn slot(key: &str, window: &Window, open: impl FnOnce(Opening) -> Res
     // `sweeper`) can show one: elsewhere it would sit unplaced and never go
     // (a panel in a window of its own, Codex's review, 12 Nov).
     if !FRAMES.with(|f| f.borrow().contains_key(&id)) {
-        return Err("Videos and PDFs show here when the pane is in the main window.".to_owned());
+        return Err("Videos, PDFs and document previews show here when the pane is in the main window.".to_owned());
     }
     // A film AVFoundation couldn't play says why in its place, from then on.
     let failed = SLOTS.with(|s| s.borrow().iter().find(|s| s.key == key && s.window == id).and_then(|s| s.media.as_ref().ok()).and_then(Media::failure));
     if let Some(why) = failed {
         // Every key ends with the file's path.
         let name = threadbear_core::highlights::last_component(key).to_owned();
-        let pdf = SLOTS.with(|s| s.borrow().iter().any(|s| s.key == key && s.window == id && s.media.as_ref().is_ok_and(|m| m.kind == Kind::PaneDocument)));
+        let pdf = SLOTS.with(|s| s.borrow().iter().any(|s| s.key == key && s.window == id && s.media.as_ref().is_ok_and(|m| matches!(m.kind, Kind::PaneDocument | Kind::PaneQuickLook))));
         let said = format!("Threadbear couldn't {} {name}: {why}", if pdf { "show" } else { "play" });
         // Taken out of the list before it's dropped, which closes it.
         let gone = SLOTS.with(|s| s.borrow_mut().iter_mut().find(|s| s.key == key && s.window == id).map(|slot| std::mem::replace(&mut slot.media, Err(said))));
