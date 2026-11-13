@@ -16,7 +16,16 @@ const WRITERS: &[&str] = &["fs::write(", "File::create(", "OpenOptions::new(", "
 /// - a file of the user's own opened in the side pane and saved back in
 ///   place, which keeps the permissions that file already had;
 /// - the dock's demo program, which isn't part of the app.
-const ALLOWED: &[&str] = &["core/src/private_file.rs", "core/src/web_runtime.rs", "core/src/text_file.rs", "dock/src/bin/dock-demo/main.rs", "dock/src/bin/dock-demo/script.rs"];
+const ALLOWED: &[&str] = &[
+    "core/src/private_file.rs",
+    "core/src/web_runtime.rs",
+    "core/src/text_file.rs",
+    "dock/src/bin/dock-demo/main.rs",
+    "dock/src/bin/dock-demo/script.rs",
+    // local_preview's unit tests, in a file of their own: they write the
+    // pages and pictures of the folders they read.
+    "core/src/local_preview/tests.rs",
+];
 
 /// Single lines elsewhere, each by its file and the text it holds, allowed
 /// exactly as many times as listed:
@@ -25,7 +34,10 @@ const ALLOWED: &[&str] = &["core/src/private_file.rs", "core/src/web_runtime.rs"
 /// - the open gate opening a file it has checked, to read only
 ///   (`open_without_waiting`: read(true), O_NOFOLLOW, nothing written).
 /// - an existing user file saved in place by the text editor, keeping its mode.
+/// - a local page scanned for Run them, to read only (read(true),
+///   O_NONBLOCK and O_NOFOLLOW, nothing written).
 const ALLOWED_LINES: &[(&str, &str, usize)] = &[
+    ("core/src/local_preview.rs", "let mut options = std::fs::OpenOptions::new();", 1),
     ("gpui/src/web_runtime.rs", "std::fs::write(path, &png).map_err(|e| format!(\"couldn't save the picture: {e}\"))?;", 1),
     ("core/src/open_policy.rs", "let mut options = std::fs::OpenOptions::new();", 1),
     ("core/src/open_policy.rs", "{ std::fs::OpenOptions::new().write(true).open(path) }", 1),
