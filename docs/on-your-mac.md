@@ -295,8 +295,35 @@ File references are where to look.
   Temporary wrappers under the run's temp folder background Cargo and Swift
   builds and are removed when the run ends. Performance runs register their
   process groups and start times in `~/.cache/threadbear-check/perf-children-*`
-  until cleanup has stopped them. A cleanup still blocked after 30 seconds
-  records its process-group IDs in `~/.cache/threadbear-check/perf-cleanup.log`
+  until cleanup has stopped them. Registered processes also inherit an unlocked
+  descriptor (197) for the registry's state file. Cleanup matches its device
+  and inode through `lsof` on macOS or `/proc` on Linux to find terminal shells
+  that outlived their app. It reads descriptor metadata, not process environments;
+  command-line text does not count as ownership. Cleanup checks
+  start times before signalling those processes and follows live ancestry for
+  children that closed the descriptor. It repeats discovery until the lease's work
+  stops, retaining both locks. A small sleeping process stays in each active
+  group, keeping that group ID reserved even after its original
+  process dies. Its PID and start time are recorded in `anchor-*` files in the
+  same registry. It double-forks outside the worker's tree, holds no host lock
+  or output pipe, and exits once its leader is gone and two snapshots find it
+  alone. Before exiting it renames its record to `retired-*` under the
+  registration gate, so reuse of that group number cannot block cleanup.
+  Retirement records include the original leader start time; a new registration
+  clears stale retirement and reuses an existing live holder when possible.
+  It checks once a second, checking group membership every two seconds after the leader goes. It also exits if the reaper dies, with
+  a start-time check every 30 seconds.
+  Only a live matching anchor permits the final group kill; separate sessions
+  need their descriptor or captured ancestry. The macOS descriptor probe avoids
+  filesystem stats and has a two-second timeout. A failed probe still allows
+  registered work to stop but prevents unlocking. Same-user processes that
+  hide their descriptors cannot be attributed after losing their ancestry.
+  Every descriptor scan must also find the reaper's own close-on-exec control
+  descriptor before it can declare cleanup complete. If an anchor disappears
+  while its group is still active, cleanup keeps the locks rather than guess
+  who owns that group.
+  A cleanup still blocked after 30 seconds
+  records its process IDs in `~/.cache/threadbear-check/perf-cleanup.log`
   and keeps the locks until the work stops. With `remote.sh --perf`, the shared warm
   target is `~/.cache/threadbear-check/gpui/perf-target`, kept out of ordinary
   cache eviction; other builds keep their own target. Source/target `.in-use`
