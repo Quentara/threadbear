@@ -321,6 +321,9 @@ test('a tb land waiting its turn, or on its check on another machine, is left al
   h.clock.advance(5 * MIN);
   await jobs.sweep();
   assert.equal(nudges(h, thread.id).length, 1);
+  // Its own landing is what's stuck: nothing tells the agent to leave it.
+  assert.match(nudges(h, thread.id)[0], /- Land it \(shell/);
+  assert.doesNotMatch(nudges(h, thread.id)[0], /Leave it running/);
 });
 
 const LAND = 'node /Users/m/Library/Application Support/Threadbear/runner/releases/20261113T003928Z-99ce1163/bin/tb land';
@@ -417,13 +420,13 @@ test('which command lines are a landing', () => {
     'node /Users/m5-mike/Library/Application Support/Threadbear/runner/releases/20261113T003928Z-99ce1163/bin/tb land',
     'node ./runner/bin/tb land',
     'node runner/bin/tb land',
-    '/Users/m/.nvm/versions/node/v26.12.1/bin/node /x/bin/tb land --dry-run',
+    '/opt/homebrew/bin/node /x/bin/tb land --dry-run',
     'node /x/bin/tb --despite-red land',
     'node --no-warnings /x/bin/tb land',
     'node tb land',
     // Node's own path with a space in it.
     '/Users/m/My Tools/bin/node /x/runner/bin/tb land',
-  ]) assert.equal(isLanding(line), true, line);
+  ]) assert.equal(isLanding(line, () => false), true, line);
   for (const line of [
     // Another tb command, or none.
     'node /x/bin/tb status',
@@ -442,5 +445,16 @@ test('which command lines are a landing', () => {
     'node /x/other.mjs /y/bin/tb land',
     'node /x/bin/tbx land',
     'sleep 3600',
-  ]) assert.equal(isLanding(line), false, line);
+    // Node's attached spellings of inline code (Codex's second look).
+    "node -esetInterval(()=>{},1000) /x/bin/tb land",
+    'node -pe1 /x/bin/tb land',
+    'node --eval=1 /x/bin/tb land',
+  ]) assert.equal(isLanding(line, () => false), false, line);
+  // A first word that's a program by itself runs the rest as its arguments:
+  // bash running a script called node isn't node. A path with a space in it
+  // has no file at its first word.
+  const files = (p: string) => p === '/bin/bash';
+  assert.equal(isLanding('/bin/bash /tmp/node /tmp/tb land', files), false);
+  assert.equal(isLanding('/Users/m/My Tools/bin/node /x/runner/bin/tb land', files), true);
+  assert.equal(isLanding('/bin/bash /tmp/node /tmp/tb land'), false, 'on the real disk');
 });

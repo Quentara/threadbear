@@ -118,16 +118,28 @@ export const LAND_WAIT_MS = 3 * 60 * 60_000;
 // before it is a script of its own (node other.mjs "x/tb land"). A script
 // with no extension and such arguments can't be told from a path with a
 // space; all it would get is the same three hours.
-export function isLanding(commandLine: string): boolean {
+const isFileOnDisk = (p: string): boolean => {
+  try {
+    return fs.statSync(p).isFile();
+  } catch {
+    return false;
+  }
+};
+
+export function isLanding(commandLine: string, isFile: (path: string) => boolean = isFileOnDisk): boolean {
   const words = commandLine.trim().split(/\s+/);
   // Node's own path can have a space too (/Users/m/My Tools/bin/node): the
   // words up to the first that ends in /node, when the line starts with a
   // path and none of them is a flag.
   const node = words.findIndex((w) => /(^|\/)node$/.test(w));
-  if (node < 0 || (node > 0 && (!words[0].startsWith('/') || words.slice(0, node).some((w) => w.startsWith('-'))))) return false;
+  // And not when the first word is a program by itself, which makes the
+  // rest its arguments: `/bin/bash /tmp/node /tmp/tb land` is bash running
+  // a script that happens to be called node (Codex's second look, 13 Nov).
+  if (node < 0 || (node > 0 && (!words[0].startsWith('/') || isFile(words[0]) || words.slice(0, node).some((w) => w.startsWith('-'))))) return false;
   const first = words.findIndex((w, i) => i > node && !w.startsWith('-'));
   if (first < 0) return false;
-  if (words.slice(node + 1, first).some((w) => /^(-e|-p|--eval|--print)(=|$)/.test(w))) return false;
+  // Inline code in any of node's spellings, -eCODE included.
+  if (words.slice(node + 1, first).some((w) => /^(-[ep]|--eval\b|--print\b)/.test(w))) return false;
   const script = words.findIndex((w, i) => i >= first && /(^|\/)tb$/.test(w));
   if (script < 0) return false;
   if (words.slice(first, script).some((w) => w.startsWith('-') || /\.[cm]?[jt]s$/.test(w))) return false;
@@ -294,7 +306,9 @@ export class StuckJobs {
           if (before === undefined || shell.cpuSeconds - before >= IDLE_CPU_SECONDS) continue;
           commands = shell.commands;
         }
-        const landing = (shells.get(sessionId) ?? []).some((sh) => landingStarted(sh.processes ?? []) !== undefined);
+        // Another shell's, never this one's own: a landing past its three
+        // hours is the job being told about, and mustn't be told to stay.
+        const landing = (shells.get(sessionId) ?? []).some((sh) => sh.taskId !== task.id && landingStarted(sh.processes ?? []) !== undefined);
         const l = stuck.get(thread.threadId) ?? [];
         l.push({ task, minutes, commands, ...(landing ? { landing } : {}) });
         stuck.set(thread.threadId, l);
