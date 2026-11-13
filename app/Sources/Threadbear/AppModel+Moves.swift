@@ -142,7 +142,7 @@ extension AppModel {
         Task { [self] in
             guard let list = try? await client.listThreads(include: [.inbox, .snoozed, .archived]),
                   let arrived = list.first(where: { $0.id == threadId }),
-                  madeRemote.contains(threadId) else { return }
+                  threads[threadId]?.isRemote == true else { return }
             madeRemote.remove(threadId)
             if let session = sessions.removeValue(forKey: threadId) { session.unsubscribe() }
             arrivedHere = [threadId]

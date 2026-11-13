@@ -1124,6 +1124,10 @@ async function main(): Promise<void> {
     port: cfg.port,
     token,
     runner,
+    relayMoving: (id) => {
+      const m = remoteMoving.get(id);
+      return Boolean(m && m.until >= Date.now() && m.moving.state !== 'failed' && m.moving.state !== 'cancelled');
+    },
     log,
     clis: updates,
     methods,

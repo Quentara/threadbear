@@ -305,7 +305,9 @@ impl Threadbear {
         }
         self.projects.decision_sends.insert(thread.clone(), DecisionSend { asks_seq: seq, answers: words });
         cx.notify();
-        let mut params = json!({ "threadId": thread, "text": text });
+        // The runner it's shown on, as the composer's send says it (thread.rs, Daybreak 113).
+        let runner_id = self.threads.get(&thread).and_then(|t| t.runner_id.clone());
+        let mut params = json!({ "threadId": thread, "text": text, "runnerId": runner_id });
         if !images.is_empty() {
             params["images"] = json!(images.iter().map(crate::composer::image_ref_json).collect::<Vec<_>>());
         }

@@ -825,7 +825,8 @@ test('a send naming the runner it is shown on never reaches another', async () =
     listFolder: async () => ({}),
     logins: async () => ({}),
   };
-  const { h, server, url } = await serve({ relay });
+  let moving = false;
+  const { h, server, url } = await serve({ relay, relayMoving: (id) => moving && id === 'moving' });
   const c = await RunnerClient.connect(url, TOKEN);
   try {
     const refused = async (params: Record<string, unknown>, method = 'threads.send') => {
@@ -851,8 +852,16 @@ test('a send naming the runner it is shown on never reaches another', async () =
     const { thread } = h.runner.create({ text: 'Local', accountId: 'claude-3' });
     assert.equal(await refused({ threadId: thread.id, text: 'x', runnerId: 'runner_secondary' }), -32031);
     await c.call('threads.send', { threadId: thread.id, text: 'mine', runnerId: null });
-    // An older app says nothing, and its send is routed as before.
+    // An older app says nothing, and its send is routed as before...
     await c.call('threads.send', { threadId: 'moving', text: 'old app' });
     assert.deepEqual(relayed.map((r) => r.text), ['hello', 'old app']);
+    // ...except while a move is under way, when it may have shown the
+    // thread as already here (Codex's review): refused, nothing relayed.
+    moving = true;
+    assert.equal(await refused({ threadId: 'moving', text: 'SENSITIVE from an old app' }), -32031);
+    assert.equal(await refused({ threadId: 'moving', seq: 3, text: 'SENSITIVE' }, 'threads.edit'), -32031);
+    assert.deepEqual(relayed.map((r) => r.text), ['hello', 'old app']);
+    // This Mac's own threads are never held up by it.
+    await c.call('threads.send', { threadId: thread.id, text: 'still mine' });
   } finally { c.close(); await server.close(); }
 });

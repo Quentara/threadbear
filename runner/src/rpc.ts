@@ -151,6 +151,10 @@ export type RpcServerOptions = {
   // Other runners' threads, through the backend (relay.ts). Without it, or
   // for a thread it doesn't own, they're unknown here as before.
   relay?: RelayHandler;
+  // Whether this runner knows of a move under way for another runner's
+  // thread (main.ts remoteMoving). A relayed send or edit that doesn't say
+  // which runner it's shown on is refused meanwhile (mustReachShown).
+  relayMoving?: (threadId: string) => boolean;
   // hello's `updates` (docs/protocol.md, "Runner updates").
   updates?: () => unknown;
   // The Mac app's hello with its build (docs/protocol.md, "App restarts").
@@ -531,8 +535,20 @@ export class RpcServer {
   }
 
   /** Throws unless a request about `tid` reaches the runner the client
-   * shows it on, `shown` (null for this Mac's own). */
+   * shows it on, `shown` (null for this Mac's own; undefined when it
+   * doesn't say). */
   private mustReachShown(tid: string, shown: unknown): void {
+    if (shown === undefined) {
+      // An older client (or tb) doesn't say. It can't have been shown where
+      // a moving thread is, as the apps before this took a move as arrived
+      // the moment its old runner let it go: while one is under way, a
+      // relayed message waits until the move is done (Codex's review).
+      const r = this.opts.runner;
+      if (!r.has(tid) && this.opts.remote?.owns(tid) !== true && this.opts.relay?.owns(tid) && this.opts.relayMoving?.(tid)) {
+        throw new RpcError(ErrorCode.notShownThere, "That thread is moving to another runner, so this wasn't sent. Send it again once it's there.");
+      }
+      return;
+    }
     if (shown !== null && (typeof shown !== 'string' || !shown)) throw bad('runnerId must be a runner id or null');
     // A new release taking over this Mac's threads (a handover) is still this Mac.
     const here = this.opts.runner.has(tid) || this.opts.remote?.owns(tid) === true;
@@ -567,7 +583,7 @@ export class RpcServer {
     // edit that would reach another is refused rather than passed on
     // (Daybreak 113). Only here on the primary: a draining runner answers
     // -32030 for one it let go, which the primary acts on.
-    if (tid !== undefined && SHOWN_ON_METHODS.has(method) && p.runnerId !== undefined && !this.opts.onlyOwn) this.mustReachShown(tid, p.runnerId);
+    if (tid !== undefined && SHOWN_ON_METHODS.has(method) && !this.opts.onlyOwn) this.mustReachShown(tid, p.runnerId);
     if (tid !== undefined && THREAD_METHODS.has(method) && !r.has(tid)) {
       if (this.opts.remote?.owns(tid)) return this.forward(conn, method, p, tid);
       if (this.opts.onlyOwn) throw new RpcError(ErrorCode.moved, 'This runner has handed that thread over to the new one.');

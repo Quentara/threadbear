@@ -1160,11 +1160,13 @@ impl Threadbear {
         self.continuing_refusal = Some(thread.clone());
         cx.notify();
         let client = self.client.clone();
+        // The runner it's shown on, as every send says it (thread.rs, Daybreak 113).
+        let runner_id = self.threads.get(&thread).and_then(|t| t.runner_id.clone());
         let params = json!({ "threadId": thread, "accountId": account, "model": REFUSAL_MODEL });
         cx.spawn(async move |this, cx| {
             let moved = call(client.clone(), "threads.update", params).await;
             let sent = match &moved {
-                Ok(v) if v["thread"]["provider"] == "codex" => call(client, "threads.send", json!({ "threadId": thread, "text": REFUSAL_CONTINUATION })).await.map(|_| ()),
+                Ok(v) if v["thread"]["provider"] == "codex" => call(client, "threads.send", json!({ "threadId": thread, "text": REFUSAL_CONTINUATION, "runnerId": runner_id })).await.map(|_| ()),
                 Ok(_) => Err(threadbear_client::runner::RpcError { code: -1, message: "Codex Sol is no longer available. Choose a model to carry on.".into(), data: None }),
                 Err(e) => Err(e.clone()),
             };
