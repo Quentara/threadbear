@@ -85,11 +85,43 @@ if [ "${1:-}" = "--on-host" ]; then
   umask 022
   mkdir -p "$TMPDIR"
   mv "$base/runs/$id" "$src" || { echo "The copy for run $id isn't on $(hostname -s)." >&2; exit 1; }
+  # Processes still working in this run's temp folder when it ends: a test
+  # that timed out or failed partway can leave a child behind, and with its
+  # parent gone it goes to launchd and stays. Six `tb land`s from landing
+  # tests sat on Tinker Desk for days, waiting on a check nobody released
+  # (7 to 14 Nov), and kept it from ever looking idle. Found by working
+  # directory: /proc on Linux, lsof on macOS.
+  left_in_tmp() {
+    local dir
+    dir="$(cd "$TMPDIR" 2>/dev/null && pwd -P)" || return 0
+    if [ -d /proc/self ]; then
+      local p c
+      for p in /proc/[0-9]*; do
+        c="$(readlink "$p/cwd" 2>/dev/null)" || continue
+        case "$c" in "$dir" | "$dir"/*) echo "${p#/proc/}" ;; esac
+      done
+    else
+      lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null | awk -v d="$dir" '
+        /^p/ { pid = substr($0, 2) }
+        /^n/ { n = substr($0, 2); if (n == d || index(n, d "/") == 1) print pid }'
+    fi | grep -vx "$$"
+  }
+  stop_left_in_tmp() {
+    local pids
+    pids="$(left_in_tmp | tr '\n' ' ')"
+    [ -n "${pids// /}" ] || return 0
+    kill $pids 2>/dev/null
+    sleep 1
+    pids="$(left_in_tmp | tr '\n' ' ')"
+    [ -z "${pids// /}" ] || kill -9 $pids 2>/dev/null
+  }
+
   # A failed check keeps its logs in $TMPDIR; they move aside for this
   # Mac to fetch, and everything else goes.
   keep_logs() {
     local rc=$?
     cd "$base" || return
+    stop_left_in_tmp
     # A failed run's free space, before its temp files go: if they're what
     # filled the disk, it'd look fine by the time this Mac asks (Codex's
     # review). The Mac falls back to asking if a full disk stops this write.

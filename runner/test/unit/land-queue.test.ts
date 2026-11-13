@@ -8,13 +8,13 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { land, landTargetFromGit, type LandTarget } from '../../src/worktrees.ts';
 import { joinQueue, leaveQueue, queueDir, readRunning, setRunning, waiting, waitingLine, writeEntry } from '../../src/land-queue.ts';
-import { capture, commit, makeBranch, makeRepo, sh, until, wrapGit, write } from '../helpers/worktrees-harness.ts';
+import { capture, commit, holdUntil, makeBranch, makeRepo, sh, until, wrapGit, write } from '../helpers/worktrees-harness.ts';
 
 // A check that writes down which of the files it saw, and holds the first
 // landing (a.txt alone) until the test lets it go, so the rest queue up.
 function slowCheck(root: string, failIf = 'never-there.txt'): string {
   return `ls *.txt | tr '\\n' ' ' >> '${root}/checks'; echo >> '${root}/checks'; ` +
-    `if test -f a.txt && ! test -f b.txt; then touch '${root}/checking'; while ! test -f '${root}/release'; do sleep 0.05; done; fi; ` +
+    `if test -f a.txt && ! test -f b.txt; then touch '${root}/checking'; ${holdUntil(`${root}/release`)}; fi; ` +
     `! test -f ${failIf}`;
 }
 
@@ -75,7 +75,7 @@ test('a real group check records every entry id and identifies each member as be
   const [a, b, c] = branches(main, ['a', 'b', 'c']);
   const common = path.join(main, '.git');
   const check = `${slowCheck(root)}; if test -f b.txt; then touch '${root}/group-checking'; ` +
-    `while ! test -f '${root}/group-release'; do sleep 0.05; done; fi`;
+    `${holdUntil(`${root}/group-release`)}; fi`;
   const first = land({ ...a, check }, capture().opts);
   const caps = [capture(), capture()];
   const rest: Promise<number>[] = [];
@@ -347,7 +347,7 @@ test('a commit made in the holder while its group check runs is carried onto its
   const [a, b, c] = branches(main, ['a', 'b', 'c']);
   // The group (b and c together) fails, after saying where it runs.
   const check = `${slowCheck(root)}; if test -f b.txt && test -f c.txt; then pwd > '${root}/holder'; ` +
-    `while ! test -f '${root}/group-release'; do sleep 0.05; done; exit 2; fi`;
+    `${holdUntil(`${root}/group-release`)}; exit 2; fi`;
   const first = land({ ...a, check }, capture().opts);
   await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
   const caps = [capture(), capture()];
@@ -568,7 +568,7 @@ async function killedDuringGroupCheck(sameSecond: boolean) {
   // An empty commit on purpose too: once landed for it, its branch has to
   // be moved, or its next tb land would land that one again.
   sh(c.path, 'git commit -q --allow-empty -m "Empty on c"');
-  const cmd = `touch '${root}/held'; while ! test -f '${root}/drop'; do sleep 0.05; done`;
+  const cmd = `touch '${root}/held'; ${holdUntil(`${root}/drop`)}`;
   const lockFile = path.join(queueDir(common), `${e.id}.lock`);
   // Says it's gone once the lock is let go, which the check waits for.
   const wrapper = process.platform === 'darwin'
@@ -578,7 +578,7 @@ async function killedDuringGroupCheck(sameSecond: boolean) {
   holder.on('error', () => {});
   const gone = new Promise((r) => holder.once('close', r));
   await until(() => fs.existsSync(path.join(root, 'held')), "c's stand-in holding its lock");
-  const check = `if test -f c.txt; then touch '${root}/drop'; while ! test -f '${root}/released'; do sleep 0.05; done; fi`;
+  const check = `if test -f c.txt; then touch '${root}/drop'; ${holdUntil(`${root}/released`)}; fi`;
   // The entry asks for the same check as b's, for c's commits as they are.
   fs.writeFileSync(path.join(queueDir(common), `${e.id}.json`), JSON.stringify({ ...e, commit: sh(c.path, 'git rev-parse HEAD'), check }));
   const asked = sh(c.path, 'git rev-parse HEAD');

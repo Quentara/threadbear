@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 import { tmpDir } from '../helpers/fakes.ts';
+import { holdUntil } from '../helpers/patience.ts';
 
 const SCRIPT = path.join(import.meta.dirname, '..', '..', '..', 'scripts', 'sync-main.sh');
 const env = { ...process.env, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1', GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@t' };
@@ -27,7 +28,7 @@ function repos() {
 // Holds the landing lock, as a landing's check would, until `release` exists.
 function holdLock(root: string, main: string) {
   const lock = path.join(main, '.git', 'threadbear-land.lock');
-  const wait = `touch '${root}/held'; while ! test -f '${root}/release'; do sleep 0.05; done`;
+  const wait = `touch '${root}/held'; ${holdUntil(`${root}/release`)}`;
   const p = process.platform === 'darwin'
     ? spawn('/usr/bin/lockf', ['-k', lock, '/bin/sh', '-c', wait], { stdio: 'ignore' })
     : spawn('flock', ['-x', lock, '/bin/sh', '-c', wait], { stdio: 'ignore' });

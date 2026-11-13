@@ -8,7 +8,7 @@ import { spawnSync } from 'node:child_process';
 import { GiB, SCRIPT, macDf, setup, shortHome } from '../helpers/check-remote-harness.ts';
 
 // THREADBEAR_NODE: find-node.sh finds the Node nvm installed in its home.
-function onHost(checkExit: number, df: string, opts: { hang?: boolean; env?: Record<string, string> } = {}) {
+function onHost(checkExit: number, df: string, opts: { hang?: boolean; leave?: string; env?: Record<string, string> } = {}) {
   const home = shortHome();
   const base = path.join(home, '.cache', 'threadbear-check');
   const copy = path.join(base, 'runs', '1-1-0');
@@ -17,7 +17,7 @@ function onHost(checkExit: number, df: string, opts: { hang?: boolean; env?: Rec
   fs.copyFileSync(path.join(path.dirname(SCRIPT), 'limit-step.mjs'), path.join(copy, 'scripts', 'limit-step.mjs'));
   fs.mkdirSync(path.join(copy, 'runner', 'scripts'), { recursive: true });
   fs.copyFileSync(path.join(path.dirname(SCRIPT), '..', 'runner', 'scripts', 'find-node.sh'), path.join(copy, 'runner', 'scripts', 'find-node.sh'));
-  fs.writeFileSync(path.join(copy, 'check.sh'), `#!/bin/bash\necho made >"$TMPDIR/big"\n${opts.hang ? 'sleep 60\n' : ''}exit ${checkExit}\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(copy, 'check.sh'), `#!/bin/bash\necho made >"$TMPDIR/big"\n${opts.hang ? 'sleep 60\n' : ''}${opts.leave ? `mkdir -p "$TMPDIR/wt"; (cd "$TMPDIR/wt" && exec sleep 300) >/dev/null 2>&1 </dev/null &\necho $! >'${opts.leave}'\n` : ''}exit ${checkExit}\n`, { mode: 0o755 });
   const nodeBin = path.join(home, '.nvm', 'versions', 'node', 'v24.0.0', 'bin');
   fs.mkdirSync(nodeBin, { recursive: true });
   fs.symlinkSync(process.execPath, path.join(nodeBin, 'node'));
@@ -43,6 +43,17 @@ test('--on-host records nothing when the run passed', () => {
   const { r, kept } = onHost(0, macDf(GiB));
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.ok(!fs.existsSync(kept));
+});
+
+// A test that timed out left a `tb land` in its temp worktree, and with the
+// run gone it sat on Tinker Desk for days (7 to 14 Nov).
+test('--on-host stops what the run left working in its temp folder', () => {
+  const pidFile = path.join(shortHome(), 'left.pid');
+  const { r } = onHost(0, macDf(100 * GiB), { leave: pidFile });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const pid = Number(fs.readFileSync(pidFile, 'utf8'));
+  assert.ok(pid > 0);
+  assert.throws(() => process.kill(pid, 0), /ESRCH/, 'the left process is gone');
 });
 
 // A host that stops answering partway: 8 Nov, Tinker Desk stopped taking ssh
