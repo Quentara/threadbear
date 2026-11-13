@@ -21,8 +21,9 @@
 #                 tests, when they changed (below)
 #   --quick       runner typecheck and unit tests (about a minute), plus
 #                 the Swift Mac app's release build when it changed,
-#                 and the desktop app's core and client tests when
-#                 desktop/ changed
+#                 the desktop app's core and client tests when
+#                 desktop/ changed, and the public site's build (site/)
+#                 when it or the guide changed
 #   --runner      only the runner's typecheck and unit tests, nothing else
 #                 that --quick adds (Convex, web, app tools, iPhone kit), on
 #                 main too: the runner's self-update runs this (deploy.mjs),
