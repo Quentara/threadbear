@@ -82,7 +82,7 @@ impl AnythingBox {
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(rules::PROMPT));
         let typing = cx.subscribe(&input, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
-                this.search(cx);
+                this.typed(cx);
             }
         });
         let app_changed = cx.observe(app, |this, _, cx| this.app_changed(cx));
@@ -107,6 +107,16 @@ impl AnythingBox {
         self.input.read(cx).value().to_string()
     }
 
+    /// The words changed: the pick goes back to the first match (any edit
+    /// does, so typing a letter and taking it out again before its search is
+    /// back can't leave an older pick on), and the new words are searched.
+    fn typed(&mut self, cx: &mut Context<Self>) {
+        self.selected = None;
+        self.scroll.scroll_to_item(0);
+        self.search(cx);
+        cx.notify();
+    }
+
     /// The words changed: match them on a background thread, and show what
     /// matched when it's back, unless newer words have taken its place.
     fn search(&mut self, cx: &mut Context<Self>) {
@@ -124,13 +134,9 @@ impl AnythingBox {
         }));
     }
 
+    /// What matched, kept. The pick stays as it is: `typed` reset it when
+    /// the words changed, and a list made again for the same words keeps it.
     fn show(&mut self, query: String, groups: Vec<Group>) {
-        // New words put the pick back on the first match; the same words
-        // (the list made again) keep it.
-        if query != self.matched {
-            self.selected = None;
-            self.scroll.scroll_to_item(0);
-        }
         self.groups = Arc::new(groups);
         self.matched = query;
     }
@@ -538,14 +544,14 @@ impl Threadbear {
     #[cfg(feature = "automation")]
     pub(crate) fn open_anything_dump(&self, cx: &App) -> Value {
         let Some(open) = &self.anything else { return Value::Null };
-        // As a person would see it once the search has caught up.
+        // What the box is showing, so a spec waits for the search to come
+        // back rather than reading matches worked out here.
         let b = open.view.read(cx);
-        let query = b.query(cx);
-        let groups = if query == b.matched { b.groups.clone() } else { Arc::new(b.catalog.groups(&query, &b.recent)) };
-        let picked = rules::picked(&groups, if query == b.matched { b.selected.as_deref() } else { None });
+        let picked = rules::picked(&b.groups, b.selected.as_deref());
         json!({
-            "query": query,
-            "groups": groups.iter().map(|g| json!({ "title": g.title, "items": g.items.iter().map(|i| line(i)).collect::<Vec<_>>() })).collect::<Vec<_>>(),
+            "query": b.query(cx),
+            "matched": b.matched,
+            "groups": b.groups.iter().map(|g| json!({ "title": g.title, "items": g.items.iter().map(|i| line(i)).collect::<Vec<_>>() })).collect::<Vec<_>>(),
             "picked": picked.map(|i| i.title.clone()),
             "recent": self.anything_recent,
         })
@@ -610,8 +616,11 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
         }
     }
     if let Some(text) = cmd["text"].as_str() {
-        let input = app.read(cx).anything.as_ref().map(|o| o.view.read(cx).input.clone()).ok_or("the box isn't up")?;
+        let view = app.read(cx).anything.as_ref().map(|o| o.view.clone()).ok_or("the box isn't up")?;
+        let input = view.read(cx).input.clone();
         input.update(cx, |s, cx| s.set_value(text.to_owned(), window, cx));
+        // set_value doesn't say Change, as a person's typing does.
+        view.update(cx, |b, cx| b.typed(cx));
     }
     if let Some(title) = cmd["pick"].as_str() {
         let view = app.read(cx).anything.as_ref().map(|o| o.view.clone()).ok_or("the box isn't up")?;
