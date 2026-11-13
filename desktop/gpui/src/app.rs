@@ -1603,7 +1603,7 @@ impl Render for Threadbear {
             crate::media_view::sweeper(window, crate::media_view::Cover { everything, menus })
         };
         // Last: every press in the window, for the activity log (tips.rs).
-        let anything = self.render_open_anything(window, cx);
+        let anything = self.render_open_anything();
         self.render_shell(window, cx).children(open_menu).children(anything).child(pages).child(media).child(crate::tips::window_presses())
     }
 }

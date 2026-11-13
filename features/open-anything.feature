@@ -60,3 +60,16 @@ Feature: Open Anything
     Then the box's pick is "Add dark mode to the dashboard"
     When I press ⌘Return in the Open Anything box
     Then "Add dark mode to the dashboard" is in a panel of its own, showing its transcript
+
+  # The box makes its list as it opens and searches it on a background
+  # thread, so a letter shows at once (Mike, 13 Nov: typing fast lagged). A
+  # thread that starts while it's up still shows: the list is made again
+  # shortly after the app changes.
+  @nav.openanything @swift-pending
+  Scenario: A thread that starts while the box is up shows in it
+    When I press "k" with "cmd"
+    And I type "zebra crossing" in the Open Anything box
+    And there's a thread called "Paint the zebra crossing" with the id "thread_zebra"
+    Then the box lists the thread "Paint the zebra crossing"
+    When I press Return in the Open Anything box
+    Then the open thread is "Paint the zebra crossing"

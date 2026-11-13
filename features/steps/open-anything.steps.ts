@@ -36,3 +36,7 @@ Then("the box's pick is {string}", async function (this: ThreadbearWorld, title:
 Then("the box's first thread is {string}, archived", async function (this: ThreadbearWorld, title: string) {
   await this.until(`${title} first under Threads, archived`, (d) => d.anything?.groups.find((g) => g.title === 'Threads')?.items[0]?.startsWith(`${title} | archived · `));
 });
+
+Then('the box lists the thread {string}', async function (this: ThreadbearWorld, title: string) {
+  await this.until(`"${title}" under Threads`, (d) => d.anything?.groups.find((g) => g.title === 'Threads')?.items.some((i) => i === title || i.startsWith(`${title} | `)));
+});

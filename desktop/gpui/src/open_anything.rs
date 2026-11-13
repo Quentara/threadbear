@@ -9,6 +9,16 @@
 // and the list scrolls to keep the pick in sight. It's a deferred layer on the
 // main window rather than a window of its own, over the web panels' pages,
 // which go out of sight while it's up (`web_panels::sweeper`).
+//
+// The box is a view of its own (`AnythingBox`) so a letter typed redraws
+// only the box: when it was part of the app's own view, every letter told
+// the whole app it had changed, and the threads list, the transcript and the
+// side pane (which follow the app) drew again before the letter showed.
+// The list it searches (`Catalog`) is made once as the box opens and again
+// at most every 400 ms while the app changes under it, and each search runs
+// on a background thread; the letter shows straight away and the matches a
+// moment after (Mike, 13 Nov: "if I type lots of letters in rapid
+// succession, there's a noticeable lag").
 use crate::app::Threadbear;
 use crate::shell::{self, Command};
 use crate::style::{self, size};
@@ -21,6 +31,8 @@ use gpui_kit::*;
 // Shadows gpui's px, so sizes here follow the app's zoom (style.rs).
 use crate::style::px;
 use serde_json::{json, Value};
+use std::sync::Arc;
+use std::time::Duration;
 use threadbear_core::open_anything::{self as rules, Catalog, Group, Item, Kind, Page, PageEntry, Target};
 use threadbear_core::shortcuts::ShortcutCommand;
 use threadbear_dock::{DockDrop, DockEdge};
@@ -32,16 +44,160 @@ const TOP_SHARE: f32 = 0.17;
 const ROW_HEIGHT: f32 = 28.;
 const CORNER: f32 = 12.;
 
-/// The box while it's up.
+/// The box while it's up, as the app keeps it.
 pub(crate) struct OpenAnything {
-    pub(crate) input: Entity<InputState>,
-    /// The pick's key; none is the first entry.
-    pub(crate) selected: Option<String>,
-    scroll: ScrollHandle,
+    pub(crate) view: Entity<AnythingBox>,
     /// What had the keyboard before, given back when it closes with nothing
     /// opened (Esc, a click outside).
     before: Option<FocusHandle>,
+}
+
+/// How long the app has to have changed before the box's list is made again
+/// from it: often enough that a thread started meanwhile shows, rarely
+/// enough that a streaming reply doesn't keep it busy.
+const REBUILD_EVERY: Duration = Duration::from_millis(400);
+
+/// The box itself: what's typed, the list it searches and what matched.
+pub(crate) struct AnythingBox {
+    app: WeakEntity<Threadbear>,
+    pub(crate) input: Entity<InputState>,
+    /// The pick's key; none is the first entry.
+    selected: Option<String>,
+    scroll: ScrollHandle,
+    catalog: Arc<Catalog>,
+    /// Recent as it was when the box opened: opening anything closes it.
+    recent: Arc<Vec<String>>,
+    groups: Arc<Vec<Group>>,
+    /// The words `groups` are for; the box may hold newer ones for a moment.
+    matched: String,
+    /// The search under way; a newer one drops it.
+    searching: Option<Task<()>>,
+    rebuilding: Option<Task<()>>,
     _typing: Subscription,
+    _app_changed: Subscription,
+}
+
+impl AnythingBox {
+    fn new(app: &Entity<Threadbear>, catalog: Catalog, recent: Vec<String>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let input = cx.new(|cx| InputState::new(window, cx).placeholder(rules::PROMPT));
+        let typing = cx.subscribe(&input, |this, _, ev: &InputEvent, cx| {
+            if matches!(ev, InputEvent::Change) {
+                this.search(cx);
+            }
+        });
+        let app_changed = cx.observe(app, |this, _, cx| this.app_changed(cx));
+        let groups = catalog.groups("", &recent);
+        Self {
+            app: app.downgrade(),
+            input,
+            selected: None,
+            scroll: ScrollHandle::new(),
+            catalog: Arc::new(catalog),
+            recent: Arc::new(recent),
+            groups: Arc::new(groups),
+            matched: String::new(),
+            searching: None,
+            rebuilding: None,
+            _typing: typing,
+            _app_changed: app_changed,
+        }
+    }
+
+    fn query(&self, cx: &App) -> String {
+        self.input.read(cx).value().to_string()
+    }
+
+    /// The words changed: match them on a background thread, and show what
+    /// matched when it's back, unless newer words have taken its place.
+    fn search(&mut self, cx: &mut Context<Self>) {
+        let query = self.query(cx);
+        let (catalog, recent, words) = (self.catalog.clone(), self.recent.clone(), query.clone());
+        let working = cx.background_executor().spawn(async move { catalog.groups(&words, &recent) });
+        // Replacing the task drops the one before, and its search with it.
+        self.searching = Some(cx.spawn(async move |this, cx| {
+            let groups = working.await;
+            let _ = this.update(cx, |this, cx| {
+                this.searching = None;
+                this.show(query, groups);
+                cx.notify();
+            });
+        }));
+    }
+
+    fn show(&mut self, query: String, groups: Vec<Group>) {
+        // New words put the pick back on the first match; the same words
+        // (the list made again) keep it.
+        if query != self.matched {
+            self.selected = None;
+            self.scroll.scroll_to_item(0);
+        }
+        self.groups = Arc::new(groups);
+        self.matched = query;
+    }
+
+    /// The matches for what's in the box now, worked out here if the
+    /// background search hasn't caught up (Return straight after a letter).
+    fn groups_now(&mut self, cx: &App) -> Arc<Vec<Group>> {
+        let query = self.query(cx);
+        if query != self.matched {
+            self.searching = None;
+            let groups = self.catalog.groups(&query, &self.recent);
+            self.show(query, groups);
+        }
+        self.groups.clone()
+    }
+
+    /// The app changed (a thread came or went, a badge moved): the list is
+    /// made again from it shortly, and what's typed matched against that.
+    fn app_changed(&mut self, cx: &mut Context<Self>) {
+        if self.rebuilding.is_some() {
+            return;
+        }
+        self.rebuilding = Some(cx.spawn(async move |this, cx| {
+            cx.background_executor().timer(REBUILD_EVERY).await;
+            let _ = this.update(cx, |this, cx| {
+                this.rebuilding = None;
+                let Some(app) = this.app.upgrade() else { return };
+                this.catalog = Arc::new(app.read(cx).anything_catalog());
+                this.search(cx);
+            });
+        }));
+    }
+
+    /// ↑ and ↓ move the pick, stopping at the ends, and the list follows it.
+    fn step(&mut self, down: bool, cx: &mut Context<Self>) {
+        let groups = self.groups_now(cx);
+        self.selected = rules::step(&groups, self.selected.as_deref(), down);
+        if let Some(index) = row_index(&groups, self.selected.as_deref()) {
+            self.scroll.scroll_to_item(index);
+        }
+        cx.notify();
+    }
+
+    /// The pick as things stand, for Return and the automation's dump.
+    fn picked(&mut self, cx: &App) -> Option<Item> {
+        let groups = self.groups_now(cx);
+        rules::picked(&groups, self.selected.as_deref()).cloned()
+    }
+
+    /// Return (⌘Return for beside) on the pick.
+    fn enter(&mut self, beside: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(item) = self.picked(cx) {
+            self.open(item, beside, window, cx);
+        }
+    }
+
+    fn open(&mut self, item: Item, beside: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(app) = self.app.upgrade() {
+            app.update(cx, |t, cx| t.open_anything_item(item, beside, window, cx));
+        }
+    }
+
+    fn close(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(app) = self.app.upgrade() {
+            app.update(cx, |t, cx| t.close_open_anything(true, window, cx));
+        }
+    }
 }
 
 impl Threadbear {
@@ -51,21 +207,14 @@ impl Threadbear {
             self.close_open_anything(true, window, cx);
             return;
         }
-        let input = cx.new(|cx| InputState::new(window, cx).placeholder(rules::PROMPT));
-        // A new word puts the pick back on the first match.
-        let typing = cx.subscribe(&input, |this, _, ev: &InputEvent, cx| {
-            if matches!(ev, InputEvent::Change) {
-                if let Some(open) = &mut this.anything {
-                    open.selected = None;
-                    open.scroll.scroll_to_item(0);
-                }
-                cx.notify();
-            }
-        });
+        let app = cx.entity();
+        let (catalog, recent) = (self.anything_catalog(), self.anything_recent.clone());
+        let view = cx.new(|cx| AnythingBox::new(&app, catalog, recent, window, cx));
         let before = window.focused(cx);
+        let input = view.read(cx).input.clone();
         input.update(cx, |s, cx| s.focus(window, cx));
         crate::web_panels::keyboard_to_app(window);
-        self.anything = Some(OpenAnything { input, selected: None, scroll: ScrollHandle::new(), before, _typing: typing });
+        self.anything = Some(OpenAnything { view, before });
         cx.notify();
     }
 
@@ -107,34 +256,6 @@ impl Threadbear {
     fn anything_catalog(&self) -> Catalog {
         let tabs: Vec<(String, String)> = crate::settings_window::Tab::ALL.iter().map(|t| (t.name().to_owned(), t.title().to_owned())).collect();
         Catalog::new(self.threads.values(), &self.projects.list, self.anything_pages(), &tabs, &threadbear_core::sidebar::local_now())
-    }
-
-    /// What's listed for what's typed now.
-    fn anything_groups(&self, cx: &App) -> (Catalog, Vec<Group>) {
-        let query = self.anything.as_ref().map(|o| o.input.read(cx).value().to_string()).unwrap_or_default();
-        let catalog = self.anything_catalog();
-        let groups = catalog.groups(&query, &self.anything_recent);
-        (catalog, groups)
-    }
-
-    /// ↑ and ↓ move the pick, stopping at the ends, and the list follows it.
-    fn anything_step(&mut self, down: bool, cx: &mut Context<Self>) {
-        let (_, groups) = self.anything_groups(cx);
-        let Some(open) = &mut self.anything else { return };
-        open.selected = rules::step(&groups, open.selected.as_deref(), down);
-        if let Some(index) = row_index(&groups, open.selected.as_deref()) {
-            open.scroll.scroll_to_item(index);
-        }
-        cx.notify();
-    }
-
-    /// Return (⌘Return for beside) on the pick.
-    fn anything_enter(&mut self, beside: bool, window: &mut Window, cx: &mut Context<Self>) {
-        let (_, groups) = self.anything_groups(cx);
-        let picked = self.anything.as_ref().and_then(|o| rules::picked(&groups, o.selected.as_deref()).cloned());
-        if let Some(item) = picked {
-            self.open_anything_item(item, beside, window, cx);
-        }
     }
 
     /// Something picked: the box goes and the thing opens, straight away.
@@ -254,12 +375,17 @@ impl Threadbear {
         self.anything_panels_shown = showing;
     }
 
-    /// The box over the window, or None while it's down.
-    pub(crate) fn render_open_anything(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let open = self.anything.as_ref()?;
-        let (input, selected, scroll) = (open.input.clone(), open.selected.clone(), open.scroll.clone());
-        let (catalog, groups) = self.anything_groups(cx);
-        let picked = rules::picked(&groups, selected.as_deref()).map(|i| i.key.clone());
+    /// The box over the window, or None while it's down: the box's own view,
+    /// which draws itself.
+    pub(crate) fn render_open_anything(&mut self) -> Option<AnyElement> {
+        self.anything.as_ref().map(|open| open.view.clone().into_any_element())
+    }
+}
+
+impl Render for AnythingBox {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let (input, scroll, catalog, groups) = (self.input.clone(), self.scroll.clone(), self.catalog.clone(), self.groups.clone());
+        let picked = rules::picked(&groups, self.selected.as_deref()).map(|i| i.key.clone());
         let viewport = window.viewport_size();
         let zoom = style::zoomed(1.);
         let (window_w, window_h) = (f32::from(viewport.width) / zoom, f32::from(viewport.height) / zoom);
@@ -282,24 +408,24 @@ impl Threadbear {
             .border_color(hairline)
             .text_size(px(size::BODY + 1.))
             .capture_action(cx.listener(|this, _: &MoveUp, _, cx| {
-                this.anything_step(false, cx);
+                this.step(false, cx);
                 cx.stop_propagation();
             }))
             .capture_action(cx.listener(|this, _: &MoveDown, _, cx| {
-                this.anything_step(true, cx);
+                this.step(true, cx);
                 cx.stop_propagation();
             }))
             .capture_action(cx.listener(|this, action: &Enter, window, cx| {
-                this.anything_enter(action.secondary, window, cx);
+                this.enter(action.secondary, window, cx);
                 cx.stop_propagation();
             }))
             .capture_action(cx.listener(|this, _: &Escape, window, cx| {
-                this.close_open_anything(true, window, cx);
+                this.close(window, cx);
                 cx.stop_propagation();
             }))
             .child(Input::new(&input).appearance(false).pl(px(0.)).text_size(px(size::BODY + 1.)));
 
-        let list = self.render_anything_list(&catalog, &groups, picked.as_deref(), &scroll, list_max, cx);
+        let list = self.render_list(&catalog, &groups, picked.as_deref(), &scroll, list_max, cx);
         let footer = h_flex()
             .flex_none()
             .gap(px(18.))
@@ -327,29 +453,28 @@ impl Threadbear {
             .child(query_row)
             .child(list)
             .child(footer);
-        Some(
-            // Anchored at the window's corner, as the picture viewer's
-            // backdrop is: a bare absolute layer in a deferred element has
-            // nothing to sit in, and its dim never showed.
-            deferred(
-                anchored().position(point(gpui_kit::px(0.), gpui_kit::px(0.))).child(
-                    div()
-                        .id("open-anything-dim")
-                        .relative()
-                        .w(viewport.width)
-                        .h(viewport.height)
-                        .bg(dim)
-                        .occlude()
-                        .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close_open_anything(true, window, cx)))
-                        .child(div().absolute().top(px(top)).left_0().right_0().flex().justify_center().child(panel)),
-                ),
-            )
-            .with_priority(3)
-            .into_any_element(),
+        // Anchored at the window's corner, as the picture viewer's
+        // backdrop is: a bare absolute layer in a deferred element has
+        // nothing to sit in, and its dim never showed.
+        deferred(
+            anchored().position(point(gpui_kit::px(0.), gpui_kit::px(0.))).child(
+                div()
+                    .id("open-anything-dim")
+                    .relative()
+                    .w(viewport.width)
+                    .h(viewport.height)
+                    .bg(dim)
+                    .occlude()
+                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| this.close(window, cx)))
+                    .child(div().absolute().top(px(top)).left_0().right_0().flex().justify_center().child(panel)),
+            ),
         )
+        .with_priority(3)
     }
+}
 
-    fn render_anything_list(&mut self, catalog: &Catalog, groups: &[Group], picked: Option<&str>, scroll: &ScrollHandle, max: f32, cx: &mut Context<Self>) -> AnyElement {
+impl AnythingBox {
+    fn render_list(&mut self, catalog: &Catalog, groups: &[Group], picked: Option<&str>, scroll: &ScrollHandle, max: f32, cx: &mut Context<Self>) -> AnyElement {
         if groups.is_empty() {
             return div().px(px(16.)).py(px(14.)).text_size(px(size::LABEL)).text_color(style::secondary_text(cx)).child("Nothing by that name. Try fewer letters.").into_any_element();
         }
@@ -360,19 +485,22 @@ impl Threadbear {
             children.push(div().px(px(16.)).pt(px(10.)).pb(px(4.)).text_size(px(size::DETAIL)).font_weight(FontWeight::SEMIBOLD).text_color(style::secondary_text(cx)).child(group.title).into_any_element());
             for item in &group.items {
                 let on = picked == Some(item.key.as_str());
-                children.push(self.render_anything_row(catalog, item, on, cx));
+                children.push(self.render_row(catalog, item, on, cx));
             }
         }
         div().id("anything-list").flex_none().max_h(px(max)).pb(px(6.)).overflow_y_scroll().track_scroll(scroll).children(children).into_any_element()
     }
 
-    fn render_anything_row(&mut self, catalog: &Catalog, item: &Item, on: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn render_row(&mut self, catalog: &Catalog, item: &Item, on: bool, cx: &mut Context<Self>) -> AnyElement {
         // Grey, not the accent: Mike asked for a quiet pick.
         let (selected_fill, hover) = (style::primary_opacity(cx, 0.09), style::primary_opacity(cx, 0.05));
         let secondary = style::secondary_text(cx);
         let icon = match (&item.target, catalog.panel_thread(item.kept_key())) {
             (Target::Panel { id, .. }, Some(thread)) => match thread.panels().into_iter().find(|p| &p.id == id) {
-                Some(panel) => crate::patch_icons::panel_face(&panel, thread, &self.sidebar.project_icons, 12., 9., cx),
+                Some(panel) => match self.app.upgrade() {
+                    Some(app) => crate::patch_icons::panel_face(&panel, thread, &app.read(cx).sidebar.project_icons, 12., 9., cx),
+                    None => crate::patch_icons::glyph(item.symbol, 12., Some(secondary)),
+                },
                 None => crate::patch_icons::glyph(item.symbol, 12., Some(secondary)),
             },
             _ => crate::patch_icons::glyph(item.symbol, 12., Some(secondary)),
@@ -391,7 +519,7 @@ impl Threadbear {
             .when(on, |s| s.bg(selected_fill))
             .when(!on, |s| s.hover(move |s| s.bg(hover)))
             .tip(tip)
-            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| this.open_anything_item(picked.clone(), false, window, cx)))
+            .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| this.open(picked.clone(), false, window, cx)))
             .child(div().flex_none().size(px(20.)).rounded(px(5.)).flex().items_center().justify_center().bg(style::primary_opacity(cx, 0.07)).child(icon))
             .child(div().min_w_0().truncate().text_size(px(size::LABEL + 1.)).text_color(cx.theme().foreground).child(item.title.clone()))
             .children(item.badge.map(|n| {
@@ -402,15 +530,21 @@ impl Threadbear {
             .into_any_element()
     }
 
+}
+
+impl Threadbear {
     /// `dump`'s box, while it's up: what's typed, the groups and their
     /// entries as each line reads, and the pick.
     #[cfg(feature = "automation")]
     pub(crate) fn open_anything_dump(&self, cx: &App) -> Value {
         let Some(open) = &self.anything else { return Value::Null };
-        let (_, groups) = self.anything_groups(cx);
-        let picked = rules::picked(&groups, open.selected.as_deref());
+        // As a person would see it once the search has caught up.
+        let b = open.view.read(cx);
+        let query = b.query(cx);
+        let groups = if query == b.matched { b.groups.clone() } else { Arc::new(b.catalog.groups(&query, &b.recent)) };
+        let picked = rules::picked(&groups, if query == b.matched { b.selected.as_deref() } else { None });
         json!({
-            "query": open.input.read(cx).value().to_string(),
+            "query": query,
             "groups": groups.iter().map(|g| json!({ "title": g.title, "items": g.items.iter().map(|i| line(i)).collect::<Vec<_>>() })).collect::<Vec<_>>(),
             "picked": picked.map(|i| i.title.clone()),
             "recent": self.anything_recent,
@@ -476,15 +610,15 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
         }
     }
     if let Some(text) = cmd["text"].as_str() {
-        let input = app.read(cx).anything.as_ref().map(|o| o.input.clone()).ok_or("the box isn't up")?;
+        let input = app.read(cx).anything.as_ref().map(|o| o.view.read(cx).input.clone()).ok_or("the box isn't up")?;
         input.update(cx, |s, cx| s.set_value(text.to_owned(), window, cx));
     }
     if let Some(title) = cmd["pick"].as_str() {
-        let item = {
-            let t = app.read(cx);
-            let (_, groups) = t.anything_groups(cx);
+        let view = app.read(cx).anything.as_ref().map(|o| o.view.clone()).ok_or("the box isn't up")?;
+        let item = view.update(cx, |b, cx| {
+            let groups = b.groups_now(cx);
             rules::flat(&groups).into_iter().find(|i| i.title == title).cloned()
-        };
+        });
         let item = item.ok_or_else(|| format!("nothing called {title:?} in the box"))?;
         let beside = cmd["beside"].as_bool().unwrap_or(false);
         app.update(cx, |t, cx| t.open_anything_item(item, beside, window, cx));
