@@ -68,5 +68,10 @@ final class SignedAppTests: XCTestCase {
         let linked = try impostor(withIcon: false)
         try FileManager.default.createSymbolicLink(at: linked.appendingPathComponent("Contents/Resources/Multi.icns"), withDestinationURL: Self.multiIcns)
         XCTAssertNil(PatchImage.applicationIcon(linked.path), "a link to an icns outside the bundle")
+        let fifo = try impostor()
+        let plist = fifo.appendingPathComponent("Contents/Info.plist")
+        try FileManager.default.removeItem(at: plist)
+        XCTAssertEqual(mkfifo(plist.path, 0o600), 0)
+        XCTAssertNil(PatchImage.applicationIcon(fifo.path), "a FIFO for Info.plist, read without hanging")
     }
 }

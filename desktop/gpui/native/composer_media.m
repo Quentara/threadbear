@@ -78,7 +78,8 @@ static bool imageURL(NSPasteboardItem *item, NSUInteger *budget) {
   // can put in a drag. A regex here backtracked: 40 KB of `<img ` held the
   // app five seconds (Daybreak 120, 13 Nov 2026). Now it's a size check
   // before any copy, then one pass in Rust (html_tags.rs).
-  if (!html || html.length > *budget) { *budget = 0; return false; }
+  if (!html) return false;
+  if (html.length > *budget) { *budget = 0; return false; }
   *budget -= html.length;
   NSData *markup = [html dataUsingEncoding:NSUTF8StringEncoding];
   NSData *want = [text dataUsingEncoding:NSUTF8StringEncoding];

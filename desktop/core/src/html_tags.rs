@@ -215,7 +215,7 @@ mod drag_source {
     fn the_composer_drag_reads_html_only_through_the_one_pass_reader() {
         let source = include_str!("../../gpui/native/composer_media.m");
         assert!(!source.contains("NSRegularExpression"), "composer_media.m uses a regex again");
-        assert!(source.contains("if (!html || html.length > *budget) { *budget = 0; return false; }"), "one HTML budget for a drag's items");
+        assert!(source.contains("if (!html) return false;\n  if (html.length > *budget) { *budget = 0; return false; }"), "one HTML budget for a drag's items, which an item with no HTML doesn't spend");
         assert!(source.contains("if (++seen > TB_DRAG_ITEMS) break;"));
         assert!(!source.contains("imageURL(item)"), "every caller passes the budget");
         assert!(source.contains("tb_drag_html_shows_image(markup.bytes"));

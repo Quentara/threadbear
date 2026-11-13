@@ -89,7 +89,11 @@ enum ChromeProfiles {
         // The Chrome that's running (profiles are offered only while it
         // is), never whichever bundle Launch Services has for Chrome's id,
         // and only once its signature says it's Google's (Daybreak 112).
-        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).lazy.compactMap(\.bundleURL).first else {
+        // Chrome kept anywhere but the Mac's app folders (~/Applications)
+        // gets the page in the default browser, as the GPUI app does.
+        guard let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).lazy.compactMap(\.bundleURL).first,
+              SignedApp.installedApps.contains(where: { app.resolvingSymlinksInPath().path.hasPrefix($0) })
+        else {
             OpenGate.openWeb(web)
             return
         }
