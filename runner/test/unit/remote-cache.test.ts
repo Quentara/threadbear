@@ -426,6 +426,19 @@ cp -R "$source/desktop/scripts/shared-cargo" "$dest/desktop/scripts/"
   const lines = fs.readFileSync(log, 'utf8').trim().split('\n');
   assert.equal(lines.length, 1, lines.join('\n'));
   assert.match(lines[0], new RegExp(`/shared-1/src/desktop ${h.base}/shared-1/target build -p x$`));
+  // The three-day age limit spares a folder whose run is still marking it in use.
+  const days = new Date(Date.now() - 4 * 24 * HOUR);
+  for (const name of ['target-leased', 'target-stale', 'src-stale']) {
+    fs.mkdirSync(path.join(h.base, name), { recursive: true });
+    if (name === 'target-leased') fs.writeFileSync(path.join(h.base, name, '.in-use'), '');
+    else fs.writeFileSync(path.join(h.base, name, 'old'), '');
+    fs.utimesSync(path.join(h.base, name, name === 'target-leased' ? '.in-use' : 'old'), name === 'target-leased' ? new Date() : days, name === 'target-leased' ? new Date() : days);
+    fs.utimesSync(path.join(h.base, name), days, days);
+  }
+  assert.equal(run('host4', 'true').status, 0);
+  assert.equal(fs.existsSync(path.join(h.base, 'target-leased')), true, 'a run still in it');
+  assert.equal(fs.existsSync(path.join(h.base, 'target-stale')), false);
+  assert.equal(fs.existsSync(path.join(h.base, 'src-stale')), false);
 });
 
 test("an idle checkout's whole build from before the shared targets goes, even with room", (t) => {
