@@ -696,6 +696,10 @@ export class ThreadRouter implements ThreadControl {
     return this.runner.endTurnNudged(threadId);
   }
 
+  unreadMessage(threadId: string): boolean {
+    return this.runner.unreadMessage(threadId);
+  }
+
   openSubagentCards(threadId: string): string[] {
     return this.runner.openSubagentCards(threadId);
   }

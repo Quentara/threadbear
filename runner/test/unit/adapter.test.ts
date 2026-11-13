@@ -187,6 +187,41 @@ test('Stop hook: a message sent after end_turn does not make it forget the call'
   state.close!();
 });
 
+// Thread 0222c475 (13 Nov 2026): Mike's next question landed 30 ms before the
+// end_turn for his last one, which was taken with needs "nothing". The CLI's
+// "started" frame is when a message goes to the agent, so until then a call
+// was written without it.
+test('unreadMessage: a message sent into a turn is unread until the CLI starts on it, and said once', async () => {
+  const { session, state } = start([], {}, { mcpServersFor: () => ({ threadbear: { type: 'sdk', name: 'threadbear' } }) });
+  const life = (s: string, uuid: string) => state.frame!({ type: 'command_lifecycle', command_uuid: uuid, state: s });
+  session.send({ id: 'u1', text: 'Not yet', images: [] });
+  assert.equal(session.unreadMessage!(), false, 'not known before the CLI has sent a lifecycle frame');
+  await life('queued', 'u1');
+  await life('started', 'u1');
+  await state.frame!({ type: 'system', subtype: 'init', session_id: 's' });
+  assert.equal(session.unreadMessage!(), false, "the turn's own message has been handed over");
+  // Sent while the agent writes its end_turn: queued, not started.
+  session.send({ id: 'u2', text: 'Should we get it into production?', images: [] });
+  await life('queued', 'u2');
+  assert.equal(session.unreadMessage!(), true);
+  assert.equal(session.unreadMessage!(), false, 'end_turn refuses once for a message');
+  // A second one behind it is its own refusal.
+  session.send({ id: 'u3', text: 'And the redirects?', images: [] });
+  assert.equal(session.unreadMessage!(), true);
+  await life('started', 'u2');
+  await life('started', 'u3');
+  assert.equal(session.unreadMessage!(), false);
+  // One the CLI folded in without a frame of its own: the result names it.
+  session.send({ id: 'u4', text: 'go', images: [] });
+  await state.frame!({ type: 'result', subtype: 'success', is_error: false, duration_ms: 1, session_id: 's', user_message_uuid: 'u1', user_message_uuids: ['u1', 'u4'] });
+  assert.equal(session.unreadMessage!(), false);
+  // Cancelled by Stop: nothing left to read.
+  session.send({ id: 'u5', text: 'wait', images: [] });
+  await life('cancelled', 'u5');
+  assert.equal(session.unreadMessage!(), false);
+  state.close!();
+});
+
 // Thread 46de9389 (7 Nov 2026): a background `tb land` finished just before
 // end_turn, and the agent read its notification with end_turn's result. The
 // work after that is past the card it gave, so Stop asks for another.

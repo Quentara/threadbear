@@ -1373,6 +1373,13 @@ export class Runner {
     return this.threads.get(threadId)?.rt.turn?.endTurnNudged === true;
   }
 
+  // For end_turn's handler: whether a message sent into the running turn is
+  // one the agent can't have read when it wrote the call (needs.ts,
+  // UNREAD_MESSAGE). True once for each such message.
+  unreadMessage(threadId: string): boolean {
+    return this.threads.get(threadId)?.rt.session?.unreadMessage?.() === true;
+  }
+
   get(threadId: string): ThreadSummary {
     return this.summary(this.mustGet(threadId));
   }

@@ -421,6 +421,14 @@ class ClaudeSession implements AgentSession {
   // a new message from the user (the agent goes on to that) or the turn's
   // result ends it.
   private owedReply?: string[];
+  // Messages sent that the CLI hasn't handed to the agent yet, by uuid: one
+  // sent while a response is being written waits in the CLI's queue until
+  // that response's tools have run, and the CLI's command_lifecycle frame
+  // "started" says when it goes over (unreadMessage). `told` are the ones
+  // end_turn has refused a call for, so each is refused for once.
+  private notStarted = new Set<string>();
+  private toldUnread = new Set<string>();
+  private lifecycle = false;
 
   constructor(opts: StartSessionOptions, sink: SessionSink, deps: ClaudeAdapterDeps) {
     this.opts = opts;
@@ -721,6 +729,7 @@ class ClaudeSession implements AgentSession {
           this.openCalls.clear();
           this.checkedCalls.clear();
         }
+        this.noteLifecycle(msg as Record<string, unknown>);
         this.noteCalls(msg as Record<string, unknown>);
         for (let out of this.normalizer.handle(msg as Record<string, unknown>)) {
           // The mode the call went through on, recorded at the call.
@@ -772,6 +781,41 @@ class ClaudeSession implements AgentSession {
       this.resolveExit();
       this.sink.exited(error);
     }
+  }
+
+  // A message is the agent's to read from "started" (handed over with the
+  // next request to the model); "completed" and "cancelled" end it too.
+  // Only "queued" leaves it waiting. A turn's result names the messages it
+  // answered, for a CLI that folded several into one and reported on one.
+  private noteLifecycle(msg: Record<string, unknown>): void {
+    if (msg.parent_tool_use_id) return;
+    if (msg.type === 'result') {
+      const answered = [msg.user_message_uuid, ...(Array.isArray(msg.user_message_uuids) ? msg.user_message_uuids : [])];
+      for (const id of answered) if (typeof id === 'string') this.handedOver(id);
+      return;
+    }
+    if (msg.type !== 'command_lifecycle') return;
+    this.lifecycle = true;
+    if (msg.state !== 'queued' && typeof msg.command_uuid === 'string') this.handedOver(msg.command_uuid);
+  }
+
+  private handedOver(uuid: string): void {
+    this.notStarted.delete(uuid);
+    this.toldUnread.delete(uuid);
+  }
+
+  // Whether a message was sent that the agent can't have read: the call
+  // end_turn is handling was written before the CLI handed it over. Not
+  // known on a CLI that sends no lifecycle frames (before 2.1.310).
+  unreadMessage(): boolean {
+    if (!this.lifecycle) return false;
+    let unread = false;
+    for (const id of this.notStarted) {
+      if (this.toldUnread.has(id)) continue;
+      this.toldUnread.add(id);
+      unread = true;
+    }
+    return unread;
   }
 
   private markToolSeen(id: string): void {
@@ -944,6 +988,11 @@ class ClaudeSession implements AgentSession {
       return { type: 'image', source: { type: 'base64', media_type: mediaType, data: data.toString('base64') } };
     });
     if (content.length === 0) content.push({ type: 'text', text: input.text });
+    const uuid = input.id ?? crypto.randomUUID();
+    // Not the agent's to read until the CLI says it has started on it. A
+    // frame that never comes mustn't keep them for ever.
+    this.notStarted.add(uuid);
+    while (this.notStarted.size > 50) this.handedOver(this.notStarted.values().next().value!);
     this.input.push({
       type: 'user',
       message: { role: 'user', content: content.length === 1 && content[0].type === 'text' ? input.text : (content as never) },
@@ -953,7 +1002,7 @@ class ClaudeSession implements AgentSession {
       origin: { kind: 'human' },
       // With a uuid the CLI reports command_lifecycle frames for the
       // message, which is how its own turns are told apart from this one.
-      uuid: input.id ?? crypto.randomUUID(),
+      uuid,
     } as SDKUserMessage);
   }
 

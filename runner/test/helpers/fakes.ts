@@ -52,6 +52,8 @@ export class FakeSession implements AgentSession {
   }
   // Only on an adapter that moves folders (FakeAdapter sets it up).
   setCwd?: (cwd: string) => Promise<void>;
+  // Set by a test of a message end_turn's call was written without.
+  unreadMessage?: () => boolean;
   // Set by a test of the context breakdown (Claude's getContextUsage).
   contextUsage?: () => Promise<Omit<import('../../src/protocol.ts').ContextUsage, 'at'> | undefined>;
   async end(opts: { hard?: boolean } = {}): Promise<void> {

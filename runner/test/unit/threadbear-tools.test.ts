@@ -569,6 +569,50 @@ test('end_turn is taken once a turn', async () => {
   assert.match(r2.text, /Already ended/);
 });
 
+// Thread 0222c475 (13 Nov 2026): Mike's "Should we get it into production?"
+// landed just before the end_turn that closed off his last answers, and the
+// agent read it with that call's result. Its reply asked for a go over a
+// done card, and a second end_turn would have been "Already ended".
+test('end_turn written before the agent could read a new message is refused, and the next is taken', async () => {
+  for (const oneReply of [true, false]) {
+    const h = makeHarness();
+    const { thread, s } = start(h, 'Not yet');
+    const { call } = tools(h, thread.id, undefined, () => oneReply);
+    const send = async (itemId: string, input: Record<string, unknown>) => {
+      toolCall(s, itemId, END_TURN, input);
+      const r = await call('end_turn', input);
+      s.out({ kind: 'event', event: { type: 'tool.result', itemId, ok: !r.error, text: r.text, truncated: false, images: [] } });
+      return r;
+    };
+    s.text('m1', 'Noted, not releasing yet.');
+    // The message is in the events, and the CLI hasn't started on it.
+    h.runner.send(thread.id, 'Should we get it into production?');
+    let unread = true;
+    s.unreadMessage = () => {
+      const was = unread;
+      unread = false;
+      return was;
+    };
+    const first = await send('e1', oneReply ? { headline: 'Not released yet', needs: 'nothing' } : { needs: 'nothing', summary: ['Left it on main.'] });
+    assert.equal(first.error, true, `${oneReply}: ${first.text}`);
+    assert.match(first.text, /^Not ended: the user sent a message while you were writing this call/);
+    // It reads the message with that refusal, and asks.
+    s.text('m2', 'Yes, I think it is ready to go live.');
+    const ask = oneReply
+      ? { headline: 'Ready to release', needs: 'you', asks: [{ question: 'Release the examples page to convex.dev?', options: [{ label: 'Go' }, { label: 'Not yet' }] }] }
+      : { needs: 'you', summary: ['It is ready to go live.'], asks: [{ action: 'Release the examples page to convex.dev?', why: 'It is approved and on main.', options: ['Go', 'Not yet'] }] };
+    const second = await send('e2', ask);
+    assert.equal(second.error, false, `${oneReply}: ${second.text}`);
+    assert.match(second.text, /Needs you/);
+    if (oneReply) s.text('m3', 'It is approved, on main, and the only commit that would go out.');
+    // The CLI folded the message into the turn, so one result answers both.
+    const ids = s.sent.map((m) => m.id!);
+    s.result('completed', undefined, undefined, { answered: ids, answers: ids[1], queuedTurns: 0 });
+    await tick();
+    assert.equal(h.runner.get(thread.id).needs, 'you', `${oneReply}: the card is the second call's`);
+  }
+});
+
 // Thread 46de9389 (7 Nov 2026): a `tb land` sent to the background finished
 // just before the agent's "landing now" end_turn, in the same CLI turn. The
 // CLI handed the agent its notification with that end_turn's result, and the

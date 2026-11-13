@@ -983,6 +983,23 @@ export class WakeRead {
   }
 }
 
+// What end_turn says to a call the agent wrote before it could have read a
+// message the user sent into the turn. The CLI holds such a message until the
+// response being written is finished and its tools have run, so a card in
+// that response can't be about it. On 13 Nov 2026 (thread 0222c475) Mike's
+// "Should we get it into production?" landed 30 ms before the end_turn that
+// closed off his last answers, with needs "nothing". The agent read it with
+// "Now write your reply", thought "I've already ended my turn, so I can't ask
+// him for approval", and wrote "Say go and I'll merge main into prod" over a
+// done card; a second end_turn would have been refused as a repeat, as the
+// message was in the events before the call. Refused, the call costs one
+// more, and the card that follows covers the message too. Only Claude's CLI
+// says when it hands a message over (adapter.ts, unreadMessage).
+export const UNREAD_MESSAGE = 'Not ended: the user sent a message while you were writing this call, and you have not read it yet.';
+export function unreadMessageRefusal(): string {
+  return `${UNREAD_MESSAGE} It comes with this result. Answer it or do what it asks, then call end_turn again for the turn as a whole.`;
+}
+
 export function endedThisTurn(events: PersistedEvent[], serverName = 'threadbear'): boolean {
   return takenEndTurn(events, serverName) !== undefined;
 }

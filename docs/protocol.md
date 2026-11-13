@@ -2911,7 +2911,15 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   once sent its card four times. A `user.message` since then opens the turn
   again, as it's owed an answer of its own (a message sent during a call that
   came back accepted counts, since the agent can't have read it), so that
-  message's `end_turn` is taken and its card replaces the last. A repeat with
+  message's `end_turn` is taken and its card replaces the last. The other
+  way round, an `end_turn` the agent wrote before it could have read a
+  message sent into the turn is refused once ("Not ended: the user sent a
+  message while you were writing this call"), so the call after it covers
+  the message too: a done card once sat under a reply asking "say go". The
+  runner knows from Claude's CLI, which holds such a message until the
+  response being written has run its tools and says `started` for it in a
+  `command_lifecycle` frame when it hands it over; Codex doesn't say, so
+  its calls aren't checked. A repeat with
   no new message that adds `archive: true`, where neither call has `needs:
   "you"`, is taken too, and adds only that; the first card stands. A
   background task finishing does the same as a message (a `system.note`

@@ -248,6 +248,12 @@ export interface AgentSession {
   // folder's untrusted permission rules, after the thread left Full, for
   // the turns the CLI starts by itself before the next message replaces it.
   askBeforeEveryTool?(): void;
+  // For end_turn's handler: whether a message sent into the running turn is
+  // one the CLI hasn't handed to the agent yet, so the call being handled was
+  // written without it. True once for each such message, as end_turn refuses
+  // on it and that refusal is what the message is handed over with. Only on
+  // an adapter whose CLI says when it hands one over.
+  unreadMessage?(): boolean;
   // Moves the session to another folder from its next turn, in the same
   // native session. Only on adapters with movesFolders.
   setCwd?(cwd: string): Promise<void>;

@@ -25,7 +25,7 @@ import { SAID_MAX } from './wake-when.ts';
 
 export { parseWhen, relativeFuture, relativeTime };
 import { RUNNER_VERSION, expandHome } from './config.ts';
-import { runCommandProblem, droppedOpenLines, OPEN_GONE, ALREADY_ENDED, ARCHIVE_ADDED, MAX_UNTIL, MAX_WAIT_FOR, SNOOZE_ADDED, snoozeFromTool, endTurnDescription, endTurnForm, endTurnMisfit, endTurnTaken, openCardsNote, END_TURN_TOOL, BULLETS_ONLY, ENDED, takenEndTurn, MAX_BYLINE, NARRATION_ONLY, NO_REPLY, needsFromTool, oneReplyAccepted, offersToTakeItBack, oneReplyAlreadyWritten, summaryFromTool, triedFirstNudged, tryFirstNudge, turnReply, type TurnReply } from './needs.ts';
+import { runCommandProblem, droppedOpenLines, OPEN_GONE, ALREADY_ENDED, ARCHIVE_ADDED, MAX_UNTIL, MAX_WAIT_FOR, SNOOZE_ADDED, snoozeFromTool, endTurnDescription, endTurnForm, endTurnMisfit, endTurnTaken, openCardsNote, END_TURN_TOOL, BULLETS_ONLY, ENDED, takenEndTurn, MAX_BYLINE, NARRATION_ONLY, NO_REPLY, needsFromTool, oneReplyAccepted, offersToTakeItBack, oneReplyAlreadyWritten, summaryFromTool, triedFirstNudged, tryFirstNudge, turnReply, unreadMessageRefusal, type TurnReply } from './needs.ts';
 
 // end_turn's needs, both forms: "done" meant this turn's step until 11 Nov
 // 2026, when thread 0222c475 said nothing with three draft PRs unmerged in
@@ -62,6 +62,9 @@ export type ThreadControl = {
   unpin?: (...args: Parameters<Runner['unpin']>) => Aw<ReturnType<Runner['unpin']>>;
   showPanel?: (threadId: string, ask: Parameters<Runner['showPanel']>[1]) => ReturnType<Runner['showPanel']>;
   endTurnNudged?: (threadId: string) => boolean;
+  // A message the agent can't have read when it wrote this end_turn
+  // (needs.ts, UNREAD_MESSAGE). True once for each.
+  unreadMessage?: (threadId: string) => boolean;
   // What this thread's subagents are parked on (approvals.ts).
   openSubagentCards?: (threadId: string) => string[];
   // What end_turn owes a review by another lab (runner/lab-review.ts).
@@ -1487,6 +1490,9 @@ export function buildThreadbearTools(
         await checkWaitFor(input.waitFor, needs);
         const asks = parsed?.asks ?? [];
         const events = await turnEvents();
+        // Before anything that could take the call: a refusal of any kind
+        // hands the message over, so only an accepted one needs this.
+        if (control.unreadMessage?.(selfId)) throw new Error(unreadMessageRefusal());
         const repeat = repeatEndTurn(events, input);
         if (repeat) return repeat;
         checkFindings(input, needs, events);
@@ -1604,6 +1610,7 @@ export function buildThreadbearTools(
         // runner knows, so it keeps a message that follows anyway
         // (needs.ts, BULLETS_ONLY).
         const owed = Boolean(!needsMessage && reply && (!reply.replied || reply.narrationOnly));
+        if (control.unreadMessage?.(selfId)) throw new Error(unreadMessageRefusal());
         const repeat = repeatEndTurn(await turnEvents(), { ...args, needs });
         if (repeat) return repeat;
         // A connector that needs Mike to sign in again (a gateway service
