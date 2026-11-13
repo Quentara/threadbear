@@ -517,7 +517,7 @@ impl Threadbear {
             let res = going.await;
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.list_error = Some(e.message);
+                    this.show_error(e.message, cx);
                     if let Some(before) = before {
                         this.threads.insert(before.id.clone(), before);
                     }
@@ -697,7 +697,7 @@ impl Threadbear {
             let res = call(client, "threads.hibernateWhen", params).await;
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.list_error = Some(e.message);
+                    this.show_error(e.message, cx);
                     if let Some(before) = before {
                         this.threads.insert(before.id.clone(), before);
                     }
@@ -753,7 +753,7 @@ impl Threadbear {
                                         Ok(_) => {
                                             this.threads.remove(&id);
                                         }
-                                        Err(e) => this.list_error = Some(e.message),
+                                        Err(e) => this.show_error(e.message, cx),
                                     }
                                     cx.notify();
                                 })

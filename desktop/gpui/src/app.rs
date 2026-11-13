@@ -29,6 +29,11 @@ pub struct Threadbear {
     pub(crate) client: Arc<Client>,
     pub(crate) status: Status,
     pub(crate) threads: HashMap<String, ThreadSummary>,
+    /// Why the thread list couldn't load, under the search box until a
+    /// load works. Only that: it has no Dismiss, so a failed action (a
+    /// rename, archive, move, Continue now on) goes to the error bar
+    /// (`show_error`) instead. One here stuck until the next reconnect
+    /// (Mike, 13 Nov: a Pixel thread's refused login change).
     pub(crate) list_error: Option<String>,
     pub(crate) selected: Option<String>,
     pub(crate) pane: Option<Entity<ThreadPane>>,
@@ -1243,7 +1248,7 @@ impl Threadbear {
                     this.chip_busy.remove(key);
                 }
                 if let Err(e) = res {
-                    this.list_error = Some(e.message);
+                    this.show_error(e.message, cx);
                     if let Some(before) = before {
                         this.threads.insert(before.id.clone(), before);
                     }

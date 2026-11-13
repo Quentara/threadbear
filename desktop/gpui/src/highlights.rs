@@ -637,7 +637,7 @@ impl SidePane {
     pub(crate) fn note_error(&mut self, message: String, cx: &mut Context<Self>) {
         if let Some(app) = self.app.upgrade() {
             app.update(cx, |t, cx| {
-                t.list_error = Some(message);
+                t.show_error(message, cx);
                 cx.notify();
             });
         }

@@ -107,7 +107,7 @@ impl Threadbear {
             let res = call(client, "threads.move", params).await;
             this.update(cx, |this, cx| {
                 if let Err(e) = res {
-                    this.list_error = Some(e.message);
+                    this.show_error(e.message, cx);
                     if let (Some(t), Some(before)) = (this.threads.get_mut(&thread_id), &before) {
                         if t.moving.as_ref().is_some_and(|m| m["moveId"] == "") {
                             t.moving = before.moving.clone();
@@ -135,7 +135,7 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 this.end_note(&key, cx);
                 if let Err(e) = res {
-                    this.list_error = Some(e.message);
+                    this.show_error(e.message, cx);
                 }
                 cx.notify();
             })
