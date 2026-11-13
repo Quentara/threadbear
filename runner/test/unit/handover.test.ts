@@ -1061,6 +1061,32 @@ test('Peers.openCards, from a release before drain.openCards: a thread that stop
   assert.deepEqual(found.map((f) => [f.thread.id, f.events.map((e) => (e as { approvalId: string }).approvalId)]), [['t-a', ['q-t-a']], ['t-b', ['q-t-b']]]);
 });
 
+test('Peers.openCards, from a release before drain.openCards: a slow thread past its share tries again with the time left over', async () => {
+  const h = makeHarness();
+  const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
+  const threads = ['t-slow', 't-a', 't-b'];
+  writeDrainInfo(h.home, { pid: 505050, port: 1, version: 'old', since: new Date().toISOString(), threads });
+  const ts = '2026-11-13T00:00:00.000Z';
+  const client = {
+    call: async (method: string, p: any) => {
+      if (method === 'drain.hello') return { threads, version: 'old' };
+      if (method === 'drain.openCards') throw new RpcClientError(ErrorCode.methodNotFound, 'Unknown method drain.openCards');
+      if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
+      if (method !== 'threads.events') return {};
+      // Its share of 600 ms is 200; it takes 300.
+      if (p.threadId === 't-slow') await new Promise((r) => setTimeout(r, 300));
+      return { events: [{ type: 'question.requested', seq: 1, ts, approvalId: `q-${p.threadId}`, questions: [] }] };
+    },
+    onNotification: () => () => {},
+    waitClosed: () => new Promise<never>(() => {}),
+    close: () => {},
+  };
+  const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect: async () => client as any, alive: () => true });
+  await peers.connectAll();
+  const found = await peers.openCards({ deadlineMs: 600 });
+  assert.deepEqual(found.map((f) => f.thread.id).sort(), ['t-a', 't-b', 't-slow']);
+});
+
 test('Peers.openCards, from a release before drain.openCards: each summary as it is once every log is read', async () => {
   const h = makeHarness();
   const { writeDrainInfo, Peers } = await import('../../src/handover.ts');

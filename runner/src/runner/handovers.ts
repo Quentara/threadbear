@@ -78,13 +78,17 @@ export const handoversPart = {
     if (!this.draining?.keep.has(threadId) || !this.threads.has(threadId)) throw new RpcError(ErrorCode.moved, 'This runner has handed that thread over to the new one.');
     const log = this.store.log(threadId);
     const last = log.lastSeq;
-    // Requests and answers as they go: only those are kept, not the log.
-    const asked: PersistedEvent[] = [];
+    // Only the requests still open as it goes, oldest first (openCardEvents
+    // over the whole log), not every one the log has had.
+    const open = new Map<string, PersistedEvent>();
     for (let from = 1; from <= last; from += chunk) {
-      asked.push(...log.read(from, Math.min(last, from + chunk - 1)).filter((e) => e.type === 'approval.requested' || e.type === 'question.requested' || e.type === 'secret.requested' || e.type === 'approval.resolved'));
+      for (const e of log.read(from, Math.min(last, from + chunk - 1))) {
+        if (e.type === 'approval.resolved') open.delete(e.approvalId);
+        else if (openCardEvents([e]).length) open.set((e as { approvalId: string }).approvalId, e);
+      }
       await new Promise((r) => setImmediate(r));
     }
-    return openCardEvents(asked);
+    return [...open.values()];
   },
 
   // Whether this runner has the thread (a draining one lets them go).

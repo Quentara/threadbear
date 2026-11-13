@@ -384,29 +384,38 @@ export class Peers {
       // so only one page waits on the connection, the whole log a page at a
       // time from the end: a sub-agent's card can outlive the turn that asked
       // it, with any amount of work after it (Codex's review, 13 Nov). Each
-      // thread gets a fair share of the time left, so one that has stopped
-      // answering can't take the rest's (THREADBEAR-1Z).
-      const read: Read[] = [];
-      for (const [i, threadId] of ids.entries()) {
+      // thread first gets a fair share of the time left, so one that has
+      // stopped answering can't take the rest's (THREADBEAR-1Z), then any not
+      // read in its share tries again with whatever time is over.
+      const readLog = async (threadId: string, by: number): Promise<PersistedEvent[]> => {
         const log: PersistedEvent[] = [];
-        const by = Date.now() + (until - Date.now()) / (ids.length - i);
+        let before: number | undefined;
+        for (;;) {
+          const left = by - Date.now();
+          if (left <= 0) throw new Error('out of time');
+          const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
+          log.unshift(...page.events);
+          const first = page.events[0]?.seq;
+          // Not a short page: an edit's cut can make one short mid-log.
+          if (first === undefined || first <= 1) return log;
+          before = first;
+        }
+      };
+      const read: Read[] = [];
+      const late: string[] = [];
+      for (const [i, threadId] of ids.entries()) {
         try {
-          let before: number | undefined;
-          for (;;) {
-            const left = by - Date.now();
-            if (left <= 0) throw new Error('out of time');
-            const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
-            log.unshift(...page.events);
-            const first = page.events[0]?.seq;
-            // Not a short page: an edit's cut can make one short mid-log.
-            if (first === undefined || first <= 1) break;
-            before = first;
-          }
+          read.push({ peer, threadId, events: openCardEvents(await readLog(threadId, Date.now() + (until - Date.now()) / (ids.length - i))) });
+        } catch {
+          late.push(threadId);
+        }
+      }
+      for (const threadId of late) {
+        try {
+          read.push({ peer, threadId, events: openCardEvents(await readLog(threadId, until)) });
         } catch (e) {
           this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
-          continue;
         }
-        read.push({ peer, threadId, events: openCardEvents(log) });
       }
       return read;
     };
