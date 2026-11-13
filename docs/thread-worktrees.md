@@ -228,6 +228,15 @@ their own.
   next run lands them too. On 13 Nov a fix committed there was checked out
   away silently and the same check failed again. Two `tb land`s in
   one worktree take turns (`threadbear-land-worktree.lock` in its git dir).
+- A landing made with `tb land --despite-red` is the repair for what's
+  red, so it's a fix in the queue: it goes first on the stack in every
+  group check, outside the group's limit, and the red hold isn't asked
+  about its files (the others' still are). So a repair queued behind
+  groups failing on main's own error goes into the next check with them,
+  rather than waiting for the halving to finish (13 Nov: three group
+  checks failed on a broken main while its one-line repair waited). If a
+  group with only fixes and the holder fails, the fixes are left out next,
+  so a broken "fix" is still found.
 - If a group's check fails, nothing lands and the group is halved: the
   holder goes again with itself and the first half, and the rest wait with
   their limit halved too. Before retrying, the holder prints the exit code

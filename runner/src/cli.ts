@@ -381,7 +381,8 @@ async function landCommand(cfg: ReturnType<typeof loadConfig>, dryRun: boolean, 
     // check while we waited. Running tb land asks for this patch's check.
     readCheck: async () => (await findWorktreePatch(from, undefined, undefined, undefined, TRUST_ALL, true))?.check,
     // A workflow red on main holds what it would run for (land-gate.ts).
-    hold: despiteRed ? undefined : (root, files) => { const dir = gateCacheDir(root); return landHold(root, files, (line) => console.log(line), gh, dir ? { dir } : undefined); },
+    despiteRed,
+    hold: (root, files) => { const dir = gateCacheDir(root); return landHold(root, files, (line) => console.log(line), gh, dir ? { dir } : undefined); },
   });
 }
 

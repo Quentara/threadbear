@@ -331,6 +331,10 @@ export type LandOptions = {
   // on main (land-gate.ts). Asked after the rebase, before the check, so a
   // held landing doesn't wait out a check first.
   hold?: (root: string, files: string[]) => Promise<string | undefined>;
+  // `tb land --despite-red`: this landing is the repair for what's red, so
+  // `hold` isn't asked about its own files. In the queue it's a fix: it
+  // goes first in any group check and the halving never leaves it out.
+  despiteRed?: boolean;
   // Where readCheck looks from, relative to the worktree's root (a
   // subfolder's patch can ask for its own check). Only landings that look
   // from the same place are checked together, so the check read on the
@@ -411,7 +415,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
     // Refusals, and conflicts with main as it is now, come straight away
     // rather than after the wait. It's done again with the lock held, as
     // main will have moved.
-    const ready = await prepare(t, out, err, opts.hold);
+    const ready = await prepare(t, out, err, opts.despiteRed ? undefined : opts.hold);
     if (typeof ready === 'number') return ready;
 
     // A dry run, and a branch with a merge on it (it's merged with main,
@@ -426,6 +430,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
         entry = joinQueue(common, {
           branch: t.branch, path: t.path, base: ready.base, commit: ready.commit, check: check ?? null, checkFrom: opts.checkFrom ?? '',
           ...(checkHost ? { checkHost } : {}),
+          ...(opts.despiteRed ? { fix: true } : {}),
         });
         entryHeld = await holdLock(entryLockFile(common, entry.id), false);
         if (!entryHeld) throw new Error('entry lock taken');
@@ -916,6 +921,27 @@ async function holdFor(cwd: string, from: string, to: string, hold: NonNullable<
   return hold(cwd, changed.stdout.split('\0').filter(Boolean));
 }
 
+// Why a group's files can't land now: what each member changes (its own
+// commits, as it asked), except a fix's, the repair for what's red.
+async function groupHeld(
+  t: LandTarget,
+  main: string,
+  own: string,
+  group: { entry: QueueEntry }[],
+  opts: LandOptions,
+): Promise<string | undefined> {
+  if (!opts.hold) return undefined;
+  const ranges: [string, string][] = group.filter((g) => !g.entry.fix).map((g) => [g.entry.base, g.entry.commit]);
+  if (!opts.despiteRed) ranges.push([main, own]);
+  const files = new Set<string>();
+  for (const [from, to] of ranges) {
+    const changed = await git(t.path, ['diff', '--name-only', '-z', `${from}...${to}`]);
+    if (!changed.ok) return `Couldn't read what ${to} changes in ${t.path}, so nothing landed. Run tb land again.`;
+    for (const f of changed.stdout.split('\0').filter(Boolean)) files.add(f);
+  }
+  return files.size ? opts.hold(t.path, [...files]) : undefined;
+}
+
 // `from..to`'s commits (first parent, no merges) made again on `onto`, as a
 // rebase would, without touching any working tree: a three-way merge of
 // each one's change (git merge-tree), then a commit with its author and
@@ -975,14 +1001,25 @@ async function stackWaiting(
   limit: number,
   check: string | null,
   checkFrom: string,
+  withFixes = true,
+  includeOthers = true,
 ): Promise<{ tip: string; group: { entry: QueueEntry; tip: string; commits: string }[] }> {
   let tip = main;
   let cap = limit;
+  let counted = 0;
   const group: { entry: QueueEntry; tip: string; commits: string }[] = [];
-  for (const e of waiting(common)) {
+  // A fix (tb land --despite-red: the repair for a main that's red) goes
+  // first and isn't counted against the limit, so the halving never leaves
+  // it out. On 13 Nov a group behind a broken main was halved down three
+  // checks, each failing on main's own error, while the one-line repair
+  // waited behind it for a group of its own.
+  const all = waiting(common);
+  const ordered = withFixes ? [...all.filter((e) => e.fix), ...all.filter((e) => !e.fix)] : all.filter((e) => !e.fix);
+  for (const e of ordered) {
     if (e.pid === process.pid && e.path === t.path) continue; // this one
-    const c = Math.min(cap, e.limit ?? Infinity);
-    if (group.length + 2 > c) continue;
+    const c = e.fix ? Infinity : Math.min(cap, e.limit ?? Infinity);
+    if (!e.fix && counted + 2 > c) continue;
+    if (!e.fix && !includeOthers) continue;
     if (e.path === t.path || e.branch === t.branch) continue;
     if ((e.check ?? null) !== check || (e.checkFrom ?? '') !== checkFrom) continue;
     if (!(await ownerWaiting(common, e))) continue;
@@ -995,7 +1032,10 @@ async function stackWaiting(
     if (commits === undefined) continue;
     group.push({ entry: e, tip: next, commits });
     tip = next;
-    cap = c;
+    if (!e.fix) {
+      counted++;
+      cap = c;
+    }
   }
   return { tip, group };
 }
@@ -1016,11 +1056,12 @@ async function landLocked(
   };
 
   // Steps 1 and 2 again: main has likely moved while this waited.
-  const ready = await prepare(t, out, err, opts.hold);
+  const ready = await prepare(t, out, err, opts.despiteRed ? undefined : opts.hold);
   if (typeof ready === 'number') return ready;
   const own = ready.commit;
   const main = ready.base;
   let limit = startLimit ?? Infinity;
+  let withFixes = true;
 
   for (;;) {
     // 3. The others waiting go on main first, then this branch on top. The
@@ -1035,13 +1076,17 @@ async function landLocked(
     } catch (e) {
       return fail(`Couldn't read the repo's patches for its check: ${(e as Error).message}`);
     }
-    if (!opts.dryRun && !ready.hasMerge && limit > 1) {
-      const stacked = await stackWaiting(t, common, main, limit, check ?? null, opts.checkFrom ?? '');
+    if (!opts.dryRun && !ready.hasMerge) {
+      let stacked = await stackWaiting(t, common, main, limit, check ?? null, opts.checkFrom ?? '', withFixes);
+      // Held on GitHub for what the others change (not a fix's, which is
+      // the repair): then only the fixes go with it, and the others go by
+      // themselves later, each hearing why.
+      if (opts.hold && stacked.group.length && (await groupHeld(t, main, own, stacked.group, opts))) {
+        stacked = await stackWaiting(t, common, main, limit, check ?? null, opts.checkFrom ?? '', withFixes, false);
+      }
       if (stacked.group.length) {
         const top = await replay(t.path, main, own, stacked.tip);
-        // Held on GitHub for what the others change: they go by themselves
-        // later, and each hears why.
-        if (top && top !== stacked.tip && !(opts.hold && (await holdFor(t.path, main, top, opts.hold)))) {
+        if (top && top !== stacked.tip) {
           try {
             fs.writeFileSync(detachedMarker(gitDir), JSON.stringify({ branch: t.branch, own, top }));
           } catch {
@@ -1138,7 +1183,11 @@ async function landLocked(
         // No individual landing is refused until its own check fails.
         if (!(await back())) return fail(`The check failed with ${group.length + 1} landings together, so nothing landed. ${stuck}`);
         if (carried) return fail(committedMeanwhile);
-        limit = Math.ceil((group.length + 1) / 2);
+        // Fixes always come along, so once it's down to this one and the
+        // fixes, the fixes are left out next, to see whose it is.
+        const counted = group.filter((g) => !g.entry.fix).length;
+        if (counted === 0) withFixes = false;
+        limit = Math.max(1, Math.ceil((counted + 1) / 2));
         for (const g of group) {
           const now = readEntry(common, g.entry.id);
           if (now && !now.result) writeEntry(common, { ...now, limit: Math.min(now.limit ?? Infinity, limit) });
@@ -1194,7 +1243,7 @@ async function landLocked(
     // Asked again now the check is done: a run that was going when it
     // started may have failed since. Others in the group wait their turn.
     if (opts.hold && !opts.dryRun) {
-      const held = await holdFor(t.path, main, checked, opts.hold);
+      const held = group.length ? await groupHeld(t, main, own, group, opts) : opts.despiteRed ? undefined : await holdFor(t.path, main, checked, opts.hold);
       if (held) {
         if (!(await back())) err(stuck);
         return fail(held);

@@ -667,3 +667,48 @@ test("a group's check hears the hosts each landing in it asked for, the holder's
   const lines = fs.readFileSync(path.join(root, 'prefers'), 'utf8').trim().split('\n');
   assert.deepEqual(lines, ['prefer=unset group=unset', 'prefer=cloud group=1']);
 });
+
+// 13 Nov: main was broken (a compile error only checked when its folder
+// changed), so a group was halved down three checks, each failing on main's
+// own error, while the one-line repair (tb land --despite-red) waited for a
+// group of its own.
+async function brokenMainQueue(fixBreaks: boolean) {
+  const { root, main } = makeRepo();
+  const [a, b, c, f] = branches(main, ['a', 'b', 'c', 'f']);
+  // f's commit is the repair: fix.txt. Without it, any change to b or c
+  // fails on main's own error.
+  commit(f.path, { 'fix.txt': 'fixed\n' }, 'Repair main');
+  const check = slowCheck(root) + `; if (test -f b.txt || test -f c.txt) && ! test -f fix.txt; then exit 1; fi` +
+    (fixBreaks ? '; ! test -f fix.txt' : '');
+  const first = land({ ...a, check }, capture().opts);
+  await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const caps = [capture(), capture(), capture()];
+  const rest = [land({ ...b, check }, caps[0].opts), land({ ...c, check }, caps[1].opts)];
+  await until(() => caps.slice(0, 2).every((x) => x.out.some((l) => l.startsWith('Waiting for another landing'))), 'b and c waiting');
+  // As after earlier failed group checks: each to be checked alone.
+  const common = path.join(main, '.git');
+  for (const e of waiting(common)) fs.writeFileSync(path.join(queueDir(common), `${e.id}.json`), JSON.stringify({ ...e, limit: 1 }));
+  rest.push(land({ ...f, check }, { ...caps[2].opts, despiteRed: true }));
+  try {
+    await until(() => caps[2].out.some((l) => l.startsWith('Waiting for another landing')), 'the fix waiting');
+  } finally {
+    write(root, { release: '' });
+  }
+  assert.equal(await first, 0);
+  return { main, root, codes: await Promise.all(rest), caps };
+}
+
+test('a repair landed despite red goes into the next check with everyone held back by halving, so they land with it', async () => {
+  const { main, codes, caps } = await brokenMainQueue(false);
+  assert.deepEqual(codes, [0, 0, 0], caps.map((x) => x.out.concat(x.err).join('\n')).join('\n---\n'));
+  for (const n of ['b', 'c', 'fix']) assert.ok(fs.existsSync(path.join(main, `${n}.txt`)), n);
+});
+
+test('a "fix" that itself breaks the check is left out in the end, and the rest land', async () => {
+  const { main, codes, caps } = await brokenMainQueue(true);
+  // b and c fail on main's error once the fix is out (it's broken too), and
+  // the fix fails its own check: nothing lands, and nothing loops for ever.
+  assert.equal(codes[2], 1, caps[2].out.concat(caps[2].err).join('\n'));
+  assert.ok(!fs.existsSync(path.join(main, 'fix.txt')));
+  assert.deepEqual(codes.slice(0, 2), [1, 1]);
+});

@@ -47,6 +47,9 @@ export type QueueEntry = {
   // THREADBEAR_CHECK_PREFER: tried first, the holder's hosts still behind
   // them (checkPreference in worktrees.ts).
   checkHost?: string;
+  // tb land --despite-red: the repair for a red main. Goes first in a
+  // group check, outside the limit.
+  fix?: boolean;
   // The most landings it may be checked with. Each failed check of a group
   // halves it for everyone in that group, so a failure is narrowed down in a
   // few checks rather than one by one.
