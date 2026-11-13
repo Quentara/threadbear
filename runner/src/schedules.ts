@@ -1264,7 +1264,7 @@ export class Scheduler {
   private approveCheck(rec: ScheduleRecord, card?: CheckCard): void {
     if (!rec.check) return;
     const cwd = this.checkFolder(rec);
-    if (!cwd) throw bad("The thread's folder isn't available during handover. Try again in a moment.");
+    if (!cwd) throw bad("The thread's folder isn't available, so its check wasn't approved.");
     try {
       this.runner.patchTrust.approveCheck(rec.check, cwd, card);
     } catch (e) {
