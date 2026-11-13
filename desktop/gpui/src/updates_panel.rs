@@ -780,8 +780,21 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
     // What a restart onto an update leaves for the next launch, put back as
     // that launch does (app_update.rs, `restore_after_update`): a scripted
     // app never restarts itself.
+    // {"restartState": true}: what a restart onto an update would leave
+    // for the next launch now (app_update.rs, `restore_state`).
+    if cmd["restartState"].as_bool() == Some(true) {
+        let state = app.update(cx, |t, cx| t.restore_state(false, cx));
+        return Ok(json!(format!("ok {state}")));
+    }
     if let Some(saved) = cmd.get("restore").filter(|v| v.is_object()) {
         app.update(cx, |t, cx| {
+            // {"fresh": true}: as a new launch would be, with no thread's
+            // place remembered and no thread kept loaded, so only what was
+            // saved can put a thread back where it was.
+            if cmd["fresh"].as_bool() == Some(true) {
+                crate::rows::forget_scroll_memories();
+                t.kept.retain(cx, |_| false);
+            }
             t.settings.saved.update_restore = Some(saved.clone());
             t.restore_after_update(cx);
         });

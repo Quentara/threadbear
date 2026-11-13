@@ -1195,6 +1195,11 @@ impl ThreadPane {
         }
     }
 
+    /// Its first page is in (a handover waits for the open thread's).
+    pub(crate) fn is_loaded(&self) -> bool {
+        self.loaded
+    }
+
     /// `captureMemory`: pinned to the bottom, or the row at the top of the
     /// view and how far down it the view starts (a row part scrolled off the
     /// top has a negative offset, as the Swift app measures it).

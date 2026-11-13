@@ -101,6 +101,65 @@ pub(crate) fn recalled_scroll(thread_id: &str) -> Option<ScrollMemory> {
     SCROLL_MEMORY.lock().ok().and_then(|map| map.get(thread_id).cloned())
 }
 
+/// How many threads' places a restart keeps: the settings file holds them,
+/// so not every thread ever opened.
+const KEPT_ACROSS_RESTART: usize = 200;
+
+/// Every thread's place that isn't its end, for a restart to keep
+/// (app_update.rs, `restore_state`): `live` (the panes open now, measured
+/// as the restart starts) over what was remembered as threads were left.
+/// `{ "<thread id>": { "anchor": "<row id>", "offset": <f32> } }`.
+pub(crate) fn scroll_memories_json(live: &[(String, ScrollMemory)]) -> serde_json::Value {
+    let mut all: HashMap<String, ScrollMemory> = SCROLL_MEMORY.lock().map(|m| m.clone()).unwrap_or_default();
+    all.extend(live.iter().cloned());
+    encode_memories(&all)
+}
+
+fn encode_memories(all: &HashMap<String, ScrollMemory>) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    let mut ids: Vec<&String> = all.keys().collect();
+    ids.sort();
+    for id in ids {
+        let memory = &all[id];
+        let Some(anchor) = memory.anchor_id.as_ref().filter(|_| !memory.pinned) else { continue };
+        if out.len() >= KEPT_ACROSS_RESTART {
+            break;
+        }
+        out.insert(id.clone(), serde_json::json!({ "anchor": anchor, "offset": memory.offset }));
+    }
+    serde_json::Value::Object(out)
+}
+
+fn decode_memories(saved: &serde_json::Value) -> Vec<(String, ScrollMemory)> {
+    saved
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(id, v)| {
+            let anchor = v["anchor"].as_str().filter(|a| !a.is_empty())?;
+            let offset = v["offset"].as_f64().filter(|o| o.is_finite()).unwrap_or(0.) as f32;
+            Some((id.clone(), ScrollMemory { pinned: false, anchor_id: Some(anchor.to_owned()), offset }))
+        })
+        .collect()
+}
+
+/// Back from a restart: each thread's place, as if it had been left there in
+/// this run, so it opens where it was rather than at its end.
+pub(crate) fn recall_scroll_memories(saved: &serde_json::Value) {
+    for (id, memory) in decode_memories(saved) {
+        remember_scroll(&id, memory);
+    }
+}
+
+/// A scripted stand-in for a new launch (`updates` with `fresh`): no thread
+/// remembered yet.
+#[cfg(feature = "automation")]
+pub(crate) fn forget_scroll_memories() {
+    if let Ok(mut map) = SCROLL_MEMORY.lock() {
+        map.clear();
+    }
+}
+
 impl ThreadPane {
     pub(crate) fn render_item(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(row) = self.feed.model().rows().get(ix).cloned() else { return div().into_any_element() };
@@ -776,5 +835,26 @@ mod across_tests {
             })
             .expect("the test window");
         assert_eq!(selected.trim(), "Where do things stand\nHere is the answer");
+    }
+}
+
+#[cfg(test)]
+mod scroll_memory_tests {
+    use super::{decode_memories, encode_memories, ScrollMemory};
+    use std::collections::HashMap;
+
+    #[test]
+    fn a_restart_keeps_each_threads_place_but_not_the_ones_at_their_end() {
+        let mut all = HashMap::new();
+        all.insert("t1".to_owned(), ScrollMemory { pinned: false, anchor_id: Some("row-9".into()), offset: -42.5 });
+        all.insert("t2".to_owned(), ScrollMemory { pinned: true, anchor_id: None, offset: 0. });
+        let saved = encode_memories(&all);
+        assert_eq!(saved, serde_json::json!({ "t1": { "anchor": "row-9", "offset": -42.5 } }));
+        let back = decode_memories(&saved);
+        assert_eq!(back.len(), 1);
+        assert_eq!((back[0].0.as_str(), back[0].1.anchor_id.as_deref(), back[0].1.offset, back[0].1.pinned), ("t1", Some("row-9"), -42.5, false));
+        // What an older build saved, or nothing at all, puts nothing back.
+        assert!(decode_memories(&serde_json::Value::Null).is_empty());
+        assert!(decode_memories(&serde_json::json!({ "t3": { "offset": 4 } })).is_empty());
     }
 }

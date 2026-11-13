@@ -24,6 +24,7 @@ pub mod find;
 pub mod folders;
 pub mod hang_sample;
 pub mod hang_watch;
+pub mod handover;
 pub mod highlights;
 pub mod home;
 pub mod inbox;

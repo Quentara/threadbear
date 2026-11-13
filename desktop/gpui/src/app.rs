@@ -401,14 +401,19 @@ impl Threadbear {
         let frame = cx.observe_window_bounds(window, |this, window, cx| this.window_frame_changed(window, cx));
         // What's typed and not sent is written as the app quits (drafts.rs).
         let quitting = cx.on_app_quit(|this, cx| {
+            // Handed over to the new build (handover.rs): the drafts and the
+            // settings are its to write now, and it's already in place.
+            let handed_over = crate::handover::handed_over();
             // Messages still held for a restarting runner stay held, so the
             // drafts written next can keep them without one also going.
-            this.client.stop_holding();
-            this.save_drafts(cx);
-            // A setting changed in the last moment waits for the throttled
-            // save (`save_settings_soon`), which a quit would otherwise lose.
-            if std::mem::take(&mut this.settings_dirty) {
-                this.settings.save();
+            if !handed_over {
+                this.client.stop_holding();
+                this.save_drafts(cx);
+                // A setting changed in the last moment waits for the throttled
+                // save (`save_settings_soon`), which a quit would otherwise lose.
+                if std::mem::take(&mut this.settings_dirty) {
+                    this.settings.save();
+                }
             }
             // The activity log's last line (activity.rs).
             crate::activity::quit();
@@ -590,6 +595,9 @@ impl Threadbear {
         // made itself for an update (app_update.rs).
         this.start_updater(cx);
         this.restore_after_update(cx);
+        // The incoming side of a handover: shows itself under the old window
+        // once it's loaded, then takes over (handover.rs).
+        this.start_incoming(cx);
         // The window starts on the Inbox with nothing open (`noteNavigation`
         // on launch), so Back from the first thread comes back here.
         this.note_navigation();

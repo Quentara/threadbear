@@ -19,11 +19,12 @@
 // thread he had open: straight away while Mike's in another app, and with the
 // app in front once he hasn't touched it for five seconds.
 //
-// No handover here (the Swift app's Handover.swift starts the new build under
-// the old window, so the window never goes): a restart in front is the window
-// going and coming back. The Swift app only restarts in front when that would
-// go unseen, but Mike keeps this app in front, so its updates never went in
-// until he clicked (12 Nov); he'd rather it went in by itself.
+// With the window on screen, the restart is a handover (handover.rs, as the
+// Swift app's Handover.swift): the new build starts under the old window and
+// takes its place once it's drawn, so the window never goes, and each
+// thread's scroll place comes with it (`restore_state`). Mike keeps this app
+// in front, so its updates never went in until he clicked (12 Nov); he'd
+// rather it went in by itself, and with the handover it goes unseen.
 use crate::app::Threadbear;
 use crate::installed;
 use gpui_kit::*;
@@ -194,12 +195,7 @@ fn relaunch_after_exit(bundle: &Path, in_background: bool) {
     if in_background {
         open.push("-g".into());
     }
-    let mut settings: Vec<(String, std::ffi::OsString)> = std::env::vars_os()
-        .filter_map(|(key, value)| Some((key.into_string().ok()?, value)))
-        .filter(|(key, _)| (key.starts_with("THREADBEAR_") || key.starts_with("THREADBARE_")) && !["_THREAD_ID", "_THREAD_KEY", "_AUTOMATION"].iter().any(|s| key.ends_with(s)))
-        .collect();
-    settings.sort();
-    for (key, value) in settings {
+    for (key, value) in settings_to_pass_on() {
         let mut pair = std::ffi::OsString::from(format!("{key}="));
         pair.push(value);
         open.extend(["--env".into(), pair]);
@@ -210,6 +206,17 @@ fn relaunch_after_exit(bundle: &Path, in_background: bool) {
     if let Err(e) = started {
         note(&format!("couldn't start the relaunch: {e}"));
     }
+}
+
+/// The Threadbear settings this run was given, for `open` to pass on to the
+/// next (`relaunch_after_exit`, and handover.rs's second copy).
+pub(crate) fn settings_to_pass_on() -> Vec<(String, std::ffi::OsString)> {
+    let mut settings: Vec<(String, std::ffi::OsString)> = std::env::vars_os()
+        .filter_map(|(key, value)| Some((key.into_string().ok()?, value)))
+        .filter(|(key, _)| (key.starts_with("THREADBEAR_") || key.starts_with("THREADBARE_")) && !["_THREAD_ID", "_THREAD_KEY", "_AUTOMATION"].iter().any(|s| key.ends_with(s)))
+        .collect();
+    settings.sort();
+    settings
 }
 
 /// The installed app's build, if it can follow main, or why it can't.
@@ -358,6 +365,11 @@ pub(crate) fn idle_seconds() -> f64 {
 impl Threadbear {
     /// From the app's start: only the installed app follows main.
     pub(crate) fn start_updater(&mut self, cx: &mut Context<Self>) {
+        // The incoming side of a handover starts it once it takes over: the
+        // app that's showing is the one following main.
+        if crate::handover::waiting() {
+            return;
+        }
         let info = match followable() {
             Ok(info) => info,
             Err(why) => {
@@ -657,13 +669,67 @@ impl Threadbear {
 
     fn restart_for_update(&mut self, in_background: bool, cx: &mut Context<Self>) {
         self.updater.restarting = true;
-        // Where it was, put back once the threads have loaded.
-        // And whether it was in front, so a restart made behind another app
-        // comes back behind it.
-        self.settings.saved.update_restore = Some(json!({ "mode": self.mode.name(), "selection": self.selected, "front": !in_background }));
+        // Where it was, put back once the threads have loaded: the list,
+        // the thread, where each thread was scrolled to, and whether it was
+        // in front, so a restart made behind another app comes back behind it.
+        self.settings.saved.update_restore = Some(self.restore_state(!in_background, cx));
         self.settings.save();
+        // Saved: the incoming app takes it (and clears it) from here, so a
+        // later save of this app's settings mustn't write it back.
+        self.settings.saved.update_restore = None;
+        // Next tick, outside whatever's being drawn or dispatched, so the
+        // window can be asked where it is.
+        cx.spawn(async move |this, cx| {
+            this.update(cx, |t, cx| t.hand_over_or_relaunch(in_background, cx)).ok();
+        })
+        .detach();
+    }
+
+    /// With the window plainly on screen, the new build is swapped in now
+    /// and started beside this one, which quits once it's showing
+    /// (handover.rs), so the window never goes away. Otherwise, or if that
+    /// can't start, the old way: quit, and open the app again.
+    fn hand_over_or_relaunch(&mut self, in_background: bool, cx: &mut Context<Self>) {
+        let main = self.main_window;
+        let spot = main.update(cx, |_, window, _| crate::handover::outgoing_spot(window)).ok().flatten();
+        if let Some(spot) = spot {
+            if drop_untrusted_staged() {
+                match rules::apply_staged(&install_dir(), &next_dir(), &old_dir(), &swapping_note(), self.updater.running.as_ref()) {
+                    Ok(Some(staged)) => {
+                        note(&format!("swapped in {} to hand over to", staged.short));
+                        self.updater.staged = None;
+                        self.hand_over(install_dir(), spot, move |_, cx| {
+                            relaunch_after_exit(&install_dir(), in_background);
+                            cx.quit();
+                        }, cx);
+                        return;
+                    }
+                    Ok(None) => {}
+                    Err(e) => note(&e),
+                }
+            }
+        }
         relaunch_after_exit(&install_dir(), in_background);
         cx.quit();
+    }
+
+    /// What a restart leaves for the next launch: the list and the thread
+    /// showing, whether it was in front, and where each thread was scrolled
+    /// to (the open ones measured now; ones opened earlier as they were
+    /// left), so none of them jumps to its end.
+    pub(crate) fn restore_state(&self, front: bool, cx: &App) -> serde_json::Value {
+        let mut live: Vec<(String, crate::rows::ScrollMemory)> = Vec::new();
+        let mut ids: Vec<String> = self.selected.iter().cloned().collect();
+        ids.extend(self.threads.keys().cloned());
+        for id in ids {
+            if let Some(pane) = self.pane_for(&id, cx) {
+                let pane = pane.read(cx);
+                if pane.is_loaded() {
+                    live.push((id, pane.capture_memory(cx)));
+                }
+            }
+        }
+        json!({ "mode": self.mode.name(), "selection": self.selected, "front": front, "scroll": crate::rows::scroll_memories_json(&live) })
     }
 
     /// On quit: the staged bundle takes the installed one's place, so the
@@ -697,16 +763,28 @@ impl Threadbear {
     pub(crate) fn restore_after_update(&mut self, cx: &mut Context<Self>) {
         let Some(saved) = self.settings.saved.update_restore.take() else { return };
         self.save_settings_soon(cx);
-        let mode = match saved["mode"].as_str() {
-            Some("scheduled") => crate::shell::SidebarMode::Scheduled,
-            Some("projects") => crate::shell::SidebarMode::Projects,
-            Some("librarian") => crate::shell::SidebarMode::Librarian,
+        // Where each thread was scrolled to, before any of them opens: the
+        // pane looks there as it loads (`restore_memory`).
+        crate::rows::recall_scroll_memories(&saved["scroll"]);
+        self.restore_place(saved["mode"].as_str().unwrap_or("inbox"), saved["selection"].as_str().unwrap_or(""), cx);
+    }
+
+    /// Puts the list and the thread back. Only what differs is changed, so a
+    /// handover's "go" that matches what's showing does nothing.
+    pub(crate) fn restore_place(&mut self, mode: &str, selection: &str, cx: &mut Context<Self>) {
+        let mode = match mode {
+            "scheduled" => crate::shell::SidebarMode::Scheduled,
+            "projects" => crate::shell::SidebarMode::Projects,
+            "librarian" => crate::shell::SidebarMode::Librarian,
             _ => crate::shell::SidebarMode::Inbox,
         };
-        self.set_mode(mode, cx);
-        if let Some(id) = saved["selection"].as_str().filter(|s| !s.is_empty()) {
-            self.pending_restore = Some(id.to_owned());
-            // The list is in already (a script's restart): open it now.
+        if self.mode != mode {
+            self.set_mode(mode, cx);
+        }
+        if !selection.is_empty() && self.selected.as_deref() != Some(selection) {
+            self.pending_restore = Some(selection.to_owned());
+            // The list is in already (a script's restart, or a handover's
+            // "go"): open it now.
             if self.sidebar.loaded {
                 self.open_pending(cx);
             }

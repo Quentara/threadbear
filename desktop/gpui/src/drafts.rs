@@ -84,6 +84,23 @@ impl Threadbear {
         }
     }
 
+    /// A handover's incoming app taking over: the drafts the outgoing app
+    /// wrote just before "go", put into every box that's empty here (what
+    /// was typed there while this app loaded).
+    pub(crate) fn reload_drafts(&mut self, cx: &mut Context<Self>) {
+        let Some(path) = self.drafts.path.clone() else { return };
+        self.drafts.saved = read(&path);
+        let mut boxes: Vec<(String, Entity<crate::composer::Composer>)> = self.composers.iter().map(|(k, c)| (k.clone(), c.clone())).collect();
+        if let Some(new) = &self.new_thread.composer {
+            boxes.push((NEW_THREAD.to_owned(), new.clone()));
+        }
+        for (key, composer) in boxes {
+            if !composer.read(cx).holds_anything(cx) {
+                self.restore_saved_draft(&key, &composer, cx);
+            }
+        }
+    }
+
     /// A box changed: written a moment later, once typing pauses.
     pub(crate) fn drafts_changed(&mut self, cx: &mut Context<Self>) {
         let task = cx.spawn(async move |this, cx| {

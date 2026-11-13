@@ -139,6 +139,28 @@ Feature: The Updates panel
     When the app comes back from restarting onto its next version on the Scheduled list with "Morning brief" open
     Then the sidebar shows the Scheduled list with "Morning brief" open
 
+  # Each thread comes back where it was scrolled to, not just the one open
+  # (the Swift app keeps only that one's): the spec reads what a restart
+  # would save, then puts it back as a new launch would, with nothing
+  # remembered or kept loaded.
+  @system.selfupdate @swift-pending @long-thread
+  Scenario: Back from restarting onto the next version, a thread I'd scrolled up in is where I left it
+    When I open the thread "A very long thread"
+    And I scroll up to the first row and read the rows on screen
+    And I open the thread "Add dark mode to the dashboard"
+    And the app comes back from restarting onto its next version with "A very long thread" open
+    Then the view isn't at the bottom
+    And what I was reading is still on screen
+
+  # The new build starts under the old window, shows the same thread in the
+  # same place and takes over, so the window never goes (handover.rs). A
+  # scripted app never restarts itself and the two windows are two apps, so
+  # it's checked by hand on a real screen. Only on a Mac so far.
+  @system.handover @manual @windows-pending @linux-pending
+  Scenario: Restarting onto the next version keeps the window on screen
+    When the app restarts onto its next version with "Morning brief" open
+    Then the window stays on screen showing "Morning brief" throughout
+
   # The quick way to take the app's update: a popover by the icon.
   @updates.popover
   Scenario: Right-clicking Updates offers Restart to Update once the next version is ready

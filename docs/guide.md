@@ -1902,8 +1902,10 @@ minute): straight away while you're in another app, and with it in front
 once you haven't touched the Mac for five seconds. "Typed" is any box: a
 message, a card's own answer, a project's goals being edited, a picture
 still coming in. It opens again on the list and the thread you had, behind
-the app you're in if that's where you were. It has no handover yet, so its
-window goes for a moment and comes back.
+the app you're in if that's where you were, with every thread you'd
+scrolled up in where you left it rather than at its end. On a Mac its
+window stays where it is: the new version opens the same thread underneath
+and takes over, as the Swift app's does.
 
 The Updates icon on the left-hand rail shows what's on its way for the app,
 the runner and the Claude Code and Codex tools. A grey dot means something

@@ -311,7 +311,11 @@ File references are where to look.
   Terminal shell running something, a web panel used in the last minute):
   straight away while you're in another app, and with the app in front
   once you haven't touched the Mac for five seconds (it asks macOS how
-  long since the last key, click or pointer move, nothing more). It writes what it did and the build's output to
+  long since the last key, click or pointer move, nothing more). With its
+  window on screen the restart is a handover: the new app is opened beside
+  the old one (`open -n`), and the two pass three small files (ready, go,
+  done) through a folder named for the old app's process,
+  `$TMPDIR/threadbear-handover-<pid>`, deleted once it's over. It writes what it did and the build's output to
   `~/Library/Logs/threadbear-desktop-update.log` (the one before it in
   `.log.1` once that passes 2 MB). `followMain: false` stops it too.
 - **Following GitHub on a second machine** (`runner/src/follow-origin.ts`):
