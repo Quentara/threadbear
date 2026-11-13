@@ -1,6 +1,8 @@
 #!/bin/bash
-# What the Swift app's "Start using the new app" runs: installs the GPUI app
-# beside the Swift one and opens it. The Swift app stays and keeps working.
+# Installs the GPUI app beside the Swift one and opens it. The Swift app's
+# "Start using the new app" starts a thread that runs this (NewApp.swift's
+# brief): first with --no-open, fixing whatever stops it, then without once
+# the person says Switch now. The Swift app stays and keeps working.
 #
 #   desktop/scripts/switch-from-swift.sh <checkout> [--no-open]
 #
@@ -18,8 +20,8 @@
 # 4. Opened. It brings over the Swift app's settings, drafts and files by
 #    itself the first time it starts (desktop/gpui/src/swift_import.rs).
 #
-# The Swift app reads the lines starting "STEP " as what to show, and runs this
-# from main too (git show), never the working tree, like its own updates.
+# Lines starting "STEP " say where it's got to. The thread runs this from
+# main (git show), never the working tree, like the apps' own updates.
 # The other scripts it runs come from main the same way.
 #
 # Exit 0 with the app open, 3 if an update build is already running, 5 if
