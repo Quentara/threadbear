@@ -29,6 +29,9 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
 /// (lengths kept, so offsets still line up), and everything after a file's
 /// `#[cfg(test)]` module dropped.
 fn code_only(text: &str) -> String {
+    // Windows' checkout has CRLF line ends (git's autocrlf), which would hide
+    // `#[cfg(test)]\nmod` and count a unit test's elements as the app's.
+    let text = text.replace("\r\n", "\n");
     let b = text.as_bytes();
     let mut out = vec![b' '; b.len()];
     let mut i = 0;
@@ -229,6 +232,13 @@ fn every_labelled_element_has_a_role() {
         "these have an accessibility label, or take a click, but have no role, so VoiceOver never sees them. Give each `.role(Role::Button)` (or ListItem, CheckBox, Tab...) and the state Swift's control has (`.aria_selected`, `.aria_toggled`, `.aria_expanded`); a wrapper naming a kit control for scripts gets `.role(Role::GenericContainer)`:\n{}",
         found.join("\n")
     );
+}
+
+#[test]
+fn a_test_module_is_left_out_with_either_line_end() {
+    let source = "fn a() { div().id(\"x\").role(Role::Button).aria_label(\"X\"); }\n#[cfg(test)]\nmod tests {\n    fn b() { div().id(\"y\").aria_label(\"Y\"); }\n}\n";
+    assert!(unroled(&code_only(source), "f.rs").is_empty());
+    assert!(unroled(&code_only(&source.replace('\n', "\r\n")), "f.rs").is_empty());
 }
 
 #[test]
