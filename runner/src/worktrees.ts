@@ -642,8 +642,23 @@ export function parseCheckTimes(text: string): { host?: string; copySeconds?: nu
   for (const line of text.split('\n')) {
     const host = /^Checking on (\S+) \((?:copied in (\d+)s)?/.exec(line);
     if (host) {
+      // A run starting on a host: any steps before it are from a host that
+      // dropped out partway (check-remote.sh goes to the next), not this run's.
       found.host = host[1];
+      delete found.copySeconds;
       if (host[2] !== undefined) found.copySeconds = Number(host[2]);
+      found.steps = [];
+      last = undefined;
+      continue;
+    }
+    // No host could take it, so check.sh runs it here (its own words): the
+    // steps that follow weren't on a host, and the updater mustn't read
+    // them as if they were (update.ts, passedLandCheck).
+    if (/^So the checks run on this Mac instead\b/.test(line)) {
+      delete found.host;
+      delete found.copySeconds;
+      found.steps = [];
+      last = undefined;
       continue;
     }
     const step = /^(ok|FAIL|skip)\s+(\S.*?)\s+(?:(\d+)s\b|\()(.*)$/.exec(line);

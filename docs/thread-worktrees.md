@@ -241,9 +241,11 @@ when check.sh ran its failing files again has `secondRun`, naming the tests.
 Past 1 MiB it's cut back to the newest 1000 lines. It stays on this Mac,
 and a log that can't be written never stops a landing.
 
-The runner's updater reads it too: a commit with a passing line here, with
-the runner's typecheck and unit tests run, is built without running them
-again (docs/dev-tools.md, "The runner updating itself").
+The runner's updater reads it too: a commit with a passing line here from
+a check host, with the runner's typecheck and unit tests run, is built
+without running them again (docs/dev-tools.md, "The runner updating
+itself"). `host` and `steps` are the last run's: a host that dropped out
+partway, or a run that fell back to this Mac, leaves none of its own.
 
 ## Cleaning up
 

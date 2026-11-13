@@ -143,7 +143,7 @@ export type UpdateDeps = {
   deploy?: (runnerDir: string, home: string, logFile: string, follow: string, opts?: { skipChecks?: boolean }) => Promise<DeployResult>;
   // Whether a landing's check already passed what the build would check
   // (landChecked above), and where.
-  landChecked?: (checkout: string, clone: string, prefix: string, commit: string, runningCommit: string | undefined) => Promise<string | undefined>;
+  landChecked?: (checkout: string, prefix: string, commit: string) => Promise<string | undefined>;
   // Deploys the Convex backend and website at main before the runner is
   // built (scripts/deploy-backend.mjs): a no-op when they haven't changed.
   deployBackend?: (repoDir: string, runnerDir: string, home: string, commit: string, logFile: string) => Promise<{ ok: boolean; error?: string }>;
@@ -359,21 +359,27 @@ export const LAND_CHECK_STEPS = ['runner typecheck', 'runner unit tests'];
 // names it, and the full one. Any other command's output is only words: on
 // 13 Nov a test's `echo "ok    runner typecheck"` was logged as that step.
 export const LAND_CHECK_COMMANDS = ['./check.sh --quick', './check.sh'];
-// The runner's packages. A build's checks install them afresh from the lock
-// (syncClone drops node_modules when it changes), where a landing checked in
-// its worktree, with no check host, runs against node_modules linked from
-// the main checkout (worktree-setup.sh), which may still be the old ones.
-export const PACKAGE_FILES = /^runner\/(package\.json|package-lock\.json|\.npmrc)$/;
 const LAND_TIMES_READ_MAX = 4 * 1024 * 1024;
 
 // The newest line of a landing log that is proof this exact commit passed
-// the runner's typecheck and unit tests: a real check (not a dry run) by
-// one of LAND_CHECK_COMMANDS, passing, with the worktree still at that
-// commit and unchanged when it ended (`intact`), and every line it printed
-// for each of LAND_CHECK_STEPS an ok, with at least one. Read as the
-// landing writes it: no link followed and no fifo waited on, and anything
-// odd is just no line.
-export function passedLandCheck(file: string, commit: string): { at?: string; host?: string } | undefined {
+// the runner's typecheck and unit tests as a build's own checks would run
+// them: a real check (not a dry run) by one of LAND_CHECK_COMMANDS,
+// passing, on a check host, with the worktree still at that commit and
+// unchanged when it ended (`intact`), and every line it printed for each of
+// LAND_CHECK_STEPS an ok, with at least one.
+//
+// On a check host only, as that's where a landing's check is a build's
+// check: check-remote.sh runs it on a copy of the files git doesn't ignore,
+// with packages installed for that copy's own lock. Run in the worktree
+// (no check host, or none could take it), it has whatever node_modules is
+// there, usually a link to the main checkout's, which stays on the old
+// packages after another thread lands an upgrade, and every ignored file;
+// a build's check in its clean clone, with packages installed from the
+// lock, catches what that hides (Codex, 13 Nov).
+//
+// Read as the landing writes it: no link followed and no fifo waited on,
+// and anything odd is just no line.
+export function passedLandCheck(file: string, commit: string): { at?: string; host: string } | undefined {
   let text: string;
   try {
     const { O_RDONLY, O_NOFOLLOW, O_NONBLOCK } = fs.constants;
@@ -394,11 +400,12 @@ export function passedLandCheck(file: string, commit: string): { at?: string; ho
     try {
       const e = JSON.parse(lines[i]) as { at?: unknown; host?: unknown; commit?: unknown; ok?: unknown; dryRun?: unknown; intact?: unknown; check?: unknown; steps?: unknown };
       if (e.commit !== commit || e.ok !== true || e.dryRun || e.intact !== true) continue;
+      if (typeof e.host !== 'string' || !e.host) continue;
       if (typeof e.check !== 'string' || !LAND_CHECK_COMMANDS.includes(e.check.trim())) continue;
       const steps = Array.isArray(e.steps) ? (e.steps as { name?: unknown; status?: unknown }[]) : [];
       const ran = (name: string) => steps.filter((s) => s?.name === name);
       if (!LAND_CHECK_STEPS.every((name) => ran(name).length > 0 && ran(name).every((s) => s.status === 'ok'))) continue;
-      return { ...(typeof e.at === 'string' ? { at: e.at } : {}), ...(typeof e.host === 'string' ? { host: e.host } : {}) };
+      return { ...(typeof e.at === 'string' ? { at: e.at } : {}), host: e.host };
     } catch {
       // a line cut short, or not a landing's
     }
@@ -408,40 +415,37 @@ export function passedLandCheck(file: string, commit: string): { at?: string; ho
 
 // Why a build of `commit` needn't run its typecheck and unit tests again, in
 // a few words, or undefined when it must. On 13 Nov every landing that
-// changed the runner had its tests run twice over: by `tb land` (check.sh
-// --quick, 5 minutes on a check host), then by the build of that same
+// changed the runner had its tests run twice over on the check hosts: by
+// `tb land` (check.sh --quick, 5 minutes), then by the build of that same
 // commit seconds later (check.sh --runner: the same typecheck and unit
-// tests and nothing more), about two hours a day of the check hosts and
-// five minutes more before each runner change was live. On a fork with no
-// check host both runs are on the person's own Mac.
+// tests and nothing more), about two hours a day of the hosts and five
+// minutes more before each runner change was live.
 //
 // Main only moves to a commit a landing's check passed, and the landing
 // leaves a line for it (worktrees.ts, logCheckTimes), so when the commit to
 // build has one that's proof (passedLandCheck), the build leaves its checks
 // out (deploy.mjs --skip-checks; the snapshot, the smoke test and the crash
-// rollback are as before). Not when the runner's packages have changed
-// since the release that's running, as only a build's checks are sure to
-// run on the ones its lock names; not for a release built with local
-// changes or a runner that isn't in runner/, where that can't be told; and
-// never on a machine that follows GitHub's main (the caller's rule), which
-// lands nothing itself.
+// rollback are as before). Not for a runner that isn't in runner/, where
+// check.sh's lines mean nothing, and never on a machine that follows
+// GitHub's main (the caller's rule), which lands nothing itself.
 //
-// What a worktree's check here still can't rule out, and a build's check in
-// its clean clone did: a test that passes only for a file git ignores there.
-export async function landChecked(checkout: string, clone: string, prefix: string, commit: string, runningCommit: string | undefined): Promise<string | undefined> {
-  if (prefix !== 'runner/' || !runningCommit || !/^[0-9a-f]{40,64}$/.test(commit) || !/^[0-9a-f]{7,64}$/.test(runningCommit)) return undefined;
+// What this takes on trust, as the landing itself does (Codex's second
+// look, 13 Nov): that check.sh runs what it prints (a build ran main's
+// check.sh too, but by --runner, or npm's scripts with no host), and that
+// nobody changed a file after the landing found the worktree clean and put
+// it back before the check ended, with the copy to the host made in
+// between: check-remote.sh copies the files, not the commit.
+export async function landChecked(checkout: string, prefix: string, commit: string): Promise<string | undefined> {
+  if (prefix !== 'runner/' || !/^[0-9a-f]{40,64}$/.test(commit)) return undefined;
   let common: string;
-  let changed: string;
   try {
     common = path.resolve(checkout, await gitAsync(checkout, ['rev-parse', '--git-common-dir']));
-    changed = await gitAsync(clone, ['diff', '--name-only', '--no-renames', runningCommit, commit, '--']);
   } catch {
-    return undefined; // no such commit in the clone, say: can't tell, so check
+    return undefined; // not a checkout: can't tell, so check
   }
-  if (changed.split('\n').some((f) => PACKAGE_FILES.test(f))) return undefined;
   const line = passedLandCheck(path.join(common, LAND_TIMES_FILE), commit);
   if (!line) return undefined;
-  return `tb land's check passed them at this commit${line.host ? ` on ${line.host}` : ''}${line.at ? ` at ${line.at}` : ''}`;
+  return `tb land's check passed them at this commit on ${line.host}${line.at ? ` at ${line.at}` : ''}`;
 }
 
 // deploy.mjs from the clone, stopping after it has pointed current at the
@@ -744,7 +748,7 @@ export class RunnerUpdater {
       // again (landChecked). A lookup that fails just means they are.
       const passed = this.followsOrigin
         ? undefined
-        : await (this.deps.landChecked ?? landChecked)(release.checkout, dir, release.prefix, main.commit, release.dirty ? undefined : release.commit).catch(() => undefined);
+        : await (this.deps.landChecked ?? landChecked)(release.checkout, release.prefix, main.commit).catch(() => undefined);
       if (this.stopped) return decision;
       log.info('building a release of main', { commit: main.short, subject: main.subject, ...(passed ? { checksLeftOut: passed } : {}) });
       let result = await (this.deps.deploy ?? runDeploy)(path.join(dir, release.prefix), home, updateLogPath(home), release.checkout, { skipChecks: Boolean(passed) });

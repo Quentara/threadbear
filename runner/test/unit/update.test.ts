@@ -7,7 +7,7 @@ import { tmpDir } from '../helpers/fakes.ts';
 import { FakeClock } from '../../src/clock.ts';
 import type { UpdateFailure } from '../../src/fix-update.ts';
 import { nullLogger } from '../../src/log.ts';
-import { CHECK_INTERVAL_MS, FIRST_CHECK_MS, MACHINE_WAIT_MS, MAX_MACHINE_TRIES, MAX_SLEPT_TRIES, SOON_MS, RunnerUpdater, runDeploy, launcherDiffers, launchAgentBehind, launcherSourcesHash, appOfExecutable, updateDir, watchMainRef, decideUpdate, failedAlready, releaseTreeAt, syncClone, updateFilePath, buildTreeAt, landChecked, passedLandCheck, LAND_CHECK_COMMANDS, LAND_CHECK_STEPS, PACKAGE_FILES, type UpdateDeps } from '../../src/update.ts';
+import { CHECK_INTERVAL_MS, FIRST_CHECK_MS, MACHINE_WAIT_MS, MAX_MACHINE_TRIES, MAX_SLEPT_TRIES, SOON_MS, RunnerUpdater, runDeploy, launcherDiffers, launchAgentBehind, launcherSourcesHash, appOfExecutable, updateDir, watchMainRef, decideUpdate, failedAlready, releaseTreeAt, syncClone, updateFilePath, buildTreeAt, landChecked, passedLandCheck, LAND_CHECK_COMMANDS, LAND_CHECK_STEPS, type UpdateDeps } from '../../src/update.ts';
 import { LAND_TIMES_FILE } from '../../src/land-queue.ts';
 import type { ReleaseJson } from '../../src/release.ts';
 import { noFileWatches, patiently } from '../helpers/patience.ts';
@@ -947,7 +947,12 @@ test('passedLandCheck: only a real, passing check of that very commit, by check.
   const tests = { name: 'runner unit tests', status: 'ok' };
   assert.equal(passedLandCheck(file, c), undefined, 'no log');
   assert.deepEqual(says(landLine(c)), { at: '2026-11-13T00:39:34.974Z', host: 'tinker-desk' });
-  assert.deepEqual(says(landLine(c, { host: undefined, at: undefined })), {}, 'a check run here, with no host');
+  assert.deepEqual(says(landLine(c, { at: undefined })), { host: 'tinker-desk' });
+  // Run in the worktree, with whatever packages and ignored files are there:
+  // not what a build's check in its clean clone would have run on.
+  assert.equal(says(landLine(c, { host: undefined })), undefined, 'a check run here, with no host');
+  assert.equal(says(landLine(c, { host: '' })), undefined);
+  assert.equal(says(landLine(c, { host: true })), undefined);
   assert.ok(says(landLine(c, { together: ['thread/other'] })), 'the top of a group');
   assert.ok(says(landLine(c, { check: './check.sh' })), 'the full check runs them too');
   assert.equal(says(landLine(other)), undefined, 'another commit');
@@ -988,60 +993,28 @@ test('passedLandCheck: only a real, passing check of that very commit, by check.
   assert.equal(passedLandCheck(file, c), undefined, 'a fifo is not waited on');
 });
 
-test("landChecked: a commit a landing checked here needs no second check, unless the runner's packages have changed", async () => {
+test('landChecked: a commit a landing checked on a check host needs no second check', async () => {
   const { repo, first, commit } = makeRepo();
-  const dir = path.join(updateDir(tmpDir('tb-update-home-')), 'src');
   const log = path.join(repo, '.git', LAND_TIMES_FILE);
   const src = commit('a runner change', 'runner/src/main.ts', 'console.log(2)\n');
-  await syncClone(repo, 'runner/', dir);
-  assert.equal(await landChecked(repo, dir, 'runner/', src, first), undefined, 'nothing says it was checked');
+  assert.equal(await landChecked(repo, 'runner/', src), undefined, 'nothing says it was checked');
   fs.writeFileSync(log, landLine(src));
-  assert.match((await landChecked(repo, dir, 'runner/', src, first)) ?? '', /^tb land's check passed them at this commit on tinker-desk at 2026-11-13T00:39:34.974Z$/);
-  // What can't be told is checked: a release built with local changes (no
-  // commit to compare from), a commit the clone doesn't have, a runner that
-  // isn't in runner/ (check.sh's lines mean nothing there), a checkout that
-  // isn't one.
-  assert.equal(await landChecked(repo, dir, 'runner/', src, undefined), undefined);
-  assert.equal(await landChecked(repo, dir, 'runner/', src, 'f'.repeat(40)), undefined);
-  assert.equal(await landChecked(repo, dir, '', src, first), undefined);
-  assert.equal(await landChecked(tmpDir(), dir, 'runner/', src, first), undefined);
-  assert.equal(await landChecked(repo, dir, 'runner/', 'HEAD', first), undefined, 'a commit id, not a name');
-
-  // A worktree's check may have run on the main checkout's packages, the
-  // old ones, so a change to them since the running release is still
-  // checked by the build, which installs from the lock...
-  let last = src;
-  for (const [file, text] of [
-    ['runner/package-lock.json', '{"name":"x","lockfileVersion":3,"v":9}\n'],
-    ['runner/package.json', '{"name":"x","v":9}\n'],
-    ['runner/.npmrc', 'x=1\n'],
-  ] as const) {
-    assert.ok(PACKAGE_FILES.test(file));
-    const c = commit(`changes ${file}`, file, text);
-    fs.appendFileSync(log, landLine(c));
-    await syncClone(repo, 'runner/', dir);
-    assert.equal(await landChecked(repo, dir, 'runner/', c, last), undefined, file);
-    // ...and so is the next landing, until a release with them is running.
-    const next = commit(`after ${file}`, 'runner/src/main.ts', `console.log(${JSON.stringify(file)})\n`);
-    fs.appendFileSync(log, landLine(next));
-    await syncClone(repo, 'runner/', dir);
-    assert.equal(await landChecked(repo, dir, 'runner/', next, last), undefined, `after ${file}`);
-    assert.ok(await landChecked(repo, dir, 'runner/', next, c), `after ${file}, with it running`);
-    last = next;
-  }
-  // Everything else, the deploy scripts and check.sh included, is what the
-  // landing's check ran with: a build's own checks are the same two steps.
-  fs.mkdirSync(path.join(repo, 'scripts'));
-  fs.mkdirSync(path.join(repo, 'runner', 'scripts'));
-  fs.mkdirSync(path.join(repo, 'runner', 'test', 'unit'), { recursive: true });
-  commit('a script', 'scripts/check-remote.sh', '1');
-  commit('the deploy', 'runner/scripts/deploy.mjs', '1');
-  commit('the check', 'check.sh', '1');
-  commit('another package file', 'package.json', '{}\n');
-  const test1 = commit('a test', 'runner/test/unit/x.test.ts', '1');
-  fs.appendFileSync(log, landLine(test1));
-  await syncClone(repo, 'runner/', dir);
-  assert.ok(await landChecked(repo, dir, 'runner/', test1, last));
+  assert.equal(await landChecked(repo, 'runner/', src), "tb land's check passed them at this commit on tinker-desk at 2026-11-13T00:39:34.974Z");
+  assert.equal(await landChecked(repo, 'runner/', first), undefined, 'another commit');
+  // From a worktree of the repo too: the log is beside the landing lock,
+  // in the common git directory.
+  const wt = path.join(tmpDir(), 'wt');
+  assert.equal(spawnSync('git', ['-C', repo, 'worktree', 'add', '-q', '--detach', wt, 'main']).status, 0);
+  assert.ok(await landChecked(wt, 'runner/', src));
+  // What can't be told is checked: a runner that isn't in runner/
+  // (check.sh's lines mean nothing there), a folder that isn't a checkout,
+  // a name in place of a commit id.
+  assert.equal(await landChecked(repo, '', src), undefined);
+  assert.equal(await landChecked(tmpDir(), 'runner/', src), undefined);
+  assert.equal(await landChecked(repo, 'runner/', 'HEAD'), undefined);
+  // A check that ran here, not on a host, is checked again by the build.
+  fs.writeFileSync(log, landLine(src, { host: undefined }));
+  assert.equal(await landChecked(repo, 'runner/', src), undefined);
 });
 
 // landChecked rests on a landing's check running everything a build's own
@@ -1109,8 +1082,8 @@ test("a build leaves its checks out when a landing passed them at that commit, a
   };
   const h = harness({}, deps);
   await h.u.check();
-  // Asked with the checkout, the clone, the commit to build and the commit running.
-  assert.deepEqual(asked, [[h.u.status().checkout, path.join(updateDir(h.home), 'src'), 'runner/', 'c2', 'c1']]);
+  // Asked with the checkout and the commit to build.
+  assert.deepEqual(asked, [[h.u.status().checkout, 'runner/', 'c2']]);
   assert.deepEqual(skipped, [true]);
   passed = undefined;
   await h.u.check();
@@ -1119,12 +1092,6 @@ test("a build leaves its checks out when a landing passed them at that commit, a
   passed = 'throws';
   await h.u.check();
   assert.deepEqual(skipped, [true, false, false]);
-  // A release built with local changes has no commit to compare from.
-  passed = 'yes';
-  const dirty = harness({ dirty: true, tree: undefined }, { ...deps, treeOf: () => 'a+b+c+d' });
-  asked.length = 0;
-  await dirty.u.check();
-  assert.equal(asked.at(-1)?.[4], undefined);
 
   // Following GitHub's main: nothing lands here, so nothing is asked.
   skipped.length = 0;

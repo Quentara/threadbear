@@ -387,28 +387,28 @@ rollback covers a release that doesn't come up.
   no host answers. Mike, 9 Nov: six updates that morning each ran the
   whole unit suite on his M5 for ten minutes. With no check host they run
   in the clone as before.
-- A commit that `tb land` checked on this machine isn't checked a second
+- A commit that `tb land` checked on a check host isn't checked a second
   time. Main only moves to a commit a landing's check passed, and that
   check leaves a line in `threadbear-land-times.log`
   (docs/thread-worktrees.md, "Where a landing's time goes"). When the
   commit to build has a line there that's proof (a real check, not a dry
-  run, by `./check.sh --quick` or `./check.sh`, passing, with the worktree
-  still at that commit and unchanged when it ended, and the runner's
-  typecheck and unit tests run and not skipped), the build runs `deploy.mjs
-  --skip-checks` (`landChecked` in `runner/src/update.ts`; the runner's log
-  says `checksLeftOut`). The snapshot, the smoke test and the crash
-  rollback are as before. On 13 Nov each landing that changed the runner
-  had the same tests run twice, five minutes apart (a build's `check.sh
-  --runner` is those two steps and nothing more): about two hours a day of
-  the check hosts, and on a fork with no check host both runs on the
-  person's own Mac. The checks still run when the runner's packages have
-  changed since the running release (a build installs them from the lock;
-  a worktree's check may have run on the main checkout's), for a commit
-  that reached main some other way (`scripts/sync-main.sh`, a push), and
-  always on a machine that follows GitHub's main, which has no landings of
-  its own to go by. What that gives up: a build's check ran in a clean
-  clone, so it would catch a test that only passes for a file git ignores
-  in the worktree.
+  run, by `./check.sh --quick` or `./check.sh`, passing, on a check host,
+  with the worktree still at that commit and unchanged when it ended, and
+  the runner's typecheck and unit tests run and not skipped), the build
+  runs `deploy.mjs --skip-checks` (`landChecked` in `runner/src/update.ts`;
+  the runner's log says `checksLeftOut`). The snapshot, the smoke test and
+  the crash rollback are as before. On 13 Nov each landing that changed the
+  runner had the same tests run twice on the check hosts, five minutes
+  apart (a build's `check.sh --runner` is those two steps and nothing
+  more): about two hours a day of the hosts. The checks still run for a
+  landing checked in its worktree (no check host, or none could take it):
+  that check has the worktree's `node_modules`, usually a link to the main
+  checkout's, which stays on the old packages after another thread lands an
+  upgrade, and every file git ignores there, where a build's check has a
+  clean clone and packages installed from the lock. They also run for a
+  commit that reached main some other way (`scripts/sync-main.sh`, a push),
+  and always on a machine that follows GitHub's main, which has no landings
+  of its own to go by.
 - A build that fails starts a thread in the background to fix it
   (`runner/src/fix-update.ts`; Mike, 6 Nov: the old banner came up often,
   mostly for tests that flaked on a busy Mac, and told him nothing he could

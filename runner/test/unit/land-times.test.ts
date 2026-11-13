@@ -53,6 +53,28 @@ test('parseCheckTimes reads check.sh lines: host, copy, steps, skips and a step 
   });
 });
 
+// The updater reads `host` as where the steps ran (update.ts,
+// passedLandCheck), so steps from a host that dropped out, or run here
+// after none could take it, mustn't be logged as a host's.
+test('parseCheckTimes: the host and steps are the last run\'s, and a run that fell back to this Mac has no host', () => {
+  const dropped = ['Checking on tinker-desk (copied in 2s; x)', 'ok    runner typecheck        1s', 'FAIL  runner unit tests      9s  /x.log'];
+  assert.deepEqual(parseCheckTimes([...dropped, 'Checking on cloud (its copy is already there)', 'ok    runner typecheck        2s', 'ok    runner unit tests    300s'].join('\n')), {
+    host: 'cloud',
+    steps: [{ name: 'runner typecheck', status: 'ok', seconds: 2 }, { name: 'runner unit tests', status: 'ok', seconds: 300 }],
+  });
+  assert.deepEqual(parseCheckTimes([...dropped, 'So the checks run on this Mac instead, at low priority.', 'ok    runner typecheck        2s', 'ok    runner unit tests    300s'].join('\n')), {
+    steps: [{ name: 'runner typecheck', status: 'ok', seconds: 2 }, { name: 'runner unit tests', status: 'ok', seconds: 300 }],
+  });
+});
+
+// check.sh's own words when no host could take a run, which the above goes by.
+test('check.sh still says when a run falls back to this Mac', () => {
+  const sh = fs.readFileSync(new URL('../../../check.sh', import.meta.url), 'utf8');
+  assert.match(sh, /^\s*echo "So the checks run on this Mac instead, at low priority\."$/m);
+  const remote = fs.readFileSync(new URL('../../../scripts/check-remote.sh', import.meta.url), 'utf8');
+  assert.equal(remote.match(/^\s*echo "Checking on \$HOST \(/gm)?.length, 2, 'both of check-remote.sh\'s lines for a run starting on a host');
+});
+
 test('parseCheckTimes copes with a copy already on the host, and with a check that prints no steps', () => {
   assert.deepEqual(parseCheckTimes('Checking on cloud (its copy is already there)\n'), { host: 'cloud', steps: [] });
   assert.deepEqual(parseCheckTimes('anything else a repo prints\nok then\n'), { steps: [] });
