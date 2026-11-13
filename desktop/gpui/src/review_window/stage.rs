@@ -51,6 +51,10 @@ pub(crate) struct StageState {
     pub(crate) page: Option<(String, Rc<threadbear_web::PanelPage>)>,
     /// Why the page shot on show couldn't show in place, by its file.
     page_failed: Option<(String, String)>,
+    /// What the page is waiting for (the runtime), for the dump.
+    page_waiting: Option<String>,
+    /// The web runtime watched, so the stage draws again as it starts.
+    runtime_watch: Option<Subscription>,
 }
 
 struct Zoomed {
@@ -62,7 +66,7 @@ struct Zoomed {
 impl StageState {
     /// Why the last page shot couldn't show in place, for the dump.
     pub(crate) fn page_failed_reason(&self) -> Option<String> {
-        self.page_failed.as_ref().map(|(_, why)| why.clone())
+        self.page_failed.as_ref().map(|(_, why)| why.clone()).or_else(|| self.page_waiting.clone())
     }
 
     pub(crate) fn zoom_requested(&mut self, step: ZoomStep) {
@@ -345,10 +349,19 @@ impl ReviewWindow {
     /// web runtime isn't running here or the gate won't show the file: then
     /// the still and Open the page, as before.
     fn stage_page(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let runtime = crate::web_runtime::runtime(cx)?;
+        let Some(runtime) = crate::web_runtime::runtime(cx) else {
+            self.stage.page_waiting = Some("no web runtime here".into());
+            return None;
+        };
+        // Drawn again as it starts, so the page comes once it's running.
+        if self.stage.runtime_watch.is_none() {
+            self.stage.runtime_watch = Some(cx.observe(&runtime, |_, _, cx| cx.notify()));
+        }
         if runtime.read(cx).state != threadbear_core::web_runtime::State::Ready || !runtime.update(cx, |r, cx| r.ensure_engine(cx)) {
+            self.stage.page_waiting = Some(format!("runtime {:?}", runtime.read(cx).state));
             return None;
         }
+        self.stage.page_waiting = None;
         if self.stage.page_failed.as_ref().is_some_and(|(p, _)| p == path) {
             return None;
         }

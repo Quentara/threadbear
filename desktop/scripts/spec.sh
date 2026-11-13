@@ -22,6 +22,9 @@ else
   private="${TMPDIR:-/tmp}/spec-gpui-$$"
   mkdir -p "$private"
   cp "${CARGO_TARGET_DIR:-desktop/target}/debug/threadbear-gpui" "$private/threadbear-gpui"
+  # Its web helper beside it, or the web runtime never starts and every
+  # @web-runtime scenario waits on a page that can't come.
+  cp "${CARGO_TARGET_DIR:-desktop/target}/debug/threadbear-web-helper" "$private/threadbear-web-helper"
   export TB_GPUI_BIN="$private/threadbear-gpui"
   trap 'rm -rf "$private"' EXIT
 fi

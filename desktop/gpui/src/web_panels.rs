@@ -448,6 +448,11 @@ fn slot(panels: &Entity<WebPanels>, key: &str, url: &str, kind: impl FnOnce() ->
     div().size_full().into_any_element()
 }
 
+thread_local! {
+    /// What the pane's local page last found, for the dump.
+    static LOCAL_PAGE: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
+}
+
 /// A local web page in the pane (`file.htmlpreview`), sealed: a page of the
 /// pool like a panel's, but in the sealed context, reading only its own
 /// folder's named assets (threadbear_web::preview_rules), with its scripts on
@@ -457,8 +462,12 @@ pub(crate) fn local_page(real: &str, scripts_for: Option<&str>, opened: u64, mai
     let Some(panels) = panels(cx) else { return note("This page can't show here.", cx) };
     let parent = match running("hl-page", "this page", main, None, window, cx) {
         Ok(parent) => parent,
-        Err(instead) => return instead,
+        Err(instead) => {
+            LOCAL_PAGE.with(|l| *l.borrow_mut() = format!("waiting (main window: {main})"));
+            return instead;
+        }
     };
+    LOCAL_PAGE.with(|l| *l.borrow_mut() = "running".into());
     let key = format!("preview:{opened}:{}:{real}", scripts_for.unwrap_or(""));
     if let Some(drawn) = panels.update(cx, |p, _| p.touch(&key)) {
         return canvas(move |bounds, _, _| drawn.set((frame_now(), bounds)), |_, _, _, _| {}).size_full().into_any_element();
@@ -1121,6 +1130,7 @@ pub(crate) fn dump(cx: &App) -> Value {
         "covered": p.covered,
         // Why a page couldn't be made, by its key.
         "failed": p.failed,
+        "localPage": LOCAL_PAGE.with(|l| l.borrow().clone()),
         "edits": EDITS.with(|e| e.borrow().clone()),
     })
 }

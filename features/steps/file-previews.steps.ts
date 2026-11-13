@@ -142,7 +142,7 @@ Then('the local page in the pane is titled {string}', { timeout: 120_000 }, asyn
   } catch (e) {
     // What the pool and the pane had, to say why.
     const d = await this.app.dump();
-    throw new Error(`${(e as Error).message}\nwebPanels: ${JSON.stringify((d as { webPanels?: unknown }).webPanels)}\npane: ${JSON.stringify(pane(d))}`);
+    throw new Error(`${(e as Error).message}\nwebRuntime: ${JSON.stringify((d as { webRuntime?: unknown }).webRuntime)}\nwebPanels: ${JSON.stringify((d as { webPanels?: unknown }).webPanels)}\npane: ${JSON.stringify(pane(d))}`);
   }
 });
 
