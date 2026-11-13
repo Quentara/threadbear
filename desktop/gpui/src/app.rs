@@ -977,7 +977,9 @@ impl Threadbear {
                     // restart), and the list loads again once it's back. A
                     // restart's drop put "The connection to the runner
                     // closed" under the search box (Codex's review, 13 Nov).
-                    Err(e) if e.is_connection() => {}
+                    // Not a timeout: the socket's still up then, and nothing
+                    // would load the list again (Codex's second look).
+                    Err(e) if matches!(e.code, threadbear_client::runner::NOT_CONNECTED | threadbear_client::runner::CLOSED) => {}
                     Err(e) => this.list_error = Some(e.message),
                 }
                 cx.notify();
