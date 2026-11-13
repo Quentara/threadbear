@@ -218,19 +218,22 @@ export function askBrief(tb: string, reason?: FullSyncReason, machine = 'Mac'): 
 /**
  * Asks at most once, whatever sets it off: the runner's start (a phone, a
  * browser or another machine already there), a phone or browser being paired
- * here, or another runner turning up. The note in runner.json is what makes it
- * once; `busy` stops two triggers starting two threads in the meantime.
+ * here, or another runner turning up. It notes `fullAsked` before it opens the
+ * thread, so a crash in between asks never rather than twice, and only the
+ * thread it opened is recorded as the one that may set the answer; a thread
+ * that won't open takes the note back, for a later trigger. `busy` stops two
+ * triggers in one process starting two threads.
  */
 type FullSyncOfferDeps = {
   read(): { syncOn: boolean; key: string | undefined; full: boolean | undefined; asked: string | undefined };
   start(reason: FullSyncReason): string;
-  note(threadId: string): void;
+  // Before the thread opens (no id), then again with its id; `undefined` with
+  // `clear` takes the note back.
+  note(threadId: string | undefined, clear?: boolean): void;
   later(fn: () => void, ms: number): void;
   delayMs: number;
   // False while the runner is stopping or handing over: then it waits for a later trigger.
   allowed(): boolean;
-  // A thread already asking (opened by a runner that stopped before it noted it).
-  existing(): string | undefined;
   log?: (msg: string, meta: Record<string, unknown>) => void;
 };
 
@@ -253,16 +256,13 @@ export class FullSyncOffer {
       try {
         // Answered, or asked by an earlier release, in the meantime: nothing.
         if (!shouldAskFullSync(this.deps.read()) || !this.deps.allowed()) return;
-        const already = this.deps.existing();
-        if (already) {
-          this.deps.note(already);
-          return;
-        }
+        this.deps.note(undefined);
         let threadId: string;
         try {
           threadId = this.deps.start(reason);
         } catch (e) {
           // A runner handing over refuses new threads: the next trigger, or the next start, asks.
+          this.deps.note(undefined, true);
           this.deps.log?.('could not ask about full sync', { error: String(e) });
           return;
         }

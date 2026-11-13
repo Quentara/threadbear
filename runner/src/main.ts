@@ -41,7 +41,7 @@ import { ClaudeAdapter } from './adapters/claude/adapter.ts';
 import { ProcessRegistry } from './proc.ts';
 import { Runner } from './runner.ts';
 import { startOwnThread } from './own-threads.ts';
-import { askBrief, ConvexUseTally, FULL_SYNC_ASK_TITLE, FullSyncOffer, fullSyncReason } from './convex-use.ts';
+import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncReason } from './convex-use.ts';
 // How long after starting the runner looks for a reason to ask about full sync,
 // and how long after a pairing or a new machine it asks (convex-use.ts).
 const ASK_FULL_SYNC_AFTER_MS = 5 * 60_000;
@@ -716,32 +716,43 @@ async function main(): Promise<void> {
       const tb = `'${tbPath.replace(/'/g, `'\\''`)}'`;
       return startOwnThread(runner, askBrief(tb, reason, process.platform === 'darwin' ? 'Mac' : 'machine'), thisRelease?.checkout);
     },
-    note: (threadId) => {
+    note: (threadId, clear) => {
       const json = readRunnerJson(cfg.home);
-      json.sync = { ...json.sync, fullAsked: new Date().toISOString(), fullAskedThread: threadId };
+      const { fullAsked: _a, fullAskedThread: _t, ...rest } = json.sync ?? {};
+      json.sync = clear ? rest : { ...rest, fullAsked: new Date().toISOString(), ...(threadId ? { fullAskedThread: threadId } : {}) };
       writeRunnerJson(cfg.home, json);
     },
     later: (fn, ms) => void setTimeout(fn, ms).unref?.(),
     delayMs: ASK_FULL_SYNC_EVENT_MS,
     allowed: () => !stopping && !draining,
-    existing: () => runner.list(['inbox', 'snoozed', 'archived']).find((t) => t.title === FULL_SYNC_ASK_TITLE)?.id,
     log: (msg, meta) => log.info(msg, meta),
   });
   fullSyncOfferRef = fullSyncOffer;
   // A phone, browser or other machine that's already there: a few minutes in,
   // so a release that's about to roll back doesn't ask, then hourly while it
-  // hasn't, for a token issued by hand or a lookup that failed. Only machines
-  // heard from lately count: a runner whose key was revoked lingers in the list.
-  const lookForFullSyncReason = () => {
+  // hasn't, for a token issued by hand or a lookup that failed. Two small
+  // reads (tokens, and the runners list without their threads), and only a
+  // runner heard from in the last few minutes counts: one whose key was revoked
+  // can't heartbeat, but lingers in the list.
+  const lookForFullSyncReason = async () => {
     if (!fullSyncOffer.open || stopping || draining) return;
-    void sync
-      .listTokens()
-      .then((devices) => fullSyncOffer.trigger(fullSyncReason({ devices, otherRunners: sync.remoteThreads().runners.filter((r) => r.online).length })))
-      .catch(() => undefined);
+    try {
+      const devices = await sync.listTokens();
+      const now = Date.now();
+      const others = (await sync.scheduleBackend().runners()).filter((r) => r.id !== syncRunnerId && r.lastSeenAt !== undefined && now - r.lastSeenAt < 3 * 60_000);
+      fullSyncOffer.trigger(fullSyncReason({ devices, otherRunners: others.length }));
+    } catch {
+      // Offline or refused: the next look tries again.
+    }
   };
   setTimeout(() => {
-    lookForFullSyncReason();
-    setInterval(lookForFullSyncReason, ASK_FULL_SYNC_LOOK_MS).unref?.();
+    void lookForFullSyncReason();
+    const look = setInterval(() => {
+      // Once it's asked, or been answered, there's nothing left to look for.
+      if (!fullSyncOffer.open) clearInterval(look);
+      else void lookForFullSyncReason();
+    }, ASK_FULL_SYNC_LOOK_MS);
+    look.unref?.();
   }, ASK_FULL_SYNC_AFTER_MS).unref?.();
   const upstream = new Upstream({
     home: cfg.home,

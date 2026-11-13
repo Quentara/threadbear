@@ -101,13 +101,14 @@ test('the question names what made it useful, with the benefit first', () => {
 });
 
 function offer(start: { full?: boolean; asked?: string; key?: string } = {}) {
-  const state = { full: start.full, asked: start.asked, allowed: true, existing: undefined as string | undefined, noted: [] as string[] };
+  const state = { full: start.full, asked: start.asked as string | undefined, allowed: true, noted: [] as (string | undefined)[], startedWithNote: [] as boolean[] };
   const started: FullSyncReason[] = [];
   const queued: (() => void)[] = [];
   let failNext = false;
   const o = new FullSyncOffer({
     read: () => ({ syncOn: true, key: start.key ?? 'k', full: state.full, asked: state.asked }),
     start: (reason) => {
+      state.startedWithNote.push(state.asked !== undefined);
       if (failNext) {
         failNext = false;
         throw new Error('handing over');
@@ -115,14 +116,13 @@ function offer(start: { full?: boolean; asked?: string; key?: string } = {}) {
       started.push(reason);
       return `t${started.length}`;
     },
-    note: (id) => {
-      state.asked = '2026-11-13T00:00:00.000Z';
-      state.noted.push(id);
+    note: (id, clear) => {
+      state.asked = clear ? undefined : '2026-11-13T00:00:00.000Z';
+      state.noted.push(clear ? 'cleared' : id);
     },
     later: (fn) => void queued.push(fn),
     delayMs: 1,
     allowed: () => state.allowed,
-    existing: () => state.existing,
   });
   return { o, state, started, run: () => queued.splice(0).forEach((f) => f()), failOnce: () => (failNext = true) };
 }
@@ -173,13 +173,19 @@ test("answered while it waited, it doesn't ask; a refused thread lets a later tr
   assert.deepEqual(r.started, ['browser']);
 });
 
-test("a thread a stopped runner opened but didn't note is noted, not asked again", () => {
+test('it notes before opening the thread, so a crash in between asks never, not twice', () => {
   const t = offer();
-  t.state.existing = 'old';
   t.o.trigger('phone');
   t.run();
-  assert.deepEqual(t.started, [], 'no second thread');
-  assert.deepEqual(t.state.noted, ['old']);
+  assert.deepEqual(t.state.startedWithNote, [true], 'already noted when the thread opens');
+  assert.deepEqual(t.state.noted, [undefined, 't1'], 'then the thread that may answer is recorded');
+  // A thread that won't open (handing over) takes the note back, so a later trigger asks.
+  const r = offer();
+  r.failOnce();
+  r.o.trigger('phone');
+  r.run();
+  assert.deepEqual(r.state.noted, [undefined, 'cleared']);
+  assert.equal(r.state.asked, undefined);
 });
 
 test('while the runner is stopping or handing over it waits, and a later trigger asks', () => {

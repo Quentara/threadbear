@@ -466,7 +466,7 @@ Size is `none` throughout: the planning docs don't size these, and work the app 
 | `planned.cloud.sandboxes` | Cloud sandboxes | Runner in a throwaway VM, shown as a remote peer | Appears as another runner in the existing runner lists (not designed or built yet). | build | none | none |
 | `planned.schedule.anyrunner` | Any-runner schedules | First runner to reach it claims the run | A "no runner" option in `schedule.editor` (not confirmed as built). | build | none | none |
 | `planned.runner.smarterchoice` | Smarter runner choice | Picks the runner for a new thread | Changes what `composer.runner` offers (not confirmed as built). | build | none | none |
-| `planned.sync.fullconvex` | Full Convex by default | Drops the Tailscale link, runner tokens and pairing by token | Changes how `foundation.rpc` reaches other runners; `sync.full` exists but is off by default. | build | none | none |
+| `planned.sync.fullconvex` | Full Convex | Drops the Tailscale link, runner tokens and pairing by token | Changes how `foundation.rpc` reaches other runners; `sync.full` exists but is off by default. | build | none | none |
 | `planned.sandbox.leftovers` | Disposable sandboxes' leftovers | Keeps screenshots and bodies when a runner vanishes | Show what's kept once its runner is gone (not designed, unverified what the client gets). | build | none | none |
 | `planned.acp.gaps` | ACP gaps | Usage readings, sandbox, rewind and CLI updates are missing for some providers | Hide those controls per provider, from `ProviderInfo`. | build | none | none |
 | `planned.connectors.google` | Google in connectors | A guided step for Google in the connectors flow | A step in `connectors.panel` (status of this work not checked). | build | none | none |
