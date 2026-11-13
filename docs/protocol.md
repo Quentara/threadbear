@@ -12,8 +12,9 @@ hide what a Trust action permits. Decode diagnostics name
 only the type or position, never values or user text. A failed, empty or partly
 unreadable local thread list is not evidence that previously listed threads were
 deleted: clients keep those rows and must not run missing-thread cleanup.
-Other runners' indexes carry `ready`: a fully readable remote list with
-`ready: true` may be empty after the last remote thread or runner was removed.
+Other runners' indexes carry `ready`: a fully readable remote list that is
+ready may be empty after the last remote thread or runner was removed. Older
+runners omit `ready` once a list has arrived.
 
 ## Auth
 

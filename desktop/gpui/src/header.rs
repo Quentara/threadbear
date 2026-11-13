@@ -955,7 +955,7 @@ impl Threadbear {
     /// Whether the open thread's last turn failed with its login refused
     /// (`signInNeeded`: errorKind auth, signed out or its session ran out).
     pub(crate) fn sign_in_needed(&self, thread: &ThreadSummary, cx: &App) -> bool {
-        thread.status == "error" && self.latest_completion(cx).is_some_and(|c| c.outcome == TurnOutcome::Failed && c.error_kind == Some(TurnErrorKind::Auth))
+        thread.status == "error" && self.completion_for(&thread.id, cx).is_some_and(|c| c.outcome == TurnOutcome::Failed && c.error_kind == Some(TurnErrorKind::Auth))
     }
 
     /// `signInAccount`: this Mac's login to sign in again. Never another
@@ -1052,14 +1052,25 @@ impl Threadbear {
 
     /// Sends the thread's last message of his again, after signing in
     /// (`sendAgain`).
-    pub(crate) fn send_again(&mut self, _thread: &str, cx: &mut Context<Self>) {
-        if let Some(pane) = &self.pane {
+    pub(crate) fn send_again(&mut self, thread: &str, cx: &mut Context<Self>) {
+        if let Some(pane) = self.pane_for(thread, cx) {
             pane.update(cx, |p, cx| {
                 if let Some(text) = p.last_user_text() {
                     p.send(text, None, cx);
                 }
             });
         }
+    }
+
+    /// A pinned thread's auth failure belongs to its own pane, even while a
+    /// different thread is open in the main panel.
+    fn completion_for(&self, thread: &str, cx: &App) -> Option<TurnCompletion> {
+        let pane = self.pane_for(thread, cx)?;
+        let p = pane.read(cx);
+        p.feed.model().rows().iter().rev().take(40).find_map(|row| match &row.content {
+            RowContent::Footer(c) => Some(c.clone()),
+            _ => None,
+        })
     }
 
     pub(crate) fn latest_completion(&self, cx: &App) -> Option<TurnCompletion> {

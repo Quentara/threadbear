@@ -96,13 +96,14 @@ fn invalid_identities_and_duplicate_rows_do_not_authorize_cleanup() {
 }
 
 #[test]
-fn remote_unconfirmed_empty_partial_and_invalid_indexes_cannot_remove_missing_threads() {
+fn remote_partial_invalid_and_unready_indexes_cannot_remove_missing_threads() {
     let good = json!({"runnerId":"cloud","threadId":"12345678-1234-1234-1234-123456789abc"});
-    for value in [json!({}), json!({"threads":false}), json!({"threads":[]}), json!({"threads":[false]}), json!({"threads":[good.clone(),false]}), json!({"threads":[good.clone(),good.clone()]})] {
+    for value in [json!({}), json!({"threads":false}), json!({"threads":[false]}), json!({"threads":[good.clone(),false]}), json!({"threads":[good.clone(),good.clone()]})] {
         assert!(!decode_remote_threads(&value).can_remove_missing());
     }
     assert!(decode_remote_threads(&json!({"threads":[good]})).can_remove_missing());
     assert!(decode_remote_threads(&json!({"threads":[], "ready":true})).can_remove_missing(), "a confirmed empty remote index removes its last deleted thread");
+    assert!(decode_remote_threads(&json!({"threads":[]})).can_remove_missing(), "old runners omit ready once the list has arrived");
     assert!(!decode_remote_threads(&json!({"threads":[], "ready":false})).can_remove_missing());
 }
 

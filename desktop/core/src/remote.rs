@@ -38,8 +38,8 @@ pub struct RemoteThreads {
     /// Mike's runner order (backend API 58), every runner's id: what the
     /// phone and the Runners panel list them in. None from a backend without one.
     pub order: Option<Vec<String>>,
-    /// A partial index cannot prove a previously seen row is gone. Empty
-    /// remote indexes need the runner's explicit `ready: true` confirmation.
+    /// A partial or unready index cannot prove a previously seen row is gone.
+    /// Missing `ready` is an older runner, whose array is already ready.
     complete: bool,
 }
 
@@ -114,8 +114,7 @@ pub fn decode_remote_threads(value: &Value) -> RemoteThreads {
     }).collect();
     if values.is_none() { crate::wire::dropped::<RemoteThreads>("remote thread list envelope"); }
     let ready = value["ready"].as_bool();
-    let complete = ready != Some(false) && values.is_some_and(|v| v.len() == threads.len())
-        && (!threads.is_empty() || ready == Some(true));
+    let complete = ready != Some(false) && values.is_some_and(|v| v.len() == threads.len());
     RemoteThreads {
         runners: value["runners"].as_array().into_iter().flatten().filter_map(RemoteRunner::decode).collect(),
         threads,
