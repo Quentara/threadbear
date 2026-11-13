@@ -33,6 +33,10 @@ struct OutlineWindow {
 }
 
 impl FloatingWindows {
+    /// The window a panel was taken into, for scripted window inspection.
+    pub fn handle(&self, panel: &str) -> Option<AnyWindowHandle> {
+        self.windows.get(panel).copied()
+    }
     /// Opens a window for each floating panel without one, closes those
     /// whose panel went back into the dock or was closed. A panel with
     /// nothing to show right now (a thread's patch panel while another

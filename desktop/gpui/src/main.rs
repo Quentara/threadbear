@@ -15,6 +15,8 @@ mod archive_flight;
 mod app_update;
 #[cfg(feature = "automation")]
 mod automation;
+#[cfg(feature = "automation")]
+mod automation_compat;
 mod card_run;
 mod chips;
 mod colour_space;

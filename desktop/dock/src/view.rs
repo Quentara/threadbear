@@ -130,6 +130,11 @@ struct LayoutMotion {
 }
 
 impl DockView {
+    /// A panel's own window, if it has been taken out of the dock.
+    pub fn floating_window(&self, panel: &str) -> Option<AnyWindowHandle> {
+        self.windows.handle(panel)
+    }
+
     /// A dock for `layout`. It redraws itself when the model changes, and
     /// opens and closes the torn-out windows the layout says it has.
     pub fn new(model: Entity<DockModel>, content: SharedContent, options: DockOptions, cx: &mut Context<Self>) -> Self {

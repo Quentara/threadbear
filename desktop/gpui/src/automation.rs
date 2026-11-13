@@ -168,6 +168,9 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
     if cmd["cmd"] == "webPanel" {
         return crate::web_panels::automation(cmd, cx).await;
     }
+    if cmd["cmd"] == "convex" {
+        return crate::web_panels::convex_command(app, cmd, cx).await;
+    }
     // `text` typed as a person's keys are, through AppKit, to whoever has the
     // window's keyboard (`keyboard` in the dump): a page's view takes them
     // from GPUI's. Out here, not in an update, as AppKit hands them straight
@@ -228,6 +231,8 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
         cx.update(crate::about_window::handle).ok_or("the About window isn't open")?
     } else if cmd["settings"].as_bool() == Some(true) && cmd["cmd"] != "settings" {
         app.read_with(cx, |t, _| t.settings_window.as_ref().map(|(handle, _)| *handle)).ok_or("the Settings window isn't open")?
+    } else if let Some(panel) = cmd["panel"].as_str().filter(|_| matches!(cmd["cmd"].as_str(), Some("window" | "point" | "size" | "resize" | "screenshot" | "click-at"))) {
+        app.read_with(cx, |t, cx| t.dock_view.read(cx).floating_window(panel)).ok_or("that panel has no window of its own")?
     } else {
         window
     };
@@ -266,6 +271,18 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
     }
     // Its clicks and keys are the script's, not Mike being at the window.
     let out = cx.update_window(window, |_, window, cx| crate::thread::scripted_input(|| step(&app, cmd, window, cx))).map_err(|e| e.to_string())??;
+    if cmd["cmd"] == "point" && cmd.get("scrollX").is_none() && cmd.get("scrollY").is_none() {
+        let hold = cmd["holdMs"].as_f64().filter(|h| h.is_finite() && *h > 0.).unwrap_or(0.).min(30_000.);
+        if hold > 0. {
+            cx.background_executor().timer(std::time::Duration::from_secs_f64(hold / 1000.)).await;
+            cx.update_window(window, |_, window, cx| crate::thread::scripted_input(|| {
+                let x = cmd["toX"].as_f64().or(cmd["x"].as_f64()).unwrap_or(0.);
+                let y = cmd["toY"].as_f64().or(cmd["y"].as_f64()).unwrap_or(0.);
+                window.pointer_up(point(px(x as f32), px(y as f32)), MouseButton::Left, cx);
+                window.render_frame(cx);
+            })).map_err(|e| e.to_string())?;
+        }
+    }
     if !from_new {
         return Ok(out);
     }
@@ -315,6 +332,8 @@ fn text<'a>(cmd: &'a Value, key: &str) -> &'a str {
 /// is what's on screen now.
 fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App) -> Result<Value, String> {
     match text(cmd, "cmd") {
+        "point" | "window" | "room" | "account-ids" | "streaming" | "debug-info" | "runners-front" => crate::automation_compat::step(app, cmd, window, cx),
+        "size" => shell_step(app, cmd, window, cx),
         // Whether anything's on its way across the window (the panels
         // gliding, an archive flight), which the spec driver asks before
         // every click so it never reads a control's spot mid-move
@@ -1247,7 +1266,7 @@ fn shell_step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &m
         }
         // `resize`: the window's content size, as the Swift command sets it
         // (for pictures at a given size).
-        "resize" => {
+        "resize" | "size" => {
             let (w, h) = (cmd["w"].as_f64().unwrap_or(1240.) as f32, cmd["h"].as_f64().unwrap_or(820.) as f32);
             window.resize(size(px(w), px(h)));
             Ok(json!(format!("ok {w}x{h}")))

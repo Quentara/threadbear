@@ -1365,6 +1365,33 @@ pub(crate) async fn automation(cmd: &Value, cx: &mut AsyncApp) -> Result<Value, 
     Ok(cx.update(|cx| dump_page(&key, cx)))
 }
 
+/// Swift's `convex` command, using the same validated list and selection
+/// model as the deployment menu, even before a page has been made.
+#[cfg(feature = "automation")]
+pub(crate) async fn convex_command(app: &WeakEntity<Threadbear>, cmd: &Value, cx: &mut AsyncApp) -> Result<Value, String> {
+    let (thread, panel, configured, client) = app.read_with(cx, |app, _| {
+        let thread = app.open_thread()?;
+        let panel = thread.panels().into_iter().find(|p| p.convex.is_some())?;
+        Some((thread.id.clone(), panel.id.clone(), panel.convex?, app.client.clone()))
+    }).map_err(|e| e.to_string())?.ok_or("no Convex cloud panel")?;
+    if let Some(deployment) = cmd["deployment"].as_str() {
+        let answer = crate::call(client, "panels.convexDeployments", json!({ "threadId": thread, "panelId": panel })).await.map_err(|e| e.message)?;
+        let listed: convex::Choices = serde_json::from_value(answer).map_err(|e| e.to_string())?;
+        let choices = convex::with_configured(listed.deployments, &configured);
+        if !choices.iter().any(|c| c.deployment == deployment) { return Err("unknown deployment".into()); }
+        cx.update(|cx| {
+            let panels = panels(cx).ok_or("no web panels")?;
+            panels.update(cx, |p, cx| p.select(&configured, deployment, cx));
+            Ok::<_, String>(())
+        })?;
+    }
+    cx.update(|cx| {
+        let panels = panels(cx).ok_or("no web panels")?;
+        let selected = panels.read(cx).selected(&configured);
+        Ok(json!(format!("ok {selected} browser={}", convex::browser_url(&selected).unwrap_or_else(|| "none".into()))))
+    })
+}
+
 #[cfg(feature = "automation")]
 fn dump_page(key: &str, cx: &App) -> Value {
     let Some(panels) = panels(cx) else { return Value::Null };
