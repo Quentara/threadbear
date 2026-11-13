@@ -830,11 +830,14 @@ export const patchesPart = {
     return [...this.threads.values()].filter((st) => st.rt.hooksRunning && !st.rt.deleted).map((st) => st.rec.id);
   },
 
-  // The threads going back to an earlier message (editMessage), which a
-  // restart waits for too: one cut off between putting the files back and
-  // writing thread.rewound loses the edit but keeps the files' undoing.
-  threadsEditing(this: Runner): string[] {
-    return [...this.threads.values()].filter((st) => st.rt.editing && !st.rt.deleted).map((st) => st.rec.id);
+  // The threads a restart waits for between turns: one going back to an
+  // earlier message (editMessage), as one cut off between putting the files
+  // back and writing thread.rewound loses the edit but keeps the files'
+  // undoing; and one whose new worktree is being made or set up after Stop,
+  // as the next runner would start its CLI before the setup was done
+  // (Codex's review). Each takes seconds, or the setup's own time limit.
+  threadsBetweenTurns(this: Runner): string[] {
+    return [...this.threads.values()].filter((st) => (st.rt.editing || st.rt.preparing) && !st.rt.deleted).map((st) => st.rec.id);
   },
 
   async runHookList(this: Runner, st: ThreadState, hooks: PatchSet['hooks']): Promise<void> {

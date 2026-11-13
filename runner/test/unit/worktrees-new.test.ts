@@ -12,6 +12,7 @@ import { RunnerClient } from '../../src/client.ts';
 import { readToken } from '../../src/config.ts';
 import { nullLogger } from '../../src/log.ts';
 import { PatchTrust } from '../../src/patch-trust.ts';
+import { Restarter } from '../../src/restart.ts';
 import { PATCH, commit, harness, makeRepo, sh, until, write } from '../helpers/worktrees-harness.ts';
 
 // --------------------------------------------------------------- patches
@@ -383,4 +384,24 @@ test('a handover while a stopped thread is being set up keeps it until the setup
   await new Promise((r) => setTimeout(r, 200));
   assert.ok(fs.existsSync(path.join(wt, '.setup-ran')), 'the worktree stays, set up, for the next runner');
   assert.equal(h.adapter.sessions.length, 0);
+});
+
+// From Codex's second review: a restart with nothing else busy doesn't
+// hand over, it stops the runner, and nothing waited for a stopped thread's
+// setup: the next runner started its CLI in the worktree before the setup
+// was done. The restart now waits for it.
+test('an idle restart while a stopped thread is being set up waits for the setup', async () => {
+  const g = gatedSetup();
+  const { main } = makeRepo(g.patch);
+  const h = harness();
+  const state = { restarts: 0 };
+  const r = new Restarter({ runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, version: '0.1.0+old', release: 'old', restart: () => state.restarts++ });
+  const { thread } = h.runner.create({ text: 'Go', accountId: 'claude-3', cwd: main });
+  await until(g.started, 'the setup to start');
+  h.runner.interrupt(thread.id, { byMike: true });
+  assert.deepEqual(r.request({ when: 'idle' }).waitingFor, [thread.id]);
+  await new Promise((res) => setTimeout(res, 100));
+  assert.equal(state.restarts, 0, 'not while the setup runs');
+  g.go();
+  await until(() => state.restarts === 1, 'the restart once the setup ends');
 });

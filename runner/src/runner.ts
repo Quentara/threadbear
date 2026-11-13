@@ -1809,6 +1809,8 @@ export class Runner {
           // that kept the thread for it looks again.
           this.archiveWhenGone(st);
           if (this.draining) this.queueHandoverCheck();
+          // A restart waiting for it hears through thread.updated.
+          this.markDirty(st);
         });
       rt.preparing = held;
       await preparing;
