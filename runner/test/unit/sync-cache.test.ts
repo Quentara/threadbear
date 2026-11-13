@@ -823,3 +823,43 @@ for (const start of ['from the file', 'in full'] as const) {
     await again.stop();
   });
 }
+
+// A handover stops the old release's sync at once, while a busy thread it
+// keeps goes on writing; the new release hears that thread's events only
+// from when it connects (Peers subscribes from the end). What the thread
+// wrote in between went up nowhere, and the thread's head then moved past
+// the gap with its next message, so the phone, the website and other Macs
+// never saw those rows (13 Nov 2026, the implicit state machines scan).
+// Once the thread comes across, what's after the head the old release
+// left goes up again.
+test('a thread kept by the release before has what it wrote during the handover sent once it comes across', async () => {
+  const s = setup();
+  const t = s.h.runner.create({ text: 'busy', cwd: s.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await firstStart(s);
+  // Written on the old release after its sync stopped.
+  s.h.runner.send(t.id, 'written during the handover');
+  await settle();
+  // The new release starts with the thread still on the old one.
+  await s.h.runner.letGo(s.h.runner.threads.get(t.id)!);
+  s.elsewhere.add(t.id);
+  s.calls.length = 0;
+  const again = s.make();
+  again.start();
+  await settle();
+  s.h.clock.advance(SETTLE_MS);
+  await settle();
+  await again.flushNow();
+  // It comes across, and goes on.
+  s.elsewhere.delete(t.id);
+  s.h.runner.adopt(t.id);
+  s.h.runner.send(t.id, 'written after it came across');
+  await settle();
+  s.h.clock.advance(2000);
+  await settle();
+  await again.flushNow();
+  await again.flushNow();
+  const sent = s.named('sync:appendMessages').flatMap((c) => c.args.messages as { threadId: string; text: string }[]).filter((m) => m.threadId === t.id).map((m) => m.text);
+  assert.ok(sent.includes('written after it came across'), JSON.stringify(sent));
+  assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
+  await again.stop();
+});

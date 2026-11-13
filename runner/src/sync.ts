@@ -1301,6 +1301,13 @@ export class ConvexSync {
   // The newest message seq written per thread, so a start needn't ask.
   private heads = new Map<string, number>();
   private catchUpDue = false;
+  // Threads the release before kept to finish (a handover), with the head
+  // the file says the mirror had. That release's sync stopped when the
+  // handover began, and this one hears the thread only from when it
+  // connects, so what came in between went up nowhere; and the thread's
+  // live messages move its head past that gap. Once it's here, everything
+  // after this head goes up (catchUpArrived); twice is harmless.
+  private arrivedFrom = new Map<string, number>();
   // Removals on their way (flush took them from `removed`), for saving, and
   // ones from the file, which a thread turning up here after all cancels.
   private removing = new Set<string>();
@@ -2187,6 +2194,7 @@ export class ConvexSync {
         this.held.delete(id);
         this.lastWrite.delete(id);
         this.heads.delete(id);
+        this.arrivedFrom.delete(id);
         this.noteSent();
         this.forgetCards(id);
         this.earliest.delete(id);
@@ -2652,6 +2660,10 @@ export class ConvexSync {
     this.heads = new Map(Object.entries(c.heads));
     // One that's here after all (handed back) isn't gone.
     const here = new Set(this.deps.runner.list(ALL).map((t) => t.id));
+    // Peers connect before the sync starts (main.ts), so the kept ones are
+    // known by now.
+    this.arrivedFrom.clear();
+    for (const [id, seq] of this.heads) if (!here.has(id) && this.deps.elsewhere?.(id)) this.arrivedFrom.set(id, seq);
     for (const id of c.removed ?? []) {
       if (here.has(id)) continue;
       this.removed.add(id);
@@ -2685,6 +2697,7 @@ export class ConvexSync {
     this.cacheChanged = false;
     this.sent.clear();
     this.heads.clear();
+    this.arrivedFrom.clear();
     this.lastWrite.clear();
     this.projectsSent = undefined;
     this.accountsSent = undefined;
@@ -3140,6 +3153,7 @@ export class ConvexSync {
         messages.unshift(...this.catchUpFromHeads());
         this.catchUpDue = false;
       }
+      if (this.arrivedFrom.size) messages.unshift(...this.catchUpArrived());
       // What it finds is written with the next flush (scheduleFlush, below).
       if (this.sharesCheckDue()) await this.reconcileShares(key);
       this.historiesDue = false;
@@ -3570,6 +3584,27 @@ export class ConvexSync {
     const out: MessageDoc[] = [];
     for (const t of this.deps.runner.list(ALL)) {
       if (filled.has(t.id)) out.push(...this.messagesAfter(t, this.heads.get(t.id) ?? 0));
+    }
+    return out;
+  }
+
+  // The kept threads (arrivedFrom) that have come across since: what's
+  // after the head the release before left. One still on that release
+  // waits; one gone from both (deleted there) is forgotten.
+  private catchUpArrived(): MessageDoc[] {
+    const filled = this.filledThreads();
+    const out: MessageDoc[] = [];
+    for (const [id, from] of [...this.arrivedFrom]) {
+      if (this.deps.elsewhere?.(id)) continue;
+      this.arrivedFrom.delete(id);
+      let t: ThreadSummary;
+      try {
+        t = this.deps.runner.get(id);
+      } catch {
+        continue;
+      }
+      // One whose whole history isn't up yet is histories()' job.
+      if (filled.has(id)) out.push(...this.messagesAfter(t, from));
     }
     return out;
   }
