@@ -286,7 +286,8 @@ export const thread = query({
     const t = await findThread(ctx, threadId);
     const bySeq = new Map<number, { seq: number; role: 'user' | 'assistant'; text: string; origin?: string; at: string }>();
     const add = (m: Doc<'messages'>) => {
-      if (m.role === 'tool') return;
+      // Nor a login's note (API 78), which only another runner reads.
+      if (m.role === 'tool' || m.role === 'note') return;
       bySeq.set(m.seq, { seq: m.seq, role: m.role, text: m.text, ...(m.origin ? { origin: m.origin } : {}), at: m.at });
     };
     // Tool rows sit between the text ones, so this reads back far enough to
@@ -295,7 +296,7 @@ export const thread = query({
     let read = 0;
     for await (const m of ctx.db.query('messages').withIndex('by_thread_seq', (q) => q.eq('threadId', threadId)).order('desc')) {
       if (++read > THREAD_SCAN) break;
-      if (m.role === 'tool') continue;
+      if (m.role === 'tool' || m.role === 'note') continue;
       add(m);
       if (++text >= MESSAGES_SHOWN) break;
     }
@@ -398,6 +399,9 @@ export const messages = query({
         hasMore = true;
         break;
       }
+      // A login's note (API 78) is for the other runners: it names logins,
+      // and no phone app draws one yet.
+      if (m.role === 'note') continue;
       if (m.role === 'tool' && !tools) continue;
       if (out.length >= want) {
         hasMore = true;

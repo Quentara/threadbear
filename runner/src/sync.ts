@@ -68,6 +68,8 @@ export const SYNC_BATCH = 50;
 export const MESSAGE_BATCH = 100;
 // A message longer than this is cut on the phone; the Mac has it all.
 export const MESSAGE_CHARS = 8000;
+// A login's note (role "note") is a sentence or two of the runner's.
+const NOTE_CHARS = 500;
 // A plan gets more room: it's read whole on the phone before Go ahead, and
 // one cut at 8,000 would hide the steps at the end that it approves.
 export const PLAN_CHARS = 24_000;
@@ -137,7 +139,10 @@ export type SyncConfig = {
 // lower one means its backend hasn't been deployed since this runner was:
 // said in runner.status, tb status and the log rather than stopping, since
 // the runner only adds to what it sends while the number stays the same.
-export const BACKEND_API_VERSION = 77;
+export const BACKEND_API_VERSION = 78;
+// From this one a message row can be a login's note (role "note"): a thread
+// that moved to another login or is waiting for room says so on another Mac.
+export const LOGIN_NOTES_API_VERSION = 78;
 // From this one sync:sharedThreads lists a runner's rows shared by link, which
 // it checks against its own threads on every start and every
 // SHARE_RECONCILE_MS (reconcileShares).
@@ -459,7 +464,7 @@ export type PhoneAsk = { action: string; why?: string; reply?: string; options?:
 // A text message, or one line for a tool call (role "tool", since backend
 // API 2): what the phone and the website show of a thread.
 export type WokeByDoc = { kind: string; description: string };
-export type MessageDoc = { threadId: string; seq: number; role: 'user' | 'assistant' | 'tool'; text: string; origin?: string; toolKind?: string; summary?: true; plan?: true; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: WokeByDoc[]; buttons?: MessageButton[]; at: string; pagedAt?: number };
+export type MessageDoc = { threadId: string; seq: number; role: 'user' | 'assistant' | 'tool' | 'note'; text: string; origin?: string; toolKind?: string; summary?: true; plan?: true; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: WokeByDoc[]; buttons?: MessageButton[]; at: string; pagedAt?: number };
 // A reply button as a message row carries it (API 59): enough to draw it
 // and say where it goes, never its brief or message, which stay on the Mac.
 // target: the new thread's folder name, or the title of the thread it messages.
@@ -1103,6 +1108,15 @@ export function toMessageDoc(threadId: string, e: PersistedEvent, scrub: (text: 
   // message.
   const turn = e.turnId ? { turn: e.turnId.slice(0, 8) } : {};
   if (e.type === 'tool.call') return { threadId, seq: e.seq, role: 'tool', text: toolLine(e, scrub), toolKind: e.kind, ...turn, at: e.ts };
+  // A login's note (the thread moved to another login, or waits for room),
+  // and no other note: without it a thread on the Pixel that changed login
+  // showed the limit's words on the Mac and then just carried on (13 Nov).
+  // The runner's own words, a line or two: a move to another provider
+  // also says which model takes over.
+  if (e.type === 'system.note') {
+    const text = e.login ? scrub(e.text).trim().slice(0, NOTE_CHARS) : '';
+    return text ? { threadId, seq: e.seq, role: 'note', text, ...turn, at: e.ts } : undefined;
+  }
   if (e.type === 'plan.proposed') {
     // The plan in full (up to PLAN_CHARS), scrubbed as a reply is, so the
     // phone can read what its Go ahead approves.
@@ -3554,6 +3568,9 @@ export class ConvexSync {
     // the runner, so this only matters when that deploy was skipped.
     const v = this.backendApiVersion;
     let messages = v !== undefined && v < 2 ? all.filter((m) => m.role !== 'tool') : all;
+    // Nor a login's note before API 78: the validator refuses the role, and
+    // the whole batch with it.
+    if (v === undefined || v < LOGIN_NOTES_API_VERSION) messages = messages.filter((m) => m.role !== 'note');
     // Before API 14 the validator has no `summary`; the bullets go as text.
     if (v === undefined || v < ASKS_API_VERSION) messages = messages.map((m) => (m.summary ? (({ summary, ...rest }) => rest)(m) : m));
     if (v === undefined || v < TURNS_API_VERSION) messages = messages.map((m) => (m.turn ? (({ turn, ...rest }) => rest)(m) : m));
@@ -4525,7 +4542,7 @@ export class ConvexSync {
         const page = events
           .filter((e) => !cuts.some((c) => e.seq >= c.from && e.seq <= c.to))
           .map((e) => toMessageDoc(id, e, this.scrubber.safeText))
-          .filter((m): m is MessageDoc => Boolean(m) && m!.role !== 'tool')
+          .filter((m): m is MessageDoc => Boolean(m) && m!.role !== 'tool' && m!.role !== 'note')
           .slice(-PAGE_SIZE)
           .map((m) => ({ ...m, pagedAt: now }));
         await this.appendMessages(page);

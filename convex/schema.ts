@@ -502,7 +502,11 @@ export default defineSchema({
   messages: defineTable({
     threadId: v.string(),
     seq: v.number(),
-    role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool')),
+    // "note" (since API 78): a runner's note that the thread's login ran
+    // out and it moved to another or is waiting for room. Only the other
+    // runners read those (relay.ts); the phone's and the shared page's
+    // queries leave them out, as a note names logins.
+    role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool'), v.literal('note')),
     text: v.string(),
     origin: v.optional(v.string()),
     toolKind: v.optional(v.string()), // the protocol's ToolKind, for a tool row

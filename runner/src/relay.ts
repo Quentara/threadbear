@@ -116,7 +116,9 @@ export type HeldBody =
 
 export type RelayRow = {
   seq: number;
-  role: 'user' | 'assistant' | 'tool';
+  // "note": a login's note from that runner (backend API 78), played as
+  // the system.note it was.
+  role: 'user' | 'assistant' | 'tool' | 'note';
   text: string;
   origin?: string;
   toolKind?: string;
@@ -250,6 +252,10 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
   // copied the rest of the rows per plan, so a run of plans took quadratic
   // time on this runner (Daybreak, 12 Nov 2026).
   const lastPlanSeq = sorted.findLast((r) => r.plan)?.seq;
+  // The last row of the last turn: a login's note after it (no turn of its
+  // own) doesn't make the turn before it an earlier one, or its card and
+  // its failure would go with the note's arrival.
+  const lastTurnRow = sorted.findLastIndex((r) => r.turn !== undefined);
   for (let i = 0; i < sorted.length; i++) {
     const r = sorted[i]!;
     const prev = sorted[i - 1];
@@ -270,6 +276,14 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
       if (went) out.push(env(base + 2, r, { type: 'plan.resolved', itemId, decision: went }));
     } else if (r.role === 'assistant') {
       out.push(env(base + 1, r, { type: 'assistant.text', itemId: `relay-${r.seq}`, text: r.text, ...(r.summary ? { summary: true } : {}) }));
+    } else if (r.role === 'note') {
+      // That runner's thread moved to another login, or is waiting for
+      // room: the app keeps these on show (is_login_note in
+      // desktop/core/src/reducer/row.rs). The only notes that come over.
+      out.push(env(base + 1, r, { type: 'system.note', text: r.text, login: true }));
+    } else if (r.role !== 'tool') {
+      // A kind of row from a newer backend than this runner knows: left
+      // out, not drawn as a tool call.
     } else {
       const kind = r.toolKind ?? 'other';
       const itemId = `relay-${r.seq}`;
@@ -309,10 +323,12 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
         }
       }
     }
-    const ends = r.turn && (next ? next.turn !== r.turn : row !== null && !running);
+    // The last turn ends once that runner's row says so, with or without a
+    // note after it; an earlier one, as soon as another turn's row follows.
+    const ends = r.turn && (!next || next.turn !== r.turn) && (i !== lastTurnRow || (row !== null && !running));
     if (ends) {
       const started = Date.parse(turnStart.get(r.turn!) ?? r.at);
-      const last = !next;
+      const last = i === lastTurnRow;
       // Each with its `ticked: true`, as the summary has them: the relay
       // has no seq after the turn's end for an asks.ticked, and without
       // them a finished checklist read as outstanding again.

@@ -25,6 +25,19 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
+    // A Pixel thread ran out on one login and carried on on another, and
+    // on the Mac it showed the limit's words and then a reply, with
+    // nothing to say it had changed login (13 Nov). The note isn't in
+    // `shows`: the website and the phone leave it out.
+    name: 'a thread that moved to another login',
+    shows: ['Half way there.'],
+    play: (p) => {
+      p.say('Half way there.');
+      p.endTurn({ needs: 'nothing' });
+      p.loginMoved();
+    },
+  },
+  {
     name: 'a decision card, with what each answer does and a pick',
     shows: ['Same thread or new?', 'One thread that moves', 'The old one is archived'],
     play: (p) => {

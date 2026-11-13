@@ -161,6 +161,9 @@ export const view = query({
         hasMore = true;
         break;
       }
+      // A login's note (API 78) names the owner's logins: never on a page
+      // anyone with the link can read.
+      if (m.role === 'note') continue;
       out.push({
         seq: m.seq,
         role: m.role,

@@ -556,7 +556,9 @@ Queries:
   most 4,000 tool rows for the page's text ones, then says `hasMore`. Every message
   is kept since API 2, and with `tools: true` there's one row per tool call
   too (`role: "tool"`, a one-line `text` such as "Run the unit tests" or
-  "Edited ~/dev/x.ts", and `toolKind`). It reads Convex alone, so it works
+  "Edited ~/dev/x.ts", and `toolKind`). A login's note (`role: "note"`,
+  API 78) is never in a page, here or in `phone:thread`: those rows are for
+  the other runners (`relay:remoteMessages`). It reads Convex alone, so it works
   while the Mac is asleep. The website watches only the newest 30 with it and
   reads older pages once, with `beforeSeq` (`web/src/transcript.ts`). The
   iPhone does the same with an 80-row live page and chunks of 200

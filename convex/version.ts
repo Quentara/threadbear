@@ -357,4 +357,11 @@
 //    relay:remoteAccounts includes each login's usage, so the Mac switches
 //    another runner's thread to one of that runner's logins with room. The
 //    Mac's runner sends one only from 77; an older backend refuses it.
-export const API_VERSION = 77;
+// 78: a message row can be a login's note (role "note"): a runner's
+//    system.note that the thread's login ran out and it moved to another,
+//    is waiting for room, or was told not to wait. relay:remoteTail and
+//    relay:remoteMessages give them to the other runners, so a thread on
+//    another machine says on the Mac that it changed login; phone:thread,
+//    phone:messages and share's page leave them out. A runner sends one
+//    only from 78.
+export const API_VERSION = 78;

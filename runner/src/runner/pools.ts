@@ -249,7 +249,7 @@ export const poolsPart = {
       if (!rt.turn) this.releaseSession(st);
     }
     rec.updatedAt = this.isoNow();
-    this.emit(st, { type: 'system.note', text: note }, rt.turn?.turnId);
+    this.emit(st, { type: 'system.note', text: note, login: true }, rt.turn?.turnId);
     this.markDirty(st);
   },
 
@@ -279,7 +279,7 @@ export const poolsPart = {
         delete rec.waitingForRoom;
         // Stays on show in the app by its first words, under the wait
         // note it takes back (is_login_note in desktop/core/src/reducer/row.rs).
-        this.emit(st, { type: 'system.note', text: "Won't carry on by itself. Send a message when you want it to." });
+        this.emit(st, { type: 'system.note', text: "Won't carry on by itself. Send a message when you want it to.", login: true });
         this.armRoomTimer();
       }
       this.markDirty(st);
@@ -306,7 +306,7 @@ export const poolsPart = {
     const at = resetTime(new Date(Date.parse(w.waitUntil) - (who ? WAIT_SLACK_MS : 0)).toISOString(), now);
     // "Carrying on at" is what keeps this note on show in the app
     // (is_login_note in desktop/core/src/reducer/row.rs).
-    this.emit(st, { type: 'system.note', text: `${lead} Carrying on at ${at}${who ? ` when ${who} is back` : ''}.` });
+    this.emit(st, { type: 'system.note', text: `${lead} Carrying on at ${at}${who ? ` when ${who} is back` : ''}.`, login: true });
     this.markDirty(st);
     this.armRoomTimer();
   },

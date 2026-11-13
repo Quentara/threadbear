@@ -26,7 +26,8 @@ const ARGS_MAX_BYTES = 64 * 1024;
 
 const relayRow = v.object({
   seq: v.number(),
-  role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool')),
+  // "note" (API 78): a login's note, which only this route carries.
+  role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool'), v.literal('note')),
   text: v.string(),
   origin: v.optional(v.string()),
   toolKind: v.optional(v.string()),
@@ -42,7 +43,7 @@ const relayRow = v.object({
 });
 
 type Button = { id: string; title: string; kind: 'start' | 'send'; target?: string; pressedThreadId?: string; failed?: string };
-type Row = { seq: number; role: 'user' | 'assistant' | 'tool'; text: string; origin?: string; toolKind?: string; summary?: boolean; plan?: boolean; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: { kind: string; description: string }[]; buttons?: Button[]; at: string };
+type Row = { seq: number; role: 'user' | 'assistant' | 'tool' | 'note'; text: string; origin?: string; toolKind?: string; summary?: boolean; plan?: boolean; planDecision?: 'go' | 'revise'; turn?: string; wokeBy?: { kind: string; description: string }[]; buttons?: Button[]; at: string };
 function toRow(m: Row): Row {
   return {
     seq: m.seq,

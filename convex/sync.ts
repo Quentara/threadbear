@@ -1357,7 +1357,7 @@ export const revokeToken = mutation({
 const messageDoc = v.object({
   threadId: v.string(),
   seq: v.number(),
-  role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool')),
+  role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool'), v.literal('note')), // "note": API 78
   text: v.string(),
   origin: v.optional(v.string()),
   toolKind: v.optional(v.string()),
