@@ -196,11 +196,38 @@ impl Threadbear {
                 }
             };
             if let Some(action) = action {
-                text = text.child(div().pt(px(2.)).child(action));
+                // As wide as its words, as Swift's small button is.
+                text = text.child(h_flex().pt(px(2.)).child(action));
             }
         }
         let tick = crate::icons::symbol(if done { "checkmark.circle.fill" } else { "circle" }).with_size(px(style::size::LABEL)).text_color(secondary);
         h_flex().items_start().gap(px(10.)).child(div().pt(px(1.)).child(tick)).child(text).into_any_element()
+    }
+
+    /// The automation's `setup`, as the Swift command: {"show": bool} opens or
+    /// closes the panel, {"hidden": bool} as Hide this list and Help's item
+    /// set it; says each item, [x] when done.
+    #[cfg(feature = "automation")]
+    pub(crate) fn setup_command(&mut self, cmd: &Value, cx: &mut Context<Self>) -> String {
+        if let Some(hidden) = cmd["hidden"].as_bool() {
+            self.settings.saved.setup_hidden = hidden.then_some(true);
+            self.save_settings_soon(cx);
+        }
+        if let Some(show) = cmd["show"].as_bool() {
+            if show != self.activity_panel_showing(shell::SETUP, cx) {
+                self.toggle_under_threads(shell::SETUP, cx);
+            }
+        }
+        cx.notify();
+        let list = self.setup_checklist();
+        let items: Vec<String> = list.items.iter().map(|(item, done)| format!("[{}] {}", if *done { "x" } else { " " }, item.name())).collect();
+        format!(
+            "ok {} left, icon {}, panel {}: {}",
+            list.left(),
+            if self.setup_shows_icon() { "shown" } else { "hidden" },
+            if self.activity_panel_showing(shell::SETUP, cx) { "open" } else { "closed" },
+            items.join(", ")
+        )
     }
 
     /// Finish setting up in `dump`.

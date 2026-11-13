@@ -169,10 +169,18 @@ impl Threadbear {
     /// (the automation's `tour` starts it there), and not before the Swift
     /// app's has been looked for (swift_import.rs).
     pub(crate) fn tour_start_if_new(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tour.checked_new || crate::scripted::scripted() {
+        // A spec can ask a scripted app to behave as a new install does.
+        let scripted = crate::scripted::scripted() && std::env::var_os("THREADBEAR_TOUR_AUTOSTART").is_none();
+        if self.tour.checked_new || scripted {
             return;
         }
         self.tour.checked_new = true;
+        // Opened before the runner had made its data folder (a fresh
+        // install), the look for the Swift app's tour couldn't be saved:
+        // again, now the folder's there.
+        if self.settings.saved.swift_tour_import.is_none() {
+            crate::swift_import::tour_once(&mut self.settings);
+        }
         if self.settings.saved.tour_seen == Some(true) || self.settings.saved.swift_tour_import.is_none() || self.tour.tour.is_on() {
             return;
         }

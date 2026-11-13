@@ -40,6 +40,26 @@ Feature: The tour, the pages' intros and Finish setting up
 
   # The Swift dump has no `setup` and its app is frozen.
   @tour.setup @swift-pending
-  Scenario: Help > Finish Setting Up opens the list of what's left
+  Scenario: Help > Finish Setting Up opens the list, ticked off from what the app knows
     When I choose "Finish Setting Up" from the menu bar
-    Then Finish setting up is open with "Start your first thread" still to do
+    # The mock's threads have run and it has a phone and a browser paired.
+    Then Finish setting up is open with "Start your first thread", "Pair your iPhone" and "Open your website" all done
+
+  # How a launch decides on the tour by itself. The Swift app keeps whether
+  # it's been seen in its own defaults, and a scripted Swift app never starts
+  # it, so these are the GPUI app's: it reads the Swift app's on first launch.
+  @tour.firstrun @swift-pending
+  Scenario: A new install gets the tour by itself, with no Skip
+    Given the app opens as a new install would, with no Swift app before it
+    Then the tour shows "Welcome to Threadbear"
+    And the tour can't be skipped
+
+  @tour.firstrun @swift-pending
+  Scenario: Someone who finished the Swift app's tour doesn't get it again
+    Given the app opens as a new install would, after a Swift app whose tour was finished
+    Then no tour card shows
+
+  @tour.firstrun @swift-pending
+  Scenario: Someone who never finished the Swift app's tour gets it
+    Given the app opens as a new install would, after a Swift app whose tour was never finished
+    Then the tour shows "Welcome to Threadbear"

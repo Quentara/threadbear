@@ -248,6 +248,51 @@ run or a screenshot from the running app. A slice with no runtime check doesn't
 count. (Ghostex's port log is where this shape comes from; its slices 214 to 268
 built parsers and gates with no launch of the app, which is the trap.)
 
+### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
+
+- The Swift app now sends everyone to this one, so for other people the
+  first launch is here. The tour is the Swift one's ten steps, word for word
+  (`threadbear_core::tour`, whose test reads Tour.swift to hold them to it):
+  the window dims with the step's part cut out and a breathing ring round
+  it, the card beside it with an arrow, an ⓘ to the step's docs page, dots,
+  Skip (only on Help's replay), Back and Next. Sample threads from the
+  runner's `threads.samples` give it something to point at and go when it
+  ends; it draws "Plan the weekend" hovered, opens the sample that needs
+  you, writes the first message in the new thread's box and moves on when
+  it's sent. Return and Esc are the card's on the steps with nothing to do.
+- A whole panel is lit from BearDock's own frame for its group, bar and all;
+  the smaller parts (the composer, the action chips, a sample's row and its
+  buttons, the view icons, the rail's Highlights icon) are measured where
+  they're drawn (`tour::mark`).
+- The pages' one-card intros (Scheduled, Projects, Librarian, Usage, Updates,
+  Connectors, and Pools once a pool has a second login) show the first time
+  each opens, never in a scripted app unless `tour` turns them on.
+- Finish setting up: its panel under the threads and its icon on the activity
+  bar with how many are left, each item ticking itself off (a thread that
+  reached the model, a phone, a browser), Hide this list, Help > Finish
+  Setting Up to bring it back. The tour opens it once the first thread's sent.
+- Coming from the Swift app: whether its tour was finished, its intros seen
+  and the list hidden come across once (`swift_import::tour_once`), apart from
+  the earlier import, which had already run on Mike's Mac. Until that look
+  has been made and saved, the tour doesn't start by itself, so a failed
+  `defaults` can't show it to someone who finished it. setup's `--existing`
+  still writes the Swift app's `tourSeen`, which comes across the same way.
+  A fresh install (no data folder yet, no Swift app) looks again when the
+  runner first connects, then gets the tour.
+- The automation has the Swift app's `tour` and `setup` commands with the
+  same words, `dump` has `tour` and `setup`, and
+  `desktop/scripts/tour-e2e.mjs` plays the whole tour against a real dev
+  runner as `app/Tools/tour-e2e.mjs` does for the Swift app.
+- GPUI only: the scenarios for how a launch decides on the tour, and the
+  setup panel's dump, are `@swift-pending` (the Swift app is frozen).
+
+Verification: `desktop/scripts/tour-e2e.mjs` against a dev runner (sending
+the first thread for real), every step's shot looked at; `app/Tools/tour-e2e.mjs`
+all passed for the Swift app on this build's runner. `features/tour.feature`
+(7 scenarios) with `@menu.help` and `@system.swiftimport`: 9 of 9 for the
+GPUI app on the cloud box, and the Swift app's 3 on Tinker Desk. `cargo test
+-p threadbear-core` tour (16) and swift_import.
+
 ### 2026-11-13 Pin a side panel to its thread (`dock.pin`)
 
 - Right-click a patch panel's tab (a page, the Convex dashboard, a list or a

@@ -135,8 +135,8 @@ you go.
 - [x] Settings > Runners, Devices and Keyboard are placeholders (the Keyboard
   file is picked up live if edited by hand) (`settings.runners`,
   `settings.devices`, `settings.keyboard`). In since 11 Nov
-- [ ] Help's two items, the tour and Finish Setting Up, are stubs that say
-  so (`menu.help`, `tour.firstrun`, `tour.setup`). About's window, the
+- [x] Help's two items, the tour and Finish Setting Up (`menu.help`,
+  `tour.firstrun`, `tour.intros`, `tour.setup`). In since 13 Nov. About's window, the
   Edit menu, File > Close, the Window menu's Zoom, Bring All to Front and
   window list, the sidebar's and Settings' arrow keys and the Updates
   icon's popover are in since 12 Nov (`tour.about`, `menu.edit`,

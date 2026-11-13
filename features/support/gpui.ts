@@ -156,7 +156,9 @@ export class GpuiDriver implements Driver {
     }
   }
 
-  async relaunch(): Promise<void> {
+  /** Quits the app and opens it again on the same runner; `between` runs
+   * while it's closed (a spec changing what it remembers, say). */
+  async relaunch(between?: () => void): Promise<void> {
     this.socket?.destroy();
     this.socket = undefined;
     const old = this.appProcess;
@@ -166,6 +168,7 @@ export class GpuiDriver implements Driver {
       await Promise.race([gone, sleep(4000)]);
       this.children = this.children.filter((c) => c !== old);
     }
+    between?.();
     await this.launchApp();
   }
 

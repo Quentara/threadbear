@@ -181,7 +181,7 @@ export interface Driver {
   /** Saves a picture of the window, for a failed scenario. */
   shot(file: string): Promise<void>;
   /** Quits the app and opens it again, keeping its data and its settings. */
-  relaunch(): Promise<void>;
+  relaunch(between?: () => void): Promise<void>;
   /** The app's own log so far (the connection, failed requests, notices),
    * as `dev-app.sh log` shows the Swift app's. */
   appLog(): Promise<string>;

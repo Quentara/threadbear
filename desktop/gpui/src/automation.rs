@@ -331,6 +331,8 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             Ok(dump)
         }
         "status" => Ok(json!("ok")),
+        // Finish setting up (setup_panel.rs), as the Swift command.
+        "setup" => Ok(json!(app.update(cx, |t, cx| t.setup_command(cmd, cx)))),
         // Threadbear > About Threadbear, through the menu item, as the Swift
         // command. The window opens just after, so the next ask says what it
         // shows: its lines, " | " between them.
