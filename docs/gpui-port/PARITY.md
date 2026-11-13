@@ -383,7 +383,11 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   page, else on the newest thread that has it, from the summaries the app
   already holds (no new runner call). ↵ opens, ⌘↵ opens beside (a thread in
   its own panel, a panel next to the main one), Esc or a click outside
-  closes. The web panels' pages go out of sight while it's up.
+  closes. The web panels' pages go out of sight while it's up. The pick
+  (what ↵ opens before any arrow) is the first entry whose name is what's
+  typed, else the first whose name starts with it (a Settings section by its
+  own name), else the first: "usage" picks Usage over a thread that only
+  mentions the word (13 Nov).
 - Files: `desktop/core/src/open_anything.rs`, `desktop/gpui/src/open_anything.rs`,
   `features/open-anything.feature`.
 - Verification: `cargo test -p threadbear-core --lib -- open_anything shortcuts keyboard`, 32 of 32; the `@nav.openanything`, `@settings.keyboard` and `@nav.shortcuts` specs against the GPUI app on the cloud box, 17 of 17; shots of the box empty and typed on Tinker Desk beside the mockups.

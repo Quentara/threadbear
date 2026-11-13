@@ -1249,6 +1249,8 @@ groups: Panels, Threads, Projects and App. Letters in order are enough
 - App has Inbox, Scheduled, Projects, Librarian, Usage, Updates, Connectors,
   Runners and each section of Settings ("keyboard" finds Settings ›
   Keyboard).
+- What Return opens is the first one named for what you typed, even below
+  others: "usage" opens Usage, not a thread that only mentions usage.
 
 With nothing typed it shows Recent (what you've opened lately, through the
 box or not) and Go to (the pages, with their keys). ↑ and ↓ move, Return

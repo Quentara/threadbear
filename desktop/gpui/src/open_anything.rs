@@ -129,6 +129,14 @@ impl AnythingBox {
             let _ = this.update(cx, |this, cx| {
                 this.searching = None;
                 this.show(query, groups);
+                // The pick can be a page named for the words further down
+                // than the first group (`rules::picked`): keep it in sight.
+                if this.selected.is_none() {
+                    let first_group = this.groups.first().map_or(0, |g| g.items.len());
+                    if let Some(at) = row_index(&this.groups, None).filter(|i| *i > first_group) {
+                        this.scroll.scroll_to_item(at);
+                    }
+                }
                 cx.notify();
             });
         }));

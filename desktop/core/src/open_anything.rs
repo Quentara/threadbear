@@ -128,6 +128,10 @@ pub struct Item {
     /// The icon's SF Symbol name; a panel's own picture is drawn from its thread.
     pub symbol: &'static str,
     pub target: Target,
+    /// How its name fits what's typed: 2 all of it, 1 its start, 0 neither
+    /// (`name_fit`). The pick goes to the best of these, so "usage" picks
+    /// Usage over a thread that only mentions the word, as a launcher does.
+    pub named: u8,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -213,7 +217,7 @@ impl Catalog {
                     (None, Some(folder)) => inbox::folder_name(folder),
                     (None, None) => "your own patches".into(),
                 };
-                let item = Item { key, kind: Kind::Panel, title: panel.title.clone(), detail, badge: panel.badge.filter(|b| *b > 0), symbol: "square.dashed", target: Target::Panel { id: panel.id.clone(), thread: thread.id.clone(), project } };
+                let item = Item { key, kind: Kind::Panel, title: panel.title.clone(), detail, badge: panel.badge.filter(|b| *b > 0), symbol: "square.dashed", target: Target::Panel { id: panel.id.clone(), thread: thread.id.clone(), project }, named: 0 };
                 panels.push((item, (*thread).clone()));
             }
         }
@@ -221,7 +225,7 @@ impl Catalog {
             .iter()
             .map(|t| {
                 let title = if t.title.is_empty() { "Untitled".to_owned() } else { t.title.clone() };
-                let item = Item { key: thread_key(&t.id), kind: Kind::Thread, title, detail: thread_detail(t, now_ms, now), badge: None, symbol: "text.alignleft", target: Target::Thread(t.id.clone()) };
+                let item = Item { key: thread_key(&t.id), kind: Kind::Thread, title, detail: thread_detail(t, now_ms, now), badge: None, symbol: "text.alignleft", target: Target::Thread(t.id.clone()), named: 0 };
                 (item, (*t).clone())
             })
             .collect();
@@ -235,7 +239,7 @@ impl Catalog {
                     n => format!("{n} threads"),
                 };
                 let title = if p.title.is_empty() { "Untitled project".to_owned() } else { p.title.clone() };
-                Item { key: project_key(&p.id), kind: Kind::Project, title, detail, badge: None, symbol: "square.stack.3d.up", target: Target::Project(p.id.clone()) }
+                Item { key: project_key(&p.id), kind: Kind::Project, title, detail, badge: None, symbol: "square.stack.3d.up", target: Target::Project(p.id.clone()), named: 0 }
             })
             .collect();
         let settings_key = pages.iter().find(|p| p.page == Page::Settings(None)).and_then(|p| p.shortcut.clone());
@@ -285,7 +289,7 @@ impl Catalog {
         [(Kind::Panel, panels), (Kind::Thread, threads), (Kind::Project, projects), (Kind::App, app)]
             .into_iter()
             .filter(|(_, items)| !items.is_empty())
-            .map(|(kind, items)| Group { title: kind.group(), items })
+            .map(|(kind, items)| Group { title: kind.group(), items: items.into_iter().map(|i| Item { named: name_fit(&q, &i.title), ..i }).collect() })
             .collect()
     }
 
@@ -301,7 +305,7 @@ impl Catalog {
 }
 
 fn page_item(page: &Page, title: String, shortcut: Option<String>) -> Item {
-    Item { key: page_key(page), kind: Kind::App, title, detail: shortcut.unwrap_or_default(), badge: None, symbol: page.symbol(), target: Target::Page(page.clone()) }
+    Item { key: page_key(page), kind: Kind::App, title, detail: shortcut.unwrap_or_default(), badge: None, symbol: page.symbol(), target: Target::Page(page.clone()), named: 0 }
 }
 
 /// A thread's right-hand words: archived or hibernating (and when), running,
@@ -402,10 +406,22 @@ pub fn flat(groups: &[Group]) -> Vec<&Item> {
     groups.iter().flat_map(|g| g.items.iter()).collect()
 }
 
-/// The picked entry: the one chosen if it's still listed, else the first.
+/// How a name fits `query` (folded): 2 when it's all of it, 1 when it starts
+/// with it, else 0. A Settings section goes by its own name too, the part
+/// after "Settings › ".
+fn name_fit(query: &str, title: &str) -> u8 {
+    let title = fold(title);
+    let section = title.rsplit_once("› ").map(|(_, s)| s.to_owned());
+    [Some(title), section].into_iter().flatten().map(|name| if name == query { 2 } else { u8::from(name.starts_with(query)) }).max().unwrap_or(0)
+}
+
+/// The picked entry: the one chosen if it's still listed, else the first
+/// whose name fits what's typed best (`Item::named`), else the first.
 pub fn picked<'a>(groups: &'a [Group], selected: Option<&str>) -> Option<&'a Item> {
     let all = flat(groups);
-    selected.and_then(|k| all.iter().find(|i| i.key == k).copied()).or_else(|| all.first().copied())
+    // max_by_key keeps the last of equals; the first in the box should win.
+    let best = || all.iter().rev().max_by_key(|i| i.named).filter(|i| i.named > 0).copied();
+    selected.and_then(|k| all.iter().find(|i| i.key == k).copied()).or_else(best).or_else(|| all.first().copied())
 }
 
 /// ↑ or ↓ from the picked entry, stopping at the ends as the slash
@@ -563,6 +579,35 @@ mod tests {
         assert_eq!(r, ["b", "a", "c"]);
         let long: Vec<String> = (0..20).map(|i| i.to_string()).collect();
         assert_eq!(used("x", &long).len(), RECENT_KEPT);
+    }
+
+    #[test]
+    fn a_page_named_for_whats_typed_is_the_pick_over_a_thread_that_mentions_it() {
+        // "usage" found "Make a poster for the meetup" by its last reply, and
+        // as Threads come before App it was the pick over Usage (13 Nov).
+        let mut poster = thread("m", "Make a poster for the meetup", "/w/meetup", 10);
+        poster.keywords = Some("check the usage rights on the photos".into());
+        let c = Catalog::new([&poster], &[], pages(), &tabs(), &Utc::now());
+        let groups = c.groups("usage", &[]);
+        assert_eq!(groups.iter().map(|g| g.title).collect::<Vec<_>>(), ["Threads", "App"], "the groups keep their order");
+        assert_eq!(picked(&groups, None).unwrap().title, "Usage");
+        assert_eq!(picked(&groups, None).unwrap().title, picked(&c.groups("usa", &[]), None).unwrap().title, "the start of its name as well");
+        // A Settings section by its own name.
+        let mut keys = thread("k", "Tidy the imports", "/w/misc", 10);
+        keys.keywords = Some("keyboard".into());
+        let c = Catalog::new([&keys], &[], pages(), &tabs(), &Utc::now());
+        assert_eq!(picked(&c.groups("keyboard", &[]), None).unwrap().title, "Settings › Keyboard");
+        // The arrows still go from the top, through the thread.
+        let groups = c.groups("keyboard", &[]);
+        assert_eq!(step(&groups, None, false).unwrap(), thread_key("k"));
+        // A thread named for it stays first, as it's first in the box.
+        let named = thread("u", "Usage graph looks off", "/w/misc", 10);
+        let c = Catalog::new([&named], &[], pages(), &tabs(), &Utc::now());
+        assert_eq!(picked(&c.groups("usage g", &[]), None).unwrap().title, "Usage graph looks off");
+        assert_eq!(picked(&c.groups("usage", &[]), None).unwrap().title, "Usage", "but a name that's all of it wins");
+        assert_eq!(picked(&c.groups("usag", &[]), None).unwrap().title, "Usage graph looks off", "and between two starts, the first");
+        // Nothing named for it: the first, as before.
+        assert_eq!(picked(&c.groups("graph", &[]), None).unwrap().title, "Usage graph looks off");
     }
 
     #[test]

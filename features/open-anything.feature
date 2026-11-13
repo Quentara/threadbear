@@ -51,6 +51,16 @@ Feature: Open Anything
     When I press Return in the Open Anything box
     Then Settings shows "keyboard"
 
+  # "usage" finds "Make a poster for the meetup" by its words, and Threads
+  # come before App, but a page named for what's typed is the pick.
+  @nav.openanything @swift-pending
+  Scenario: A page named for what's typed is the pick over a thread that mentions it
+    When I press "k" with "cmd"
+    And I type "usage" in the Open Anything box
+    Then the box lists the thread "Make a poster for the meetup"
+    And the box lists "Usage" under "App"
+    And the box's pick is "Usage"
+
   @nav.openanything @swift-pending
   Scenario: The arrows move the pick, and ⌘Return opens a thread in a panel of its own
     When I press "k" with "cmd"
