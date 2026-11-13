@@ -815,15 +815,25 @@ impl Threadbear {
     /// where it could go instead.
     pub(crate) fn limit_advice(&self, thread: &ThreadSummary, cx: &App) -> Option<LimitAdvice> {
         use threadbear_core::new_thread::{continue_title, has_room, pool_logins, switch_targets, usage_of};
-        let accounts = &self.logins.accounts;
+        // Another runner's thread is judged by that runner's own logins and
+        // offered them, never this Mac's: a login id like "claude-main" is
+        // that runner's, and one of the same id here is a different login
+        // (Mike, 13 Nov: a Pixel thread that had finished fine said this
+        // Mac's login was at its limit, and offered this Mac's logins). Until
+        // they've come (`load_remote_logins`), nothing is said.
+        let logins = match thread.runner_id.as_deref() {
+            Some(runner) => self.remote.logins.get(runner)?,
+            None => &self.logins,
+        };
+        let accounts = &logins.accounts;
         let targets: Vec<(String, String)> = switch_targets(accounts, &thread.account_id).into_iter().map(|a| (a.id.clone(), continue_title(a, accounts))).collect();
         let local = thread.runner_id.is_none();
         // A pool thread is the runner's to move: nothing while its pool has a
         // login with room, and when it carries on once it's waiting. Once
         // the whole pool is out it asks: Continue now on a login outside
         // the pool (which pins it there), or wait.
-        if self.logins.uses_pools() {
-            if let Some(pool) = thread.pool_id.as_deref().and_then(|id| self.logins.pool(id)) {
+        if logins.uses_pools() {
+            if let Some(pool) = thread.pool_id.as_deref().and_then(|id| logins.pool(id)) {
                 if let Some(until) = thread.waiting_for_room_until_ms() {
                     return Some(LimitAdvice { text: format!("Every login in {} is out of room.", pool.title), targets, stopped: local, carries_on_at: Some(until) });
                 }
@@ -832,7 +842,7 @@ impl Threadbear {
                 }
             }
         }
-        let usage = self.logins.account(&thread.account_id).and_then(usage_of);
+        let usage = logins.account(&thread.account_id).and_then(usage_of);
         let blocked = usage.as_ref().is_some_and(|u| u.blocked);
         // Only while the thread is still on the login the turn failed on:
         // after "Switch to ..." the status stays error until the next turn,

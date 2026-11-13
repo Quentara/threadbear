@@ -169,6 +169,29 @@ export function commandArgs(kind: Kind, raw: unknown): Record<string, unknown> {
       out = pick(a, ['approvalId', 'decision', 'message', 'answers', 'secret', 'sealed']);
       break;
     case 'update':
+      // A login, model or effort change (API 77): the composer's pickers and
+      // the limit box's Continue now on, for a thread on another runner.
+      // They go together, as one threads.update there, since a model picked
+      // from another provider's column moves the login with it, and only
+      // with nothing else, so it reads as the one change it is.
+      if (['accountId', 'model', 'effort', 'carryOn'].some((k) => a[k] !== undefined)) {
+        out = pick(a, ['accountId', 'model', 'effort']);
+        for (const [k, x] of Object.entries(out)) {
+          // null puts the model or effort back to the login's default.
+          if (!(typeof x === 'string' && x.length > 0 && x.length <= 200) && !(x === null && k !== 'accountId')) throw bad(`${k} must be a short string`);
+        }
+        if (!Object.keys(out).length) throw bad('carryOn goes with accountId');
+        if (a.carryOn !== undefined) {
+          if (a.carryOn !== true || typeof out.accountId !== 'string') throw bad('carryOn goes with accountId');
+          out.carryOn = true;
+        }
+        // An agent on the main Mac made it (its threadbear tools): that
+        // runner keeps a sandboxed thread in its sandbox and starts no turn.
+        if (a.by === 'agent') out.by = 'agent';
+        const others = pick(a, ['snooze', 'wake', 'archive', 'unarchive', 'markSeen', 'title', 'star']);
+        if (Object.keys(others).length) throw bad('an update changes one thing');
+        break;
+      }
       out = pick(a, ['snooze', 'wake', 'archive', 'unarchive', 'markSeen', 'title', 'star']);
       if (Object.keys(out).length !== 1) throw bad('an update changes one thing');
       // How it went, with an archive (API 42), as phone:update takes it.
@@ -384,7 +407,12 @@ export const commandState = query({
   },
 });
 
-/** Another runner's logins, with their models, for the new-thread pickers on the main Mac. */
+/**
+ * Another runner's logins, with their models and (API 77) how much room each
+ * has, for the main Mac's pickers and its limit box on that runner's threads.
+ * Without the room, that box judged a Pixel thread by the Mac's own login of
+ * the same id, and offered the Mac's logins to switch it to.
+ */
 export const remoteAccounts = query({
   args: { key: v.string(), runnerId: v.string() },
   returns: v.array(v.any()),
@@ -392,7 +420,7 @@ export const remoteAccounts = query({
     await runnerAuth(ctx, key, 'remoteAccounts');
     const out = [];
     for (const a of await ctx.db.query('accounts').withIndex('by_runnerId', (q) => q.eq('runnerId', runnerId)).take(50)) {
-      const { _id, _creationTime, usage: _u, ...rest } = a;
+      const { _id, _creationTime, ...rest } = a;
       out.push(rest);
     }
     return out;

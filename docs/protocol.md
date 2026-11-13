@@ -5442,7 +5442,13 @@ only way the app opens another runner's thread.
   other runner's key from its row, as the phone seals it, so the value
   never reaches the backend in the clear), `threads.markSeen` (only when
   the row is unread), `threads.update` (`title`, `archived` with its `verdict`, `starred`,
-  `snoozedUntil`; anything else is `-32000`), `threads.hibernateWhen` (an
+  `snoozedUntil`; or, from backend API 77 and on their own, `accountId`,
+  `model` and `effort`, with `carryOn` beside `accountId`, which go as one
+  `update` command that runner applies through its own `threads.update`,
+  with `unconfine` unless `by: "agent"` (an agent's change, `byAgent`);
+  only the main Mac's commands, `from: "mac"`, can carry them; an older
+  backend's runner says it works once the backend is updated; a folder,
+  pool or mode change is `-32000`), `threads.hibernateWhen` (an
   `update` with `snooze: { said }`; that runner puts the thread away at once
   and the command is done once its model has said when, so the answer is
   `{ thread }` from the row, without `until`, `topic` or `why`, or the
@@ -6614,7 +6620,7 @@ anyone's); "any runner" is any good key. Anything not sorted is owner only.
 | `commandState` | owner only | |
 | `pictureUploadUrl` | owner only | a one-use `/relay/upload` URL for a picture going to another runner's thread, recorded in `relayUploads` |
 | `discardPictures` | owner only | deletes pictures uploaded through `pictureUploadUrl` for a command that wasn't queued, only ones nothing names |
-| `remoteAccounts` | owner only | another runner's logins |
+| `remoteAccounts` | owner only | another runner's logins, with their usage from API 77 |
 | `remoteBody` | owner only | one tool's output on another runner's thread (full sync) |
 | `fileRequest` | its own | a request for a thread on another runner, from one of its own threads (Asking another runner); never changed after; at most 5 waiting (one over two hours old doesn't count) and 50 kept, oldest going first, for a week at most |
 | `runnerRequest` | its own | a request its runner filed; the owner reads any |

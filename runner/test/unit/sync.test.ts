@@ -972,6 +972,33 @@ test('an archive command an agent sent (by: "agent") says an agent archived it; 
   assert.ok(h.runner.get(b.id).archivedAt);
 });
 
+// 13 Nov: Continue now on for a Pixel thread at its limit, from the Mac,
+// had no way there. The main Mac's update (convex/relay.ts, API 77) moves
+// the thread to that runner's own login; nothing else can send one.
+test('an update from the main Mac changes the thread\'s login, model and effort; one not from the Mac is refused', async () => {
+  const { h, sync, push, calls } = setupFull();
+  sync.start();
+  await sync.flushNow();
+  const t = h.runner.create({ text: 'one', cwd: h.cfg.defaults.cwd, accountId: 'claude-main' }).thread;
+  const s = session(h, t.id);
+  s.init();
+  s.result('completed');
+  await tick();
+  push([
+    { commandId: 'l1', kind: 'update', threadId: t.id, args: { accountId: 'claude-3', model: 'claude-haiku-5-5', effort: 'high', from: 'mac' }, createdAt: 1 },
+    { commandId: 'l2', kind: 'update', threadId: t.id, args: { accountId: 'claude-main' }, createdAt: 2 },
+  ]);
+  await tick(20);
+  const rec = h.runner.get(t.id);
+  assert.equal(rec.accountId, 'claude-3');
+  assert.equal(rec.model, 'claude-haiku-5-5');
+  assert.equal(rec.effort, 'high');
+  const finished = calls.filter((c) => c.fn === 'sync:finishCommand').map((c) => c.args);
+  assert.equal(finished.find((f) => f.commandId === 'l1')?.ok, true);
+  const refused = finished.find((f) => f.commandId === 'l2');
+  assert.equal(refused?.ok, false, 'only the main Mac changes a login this way');
+});
+
 test('commands: each pending one is taken once, applied through the runner as from the phone, and finished', async () => {
   const { h, sync, calls, push, applied } = setupFull();
   sync.start();

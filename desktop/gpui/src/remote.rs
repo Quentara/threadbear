@@ -29,6 +29,10 @@ pub(crate) struct RemoteState {
     pub(crate) made: HashSet<String>,
     /// Logins being fetched, so one's asked for once.
     pub(crate) fetching: HashSet<String>,
+    /// When each runner's logins last came: they carry how much room each
+    /// has (backend API 77), which the limit box goes by, so they're asked
+    /// for again on opening one of its threads once they're a minute old.
+    pub(crate) logins_at: HashMap<String, std::time::Instant>,
     /// `runners.list`: every runner, this Mac's too.
     pub(crate) all_runners: Vec<RunnerInfo>,
     /// `hello.experiments`: what's on for this runner.
@@ -135,7 +139,8 @@ impl Threadbear {
     /// `loadRelayLogins`: that runner's logins for the pickers, from the
     /// backend through this Mac's runner, once per runner.
     pub(crate) fn load_remote_logins(&mut self, runner: String, cx: &mut Context<Self>) {
-        if self.remote.logins.contains_key(&runner) || !self.remote.fetching.insert(runner.clone()) {
+        let fresh = self.remote.logins_at.get(&runner).is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(60));
+        if (self.remote.logins.contains_key(&runner) && fresh) || !self.remote.fetching.insert(runner.clone()) {
             return;
         }
         let client = self.client.clone();
@@ -146,6 +151,7 @@ impl Threadbear {
                 match res {
                     Ok(value) => {
                         this.remote.logins.insert(runner.clone(), RunnerLogins::from_hello(&value));
+                        this.remote.logins_at.insert(runner.clone(), std::time::Instant::now());
                         if this.new_thread.picks.runner.as_deref() == Some(runner.as_str()) {
                             this.new_thread.runner_problem = None;
                         }

@@ -351,4 +351,9 @@
 //    plan and what became of it, so another Mac draws its plan card rather
 //    than folding the plan into the turn's work. A runner sends `review`,
 //    `cardTurn` and `planDecision` only from 76.
-export const API_VERSION = 76;
+// 77: an `update` command from the main Mac can change a thread's login,
+//    model or effort (with carryOn, the limit box's Continue now on), and
+//    relay:remoteAccounts includes each login's usage, so the Mac switches
+//    another runner's thread to one of that runner's logins with room. The
+//    Mac's runner sends one only from 77; an older backend refuses it.
+export const API_VERSION = 77;

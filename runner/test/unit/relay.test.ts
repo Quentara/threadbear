@@ -245,7 +245,33 @@ test('sends, stops and changes go to the thread runner; settings that only work 
   h.subs.get('relay:commandState')![1]!.onUpdate({ state: 'done' });
   await stop;
   assert.equal(h.calls.at(-1)!.args.kind, 'interrupt');
-  await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, model: 'opus' }), /isn't possible through Convex yet/);
+  await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, cwd: '/elsewhere' }), /isn't possible through Convex yet/);
+});
+
+// 13 Nov: Continue now on for a Pixel thread at its limit was refused as
+// "Changing its login, model or settings isn't possible through Convex yet".
+test("a login, model or effort change goes to the thread's runner as one update, once the backend takes it", async () => {
+  const old = harness();
+  await assert.rejects(old.relay.call(T, 'threads.update', { threadId: T, accountId: 'claude-2' }), /once your Convex backend is updated/);
+  assert.ok(!old.calls.some((c) => c.fn === 'relay:queueCommand'), 'nothing queued for a backend that would refuse it');
+  const h = harness({ apiVersion: 77 });
+  const moved = h.relay.call(T, 'threads.update', { threadId: T, accountId: 'claude-2', model: 'opus', carryOn: true });
+  await new Promise((r) => setImmediate(r));
+  h.subs.get('relay:commandState')![0]!.onUpdate({ state: 'done' });
+  const { thread } = (await moved) as { thread: { accountId: string; model?: string } };
+  const queued = h.calls.find((c) => c.fn === 'relay:queueCommand')!;
+  assert.equal(queued.args.kind, 'update');
+  assert.deepEqual(queued.args.args, { accountId: 'claude-2', model: 'opus', carryOn: true });
+  assert.equal(thread.accountId, 'claude-2', 'the reply has the new login at once');
+  assert.equal(thread.model, 'opus');
+  // An agent's goes as one, so that runner keeps a sandboxed thread in.
+  const agent = h.relay.call(T, 'threads.update', { threadId: T, effort: 'high', byAgent: true });
+  await new Promise((r) => setImmediate(r));
+  h.subs.get('relay:commandState')![1]!.onUpdate({ state: 'done' });
+  await agent;
+  assert.deepEqual(h.calls.filter((c) => c.fn === 'relay:queueCommand').at(-1)!.args.args, { effort: 'high', by: 'agent' });
+  await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, accountId: 'claude-2', title: 'x' }), /on its own/);
+  await assert.rejects(h.relay.call(T, 'threads.update', { threadId: T, model: 'opus', carryOn: true }), /carryOn goes with accountId/);
 });
 
 // 8 Nov: a picture pasted for a thread on Hetzner Cloud was refused with
