@@ -346,6 +346,7 @@ test('heartbeats once a minute; stop with bye says goodbye, stop without does no
 test('a failed startup heartbeat retries soon and attaches schedules before the next minute', async () => {
   let beats = 0;
   let scheduler!: Scheduler;
+  const logs: { message: string; data?: unknown }[] = [];
   const { h, sync, calls } = setup({
     answer: (fn) => {
       if (fn !== 'sync:heartbeat') return null;
@@ -353,6 +354,7 @@ test('a failed startup heartbeat retries soon and attaches schedules before the 
       return { apiVersion: SCHEDULES_API_VERSION };
     },
     schedules: { attach: (b) => scheduler.attach(b), inBackend: () => scheduler.inBackend() },
+    extra: { log: { ...nullLogger, info: (message, data) => { logs.push({ message, data }); } } },
   });
   fs.writeFileSync(path.join(h.home, 'schedules.json'), JSON.stringify({ version: 2, schedules: [] }));
   scheduler = new Scheduler({ runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, syncOn: true, self: { id: 'r1', name: 'TestMac' } });
@@ -376,6 +378,10 @@ test('a failed startup heartbeat retries soon and attaches schedules before the 
   h.clock.advance(1);
   await tick();
   assert.equal(beats, 3);
+  assert.deepEqual(logs.filter((l) => l.message.startsWith('convex startup heartbeat')), [
+    { message: 'convex startup heartbeat failed; retrying', data: { error: 'Error: fetch failed' } },
+    { message: 'convex startup heartbeat recovered', data: undefined },
+  ]);
   scheduler.stop();
   await sync.stop();
 });
@@ -429,8 +435,10 @@ test('a startup heartbeat that fails after stop cannot schedule a retry', async 
   const { h, sync, calls } = setup({ answer: (fn) => fn === 'sync:heartbeat' ? heartbeat : null });
   sync.start();
   await sync.stop();
+  const pending = h.clock.pending();
   fail(new Error('fetch failed'));
   await tick();
+  assert.equal(h.clock.pending(), pending, 'a late failure does not leave a retry timer behind');
   h.clock.advance(HEARTBEAT_MS * 2);
   await tick();
   assert.equal(calls.filter((c) => c.fn === 'sync:heartbeat').length, 1);

@@ -3888,6 +3888,7 @@ export class ConvexSync {
     };
     void this.post('mutation', 'sync:heartbeat', { key: this.deps.key, runner }).then(
       (r) => {
+        if (!this.backendHeard && this.startupHeartbeatRetryMs > 1000) this.deps.log.info('convex startup heartbeat recovered');
         this.sawBackend(r);
         // A start whose first flush went before a heartbeat said the
         // backend can list the shared rows checks them now.
@@ -3926,6 +3927,7 @@ export class ConvexSync {
         // A single failed request at startup used to leave them unavailable
         // for a whole minute, even after the connection had recovered.
         if (this.running && !this.backendHeard && !this.keyRejected && !refused && !refusedForGood(e) && !retryLater(e)) {
+          if (this.startupHeartbeatRetryMs === 1000) this.deps.log.info('convex startup heartbeat failed; retrying', { error: String(e) });
           this.heartbeatTimer?.cancel();
           this.heartbeatTimer = this.deps.clock.setTimeout(() => this.heartbeat(), this.startupHeartbeatRetryMs);
           this.startupHeartbeatRetryMs = Math.min(this.startupHeartbeatRetryMs * 2, HEARTBEAT_MS);
