@@ -695,12 +695,14 @@ export const patchesPart = {
     else void this.refreshPatches(st);
   },
 
+  // Through rereadPatches, so a thread whose read is already going reads
+  // again once it ends: that read may have looked before the change (Trust
+  // pressed on a second patch while the first was still loading stayed
+  // "changed since you trusted it" until the next poll).
   rereadAllPatches(this: Runner): void {
     this.forgetFolders();
     for (const st of this.threads.values()) {
-      if (!st.rt.patches || st.rt.deleted) continue;
-      st.rt.patches.at = -Infinity;
-      void this.refreshPatches(st);
+      if (!st.rt.deleted) this.rereadPatches(st);
     }
   },
 
