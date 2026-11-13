@@ -17,7 +17,7 @@ function alive(pid: number) {
   const ps = spawnSync('ps', ['-p', String(pid), '-o', 'stat='], { encoding: 'utf8' });
   return ps.status === 0 && !ps.stdout.trim().startsWith('Z');
 }
-function fixture(t: TestContext, perf = true) {
+function fixture(t: TestContext, { perf = true, tmpFallback = false } = {}) {
   const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "tb-swift's $& test-"));
   const repo = path.join(home, 'repo');
   for (const dir of ['features/support', 'scripts/perf-swift-bin', 'app/Tools/mock-runner', 'bin']) fs.mkdirSync(path.join(repo, dir), { recursive: true });
@@ -53,7 +53,7 @@ exec "$app/Contents/MacOS/Threadbear", @ARGV;
   for (const name of ['open', 'node']) fs.symlinkSync(fs.readlinkSync(path.join(root, 'scripts/perf-swift-bin', name)), path.join(repo, 'scripts/perf-swift-bin', name));
   const entry = path.join(home, 'worker.mjs');
   const verify = path.join(home, 'verify.mjs');
-  fs.writeFileSync(verify, `import fs from 'node:fs'; import {spawnSync} from 'node:child_process'; for (const name of ['app','mock','launcher']) { const file=process.env.HOME+'/all-'+name+'.pids'; if (!fs.existsSync(file)) continue; for (const pid of fs.readFileSync(file,'utf8').trim().split('\\n')) { const ps=spawnSync('ps',['-p',pid,'-o','stat='],{encoding:'utf8'}); if(ps.status===0 && !ps.stdout.trim().startsWith('Z')) { console.error(name+' still active when next lease acquired'); process.exit(23); } } }`);
+  fs.writeFileSync(verify, `import fs from 'node:fs'; import {spawnSync} from 'node:child_process'; for (const name of ['app','mock','launcher']) { const file=process.env.HOME+'/all-'+name+'.pids'; if (!fs.existsSync(file)) continue; for (const pid of fs.readFileSync(file,'utf8').trim().split('\\n')) { const ps=spawnSync('ps',['-p',pid,'-o','stat=,command='],{encoding:'utf8'}); if(ps.status===0 && !ps.stdout.trim().startsWith('Z') && ps.stdout.includes(process.env.HOME)) { console.error(name+' still active when next lease acquired'); process.exit(23); } } }`);
   fs.writeFileSync(entry, `import fs from 'node:fs'; import { SwiftDriver } from ${JSON.stringify(path.join(repo, 'features/support/swift.ts'))}; fs.writeFileSync(process.env.HOME+'/worker.pid', String(process.pid)); const d = new SwiftDriver(); await d.start(); if (process.env.RELAUNCH) await d.relaunch(); if (process.env.POLL) { while(!fs.existsSync(process.env.HOME+'/mock.pid')) await new Promise(r=>setTimeout(r,20)); const count=()=>fs.readdirSync(process.env.THREADBEAR_PERF_CHILDREN).filter(n=>/^\\d+$/.test(n)).length; const before=count(); for(let i=0;i<20;i++) await d.dump(); fs.writeFileSync(process.env.HOME+'/counts',JSON.stringify([before,count()])); } fs.writeFileSync(process.env.HOME+'/ready', ''); if (process.env.NORMAL_STOP) { await d.stop(); } else { setInterval(()=>{}, 1000); }`);
   fs.writeFileSync(path.join(repo, 'bin/ps'), `#!/bin/bash
 if [[ " $* " = *' lstart= '* ]] && [ -e "$HOME/slow-ps" ]; then
@@ -112,28 +112,29 @@ exit 1
     return result;
   }
   t.after(async () => {
-    fs.writeFileSync(path.join(home, 'allow-reap'), '');
-    fs.writeFileSync(path.join(home, 'proceed'), '');
-    for (const child of children) child.stdin?.end();
-    // Non-perf fixture has no supervisor; these are only our fake processes.
-    for (const name of ['worker', 'app', 'mock']) {
-      try { killOwned(Number(fs.readFileSync(path.join(home, `${name}.pid`), 'utf8'))); } catch {}
-    }
-    for (const name of ['app', 'mock', 'launcher']) {
-      try { for (const pid of fs.readFileSync(path.join(home, `all-${name}.pids`), 'utf8').trim().split('\n')) killOwned(Number(pid)); } catch {}
-    }
-    for (const child of children) await child.done;
-    for (const name of ['app', 'mock', 'launcher']) {
-      try { for (const pid of fs.readFileSync(path.join(home, `all-${name}.pids`), 'utf8').trim().split('\n')) killOwned(Number(pid)); } catch {}
-    }
-    // A TMPDIR-fallback fixture uses /tmp, just as the frozen launcher does.
-    if (fs.existsSync(path.join(home, 'instance-dir'))) {
-      const instance = fs.readFileSync(path.join(home, 'instance-dir'), 'utf8');
-      const worker = fs.readFileSync(path.join(home, 'worker.pid'), 'utf8');
-      assert.equal(path.basename(instance), `spec-${worker}-1`);
-      fs.rmSync(instance, { recursive: true, force: true });
-    }
-    fs.rmSync(home, { recursive: true, force: true });
+    try {
+      fs.writeFileSync(path.join(home, 'allow-reap'), '');
+      fs.writeFileSync(path.join(home, 'proceed'), '');
+      for (const child of children) child.stdin?.end();
+      // Non-perf fixture has no supervisor; these are only our fake processes.
+      for (const name of ['worker', 'app', 'mock']) {
+        try { killOwned(Number(fs.readFileSync(path.join(home, `${name}.pid`), 'utf8'))); } catch {}
+      }
+      for (const name of ['app', 'mock', 'launcher']) {
+        try { for (const pid of fs.readFileSync(path.join(home, `all-${name}.pids`), 'utf8').trim().split('\n')) killOwned(Number(pid)); } catch {}
+      }
+      for (const child of children) await child.done;
+      for (const name of ['app', 'mock', 'launcher']) {
+        try { for (const pid of fs.readFileSync(path.join(home, `all-${name}.pids`), 'utf8').trim().split('\n')) killOwned(Number(pid)); } catch {}
+      }
+      // A TMPDIR-fallback fixture uses /tmp, just as the frozen launcher does.
+      if (tmpFallback && fs.existsSync(path.join(home, 'instance-dir'))) {
+        const instance = fs.readFileSync(path.join(home, 'instance-dir'), 'utf8');
+        const worker = fs.readFileSync(path.join(home, 'worker.pid'), 'utf8');
+        assert.equal(path.basename(instance), `spec-${worker}-1`);
+        fs.rmSync(instance, { recursive: true, force: true });
+      }
+    } finally { fs.rmSync(home, { recursive: true, force: true }); }
   });
   function killOwned(pid: number) {
     const ps = spawnSync('ps', ['-p', String(pid), '-o', 'command='], { encoding: 'utf8' });
@@ -211,7 +212,7 @@ test('polling does not grow the registry, explicit Node is used, and successful 
 });
 
 test('without a perf registry Swift still calls the ordinary launcher', async (t) => {
-  const h = fixture(t, false);
+  const h = fixture(t, { perf: false });
   const first = h.run({ NORMAL_STOP: '1', TMPDIR: h.file('new-temp-directory') });
   assert.equal(await first.done, 0, first.output);
   assert.ok(fs.existsSync(h.file('ordinary-open')));
@@ -230,7 +231,7 @@ test('a symlinked Swift instance root still uses the owned launch adapters', asy
 });
 
 test('Swift TMPDIR fallback matches the launcher even when TMP points elsewhere', async (t) => {
-  const h = fixture(t);
+  const h = fixture(t, { tmpFallback: true });
   const first = h.run({ NORMAL_STOP: '1', TMPDIR: '', TMP: h.home, TEMP: h.home });
   assert.equal(await first.done, 0, first.output);
   assert.ok(!fs.existsSync(h.file('ordinary-open')), 'TMP fallback bypassed the app gate');
