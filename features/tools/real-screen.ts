@@ -43,23 +43,7 @@ const finder = path.join(work, 'window-at');
 /** The app whose window is on top at a screen point: what a real click there reaches. */
 export function windowAt(x: number, y: number): { pid: number; owner: string } | null {
   if (!fs.existsSync(finder)) {
-    fs.writeFileSync(`${finder}.swift`, `import CoreGraphics
-import Foundation
-let x = Double(CommandLine.arguments[1])!, y = Double(CommandLine.arguments[2])!
-// Front to back, every layer: a notification or a dialog over the point takes the click too.
-let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as! [[String: Any]]
-for w in list {
-  guard let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
-  // Notification Centre keeps a see-through window over the whole screen
-  // that only its banners take clicks in.
-  if (w[kCGWindowName as String] as? String) == "Notification Center" { continue }
-  if x >= b["X"]! && x < b["X"]! + b["Width"]! && y >= b["Y"]! && y < b["Y"]! + b["Height"]! {
-    print(w[kCGWindowOwnerPID as String] as! Int32, w[kCGWindowOwnerName as String] as? String ?? "?")
-    break
-  }
-}
-`);
-    execFileSync('swiftc', ['-O', `${finder}.swift`, '-o', finder]);
+    execFileSync('swiftc', ['-O', path.join(root, 'features/tools/window-at.swift'), '-o', finder]);
   }
   const out = execFileSync(finder, [String(x), String(y)]).toString().trim();
   if (!out) return null;

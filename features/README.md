@@ -82,5 +82,13 @@ no recording running there. Never run them on the Mac Mike is using. The
 picture-promise case starts its own source window and checks it is in front
 before dragging into its own test app.
 
+The screen guard also checks Accessibility when the Dock's full-screen,
+layer-20 window covers a point. It accepts the ordinary window directly
+beneath it only when the Accessibility hit-test reaches that same process.
+No Accessibility permission, a failed hit-test or a different result keeps
+the drag blocked; other covering windows still block it too. The exception
+also refuses checked points within 24 points of the display edge, where moving the
+pointer could reveal an auto-hidden Dock after the check.
+
 `@picture-loading` gives the mock a cancellable scripted turn while a picture
 is delayed. Its script is temporary and no model runs.
