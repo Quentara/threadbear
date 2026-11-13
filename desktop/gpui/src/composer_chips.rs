@@ -1212,6 +1212,7 @@ pub(crate) fn search_command(composer: &Entity<Composer>, words: &str, window: &
         s.set_value(words.to_owned(), window, cx);
         s.focus(window, cx);
     });
+    crate::web_panels::keyboard_to_app(window);
     window.render_frame(cx);
     window.press("enter", cx);
     Ok(())
