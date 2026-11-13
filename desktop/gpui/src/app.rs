@@ -810,7 +810,7 @@ impl Threadbear {
                         // its moving flag can already have been cleared at
                         // claimed, so verify the local list regardless of it.
                         let arriving = t.runner_id.is_none() && self.threads.get(&t.id).is_some_and(|old| old.is_remote() || self.remote.made.contains(&t.id));
-                        t.runner_id = self.threads.get(&t.id).and_then(|old| old.runner_id.clone());
+                        if let Some(old) = self.threads.get(&t.id) { t.runner_id = old.runner_id.clone(); }
                         if arriving {
                             // Relay and local updates share a notification. Verify
                             // ownership with the local list before replacing it.
