@@ -218,8 +218,10 @@ their own.
   and the rest land.
 - While it waits, a landing says where it is: whose check is running and
   for how long, how many are waiting ahead of it, and roughly how long it
-  has to go, from the last 20 checks in the times log below. It says it
-  again every three minutes.
+  has to go, from the last 20 checks in the times log below. If it is
+  already in the running group, it says it is being checked and estimates
+  only the rest of that check. Landings in the running group don't count
+  as waiting ahead of anyone else. It says it again every three minutes.
 
 So a landing waits for at most the check that's running and the next one,
 unless a check fails.

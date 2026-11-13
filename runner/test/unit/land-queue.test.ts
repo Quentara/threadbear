@@ -111,6 +111,44 @@ test('the waiting line says where it is in the line and roughly how long', () =>
   assert.equal(waitingLine(common, times, { ...ahead, at: ahead.at - 1 }, now), '...');
 });
 
+test('the waiting line recognises a landing already in the running group', () => {
+  const { main } = makeRepo();
+  const common = path.join(main, '.git');
+  const times = path.join(common, 'threadbear-land-times.log');
+  fs.writeFileSync(times, JSON.stringify({ ok: true, seconds: 360 }) + '\n');
+  const now = Date.now();
+  joinQueue(common, { branch: 'thread/peer', path: '/peer', base: 'b', commit: 'c' });
+  const me = joinQueue(common, { branch: 'thread/me', path: '/me', base: 'b', commit: 'c' });
+  // The holder and any position in its group use the same remaining check.
+  for (const branches of [['thread/me', 'thread/peer'], ['thread/peer', 'thread/me']]) {
+    setRunning(common, { startedAt: now - 120_000, branches });
+    assert.equal(waitingLine(common, times, me, now), ': this landing is being checked with 1 other landing; the check has been running 2 min, so roughly 4 min to go (a check takes about 6 min here).');
+  }
+  setRunning(common, { startedAt: now - 180_000, branches: ['thread/holder', me.branch, 'thread/peer', 'thread/another'] });
+  assert.equal(waitingLine(common, times, me, now), ': this landing is being checked with 3 other landings; the check has been running 3 min, so roughly 3 min to go (a check takes about 6 min here).');
+  setRunning(common, { startedAt: now - 600_000, branches: [me.branch] });
+  assert.equal(waitingLine(common, times, me, now), ': this landing is being checked; the check has been running 10 min, so roughly 1 min to go (a check takes about 6 min here).');
+  fs.rmSync(times);
+  assert.equal(waitingLine(common, times, me, now), ': this landing is being checked; the check has been running 10 min.');
+});
+
+test('the waiting line counts only landings outside the running group as ahead', () => {
+  const { main } = makeRepo();
+  const common = path.join(main, '.git');
+  const times = path.join(common, 'threadbear-land-times.log');
+  fs.writeFileSync(times, JSON.stringify({ ok: true, seconds: 360 }) + '\n');
+  const now = Date.now();
+  const active = joinQueue(common, { branch: 'thread/active', path: '/active', base: 'b', commit: 'c' });
+  const ahead = joinQueue(common, { branch: 'thread/ahead', path: '/ahead', base: 'b', commit: 'c' });
+  const me = joinQueue(common, { branch: 'thread/me', path: '/me', base: 'b', commit: 'c' });
+  // Fix the ordering independently of the clock and random queue ids.
+  me.at = Math.max(active.at, ahead.at, me.at) + 1;
+  setRunning(common, { startedAt: now - 120_000, branches: ['thread/holder', active.branch] });
+  assert.equal(waitingLine(common, times, me, now), ': the check for thread/holder and 1 more has been running 2 min; 1 more waiting ahead of this one, all checked together with it next, so roughly 10 min to go (a check takes about 6 min here).');
+  // A caller without an entry (such as sync-main) is outside this check.
+  assert.equal(waitingLine(common, times, undefined, now), ': the check for thread/holder and 1 more has been running 2 min; 2 more waiting ahead of this one, all checked together with it next, so roughly 10 min to go (a check takes about 6 min here).');
+});
+
 test('a landing that asks for a different check is never put in another one', async () => {
   const { root, main } = makeRepo();
   const [a, b, c] = branches(main, ['a', 'b', 'c']);

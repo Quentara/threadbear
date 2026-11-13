@@ -160,16 +160,23 @@ export function typicalCheckSeconds(timesFile: string): number | undefined {
 const minutes = (s: number): string => (s < 60 ? 'under a minute' : s < 90 ? '1 min' : `${Math.round(s / 60)} min`);
 
 // Where a waiting landing is in the line, and roughly how long it has.
-// Everyone waiting goes into the next check together, so it's the rest of
-// the current check and one more.
+// Entries stay in the queue during their group check. Those have only the
+// rest of this check to go; the others wait for this check and one more.
 export function waitingLine(common: string, timesFile: string, me: QueueEntry | undefined, now = Date.now()): string {
-  const all = waiting(common);
-  const ahead = me ? all.filter((e) => e.id !== me.id && (e.at < me.at || (e.at === me.at && e.id < me.id))).length : all.length;
   const running = readRunning(common);
+  const all = waiting(common).filter((e) => !running?.branches.includes(e.branch));
+  const ahead = me ? all.filter((e) => e.id !== me.id && (e.at < me.at || (e.at === me.at && e.id < me.id))).length : all.length;
   const typical = typicalCheckSeconds(timesFile);
   const parts: string[] = [];
   if (running) {
     const ago = Math.max(0, Math.round((now - running.startedAt) / 1000));
+    if (me && running.branches.includes(me.branch)) {
+      const peers = running.branches.length - 1;
+      const withOthers = peers ? ` with ${peers} other landing${peers === 1 ? '' : 's'}` : '';
+      const estimate = typical !== undefined
+        ? `, so roughly ${minutes(Math.max(60, typical - ago))} to go (a check takes about ${minutes(typical)} here)` : '';
+      return `: this landing is being checked${withOthers}; the check has been running ${minutes(ago)}${estimate}.`;
+    }
     const what = running.branches.length > 1 ? `${running.branches[0]} and ${running.branches.length - 1} more` : running.branches[0] ?? 'another landing';
     parts.push(`the check for ${what} has been running ${minutes(ago)}`);
     if (typical !== undefined) {
