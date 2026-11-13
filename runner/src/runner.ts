@@ -2558,8 +2558,10 @@ export class Runner {
     // (not one the runner opened for a background task's approval).
     if (outcome === 'completed' && finished && !finished.auto && !this.stopping) void this.runHooks(st, finished);
     // The turn may have changed what live state reads (comments resolved,
-    // a handback): read it now rather than at the next poll.
-    if (rt.patches?.live && !this.stopping) void this.refreshPatches(st);
+    // a handback): read it now rather than at the next poll. Through
+    // rereadPatches, so a poll's read already going (which looked before
+    // the turn's change) is read again once it ends, not left to stand.
+    if (rt.patches?.live && !this.stopping) this.rereadPatches(st);
     if (outcome && finished && !finished.auto && !this.stopping) {
       this.tellActivity({ kind: 'turn.end', threadId: rec.id, outcome, edited: [...finished.edited].map((p) => path.resolve(rec.cwd, p)), workedIn: [...(finished.workedIn ?? [])] });
     }

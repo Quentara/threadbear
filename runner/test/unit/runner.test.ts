@@ -1884,6 +1884,51 @@ test('live state: a command action that changes what its chips ask swaps them st
   assert.deepEqual(titles(), ['Start']);
 });
 
+// The turn's end asks for live state again (the agent may have resolved
+// comments or started a server). It went through refreshPatches, which
+// drops the ask while a read is going, so a poll's read that looked before
+// the turn's change stood until the next poll, 20 s later (13 Nov 2026,
+// the implicit state machines scan; the same shape as 589c357f4).
+test("live state: a turn's end while a poll's read is going reads again once that read ends", async () => {
+  const root = tmpDir();
+  const project = path.join(root, 'app');
+  const gate = tmpDir();
+  fs.mkdirSync(path.join(project, '.threadbear/patches'), { recursive: true });
+  // The chip shows while `on` exists. With `hold` there, a read notes what
+  // it saw, then waits for `go` before answering with it.
+  fs.writeFileSync(path.join(project, '.threadbear/patches/server.ts'), `
+    import fs from "node:fs";
+    const gate = ${JSON.stringify(gate)};
+    const on = async ({ cwd }) => {
+      const seen = fs.existsSync(cwd + "/on");
+      if (fs.existsSync(gate + "/hold")) {
+        fs.writeFileSync(gate + "/entered", "");
+        while (!fs.existsSync(gate + "/go")) await new Promise((r) => setTimeout(r, 10));
+      }
+      return seen;
+    };
+    export default { actions: [{ title: "Stop", run: "rm on", when: on }] };`);
+  const h = makeHarness(undefined, {}, { panelsRoot: root, actionShell: ['/bin/sh', '-c'], actionTimeoutMs: 5000 });
+  const { thread } = create(h, { cwd: project });
+  await until(() => h.adapter.last !== undefined && h.runner.get(thread.id).patches?.length === 1, 'the CLI to start and the patch to load');
+  const s = h.adapter.last;
+  s.init();
+  await h.runner.patchesIdle();
+  assert.equal(h.runner.get(thread.id).actions, undefined);
+
+  // The poll's read starts, and looks before the turn starts the server.
+  fs.writeFileSync(path.join(gate, 'hold'), '');
+  h.clock.advance(21_000);
+  await until(() => fs.existsSync(path.join(gate, 'entered')), "the poll's read to start");
+  fs.writeFileSync(path.join(project, 'on'), '');
+  s.result('completed');
+  await tick();
+  fs.rmSync(path.join(gate, 'hold'));
+  fs.writeFileSync(path.join(gate, 'go'), '');
+  await until(() => h.runner.get(thread.id).actions !== undefined, "the turn's change to show without another poll");
+  assert.deepEqual(h.runner.get(thread.id).actions?.map((a) => a.title), ['Stop']);
+});
+
 test('a turn.end hook runs after a turn that edited a matching file, and a failure is told to the agent twice at most', async () => {
   const root = tmpDir();
   const project = path.join(root, 'app');
