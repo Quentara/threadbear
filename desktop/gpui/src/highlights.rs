@@ -1002,7 +1002,7 @@ pub(crate) fn tipped(el: Stateful<Div>, tip: impl Into<SharedString>) -> gpui_ki
 pub(crate) fn tipped_as(el: Stateful<Div>, tip: impl Into<SharedString>, role: Role) -> gpui_kit::base::ObservedElement<Stateful<Div>> {
     let text: SharedString = tip.into();
     let shown = text.clone();
-    el.test_support().role(role).aria_label(text).tip(shown)
+    crate::a11y::A11yRole::a11y_role(el.test_support(), role).aria_label(text).tip(shown)
 }
 
 /// One row in the pane's lists (`PaneRow`): a grey icon, the title with a word

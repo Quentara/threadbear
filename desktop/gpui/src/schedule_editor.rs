@@ -4,6 +4,7 @@
 // underneath) and where it goes. What the runner makes of the time shows
 // under it as it changes (`schedules.preview`, a quarter of a second after the
 // last change), so a cron typo is plain before saving.
+use crate::a11y::A11yRole as _;
 use crate::app::Threadbear;
 use crate::{call, icons, now_ms, style};
 use gpui_kit::base::TestSupportExt as _;
@@ -606,7 +607,7 @@ impl ScheduleEditor {
         div()
             .id(SharedString::from(format!("{id}-holder")))
             .test_support()
-            .role(Role::GenericContainer).aria_label(tip.to_owned())
+            .a11y_role(Role::GenericContainer).aria_label(tip.to_owned())
             .flex_none()
             .child(button.dropdown_menu(move |menu: PopupMenu, _window, _cx| {
                 let mut menu = menu;
@@ -951,7 +952,7 @@ impl Render for ScheduleEditor {
             .child(div().flex_1())
             .child(Button::new("schedule-cancel").label("Cancel").small().outline().tooltip("Close without saving (Esc)").on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))))
             .child(
-                div().id("schedule-save").test_support().role(Role::GenericContainer).aria_label(save_tip.to_owned()).child(
+                div().id("schedule-save").test_support().a11y_role(Role::GenericContainer).aria_label(save_tip.to_owned()).child(
                     Button::new("schedule-save-button")
                         .label(save_label)
                         .small()

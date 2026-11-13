@@ -514,7 +514,7 @@ macro_rules! tipped {
     ($el:expr, $id:expr, $tip:expr, $role:expr) => {{
         let tip_text: SharedString = $tip.into();
         let shown = tip_text.clone();
-        crate::tips::Tip::tip($el.id($id).test_support().role($role).aria_label(tip_text), shown)
+        crate::tips::Tip::tip(crate::a11y::A11yRole::a11y_role($el.id($id).test_support(), $role).aria_label(tip_text), shown)
     }};
 }
 pub(crate) use tipped;

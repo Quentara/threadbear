@@ -7,6 +7,7 @@
 // U+FFFC mark per chip, the chip drawn by the renderer below, and the input
 // keeps them atomic through edits and undo. That mark is exactly what the
 // Swift draft holds (InlinePictures), so the two apps' drafts read the same.
+use crate::a11y::A11yRole as _;
 use crate::app::Threadbear;
 use crate::composer_card::CardState;
 use crate::composer_chips::ModelPickerView;
@@ -347,7 +348,7 @@ impl Composer {
                 let (app_c, id) = (self.app.clone(), thread.id.clone());
                 let carry_on = advice.carry_on;
                 row = row.child(
-                    div().id("limit-switch").test_support().role(Role::GenericContainer).aria_label(tip).child(Button::new("limit-switch-button").label("Continue now on").small().secondary().tooltip(tip).on_click(move |_, _, cx| {
+                    div().id("limit-switch").test_support().a11y_role(Role::GenericContainer).aria_label(tip).child(Button::new("limit-switch-button").label("Continue now on").small().secondary().tooltip(tip).on_click(move |_, _, cx| {
                         app_c.update(cx, |a, cx| a.continue_now_on(&id, account.clone(), carry_on, cx)).ok();
                     })),
                 );
@@ -387,7 +388,7 @@ impl Composer {
                     }
                     menu
                 });
-                row = row.child(h_flex().gap(px(6.)).items_center().child(div().text_color(secondary).child("Carry on by itself")).child(div().id("limit-carry-on").test_support().role(Role::GenericContainer).aria_label(tip).child(menu)));
+                row = row.child(h_flex().gap(px(6.)).items_center().child(div().text_color(secondary).child("Carry on by itself")).child(div().id("limit-carry-on").test_support().a11y_role(Role::GenericContainer).aria_label(tip).child(menu)));
             }
             column = column.child(row);
         }

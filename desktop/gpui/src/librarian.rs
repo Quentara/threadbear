@@ -6,6 +6,7 @@
 // Pausing shows at once and goes back if the runner says no; Look at
 // everything spins until the runner has queued the looks; each takes no
 // second click while it's on its way.
+use crate::a11y::A11yRole as _;
 use crate::app::Threadbear;
 use crate::home_page::{home_status_line, home_title, mode_header, Art};
 use crate::sidebar::{icon, palette, tipped, Palette, LEADING, OUTER_INSET, TRAILING};
@@ -190,7 +191,7 @@ impl Threadbear {
             .gap(px(8.))
             .pt(px(4.))
             .child(
-                div().id("librarian-pause").test_support().role(Role::GenericContainer).aria_label(pause_tip.to_owned()).child(
+                div().id("librarian-pause").test_support().a11y_role(Role::GenericContainer).aria_label(pause_tip.to_owned()).child(
                     // Small and filled, as the Swift view's `.controlSize(.small)`.
                     Button::new("librarian-pause-button")
                         .label(if paused { "Resume" } else { "Pause" })
@@ -202,7 +203,7 @@ impl Threadbear {
                 ),
             )
             .child(
-                div().id("librarian-run").test_support().role(Role::GenericContainer).aria_label("Queue a look at every thread it hasn't looked at yet, newest first".to_owned()).child(
+                div().id("librarian-run").test_support().a11y_role(Role::GenericContainer).aria_label("Queue a look at every thread it hasn't looked at yet, newest first".to_owned()).child(
                     Button::new("librarian-run-button")
                         .label("Look at everything")
                         .xsmall()
@@ -370,7 +371,7 @@ impl Threadbear {
         let paused = status.paused;
         let label = |text: &'static str| div().w(px(110.)).flex_none().text_size(px(style::size::LABEL)).line_height(px(16.)).text_color(secondary).child(text);
         let switch_tip = if paused { "Paused: what's queued waits. Turn it on to carry on" } else { "Turn it off to pause; what's queued waits" };
-        let switch = div().id("librarian-switch").test_support().role(Role::GenericContainer).aria_label(switch_tip.to_owned()).tip(switch_tip).child(
+        let switch = div().id("librarian-switch").test_support().a11y_role(Role::GenericContainer).aria_label(switch_tip.to_owned()).tip(switch_tip).child(
             MacSwitch::new("librarian-look", !paused)
                 .outside_form()
                 .disabled(pausing)
@@ -389,7 +390,7 @@ impl Threadbear {
             .child(div().text_size(px(17.)).line_height(px(21.)).font_semibold().child("Settings"))
             .child(grid)
             .child(
-                div().id("librarian-more-settings").test_support().role(Role::GenericContainer).aria_label("Private folders, whose threads are never sent anywhere".to_owned()).child(
+                div().id("librarian-more-settings").test_support().a11y_role(Role::GenericContainer).aria_label("Private folders, whose threads are never sent anywhere".to_owned()).child(
                     Button::new("librarian-more-settings-button")
                         .label("More in Settings…")
                         .small()
@@ -430,7 +431,7 @@ impl Threadbear {
             div()
                 .id("librarian-pool")
                 .test_support()
-                .role(Role::GenericContainer).aria_label(tip.to_owned())
+                .a11y_role(Role::GenericContainer).aria_label(tip.to_owned())
                 .child(Button::new("librarian-pool-button").label(current).small().outline().dropdown_caret(true).tooltip(tip).dropdown_menu(move |menu: PopupMenu, _, _| {
                     let mut menu = menu;
                     for (id, title, symbol) in &choices {

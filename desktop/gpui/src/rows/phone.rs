@@ -1,4 +1,5 @@
 // The small phone beside messages sent from the iPhone app (Cells.swift).
+use crate::a11y::A11yRole as _;
 use crate::style::{self, px};
 use crate::tips::Tip as _;
 use gpui_kit::base::TestSupportExt as _;
@@ -17,7 +18,7 @@ pub(super) fn mark(index: usize, cx: &App) -> AnyElement {
         .trigger(PhoneMark { index, ink, open: false })
         .content(move |_, _, _| {
             div().id("phone-origin-note").px(px(4.)).py(px(2.)).text_size(px(12.)).line_height(px(15.)).text_color(text)
-                .test_support().role(Role::GenericContainer).aria_label("Phone message origin").child(WORDS)
+                .test_support().a11y_role(Role::GenericContainer).aria_label("Phone message origin").child(WORDS)
         })
         .into_any_element()
 }

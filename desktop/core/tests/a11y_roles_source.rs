@@ -10,7 +10,7 @@
 // does a custom element built from `div()`, `h_flex()` or `v_flex()` that
 // takes a click. A wrapper that only names a kit control for the app's
 // scripts, or a backdrop a click dismisses, says so with
-// `.role(Role::GenericContainer)`: still no node, as what's inside is what
+// `.a11y_role(Role::GenericContainer)` (gpui/src/a11y.rs): still no node, as what's inside is what
 // VoiceOver reads.
 use std::path::{Path, PathBuf};
 
@@ -190,13 +190,19 @@ fn chain_at(code: &str, at: usize) -> String {
     flat
 }
 
+/// A chain that says its role: `.role(`, or the app's `a11y_role` (gpui/src/a11y.rs),
+/// which takes `Role::GenericContainer` without gpui-pre's debug assertion.
+fn has_role(chain: &str) -> bool {
+    chain.contains(".role(") || chain.contains("a11y_role(")
+}
+
 /// Each `.aria_label(`, and each click on a custom element, whose chain
 /// sets no `.role(`, as `file:line`.
 fn unroled(code: &str, rel: &str) -> Vec<String> {
     let mut found = Vec::new();
     for (at, _) in code.match_indices(".aria_label(") {
         let chain = chain_at(code, at);
-        if !chain.contains(".role(") {
+        if !has_role(&chain) {
             let line = code[..at].matches('\n').count() + 1;
             found.push(format!("{rel}:{line}"));
         }
@@ -204,7 +210,7 @@ fn unroled(code: &str, rel: &str) -> Vec<String> {
     for (at, _) in code.match_indices(".on_click(") {
         let chain = chain_at(code, at);
         let custom = ["div()", "h_flex()", "v_flex()"].iter().any(|start| chain.trim_start().starts_with(start));
-        if custom && !chain.contains(".role(") {
+        if custom && !has_role(&chain) {
             let line = code[..at].matches('\n').count() + 1;
             found.push(format!("{rel}:{line} (a click)"));
         }
@@ -229,9 +235,31 @@ fn every_labelled_element_has_a_role() {
     assert!(labels > 50, "only {labels} labels found, so this test isn't reading the app's controls");
     assert!(
         found.is_empty(),
-        "these have an accessibility label, or take a click, but have no role, so VoiceOver never sees them. Give each `.role(Role::Button)` (or ListItem, CheckBox, Tab...) and the state Swift's control has (`.aria_selected`, `.aria_toggled`, `.aria_expanded`); a wrapper naming a kit control for scripts gets `.role(Role::GenericContainer)`:\n{}",
+        "these have an accessibility label, or take a click, but have no role, so VoiceOver never sees them. Give each `.role(Role::Button)` (or ListItem, CheckBox, Tab...) and the state Swift's control has (`.aria_selected`, `.aria_toggled`, `.aria_expanded`); a wrapper naming a kit control for scripts gets `.a11y_role(Role::GenericContainer)`, never `.role(` with it, which panics in a debug build:\n{}",
         found.join("\n")
     );
+}
+
+/// gpui-pre's `role` asserts it's never handed a plain container, so a debug
+/// or scripted app panicked as soon as one of these drew (13 Nov): every app
+/// spec with a done turn's footer, a banner or the Terminal's note.
+#[test]
+fn no_plain_container_goes_through_gpuis_own_role() {
+    let desktop = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_owned();
+    let mut files = Vec::new();
+    rust_files(&desktop.join("gpui/src"), &mut files);
+    let mut found = Vec::new();
+    for file in &files {
+        let rel = file.strip_prefix(&desktop).unwrap().to_string_lossy().replace('\\', "/");
+        let code = std::fs::read_to_string(file).unwrap();
+        for (n, line) in code.lines().enumerate() {
+            let squashed: String = line.split_whitespace().collect();
+            if squashed.contains(".role(Role::GenericContainer)") || squashed.contains(".role(gpui_kit::Role::GenericContainer)") || squashed.contains(".role($role)") {
+                found.push(format!("{rel}:{}", n + 1));
+            }
+        }
+    }
+    assert!(found.is_empty(), "use `.a11y_role(` (gpui/src/a11y.rs) for these, which leaves a plain container out rather than panicking:\n{}", found.join("\n"));
 }
 
 #[test]

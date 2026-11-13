@@ -1,5 +1,6 @@
 // The Swift milestone toast's behavior and capsule, with Mike's chosen paw.
 // It stays still, as he picked in the motion review.
+use crate::a11y::A11yRole as _;
 use crate::app::Threadbear;
 use crate::style::{self, px};
 use crate::tips::Tip as _;
@@ -103,7 +104,7 @@ impl Threadbear {
                 cx.notify();
             }))
             .child(milestone_mark(cx))
-            .child(div().id("milestone-title").test_support().role(Role::GenericContainer).aria_label(rules::title(tier)).child(rules::title(tier)))
+            .child(div().id("milestone-title").test_support().a11y_role(Role::GenericContainer).aria_label(rules::title(tier)).child(rules::title(tier)))
             .child(div().text_color(style::secondary_text(cx)).child(rules::line(tier)))
             .into_any_element()
     }

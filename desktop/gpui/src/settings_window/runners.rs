@@ -5,6 +5,7 @@
 // machine, which the ⓘs say. The words and the order are
 // threadbear_core::runners; the order is saved as the Runners panel saves it
 // (`set_runner_order`), here at once.
+use crate::a11y::A11yRole as _;
 use super::{plain_note, row_with, section, SettingsWindow};
 use crate::app::Threadbear;
 use crate::highlights::tipped_as;
@@ -143,7 +144,7 @@ impl SettingsWindow {
             }
             menu
         });
-        div().id("settings-default-runner-holder").test_support().role(Role::GenericContainer).aria_label(rules::DEFAULT_TIP).flex_none().child(button).into_any_element()
+        div().id("settings-default-runner-holder").test_support().a11y_role(Role::GenericContainer).aria_label(rules::DEFAULT_TIP).flex_none().child(button).into_any_element()
     }
 
     /// `RunnerRow`: a handle to drag it by when the order can change, its

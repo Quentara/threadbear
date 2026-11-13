@@ -4,6 +4,7 @@
 // channel; requests run there too and their results come back as tasks.
 // Read-outs that exist only for the scripted control (`automation.rs`).
 #![cfg_attr(not(feature = "automation"), allow(dead_code, unused_imports))]
+mod a11y;
 mod activity;
 mod activity_panels;
 mod agent_browser;

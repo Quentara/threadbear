@@ -5,6 +5,7 @@
 // screen or the link handed to the browser: the link is drawn into the code and
 // dropped, never kept, logged or put in the dump. The words and the code are
 // threadbear_core::devices.
+use crate::a11y::A11yRole as _;
 use super::{row_with, section, SettingsWindow};
 use crate::app::Threadbear;
 use crate::highlights::{tipped, tipped_as};
@@ -327,7 +328,7 @@ impl SettingsWindow {
                 }
             });
             // Its name for the specs, as each browser's Revoke has the same tip.
-            let revoke = div().id(SharedString::from(format!("settings-revoke-holder-{}", device.id))).test_support().role(Role::GenericContainer).aria_label(format!("Revoke {}", device.title())).flex_none().child(revoke);
+            let revoke = div().id(SharedString::from(format!("settings-revoke-holder-{}", device.id))).test_support().a11y_role(Role::GenericContainer).aria_label(format!("Revoke {}", device.title())).flex_none().child(revoke);
             rows.push(row_with(label.into_any_element(), revoke.into_any_element(), cx));
         }
         section("settings-devices-paired", "Paired", rules::PAIRED_ABOUT, rules::PAIRED_ASK, rows, cx)

@@ -8,6 +8,7 @@
 // changes (file_watch.rs), every 15 seconds for another Mac's, and when the
 // window comes to the front. Drag-out is later work (`drag.fileout`), and Space
 // shows the file in the pane, as there's no Quick Look here (`file.quicklook`).
+use crate::a11y::A11yRole as _;
 use crate::call;
 use crate::file_watch::FolderWatch;
 use crate::highlights::{icon, palette, MenuItem, Palette, PanePreview, SidePane, Target, FILES};
@@ -596,7 +597,7 @@ impl SidePane {
         let (empty_key, click_key) = (key.to_owned(), key.to_owned());
         let _ = thread;
         div()
-            .id("folder-surface").role(Role::GenericContainer)
+            .id("folder-surface").a11y_role(Role::GenericContainer)
             .flex_1()
             .min_h_0()
             .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {

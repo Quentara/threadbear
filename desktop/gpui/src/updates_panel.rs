@@ -7,6 +7,7 @@
 // The app's own update (app_update.rs) is its App section, and a right-click
 // on the icon puts it in a popover beside it with Restart to Update, the quick
 // way to take one (Swift's AppUpdatePopover).
+use crate::a11y::A11yRole as _;
 use crate::activity_panels::{button_row, panel_column, push_button, small_heading, system_orange, text_button, text_line, MenuLabel};
 use crate::app::Threadbear;
 use crate::{call, icons, now_ms, shell, style};
@@ -669,7 +670,7 @@ impl Threadbear {
         let current = cli.policy.clone();
         let app = cx.entity().downgrade();
         let words = format!("Updates: {}", rules::policy_title(&cli.policy));
-        let holder = div().id(SharedString::from(format!("updates-policy-{}", cli.provider))).flex_none().test_support().role(Role::GenericContainer).aria_label(tip).tip(tip);
+        let holder = div().id(SharedString::from(format!("updates-policy-{}", cli.provider))).flex_none().test_support().a11y_role(Role::GenericContainer).aria_label(tip).tip(tip);
         if busy {
             // Taking no other choice until the runner has this one.
             return holder.opacity(0.5).child(MenuLabel::new(SharedString::from(format!("updates-policy-{provider}-label")), words, 11., style::label_text(cx))).into_any_element();

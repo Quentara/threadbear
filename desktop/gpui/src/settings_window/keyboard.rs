@@ -6,6 +6,7 @@
 // The keys stay in shortcuts.json, which an agent can change too, and the app
 // picks up (shell.rs, `watch_shortcuts`); this writes it. The rules are
 // threadbear_core::keyboard.
+use crate::a11y::A11yRole as _;
 use super::{section, SettingsWindow};
 use crate::app::Threadbear;
 use crate::highlights::{tipped, tipped_as};
@@ -225,7 +226,7 @@ impl SettingsWindow {
         let field = div()
             .id("settings-keyboard-search")
             .test_support()
-            .role(Role::GenericContainer).aria_label(rules::SEARCH_PROMPT)
+            .a11y_role(Role::GenericContainer).aria_label(rules::SEARCH_PROMPT)
             .tip(rules::SEARCH_PROMPT)
             .h(px(29.))
             .pl(px(16.))
