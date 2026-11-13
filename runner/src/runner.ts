@@ -2867,10 +2867,17 @@ export class Runner {
             const pressed = this.toldPressNews(rec, inUse ? 'turn' : 'all');
             if (pressed && !command) text = `${pressed}\n\n${text}`;
             const earlier = rec.lastTurnCompletedSeq > 0;
-            if (!command && !inUse && (rt.carried || earlier)) {
+            if (!inUse && (rt.carried || earlier) && !(command && /^\/clear\b/i.test(first.text.trim()))) {
               rec.handoff = rt.carried ?? { fromCwd: rec.cwd, fromAccountId: rec.accountId, lost: true };
-              text = this.handoffNote(st, account) + text;
-              delete rec.handoff;
+              if (command) {
+                // The command must stay bare. Keep the missing session's
+                // context for the next ordinary send, rather than lose it.
+                rec.handoff.lost = true;
+                this.retellPressesFrom(rec, 0, true);
+              } else {
+                text = this.handoffNote(st, account) + text;
+                delete rec.handoff;
+              }
             }
             rt.carried = undefined;
             this.startSession(st, account);

@@ -408,14 +408,14 @@ test('a failed edit does not save the wording it interrupted to replace', async 
 });
 
 test('a session-not-found retry keeps recovery on a steered carrier and leaves slash commands bare', async () => {
-  for (const command of [false, true]) {
+  for (const command of [false, '/compact', '/clear'] as const) {
     const h = makeHarness();
     const { thread } = h.runner.create({ text: 'earlier [Picture 1]', images: [image()], accountId: 'claude-3' });
     h.adapter.last.init();
     stop(h, thread.id);
     h.clock.advance(30 * 60_000);
     await tick();
-    if (command) h.runner.send(thread.id, '/compact');
+    if (command) h.runner.send(thread.id, command);
     else {
       h.runner.send(thread.id, 'scheduled work', [], { origin: 'schedule' });
       h.runner.send(thread.id, 'steered carrier');
@@ -423,7 +423,21 @@ test('a session-not-found retry keeps recovery on a steered carrier and leaves s
     const missing = h.adapter.last;
     missing.sink.exited(new SessionNotFoundError());
     const sent = h.adapter.last.sent;
-    if (command) assert.equal(sent[0].text, '/compact');
+    if (command) {
+      assert.equal(sent[0].text, command);
+      h.adapter.last.init();
+      h.adapter.last.result();
+      h.runner.send(thread.id, 'ordinary send after the command');
+      await tick();
+      const following = h.adapter.last.sent.at(-1)!;
+      if (command === '/clear') {
+        assert.equal(following.text, 'ordinary send after the command');
+        assert.equal(following.images.length, 0);
+      } else {
+        assert.match(following.text, /\[Threadbear handoff\][\s\S]*earlier[\s\S]*ordinary send after the command/);
+        assert.equal(following.images.length, 1);
+      }
+    }
     else {
       assert.match(sent[1].text, /earlier \[Picture 1\][\s\S]*steered carrier/);
       assert.equal(sent[1].images.length, 1);
