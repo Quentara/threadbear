@@ -123,3 +123,9 @@ Feature: The Updates panel
   Scenario: The update popover says when the app is up to date
     When I right-click the Updates icon
     Then the update popover says "The app is up to date."
+
+  @updates.panel @swift-pending
+  Scenario: An old web runtime says so in Updates
+    When the web runtime needs a security update
+    And I open the Updates panel
+    Then the Updates panel lists "Web runtime: CEF is over two weeks behind stable. Chromium's sandbox is off."

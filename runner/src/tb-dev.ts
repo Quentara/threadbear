@@ -449,6 +449,7 @@ export function formatStatus(s: RunnerStatus, threads: ThreadSummary[], now: num
     if (p.reason) lines.push(`  Reason: ${p.reason}`);
     if (p.resumeThreadId) lines.push(`  Then carries on: ${threadLine(p.resumeThreadId, threads, self)}`);
   }
+  if (s.webRuntimeProblem) lines.push(s.webRuntimeProblem);
   const u = s.update;
   if (u) lines.push(formatUpdate(u, now));
   // Said on its own line: it's the thing that sat unnoticed for three days.

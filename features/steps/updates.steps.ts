@@ -126,3 +126,7 @@ Then('the update popover says {string}', async function (this: ThreadbearWorld, 
   }
   assert.fail(`the popover doesn't say "${line}": ${JSON.stringify(lines)}`);
 });
+
+When('the web runtime needs a security update', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'mock', method: 'updates', params: { state: 'idle', webRuntimeProblem: "Web runtime: CEF is over two weeks behind stable. Chromium's sandbox is off." } });
+});

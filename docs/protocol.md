@@ -1326,6 +1326,9 @@ type RunnerUpdates = {
   // This machine can't follow GitHub's main properly (followOrigin), and the
   // other runners saying that of themselves, on the main Mac's runner.
   followProblem?: string
+  // This release's CEF pin is over 14 days behind stable, or the daily
+  // check has failed for 3 days. Also on runner.status as webRuntimeProblem.
+  webRuntimeProblem?: string
   behindRunners?: { name: string; problem: string }[]
   // Mike's releases, for a fork (below). Left out while off, except on
   // Mike's own runner once it has tagged one.

@@ -50,6 +50,7 @@ import { resolveCodexBinary } from './adapters/codex/appserver.ts';
 import { checkSurface, testedVersion } from './adapters/codex/surface.ts';
 import { CliUpdates } from './updates/manager.ts';
 import { ExtraUpdates } from './updates/extra.ts';
+import { WebRuntimeUpdates, runtimeInstalled } from './updates/web-runtime.ts';
 import { UsageStore } from './usage.ts';
 import { UsageHistory } from './usage-history.ts';
 import { TokenTally } from './token-tally.ts';
@@ -721,6 +722,8 @@ async function main(): Promise<void> {
     if (u.launcherChanged) out.launcherChanged = true;
     if (u.launcherReason) out.launcherReason = u.launcherReason;
     if (u.followProblem) out.followProblem = u.followProblem;
+    const webRuntimeProblem = webRuntimeUpdates.problem();
+    if (webRuntimeProblem) out.webRuntimeProblem = webRuntimeProblem;
     const behind = sync.behindRunners();
     if (behind.length) out.behindRunners = behind;
     const up = upstream.status();
@@ -736,6 +739,7 @@ async function main(): Promise<void> {
     lastUpdates = key;
     runner.publish({ method: 'runner.updates', params: { updates } });
   }
+  const webRuntimeUpdates = new WebRuntimeUpdates({ home: cfg.home, clock: realClock, platform: process.arch === 'arm64' ? 'macosarm64' : 'macosx64', installed: () => runtimeInstalled(path.join(cfg.home, 'web-runtime')), changed: publishUpdates });
   updaterReady = true;
 
   runner.attachClis(updates);
@@ -745,7 +749,7 @@ async function main(): Promise<void> {
   methods['runner.status'] = (p) => {
     const draining = peers.status();
     const behind = sync.behindRunners();
-    return { ...(restartStatus(p) as Record<string, unknown>), ...(behind.length ? { behindRunners: behind } : {}), clis: updates.list(), sync: sync.status(), secretCheck: secretCheck.status(), relay: relay.status(), upstream: upstream.status(), ...(draining.length ? { draining } : {}), ...(macScreen ? { macScreen: macScreen.status() } : {}) };
+    return { ...(restartStatus(p) as Record<string, unknown>), ...(behind.length ? { behindRunners: behind } : {}), webRuntimeProblem: webRuntimeUpdates.problem(), clis: updates.list(), sync: sync.status(), secretCheck: secretCheck.status(), relay: relay.status(), upstream: upstream.status(), ...(draining.length ? { draining } : {}), ...(macScreen ? { macScreen: macScreen.status() } : {}) };
   };
   // tb updates (docs/protocol.md, "Mike's releases").
   methods['upstream.status'] = () => ({ upstream: upstream.status() });
@@ -1035,6 +1039,7 @@ async function main(): Promise<void> {
   // Checks start a minute after this; installs never while a restart waits.
   updates.start();
   extraUpdates.start();
+  if (process.platform === 'darwin' && cfg.home === defaultHome() && RELEASE.release && process.env.THREADBEAR_CLI_UPDATES !== 'off') webRuntimeUpdates.start();
   // The runner's log is held open by launchd too, so it's emptied in place.
   // The app's update log sits beside it, but only for the real data dir: a
   // dev runner's log is in its temp home.
@@ -1104,6 +1109,7 @@ async function main(): Promise<void> {
     projects.stop();
     usage.stop();
     tally.stop();
+    webRuntimeUpdates.stop();
     updates.stop();
     extraUpdates.stop();
     // A restart's new release writes everything again under the same
@@ -1152,6 +1158,7 @@ async function main(): Promise<void> {
     keepAwake.stop();
       connectors.stop();
       projects.freeze();
+      webRuntimeUpdates.stop();
       updates.stop();
       extraUpdates.stop();
       usage.stopWriting();

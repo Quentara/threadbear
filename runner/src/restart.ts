@@ -70,6 +70,7 @@ export type Notice = { level: 'info' | 'warning' | 'error'; message: string };
 
 // runner.status's result (docs/protocol.md).
 export type RunnerStatus = {
+  webRuntimeProblem?: string;
   version: string;
   release?: string;
   pid: number;

@@ -809,3 +809,9 @@ test('tb status: another runner\'s name and problem reach the terminal without e
   assert.doesNotMatch(own, /\u001b|\u0007|52;c;/);
   assert.match(own, /Not following GitHub's main properly: nope/);
 });
+
+test('tb status includes the web runtime security warning', () => {
+  const base = { version: '1', pid: 1, startedAt: '2026-11-13T00:00:00Z', home: '/h', liveClis: 0, running: [] };
+  assert.match(formatStatus({ ...base, webRuntimeProblem: 'CEF needs updating' }, [], Date.now()), /CEF needs updating/);
+  assert.doesNotMatch(formatStatus(base, [], Date.now()), /CEF/);
+});

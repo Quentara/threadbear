@@ -39,6 +39,7 @@ pub struct RunnerUpdates {
     pub upstream: Option<Upstream>,
     /// This machine can't follow GitHub's main properly. None while it's fine.
     pub follow_problem: Option<String>,
+    pub web_runtime_problem: Option<String>,
     /// The other runners saying that of themselves (the main Mac's runner).
     pub behind_runners: Vec<BehindRunner>,
 }
@@ -113,6 +114,7 @@ impl RunnerUpdates {
             launcher_reason: text(v, "launcherReason"),
             upstream: Upstream::decode(&v["upstream"]),
             follow_problem: text(v, "followProblem"),
+            web_runtime_problem: text(v, "webRuntimeProblem"),
             behind_runners: v["behindRunners"]
                 .as_array()
                 .into_iter()
@@ -211,7 +213,7 @@ fn runner_failed(runner: Option<&RunnerUpdates>) -> bool {
 /// runner: the icon's grey dot. The icon itself is always there since the
 /// CLIs' versions moved into its panel (28 Oct).
 pub fn shown(app: &AppSide, runner: Option<&RunnerUpdates>) -> bool {
-    app.is_pending() || app.failed || app.not_following.is_some() || runner_pending(runner) || runner_failed(runner) || from_mike(runner) || not_following(runner)
+    app.is_pending() || app.failed || app.not_following.is_some() || runner_pending(runner) || runner_failed(runner) || from_mike(runner) || not_following(runner) || runner.is_some_and(|r| r.web_runtime_problem.is_some())
 }
 
 /// A release of Mike's this copy's main doesn't have yet.
@@ -233,6 +235,7 @@ pub const REINSTALL_LINE: &str = "The runner needs reinstalling, which only you 
 /// that everything is up to date. The panel has the rest.
 pub fn icon_tooltip(app: &AppSide, runner: Option<&RunnerUpdates>, clis: &[CliStatus]) -> String {
     let mut lines = vec!["Updates".to_owned()];
+    lines.extend(runner.and_then(|r| r.web_runtime_problem.clone()));
     // A runner app to reinstall gets its own line, as it's the one that's
     // Mike's to do (the accent dot); left in, it read as "A runner update",
     // which looks like one on its way by itself (12 Nov, Mike: "I thought
@@ -507,6 +510,7 @@ pub fn runner_lines(u: Option<&RunnerUpdates>) -> Vec<String> {
     let Some(u) = u else { return vec!["This runner doesn't say how its updates are going.".to_owned()] };
     let mut out: Vec<String> = [build_line(u), old_runners_line(u), launcher_line(u)].into_iter().flatten().collect();
     out.extend(follow_lines(u));
+    out.extend(u.web_runtime_problem.clone());
     if out.is_empty() {
         out.push("The runner is up to date.".to_owned());
     }
@@ -751,6 +755,16 @@ mod tests {
               "checkedAt": "2026-11-11T01:00:00.000Z", "hold": { "version": "0.165.0", "reason": "the app-server protocol changed", "missing": ["thread/backgroundTerminals/list"] } },
             { "path": "no provider" },
         ]))
+    }
+
+    #[test]
+    fn stale_web_runtime_is_visible_in_the_panel_and_updates_icon() {
+        let u = RunnerUpdates::decode(&json!({ "state": "idle", "webRuntimeProblem": "CEF needs updating" })).unwrap();
+        let app = AppSide::default();
+        assert_eq!(runner_lines(Some(&u)), vec!["CEF needs updating"]);
+        assert!(shown(&app, Some(&u)));
+        assert!(icon_tooltip(&app, Some(&u), &[]).contains("CEF needs updating"));
+        assert!(!needs_you(&app, Some(&u)));
     }
 
     #[test]

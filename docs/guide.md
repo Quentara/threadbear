@@ -154,6 +154,13 @@ with Install web runtime and Not now, and shows the code until then (or
 after Not now, until the app restarts). Settings > General > Web runtime
 says where it's got to and installs it too.
 
+The installed Mac runner checks the web runtime's CEF pin daily while a
+runtime is installed. Updates and
+`tb status` warn if it is two weeks behind stable, or the check has failed
+for three days. Bringing in a Threadbear update carries a newer pin when
+one is available. Chromium's sandbox stays off so the runtime can be
+downloaded on first use; keep these updates current.
+
 Text an agent writes for you to send somewhere else (a Slack message, an
 email) comes in a ```` ```slack ````, ```` ```email ```` or
 ```` ```draft ```` block. It shows in a box the way it'll go out: every

@@ -196,6 +196,7 @@ export type RunnerUpdates = {
   upstream?: UpstreamStatus;
   // This machine isn't following GitHub's main properly (follow-origin.ts).
   followProblem?: string;
+  webRuntimeProblem?: string;
   // The other runners that say that of themselves, on the main Mac's runner.
   behindRunners?: { name: string; problem: string }[];
 };

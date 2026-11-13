@@ -420,10 +420,11 @@ impl Threadbear {
         let (build, old, launcher) = (rules::build_line(&runner), rules::old_runners_line(&runner), rules::launcher_line(&runner));
         let not_following = rules::follow_lines(&runner);
         let mut out = Vec::new();
-        if build.is_none() && old.is_none() && launcher.is_none() && not_following.is_empty() {
+        if build.is_none() && old.is_none() && launcher.is_none() && not_following.is_empty() && runner.web_runtime_problem.is_none() {
             out.push(line("The runner is up to date.".to_owned()));
         }
         out.extend(not_following.into_iter().map(line));
+        out.extend(runner.web_runtime_problem.clone().map(line));
         out.extend(build.map(line));
         if let Some(old) = old {
             out.push(line(old));
@@ -588,10 +589,11 @@ impl Threadbear {
             Some(runner) => {
                 let (build, old, launcher) = (rules::build_line(runner), rules::old_runners_line(runner), rules::launcher_line(runner));
                 let not_following = rules::follow_lines(runner);
-                if build.is_none() && old.is_none() && launcher.is_none() && not_following.is_empty() {
+                if build.is_none() && old.is_none() && launcher.is_none() && not_following.is_empty() && runner.web_runtime_problem.is_none() {
                     lines.push("The runner is up to date.".to_owned());
                 }
                 lines.extend(not_following);
+                lines.extend(runner.web_runtime_problem.clone());
                 lines.extend(build);
                 if let Some(old) = old {
                     lines.push(old);
