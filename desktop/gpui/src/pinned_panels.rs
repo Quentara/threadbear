@@ -114,7 +114,7 @@ impl Threadbear {
                     "panel": panel,
                     "title": self.pinned_title(id),
                     "tip": self.pinned_tip(id),
-                    "available": self.panel_available(id),
+                    "available": self.panel_available(id, cx),
                     "showing": dock.controller.is_showing(id),
                     "rows": rows,
                 }))
