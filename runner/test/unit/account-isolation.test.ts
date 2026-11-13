@@ -42,6 +42,7 @@ test('unit-test preload replaces inherited home and account overrides', () => {
     const home = process.env.HOME;
     assert.notEqual(home, '/outside/home');
     assert.equal(os.homedir(), home);
+    assert.ok(os.tmpdir().startsWith(home + '/'));
     for (const key of ['XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'CODEX_HOME']) assert.ok(process.env[key].startsWith(home + '/'), key);
     for (const key of ['THREADBEAR_HOME', 'THREADBARE_HOME', 'THREADBEAR_CLAUDE_MAIN_JSON', 'THREADBEAR_CODEX_MAIN_DIR', 'CLAUDE_CONFIG_DIR', 'OPENCODE_CONFIG']) assert.equal(process.env[key], undefined, key);
   `, { HOME: '/outside/home', XDG_CONFIG_HOME: '/outside/config', CODEX_HOME: '/outside/codex', CLAUDE_CONFIG_DIR: '/outside/claude', THREADBEAR_HOME: '/outside/data', THREADBARE_HOME: '/outside/old', THREADBEAR_CLAUDE_MAIN_JSON: '/outside/claude.json', THREADBEAR_CODEX_MAIN_DIR: '/outside/codex', OPENCODE_CONFIG: '/outside/opencode.json' });
@@ -53,8 +54,12 @@ test('unit-test guard fails even when a real-account read error is caught', () =
     `fs.existsSync(file)`,
     `fs.readFileSync(new URL('file://' + file))`,
     `await fs.promises.readFile(file)`,
+    `await fs.promises.readFile(file).catch(() => {})`,
     `statSync(file)`,
     `fs.realpathSync.native(file)`,
+    `fs.copyFileSync(file, process.env.HOME + '/copy')`,
+    `fs.copyFileSync(process.env.HOME + '/missing', file)`,
+    `fs.writeFileSync(file, '')`,
   ]) {
     const result = child(`
       import fs, { statSync } from 'node:fs';
@@ -65,6 +70,33 @@ test('unit-test guard fails even when a real-account read error is caught', () =
     assert.equal(result.status, 1, operation + ': ' + result.stderr);
     assert.match(result.stderr, /Unit tests accessed real account folders/);
   }
+});
+
+test('unit-test guard permits its update clone, filters release PATHs, and keeps sibling data protected', () => {
+  // Simulate an installed update clone entirely under a fixture home.
+  const home = tmpDir();
+  const data = path.join(home, 'Library/Application Support/Threadbear');
+  const clone = path.join(data, 'runner/update/src');
+  const helpers = path.join(clone, 'runner/test/helpers');
+  fs.mkdirSync(helpers, { recursive: true });
+  for (const file of ['private-home.ts', 'clean-env.ts']) fs.copyFileSync(path.join(import.meta.dirname, '../helpers', file), path.join(helpers, file));
+  fs.writeFileSync(path.join(clone, 'fixture.txt'), 'source');
+  fs.symlinkSync(path.join(home, '.codex'), path.join(clone, 'login-link'));
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
+    import fs from 'node:fs';
+    import os from 'node:os';
+    const user = os.userInfo();
+    os.userInfo = () => ({ ...user, homedir: ${JSON.stringify(home)} });
+    await import(${JSON.stringify(path.join(helpers, 'clean-env.ts'))});
+    assert.equal(fs.readFileSync(${JSON.stringify(path.join(clone, 'fixture.txt'))}, 'utf8'), 'source');
+    assert.equal(process.env.PATH, '/usr/bin');
+    assert.throws(() => fs.existsSync(${JSON.stringify(path.join(data, 'secrets/probe'))}), /real account folder/);
+    assert.throws(() => fs.existsSync(${JSON.stringify(path.join(clone, 'login-link/probe'))}), /real account folder/);
+  `], { encoding: 'utf8', env: { ...process.env, PATH: path.join(data, 'runner/releases/fixture/bin') + ':/usr/bin' } });
+  assert.equal(result.status, 1, result.stderr);
+  assert.match(result.stderr, /Unit tests accessed real account folders/);
+  assert.doesNotMatch(result.stderr, /AssertionError/);
 });
 
 test('unit-test guard follows a fixture symlink back to a real account', () => {
