@@ -3476,7 +3476,7 @@ The new hero is shorter, and every page now leads with what the app does.
   const frame = document.body.appendChild(document.createElement('iframe'));
   const w = frame.contentWindow;
   const guarded = w.navigator.clipboard === undefined && Object.getOwnPropertyDescriptor(w.Document.prototype, 'execCommand').configurable === false;
-  document.title = 'named ' + await status('logo.png') + ', unnamed ' + await status('notes.png') + ', dotfile ' + await status('.env') + ', away ' + await status('https://example.com/') + ', frame guarded ' + (guarded ? 'yes' : 'no');
+  document.title = 'named ' + await status('logo.png') + ', unnamed ' + await status('notes.png') + ', dotfile ' + await status('.env') + ', away ' + await status('https://example.com/') + ', frame guarded ' + (guarded ? 'yes' : 'no') + ', webrtc ' + (typeof RTCPeerConnection === 'undefined' && typeof w.RTCPeerConnection === 'undefined' ? 'none' : 'there');
 })();
 </script>`);
     file('mockups/logo.png', { copy: path.join(here, 'fixtures/demo-upload-resume/media/progress-before.png') });

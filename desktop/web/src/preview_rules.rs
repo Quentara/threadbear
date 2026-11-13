@@ -101,6 +101,11 @@ pub fn policy(scripts: bool) -> String {
     ["default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:", "connect-src 'self'", "form-action 'none'", frames, "base-uri 'none'", "object-src 'none'", "worker-src 'none'"].join("; ")
 }
 
+/// The Permissions-Policy every answer carries: no clipboard, camera,
+/// microphone, screen capture or the like for the page or any frame in it,
+/// below the guards, in Chromium itself.
+pub const PERMISSIONS: &str = "clipboard-read=(), clipboard-write=(), camera=(), microphone=(), display-capture=(), geolocation=(), usb=(), serial=(), hid=(), bluetooth=(), payment=(), publickey-credentials-get=()";
+
 /// Whether the view's frame may show `url`: the main frame its own page (a
 /// jump to a place on it included) or a blank page; a frame inside it its own
 /// origin or a blank or srcdoc page, and data: or blob: while scripts are off.
@@ -141,12 +146,18 @@ pub fn own_path(url: &str, origin: &str) -> Option<String> {
 
 /// Run in the page's own world in every frame before its scripts, while they
 /// run: no Clipboard API, and no `execCommand('copy')` or `'cut'`, either of
-/// which a script can use on any click to put what it read on the clipboard.
+/// which a script can use on any click to put what it read on the clipboard;
+/// and no WebRTC, whose connections go round the proxy and the request
+/// handlers (the Swift app turns it off in WebKit; Grok's review, 13 Nov).
 /// Not configurable once set, and everything the wrapper uses is taken before
 /// the page's scripts can replace it.
 pub const CLIPBOARD_GUARD: &str = r#"(() => {
   try { delete Navigator.prototype.clipboard; } catch (_) {}
   try { Object.defineProperty(Navigator.prototype, 'clipboard', { get: () => undefined, configurable: false }); } catch (_) {}
+  for (const name of ['RTCPeerConnection', 'webkitRTCPeerConnection', 'RTCDataChannel', 'RTCRtpSender', 'RTCRtpReceiver', 'RTCIceCandidate', 'RTCSessionDescription']) {
+    try { delete globalThis[name]; } catch (_) {}
+    try { Object.defineProperty(globalThis, name, { value: undefined, writable: false, configurable: false }); } catch (_) {}
+  }
   const exec = Document.prototype.execCommand;
   const apply = Reflect.apply, toString = String, lower = String.prototype.toLowerCase;
   Object.defineProperty(Document.prototype, 'execCommand', {

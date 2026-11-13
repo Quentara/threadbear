@@ -131,6 +131,10 @@ pub struct PanelPage {
     next: AtomicI32,
     /// Its DevTools answers' observer, let go of before the page closes.
     observer: Option<Registration>,
+    /// A local page running its scripts: nothing copies out of it, as a
+    /// script could have put what it read in the selection or the copy
+    /// (the Swift app's SealedPreviewWebView refuses copy: the same way).
+    no_copy: bool,
 }
 
 impl PanelPage {
@@ -219,6 +223,9 @@ impl PanelPage {
         if context.is_none() && matches!(kind, Kind::Preview(_)) {
             return Err("the sealed pages' context isn't there".into());
         }
+        if matches!(&kind, Kind::Preview(p) if p.scripts) && !super::sealed::all_rules() {
+            return Err("the web runtime couldn't keep a page with scripts off the network here, so it isn't run".into());
+        }
         let browser = browser_host_create_browser_sync(Some(&window_info), Some(&mut client), Some(&CefString::from(first.as_str())), Some(&settings), None, context.as_mut())
             .ok_or("Chromium didn't make the page")?;
         let host = browser.host().ok_or("the page has no host")?;
@@ -240,6 +247,7 @@ impl PanelPage {
             shared,
             next: AtomicI32::new(1),
             observer: registration,
+            no_copy: matches!(&kind, Kind::Preview(p) if p.scripts),
         };
         if let Kind::Preview(preview) = &kind {
             if preview.scripts {
@@ -425,6 +433,9 @@ impl PanelPage {
     /// One of the page's own Edit commands, for ⌘C and the like while it has
     /// the keyboard: the app's key bindings would otherwise take them.
     pub fn edit(&self, command: &str) {
+        if self.no_copy && matches!(command, "copy" | "cut") {
+            return;
+        }
         let Some(frame) = self.browser.focused_frame().or_else(|| self.browser.main_frame()) else { return };
         match command {
             "copy" => frame.copy(),

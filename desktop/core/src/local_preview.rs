@@ -433,15 +433,14 @@ pub fn without_script_contents(text: &str) -> String {
         let mut close = None;
         let mut i = gt + 1;
         while i < bytes.len() {
-            if bytes[i] == b'<' && starts_ci(bytes, i, b"</script") {
-                let mut j = i + 8;
-                while j < bytes.len() && is_space(bytes[j]) {
-                    j += 1;
+            // An end tag as the browser reads one: `</script` then a space,
+            // a `/` or `>`, running to the next `>` (`</script/>` and
+            // `</script foo>` close it too: Grok's review, 13 Nov).
+            if bytes[i] == b'<' && starts_ci(bytes, i, b"</script") && matches!(bytes.get(i + 8), Some(b) if is_space(*b) || *b == b'/' || *b == b'>') {
+                if let Some(gt) = (i + 8..bytes.len()).find(|&j| bytes[j] == b'>') {
+                    close = Some((i, gt + 1));
                 }
-                if bytes.get(j) == Some(&b'>') {
-                    close = Some((i, j + 1));
-                    break;
-                }
+                break;
             }
             i += 1;
         }
@@ -666,7 +665,9 @@ pub fn scan(path: &Path) -> Option<(bool, String)> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt as _;
-        options.custom_flags(libc::O_NONBLOCK);
+        // The real path the gate found: a link swapped in since is refused,
+        // so what's scanned is what `serve` will read.
+        options.custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW);
     }
     let file = options.open(path).ok()?;
     let meta = file.metadata().ok()?;

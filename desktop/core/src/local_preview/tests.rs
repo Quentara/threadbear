@@ -223,6 +223,9 @@ fn stripping_scripts_and_reading_urls() {
     assert_eq!(without_script_contents("<script a>x<script>y</script ><p>"), "<script a></script ><p>");
     assert_eq!(without_script_contents("<script>never closed"), "<script>never closed");
     assert_eq!(without_script_contents("<scripts>x</script>"), "<scripts>x</script>", "not a script tag");
+    assert_eq!(without_script_contents("<script>var src = \"p.png\";</script/><p>"), "<script></script/><p>", "a closer the browser reads");
+    assert_eq!(without_script_contents("<script>var src = \"p.png\";</script foo><p>"), "<script></script foo><p>");
+    assert_eq!(without_script_contents("<script>a</scripty>b"), "<script>a</scripty>b", "not a closer");
     assert_eq!(without_script_contents("<script>a</script><p><SCRIPT>b</SCRIPT>"), "<script></script><p><SCRIPT></SCRIPT>");
     assert_eq!(css_urls(r#"a{b:url( "x y.png" )} c{d:url(z.png) url('w.png')} e{f:url(bad"quote)}"#, usize::MAX), ["x y.png", "z.png", "w.png"]);
 }
