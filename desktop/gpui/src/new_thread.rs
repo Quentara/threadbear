@@ -183,9 +183,9 @@ impl Threadbear {
             self.new_thread.prefs.remembered.used_account(&used, &provider);
             self.new_thread.save();
         }
-        // The folder, a picked mode and a picked login or pool were for this
-        // thread; the next one starts from the defaults again. The model and
-        // effort stick (Remembered).
+        // The folder and a picked login or pool were for this thread; the
+        // next one starts from the defaults again. The model, effort and mode
+        // stick (Remembered).
         let picks = &mut self.new_thread.picks;
         *picks = NewThreadPicks { runner: None, runner_picked: false, ..Default::default() };
         self.new_thread.runner_problem = None;
@@ -208,6 +208,7 @@ impl Threadbear {
         let logins = self.draft_logins();
         if let Some(mode) = params["permissionMode"].as_str() {
             self.new_thread.picks.permission = Some(mode.to_owned());
+            self.new_thread.prefs.remembered.set_permission(mode);
         }
         if let Some(cwd) = params["cwd"].as_str() {
             self.new_thread.picks.cwd = Some(cwd.to_owned());

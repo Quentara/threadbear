@@ -377,12 +377,13 @@ it's a command built from something only known as it runs, like
 URLs, patterns and prompt text in a patch don't count, only what it runs. Even
 once you allow it, the patch waits for you to trust it in Patches.
 
-The mode belongs to one thread. A new thread starts on your default mode
-again unless you pick otherwise, so if you're unsure about a task, switch it
-to Ask before edits before you send. On a new install the default is Auto;
-an install from before 9 Nov 2026 keeps Full access. Threads you start from
-the phone, the website, `tb new` or a schedule with no mode of its own start
-on it too. It's `"defaults": { "permissionMode": "auto" }` in `runner.json`
+The mode belongs to one thread. On the Mac a new thread starts on the
+mode you last picked for one, as it does the model (Plan first aside, which
+is for one task), so if you're unsure about a task, switch it to Ask before
+edits before you send. Until you've picked one it's your default mode. On a
+new install the default is Auto; an install from before 9 Nov 2026 keeps
+Full access. Threads you start from the phone, the website, `tb new` or a
+schedule with no mode of its own start on the default. It's `"defaults": { "permissionMode": "auto" }` in `runner.json`
 in the data folder (`"full"`, `"ask"` or `"auto"`; none is Full access), so
 ask any thread to change it. It applies once the runner next restarts. The
 threads Threadbear starts by itself, to bring in Mike's releases or fix a
