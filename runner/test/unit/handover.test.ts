@@ -972,6 +972,35 @@ test('Peers.openCards: reads the whole log a page at a time, and gives up on a r
   assert.deepEqual(found.map((f) => [f.thread.id, f.events.map((e) => e.seq)]), [['t-long', [2]]]);
 });
 
+// THREADBEAR-1Z: read one at a time, the first slow thread took the whole
+// budget and every thread after it, on both draining runners, went "out of
+// time" with its card unread.
+test("Peers.openCards: one slow thread doesn't cost the others theirs", async () => {
+  const h = makeHarness();
+  const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
+  const since = new Date().toISOString();
+  writeDrainInfo(h.home, { pid: 474747, port: 1, version: 'older', since, threads: ['t-hung', 't-a'] });
+  writeDrainInfo(h.home, { pid: 484848, port: 2, version: 'old', since, threads: ['t-b'] });
+  const ts = '2026-11-13T00:00:00.000Z';
+  const clientFor = (threads: string[]) => ({
+    call: async (method: string, p: any) => {
+      if (method === 'drain.hello') return { threads, version: 'old' };
+      if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
+      if (method === 'threads.events' && p.threadId === 't-hung') return new Promise(() => {});
+      if (method === 'threads.events') return { events: [{ type: 'question.requested', seq: 1, ts, approvalId: `q-${p.threadId}`, questions: [] }] };
+      return {};
+    },
+    onNotification: () => () => {},
+    waitClosed: () => new Promise<never>(() => {}),
+    close: () => {},
+  });
+  const connect = async (_port: number, _token: string, _legacy: boolean, pid: number) => clientFor(pid === 474747 ? ['t-hung', 't-a'] : ['t-b']) as any;
+  const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect, alive: () => true });
+  await peers.connectAll();
+  const found = await peers.openCards({ deadlineMs: 300 });
+  assert.deepEqual(found.map((f) => [f.thread.id, f.events.map((e) => (e as { approvalId: string }).approvalId)]).sort(), [['t-a', ['q-t-a']], ['t-b', ['q-t-b']]]);
+});
+
 test('Peers.openCards: each summary as it is once every log is read', async () => {
   const h = makeHarness();
   const { writeDrainInfo, Peers } = await import('../../src/handover.ts');

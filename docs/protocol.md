@@ -1580,9 +1580,10 @@ restart wait for busy threads. It hands over instead:
 - The draining runner's sync stops at the handover, and the primary only
   hears its events from then on. So the primary's sync starts listening
   but holds its writes while it reads each kept thread's whole log
-  (`threads.events`, a page at a time from the end, within 5 seconds: a
-  draining runner that stops answering costs a thread its card, not the
-  startup) for the cards nothing has answered, puts them back on the
+  (`threads.events`, a page at a time from the end, every thread at once
+  within 5 seconds: a draining runner that stops answering costs a thread
+  its card, not the startup, and a slow thread doesn't cost the others
+  theirs) for the cards nothing has answered, puts them back on the
   thread's row and marks every thread it read, then writes
   (`Peers.openCards`, `ConvexSync.seedCards`, `release`). A card asked for
   or answered on the draining runner later reaches the row with the

@@ -358,32 +358,34 @@ export class Peers {
   // (Codex's review, 13 Nov). By `deadlineMs` at most, as startup waits on
   // it: a draining runner that has stopped answering gives what's read so
   // far, and a thread not read at all keeps its row as it is.
+  // Every thread at once, each with the whole deadline: read one after
+  // another, the first slow answer (a busy startup) used it up and every
+  // thread after it on both draining runners went unread (THREADBEAR-1Z).
   async openCards(opts: { deadlineMs?: number; page?: number } = {}): Promise<{ thread: ThreadSummary; events: PersistedEvent[] }[]> {
     const until = Date.now() + (opts.deadlineMs ?? OPEN_CARDS_DEADLINE_MS);
     const size = opts.page ?? OPEN_CARDS_PAGE;
-    const read: { peer: Peer; threadId: string; events: PersistedEvent[] }[] = [];
-    for (const peer of this.peers.values()) {
-      for (const threadId of [...peer.threads.keys()]) {
-        const log: PersistedEvent[] = [];
-        try {
-          let before: number | undefined;
-          for (;;) {
-            const left = until - Date.now();
-            if (left <= 0) throw new Error('out of time');
-            const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
-            log.unshift(...page.events);
-            const first = page.events[0]?.seq;
-            // Not a short page: an edit's cut can make one short mid-log.
-            if (first === undefined || first <= 1) break;
-            before = first;
-          }
-        } catch (e) {
-          this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
-          continue;
+    const readOne = async (peer: Peer, threadId: string): Promise<{ peer: Peer; threadId: string; events: PersistedEvent[] } | undefined> => {
+      const log: PersistedEvent[] = [];
+      try {
+        let before: number | undefined;
+        for (;;) {
+          const left = until - Date.now();
+          if (left <= 0) throw new Error('out of time');
+          const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
+          log.unshift(...page.events);
+          const first = page.events[0]?.seq;
+          // Not a short page: an edit's cut can make one short mid-log.
+          if (first === undefined || first <= 1) break;
+          before = first;
         }
-        read.push({ peer, threadId, events: openCardEvents(log) });
+      } catch (e) {
+        this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
+        return undefined;
       }
-    }
+      return { peer, threadId, events: openCardEvents(log) };
+    };
+    const reads = await Promise.all([...this.peers.values()].flatMap((peer) => [...peer.threads.keys()].map((threadId) => readOne(peer, threadId))));
+    const read = reads.filter((r) => r !== undefined);
     // Each thread as it is now, once every log is read, as the caller seeds
     // in the same tick: one read early may have asked for a card since and
     // said it waits, which the summary from then (idle) would undo (Codex's
