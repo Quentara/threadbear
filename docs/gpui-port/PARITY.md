@@ -298,13 +298,35 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   frame it made.
 - The specs' bar words, title and Run them read GPUI's dump only, so the
   pane's are `@swift-pending`; the stage's runs on both.
-- Cross-lab review: REVIEW-PENDING.
+- Cross-lab review (Codex was stopped by OpenAI's cybersecurity filter, so
+  Grok 4.7 high had the same brief, to break the seal). Fixed: a page
+  running its scripts still had WebRTC (now taken away with the clipboard,
+  and scripts only run where the sealed context took every rule); copy and
+  drag had no native veto (⌘C and Cut are refused for such a page, and
+  answers carry a Permissions-Policy with no clipboard); `</script/>` and
+  `</script foo>` left a script's words read as markup; the scan for Run
+  them followed a link swapped in for the page. Left: Open the page on the
+  review stage's still (when the runtime isn't there) opens the file in the
+  browser, unsealed, as a person's click, as the Swift app's does; and a
+  folder swapped for a link in the moment between resolving the page and
+  opening its folder points the site there, which still serves only the
+  page's name and the assets it names (the Swift app has the same moment).
+  The mock's page checks the guards empirically: a blank frame it makes
+  has no clipboard and a locked execCommand, and there's no RTCPeerConnection.
 - Files: `desktop/core/src/local_preview.rs`, `desktop/web/src/preview_rules.rs`,
   `desktop/web/src/mac/preview.rs`, `desktop/web/src/mac/panel.rs`,
   `desktop/gpui/src/files.rs`, `desktop/gpui/src/web_panels.rs`,
   `desktop/gpui/src/review_window/stage.rs`, `desktop/gpui/src/prefs.rs`,
   `app/Tools/mock-runner/server.mjs`.
-- Verification: VERIFY-PENDING
+- `desktop/scripts/spec.sh` now copies the web helper beside the app: without
+  it no `@web-runtime` scenario could start Chromium through it.
+- Verification: `cargo test -p threadbear-core --lib local_preview` (21) and
+  `cargo test -p threadbear-web --lib` (14) on Tinker Desk; TB_APP=gpui
+  cucumber for `@file.htmlpreview`, `@file.runthem`, `@review.media`,
+  `@pane.sections` and `@panel.web` on Tinker Desk's desktop with CEF
+  156.0.26, 21 of 21, the Run them page titled "named 200, unnamed 404,
+  dotfile 404, away blocked, frame guarded yes, webrtc none". Dark pictures
+  of both apps with drawn.html open: the bar matches in words and place.
 
 ### 2026-11-13 Pane sections side by side each draw their own (`pane.sections`)
 
@@ -322,7 +344,12 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
 - Files: `desktop/gpui/src/side_sections.rs`, `desktop/gpui/src/highlights.rs`,
   `desktop/gpui/src/shell.rs`, `desktop/gpui/src/explain_pane.rs`,
   `desktop/gpui/src/patches.rs`.
-- Verification: VERIFY1-PENDING
+- Verification: TB_APP=gpui cucumber `@pane.sections` on Tinker Desk; a
+  scripted run moving Files beside Highlights, with dark pictures of the
+  GPUI app (each its own: the summary and rows, the folder list) beside the
+  Swift app's and main's (which drew Highlights twice). The whole GPUI suite:
+  517 of 519, the two failures passing alone (a PDF link, and the restart
+  banner, which flickers under load).
 
 ### 2026-11-12 The limit box asks: Continue now on (`banner.limit`)
 
