@@ -4,7 +4,6 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import path from 'node:path';
 import fs from 'node:fs';
-import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import type { Driver, Dump } from './driver.ts';
 
@@ -25,7 +24,8 @@ export class SwiftDriver implements Driver {
     // Ordinary debug launches still use LS, including its temp-folder setup.
     let instance = '';
     if (registry) {
-      const stateRoot = path.join(os.tmpdir(), 'threadbear-dev-app');
+      // Match the launcher's fallback exactly; os.tmpdir() also uses TMP/TEMP.
+      const stateRoot = path.join(process.env.TMPDIR || '/tmp', 'threadbear-dev-app');
       fs.mkdirSync(stateRoot, { recursive: true });
       // dev-app.sh canonicalizes the instance root too, which can itself be
       // a symlink. A mismatched path would miss the private-app adapter.

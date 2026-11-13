@@ -18,7 +18,7 @@ function alive(pid: number) {
   return ps.status === 0 && !ps.stdout.trim().startsWith('Z');
 }
 function fixture(t: TestContext, perf = true) {
-  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "tb-swift's test-"));
+  const home = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "tb-swift's $& test-"));
   const repo = path.join(home, 'repo');
   for (const dir of ['features/support', 'scripts/perf-swift-bin', 'app/Tools/mock-runner', 'bin']) fs.mkdirSync(path.join(repo, dir), { recursive: true });
   // Stand-in for LaunchServices. Never call the host's real open command.
@@ -45,11 +45,15 @@ exec "$app/Contents/MacOS/Threadbear", @ARGV;
   // can only reach our fake LaunchServices, never the host's real open.
   const adapter = path.join(repo, 'scripts/perf-swift.pl');
   const fakeOpen = path.join(repo, 'bin/open').replaceAll('\\', '\\\\').replaceAll("'", "\\'");
-  fs.writeFileSync(adapter, fs.readFileSync(adapter, 'utf8').replace("'/usr/bin/open'", `'${fakeOpen}'`));
+  const originalAdapter = fs.readFileSync(adapter, 'utf8');
+  const patchedAdapter = originalAdapter.replace(/'\/usr\/bin\/open'/g, () => `'${fakeOpen}'`);
+  assert.notEqual(patchedAdapter, originalAdapter, 'adapter fallback was not replaced');
+  assert.doesNotMatch(patchedAdapter, /\/usr\/bin\/open/, 'adapter still reaches the real open');
+  fs.writeFileSync(adapter, patchedAdapter);
   for (const name of ['open', 'node']) fs.symlinkSync(fs.readlinkSync(path.join(root, 'scripts/perf-swift-bin', name)), path.join(repo, 'scripts/perf-swift-bin', name));
   const entry = path.join(home, 'worker.mjs');
   const verify = path.join(home, 'verify.mjs');
-  fs.writeFileSync(verify, `import fs from 'node:fs'; import {spawnSync} from 'node:child_process'; for (const name of ['app','mock']) { const file=process.env.HOME+'/all-'+name+'.pids'; if (!fs.existsSync(file)) continue; for (const pid of fs.readFileSync(file,'utf8').trim().split('\\n')) { const ps=spawnSync('ps',['-p',pid,'-o','stat='],{encoding:'utf8'}); if(ps.status===0 && !ps.stdout.trim().startsWith('Z')) { console.error(name+' still active when next lease acquired'); process.exit(23); } } }`);
+  fs.writeFileSync(verify, `import fs from 'node:fs'; import {spawnSync} from 'node:child_process'; for (const name of ['app','mock','launcher']) { const file=process.env.HOME+'/all-'+name+'.pids'; if (!fs.existsSync(file)) continue; for (const pid of fs.readFileSync(file,'utf8').trim().split('\\n')) { const ps=spawnSync('ps',['-p',pid,'-o','stat='],{encoding:'utf8'}); if(ps.status===0 && !ps.stdout.trim().startsWith('Z')) { console.error(name+' still active when next lease acquired'); process.exit(23); } } }`);
   fs.writeFileSync(entry, `import fs from 'node:fs'; import { SwiftDriver } from ${JSON.stringify(path.join(repo, 'features/support/swift.ts'))}; fs.writeFileSync(process.env.HOME+'/worker.pid', String(process.pid)); const d = new SwiftDriver(); await d.start(); if (process.env.RELAUNCH) await d.relaunch(); if (process.env.POLL) { while(!fs.existsSync(process.env.HOME+'/mock.pid')) await new Promise(r=>setTimeout(r,20)); const count=()=>fs.readdirSync(process.env.THREADBEAR_PERF_CHILDREN).filter(n=>/^\\d+$/.test(n)).length; const before=count(); for(let i=0;i<20;i++) await d.dump(); fs.writeFileSync(process.env.HOME+'/counts',JSON.stringify([before,count()])); } fs.writeFileSync(process.env.HOME+'/ready', ''); if (process.env.NORMAL_STOP) { await d.stop(); } else { setInterval(()=>{}, 1000); }`);
   fs.writeFileSync(path.join(repo, 'bin/ps'), `#!/bin/bash
 if [[ " $* " = *' lstart= '* ]] && [ -e "$HOME/slow-ps" ]; then
@@ -60,11 +64,14 @@ exec /bin/ps "$@"
   fs.writeFileSync(path.join(repo, 'app/Tools/mock-runner/server.mjs'), `import fs from 'node:fs'; fs.writeFileSync(process.env.HOME+'/mock.pid', String(process.pid)); fs.appendFileSync(process.env.HOME+'/all-mock.pids', process.pid+'\\n'); process.on('SIGTERM', ()=>{}); setInterval(()=>{},1000);`);
   fs.writeFileSync(path.join(repo, 'app/Tools/dev-app.sh'), `#!/bin/bash
 set -eu
+echo $$ >>"$HOME/all-launcher.pids"
 id=''
 for ((i=1;i<=$#;i++)); do if [ "\u0024{!i}" = --id ]; then j=$((i+1)); id="\u0024{!j}"; fi; done
-mkdir -p "$TMPDIR/threadbear-dev-app"
-state_root="$(cd "$TMPDIR/threadbear-dev-app" && pwd -P)"
+tmp_root="\u0024{TMPDIR:-/tmp}"
+mkdir -p "$tmp_root/threadbear-dev-app"
+state_root="$(cd "$tmp_root/threadbear-dev-app" && pwd -P)"
 dir="$state_root/$id"
+printf '%s' "$dir" >"$HOME/instance-dir"
 case " $* " in
   *' stop '*) kill "$(cat "$HOME/app.pid")" "$(cat "$HOME/mock.pid")" 2>/dev/null || true; exit 0 ;;
   *' dump '*) echo '{"connection":"connected","sidebar":{"sections":[]},"transcript":{"rows":[]}}'; exit 0 ;;
@@ -85,7 +92,7 @@ while [ "\u0024{GAP:-}" = mock ] && [ ! -e "$HOME/proceed" ]; do sleep .02; done
 /usr/bin/perl -MPOSIX -e 'my $pid=fork(); die $! unless defined $pid; exit 0 if $pid; POSIX::setsid(); exec @ARGV or die $!;' "$THREADBEAR_NODE" "$(dirname "$0")/mock-runner/server.mjs" --data-dir "$dir/data" </dev/null >"$dir/mock.log" 2>&1
 touch "$HOME/before-app"
 while [ "\u0024{GAP:-}" = app ] && [ ! -e "$HOME/proceed" ]; do sleep .02; done
-open -g -n --env 'BROWSERBEAR_HOME=private browser home' -a "$dir/Threadbear.app" --stdout "$dir/app.stdout" --stderr "$dir/app.stderr" --args --data-dir "$dir/data" --automation-id "$id" 'argument with spaces'
+open -g -n --env 'BROWSERBEAR_HOME=private browser home' -a "$dir/Threadbear.app" --stdout "$dir/app.stdout" --stderr "$dir/app.stderr" --args --data-dir "$dir/data" --automation-id "$id" --test-owner "$HOME" 'argument with spaces'
 touch "$HOME/after-open"
 # The real script records app.pid only after discovering the LS process.
 while [ "\u0024{GAP:-}" = record ] && [ ! -e "$HOME/proceed" ]; do sleep .02; done
@@ -112,12 +119,19 @@ exit 1
     for (const name of ['worker', 'app', 'mock']) {
       try { killOwned(Number(fs.readFileSync(path.join(home, `${name}.pid`), 'utf8'))); } catch {}
     }
-    for (const name of ['app', 'mock']) {
+    for (const name of ['app', 'mock', 'launcher']) {
       try { for (const pid of fs.readFileSync(path.join(home, `all-${name}.pids`), 'utf8').trim().split('\n')) killOwned(Number(pid)); } catch {}
     }
     for (const child of children) await child.done;
-    for (const name of ['app', 'mock']) {
+    for (const name of ['app', 'mock', 'launcher']) {
       try { for (const pid of fs.readFileSync(path.join(home, `all-${name}.pids`), 'utf8').trim().split('\n')) killOwned(Number(pid)); } catch {}
+    }
+    // A TMPDIR-fallback fixture uses /tmp, just as the frozen launcher does.
+    if (fs.existsSync(path.join(home, 'instance-dir'))) {
+      const instance = fs.readFileSync(path.join(home, 'instance-dir'), 'utf8');
+      const worker = fs.readFileSync(path.join(home, 'worker.pid'), 'utf8');
+      assert.equal(path.basename(instance), `spec-${worker}-1`);
+      fs.rmSync(instance, { recursive: true, force: true });
     }
     fs.rmSync(home, { recursive: true, force: true });
   });
@@ -211,6 +225,15 @@ test('a symlinked Swift instance root still uses the owned launch adapters', asy
   const first = h.run({ NORMAL_STOP: '1' });
   assert.equal(await first.done, 0, first.output);
   assert.ok(!fs.existsSync(h.file('ordinary-open')), 'canonical bundle mismatch bypassed the app gate');
+  const next = h.run({}, h.verify);
+  assert.equal(await next.done, 0, next.output);
+});
+
+test('Swift TMPDIR fallback matches the launcher even when TMP points elsewhere', async (t) => {
+  const h = fixture(t);
+  const first = h.run({ NORMAL_STOP: '1', TMPDIR: '', TMP: h.home, TEMP: h.home });
+  assert.equal(await first.done, 0, first.output);
+  assert.ok(!fs.existsSync(h.file('ordinary-open')), 'TMP fallback bypassed the app gate');
   const next = h.run({}, h.verify);
   assert.equal(await next.done, 0, next.output);
 });

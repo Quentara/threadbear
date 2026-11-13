@@ -142,7 +142,7 @@ The Swift app runs directly from its registered private bundle, preserving
 arguments, requested `--env` values and output files. It inherits the worker's
 environment; LaunchServices normally supplies launchd's environment. The mock
 uses `THREADBEAR_NODE` (or its old alias), else the worker's Node binary.
-Every remote Swift run uses this path, including specs and screenshots;
+Every Swift run under a lease uses this path, local or remote, including specs and screenshots;
 ordinary debug launches outside a lease still use LaunchServices. The driver
 prints the direct-launch mode. Settle the app before sampling counters, and
 check LaunchServices/direct QoS and App Nap before treating timings as equivalent.
