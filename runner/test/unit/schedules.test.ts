@@ -96,6 +96,91 @@ function idleThread(h: ReturnType<typeof makeHarness>) {
   return { thread, s };
 }
 
+for (const backend of [false, true]) for (const crashed of [false, true]) for (const manual of [false, true]) test(`a lost draining-runner reply is not delivered again after adoption (${backend ? 'backend' : 'local'}, ${crashed ? 'crash' : 'normal'}, ${manual ? 'Run now' : 'due'})`, async () => {
+  const old = makeHarness();
+  // Start the primary before the old thread exists, as if it skipped a
+  // thread the draining process still owns. They share the real log files.
+  const h = makeHarness(old.home);
+  const { thread } = old.runner.create({ text: 'Measure', accountId: 'claude-3' });
+  const session = old.adapter.last;
+  session.init();
+  session.out({ kind: 'tasks', tasks: [{ id: 'shell', type: 'local_bash', kind: 'shell', description: 'blocked shell' }] });
+  session.result('completed');
+  await tick();
+  await old.runner.beginDrain([thread.id], { onHandedOver: () => assert.fail('the shell holds ownership') });
+  let away = true;
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
+    elsewhere: () => away,
+    sendElsewhere: async (id, text, scheduleId, run) => {
+      const methods = scheduledSendMethods(old.runner);
+      const deliver = methods['drain.sendScheduledOnce'] ?? methods['drain.sendScheduled'];
+      deliver({ threadId: id, text, scheduleId, run });
+      throw new RpcError(ErrorCode.busy, 'connection closed before the reply');
+    },
+  });
+  sched.start();
+  if (backend) { await sched.attach(fakeBackend(h.clock, [M5]).for('primary', M5.id)); await tick(8); }
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    if (manual) await assert.rejects(sched.runNow(sc.id), (e: RpcError) => e.code === ErrorCode.busy);
+    else h.clock.advance(MIN);
+    await tick(8);
+    assert.equal(session.sent.length, 2, 'the old process started the scheduled turn');
+    assert.equal(sched.find(sc.id).lastRun, undefined, 'the missing reply left the slot due');
+    if (!crashed) { session.result('completed'); await tick(8); }
+    old.runner.flush();
+    away = false;
+    h.runner.adopt(thread.id, { crashed });
+    h.clock.advance(MIN);
+    await tick(8);
+    const messages = h.store.log(thread.id).read(1, h.store.log(thread.id).lastSeq).filter((e) => e.type === 'user.message' && e.scheduleId === sc.id);
+    assert.equal(messages.length, 1, 'the primary acknowledges the existing durable message');
+    assert.equal(sched.find(sc.id).runs, 1);
+    assert.ok(sched.find(sc.id).finishedAt);
+  } finally { sched.stop(); }
+});
+
+test('explicit cron runs remain distinct from each other and the next due slot', async () => {
+  const { h, sched } = setup();
+  const { thread, s } = idleThread(h);
+  try {
+    const sc = await sched.create({ text: 'Inspect', cron: '@hourly', threadId: thread.id });
+    await sched.runNow(sc.id);
+    s.result('completed');
+    await tick();
+    await sched.runNow(sc.id);
+    s.result('completed');
+    await tick();
+    h.clock.advance(60 * MIN);
+    await tick(8);
+    const messages = h.store.log(thread.id).read(1, h.store.log(thread.id).lastSeq).filter((e) => e.type === 'user.message' && e.scheduleId === sc.id);
+    assert.equal(messages.length, 3);
+    assert.equal(new Set(messages.map((e) => e.turnId)).size, 3);
+  } finally { sched.stop(); }
+});
+
+test('retrying a scheduled start after a failed turn.started append reuses its user message', async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  const log = h.store.log(thread.id);
+  const append = log.append.bind(log);
+  log.append = (event) => {
+    if (event.type === 'turn.started') throw new Error('disk full');
+    append(event);
+  };
+  try {
+    assert.throws(() => h.runner.sendScheduled(thread.id, 'Inspect', 'schedule-1', 'due:slot-1'), /disk full/);
+  } finally { log.append = append; }
+  const recovered = makeHarness(h.home);
+  const sent = recovered.runner.sendScheduled(thread.id, 'Inspect', 'schedule-1', 'due:slot-1');
+  await tick(8);
+  const events = recovered.store.log(thread.id).read(1, recovered.store.log(thread.id).lastSeq);
+  assert.equal(events.filter((e) => e.type === 'user.message' && e.scheduleId === 'schedule-1').length, 1);
+  assert.equal(events.filter((e) => e.type === 'turn.started' && e.turnId === sent.turnId).length, 1);
+  assert.deepEqual(recovered.runner.findScheduledSend(thread.id, 'schedule-1', 'due:slot-1'), sent);
+});
+
 for (const backend of [false, true]) for (const hibernated of [false, true]) test(`a scheduled continuation reaches a draining runner held by a blocked shell (${backend ? 'backend' : 'local'}, ${hibernated ? 'hibernating' : 'awake'})`, async () => {
   const old = makeHarness();
   const { thread } = old.runner.create({ text: 'Measure', accountId: 'claude-3' });
@@ -107,12 +192,12 @@ for (const backend of [false, true]) for (const hibernated of [false, true]) tes
   const sched = new Scheduler({
     runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, self: M5,
     elsewhere: (id) => id === thread.id,
-    sendElsewhere: (id, text, scheduleId) => sendScheduled(h.runner, {
+    sendElsewhere: (id, text, scheduleId, run) => sendScheduled(h.runner, {
       call: async (_id, method, params) => {
-        assert.equal(method, 'drain.sendScheduled');
-        return scheduledSendMethods(old.runner)['drain.sendScheduled'](params);
+        assert.equal(method, 'drain.sendScheduledOnce');
+        return scheduledSendMethods(old.runner)['drain.sendScheduledOnce'](params);
       },
-    }, id, text, scheduleId),
+    }, id, text, scheduleId, run),
   });
   sched.start();
   if (backend) { await sched.attach(fakeBackend(h.clock, [M5]).for('primary', M5.id)); await tick(6); }

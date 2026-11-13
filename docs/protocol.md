@@ -5326,6 +5326,14 @@ kept in `schedules.json` in the data dir.
   so recurring check-ins can't keep resetting its quiet spell.
   A draining release that
   doesn't know this method leaves the run due until its thread comes across.
+  New primaries use `drain.sendScheduledOnce { threadId, text, scheduleId,
+  run }` instead. `run` identifies the due slot or backend Run now request;
+  the schedule, thread and run produce a stable message/turn id. Both the
+  draining runner and a primary that adopts it acknowledge an already
+  logged delivery instead of sending again after a lost reply. A message
+  logged before `turn.started` failed is reused when that start is retried.
+  The old method remains for older primaries; a draining release without
+  the keyed method leaves the run due until handover.
   An archived or snoozed thread comes back to the inbox, as with any message. One it
   brought out of the archive (`unarchivedBySchedule` on the record, with who
   had archived it) goes back, archived by them again with a `system.note`,

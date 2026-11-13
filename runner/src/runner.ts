@@ -74,7 +74,7 @@ import type {
 } from './adapters/types.ts';
 import { SessionNotFoundError } from './adapters/types.ts';
 import type { RewindResult } from './adapters/types.ts';
-import type { ThreadRecord, ThreadStore, QueuedSend, SubagentRecord } from './store.ts';
+import type { EventLog, ThreadRecord, ThreadStore, QueuedSend, SubagentRecord } from './store.ts';
 import { cutOut } from './store.ts';
 
 // The presses a thread keeps for its agent to hear of (Runner.notePress).
@@ -1523,6 +1523,44 @@ export class Runner {
   // origin "runner" marks a message the runner sends by itself (restart.ts),
   // "schedule" one a schedule sent (schedules.ts). `queue` keeps it out of a
   // running turn: it waits and starts its own.
+  // Built lazily and extended only by new events. A scheduled retry after
+  // adoption must consult the durable log, without rescanning it each run.
+  private scheduledMessages = new WeakMap<EventLog, { through: number; messages: Map<string, { seq: number; started: boolean }> }>();
+
+  private scheduledMessage(st: ThreadState, messageId: string): { seq: number; started: boolean } | undefined {
+    const log = this.store.log(st.rec.id);
+    let index = this.scheduledMessages.get(log);
+    if (!index || index.through > log.lastSeq) {
+      index = { through: 0, messages: new Map() };
+      this.scheduledMessages.set(log, index);
+    }
+    const last = log.lastSeq;
+    for (let from = index.through + 1; from <= last; from += 512) {
+      for (const e of log.read(from, Math.min(from + 511, last))) {
+        if (e.type === 'user.message' && e.origin === 'schedule' && e.turnId) index.messages.set(e.turnId, { seq: e.seq, started: false });
+        if (e.type === 'turn.started' && e.turnId) {
+          const message = index.messages.get(e.turnId);
+          if (message) message.started = true;
+        }
+      }
+    }
+    index.through = last;
+    return index.messages.get(messageId);
+  }
+
+  findScheduledSend(threadId: string, scheduleId: string, run?: string): { turnId: string } | undefined {
+    if (!run) return undefined;
+    const st = this.mustGet(threadId);
+    const turnId = scheduledMessageId(threadId, scheduleId, run);
+    if (st.rec.queue.some((q) => q.turnId === turnId) || this.scheduledMessage(st, turnId)?.started) return { turnId };
+    return undefined;
+  }
+
+  sendScheduled(threadId: string, text: string, scheduleId: string, run?: string): { turnId: string } {
+    const prior = this.findScheduledSend(threadId, scheduleId, run);
+    return prior ?? this.send(threadId, text, [], { origin: 'schedule', scheduleId, queue: true, ...(run ? { messageId: scheduledMessageId(threadId, scheduleId, run) } : {}) });
+  }
+
   send(threadId: string, text: string, images: ImageRef[] = [], opts: SendOptions = {}): { turnId: string } {
     const st = this.mustGet(threadId);
     this.checkAccepting();
@@ -1598,7 +1636,7 @@ export class Runner {
       this.endPanelWait(st, false);
       this.markDirty(st);
     }
-    const turnId = crypto.randomUUID();
+    const turnId = opts.messageId ?? crypto.randomUUID();
     const msg: QueuedSend = { turnId, text, images: refs };
     if (opts.origin) msg.origin = opts.origin;
     if (opts.scheduleId) msg.scheduleId = opts.scheduleId;
@@ -1773,7 +1811,8 @@ export class Runner {
     // A review can be replayed after a failed turn.started append. Its
     // stable message ID keeps the original user row rather than duplicating it.
     const reviewMessage = msg.reviewId ? this.store.log(rec.id).read(1, rec.lastSeq).find(e => e.type === 'user.message' && e.reviewId === msg.reviewId && e.turnId === msg.turnId) : undefined;
-    const messageSeq = reviewMessage?.seq ?? this.emit(st, userMessage(msg), msg.turnId).seq;
+    const scheduledMessage = msg.origin === 'schedule' ? this.scheduledMessage(st, msg.turnId) : undefined;
+    const messageSeq = reviewMessage?.seq ?? scheduledMessage?.seq ?? this.emit(st, userMessage(msg), msg.turnId).seq;
     try {
       this.emit(st, { type: 'turn.started', turnId: msg.turnId }, msg.turnId);
     } catch (e) {
@@ -4170,7 +4209,14 @@ export function stoppedWorkMessage(what: string[], last: boolean): string {
   ].join('\n');
 }
 
-export type SendOptions = { origin?: MessageOrigin; scheduleId?: string; queue?: boolean; answers?: AskAnswer[]; editOf?: number };
+export type SendOptions = { origin?: MessageOrigin; scheduleId?: string; queue?: boolean; answers?: AskAnswer[]; editOf?: number; messageId?: string };
+
+// A UUID-shaped id in the existing message/turn field, so it survives every
+// runner handover and crash without adding metadata for clients to mirror.
+function scheduledMessageId(threadId: string, scheduleId: string, run: string): string {
+  const hex = crypto.createHash('sha256').update(JSON.stringify([threadId, scheduleId, run])).digest('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
 
 // Typed by Mike, at the Mac or on his phone: not the runner's, a
 // schedule's or an agent's (another thread's, or this one's own `then`

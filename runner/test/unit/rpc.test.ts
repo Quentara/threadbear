@@ -40,6 +40,29 @@ test('the draining server queues scheduled messages with their origin and reject
 });
 
 const TOKEN = 'test-token-0123456789';
+
+test('a keyed draining send acknowledges an existing delivery while its turn is still running', async () => {
+  const h = makeHarness();
+  const server = new RpcServer({ host: '127.0.0.1', port: 0, token: TOKEN, runner: h.runner, log: nullLogger, onlyOwn: true, methods: scheduledSendMethods(h.runner) });
+  const { port } = await server.listen();
+  const client = await RunnerClient.connect(`ws://127.0.0.1:${port}/rpc`, TOKEN, { server: 'drain' });
+  try {
+    const { thread } = h.runner.create({ text: 'Measure', accountId: 'claude-3' });
+    const s = h.adapter.last;
+    s.init();
+    s.out({ kind: 'tasks', tasks: [{ id: 'shell', type: 'local_bash', kind: 'shell', description: 'blocked shell' }] });
+    s.result('completed');
+    await tick();
+    await h.runner.beginDrain([thread.id], { onHandedOver: () => assert.fail('the shell keeps it here') });
+    const request = { threadId: thread.id, text: 'Inspect', scheduleId: 's1', run: 'due:slot-1' };
+    const first = await client.call('drain.sendScheduledOnce', request);
+    const retry = await client.call('drain.sendScheduledOnce', request);
+    assert.deepEqual(retry, first);
+    assert.equal(s.sent.length, 2);
+    await assert.rejects(client.call('drain.sendScheduledOnce', { ...request, run: '' }), (e: { code: number }) => e.code === -32602);
+    await assert.rejects(client.call('drain.sendScheduledOnce', { ...request, run: 'x'.repeat(201) }), (e: { code: number }) => e.code === -32602);
+  } finally { client.close(); await server.close(); }
+});
 // What the runner's main server binds its proofs to.
 const main = (port: number) => ({ server: 'primary' as const, port });
 

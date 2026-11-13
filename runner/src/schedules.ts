@@ -119,7 +119,7 @@ const ONLINE_MS = 3 * 60_000;
 // offered in runners.list: an old install, or a test's.
 const FORGET_MS = 30 * 86_400_000;
 
-export type ScheduleRunner = Pick<Runner, 'create' | 'send' | 'get' | 'hello' | 'onNotification' | 'publish' | 'patchTrust'> & { cfg?: Pick<Runner['cfg'], 'defaults'> };
+export type ScheduleRunner = Pick<Runner, 'create' | 'send' | 'sendScheduled' | 'get' | 'hello' | 'onNotification' | 'publish' | 'patchTrust'> & { cfg?: Pick<Runner['cfg'], 'defaults'> };
 
 export type CreateScheduleParams = {
   // A card's approval of `check` (patch-trust.ts, approveCheck). Not from a client.
@@ -215,7 +215,7 @@ export class Scheduler {
   // Threads a draining runner still has (docs/protocol.md, "Handovers"):
   // they're real threads, just not loaded here yet.
   private elsewhere: (threadId: string) => boolean;
-  private sendElsewhere?: (threadId: string, text: string, scheduleId: string) => Promise<{ turnId: string }>;
+  private sendElsewhere?: (threadId: string, text: string, scheduleId: string, run: string) => Promise<{ turnId: string }>;
   // Schedule checks (schedule-check.ts).
   private home: string;
   private check: (p: { command: string; cwd: string; home: string; scheduleId: string; timeoutMs?: number }) => Promise<CheckResult>;
@@ -258,7 +258,7 @@ export class Scheduler {
     log: Logger;
     zone?: () => string;
     elsewhere?: (threadId: string) => boolean;
-    sendElsewhere?: (threadId: string, text: string, scheduleId: string) => Promise<{ turnId: string }>;
+    sendElsewhere?: (threadId: string, text: string, scheduleId: string, run: string) => Promise<{ turnId: string }>;
     self?: SelfRunner;
     syncOn?: boolean;
     runCheck?: (p: { command: string; cwd: string; home: string; scheduleId: string; timeoutMs?: number }) => Promise<CheckResult>;
@@ -1121,7 +1121,7 @@ export class Scheduler {
     let res: Awaited<ReturnType<Scheduler['send']>>;
     try {
       this.notMidCheck(rec);
-      res = await this.send(rec, true, this.keptFor(rec));
+      res = await this.send(rec, true, this.keptFor(rec), `request:${request}`);
     } catch (e) {
       // Busy (a restart, or its thread finishing on the old runner): leave
       // the request for the next look.
@@ -1302,7 +1302,10 @@ export class Scheduler {
     }
   }
 
-  private async send(rec: ScheduleRecord, manual: boolean, checked?: { skip: string } | Carried): Promise<{ outcome: 'sent' | 'skipped' | 'failed' | 'retry'; threadId?: string; turnId?: string; note?: string }> {
+  private async send(rec: ScheduleRecord, manual: boolean, checked?: { skip: string } | Carried, requestedRun?: string): Promise<{ outcome: 'sent' | 'skipped' | 'failed' | 'retry'; threadId?: string; turnId?: string; note?: string }> {
+    // Run now consumes an unfinished one-off's due slot too. A cron's
+    // explicit runs have their own identity and leave the next slot alone.
+    const run = rec.at && !rec.finishedAt ? `due:${rec.at}` : requestedRun ?? (manual ? `manual:${crypto.randomUUID()}` : `due:${rec.nextRunAt}`);
     const at = this.iso();
     const text = `[Scheduled: "${rec.title}", ${this.whenText(rec)}]\n\n${rec.text}${checked && 'extra' in checked ? checked.extra : ''}`;
     const record = (outcome: 'sent' | 'skipped' | 'failed', threadId?: string, note?: string) => {
@@ -1338,12 +1341,12 @@ export class Scheduler {
           if (!this.sendElsewhere) throw new RpcError(ErrorCode.busy, 'That thread is finishing on the old runner.');
           this.sending.add(rec.id);
           try {
-            ({ turnId } = await this.sendElsewhere(rec.threadId, text, rec.id));
+            ({ turnId } = await this.sendElsewhere(rec.threadId, text, rec.id, run));
           } finally {
             this.sending.delete(rec.id);
           }
         } else {
-          ({ turnId } = this.runner.send(rec.threadId, text, [], { origin: 'schedule', scheduleId: rec.id, queue: true }));
+          ({ turnId } = this.runner.sendScheduled(rec.threadId, text, rec.id, run));
         }
         record('sent', rec.threadId);
         return { outcome: 'sent', threadId: rec.threadId, turnId };
