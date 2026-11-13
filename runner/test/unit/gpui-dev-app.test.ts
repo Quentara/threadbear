@@ -15,6 +15,10 @@ import { tmpDir } from '../helpers/fakes.ts';
 import { alive, dumpText, pick, refuseHome, since, type Instance } from '../../../desktop/scripts/dev-app.ts';
 
 const DEV_APP = path.join(import.meta.dirname, '..', '..', '..', 'desktop', 'scripts', 'dev-app.sh');
+// The runner's own release build (update.ts) reruns these tests in a clone
+// with only runner/node_modules installed, so the mock can't start there.
+const MOCK = path.join(import.meta.dirname, '..', '..', '..', 'app', 'Tools', 'mock-runner');
+const NO_MOCK = !fs.existsSync(path.join(MOCK, 'node_modules', 'ws')) && 'mock runner has no node_modules';
 
 test('start refuses the real data folder, however it is named, unless told', () => {
   const tmp = tmpDir('gpui-dev-app-home-');
@@ -98,7 +102,7 @@ function run(env: NodeJS.ProcessEnv, ...args: string[]) {
   return { status: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
 }
 
-test('start, do, dump, stop, and the idle quit, with a stand-in app on the mock', async () => {
+test('start, do, dump, stop, and the idle quit, with a stand-in app on the mock', { skip: NO_MOCK }, async () => {
   const tmp = tmpDir('gpui-dev-app-');
   const app = path.join(tmp, 'fake-app');
   fs.writeFileSync(app, FAKE_APP, { mode: 0o755 });
