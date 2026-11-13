@@ -9,12 +9,14 @@ private func frame(_ window: [String: Any]) -> CGRect? {
 
 // The injected hit-test keeps the fail-closed decision testable without a
 // desktop, Accessibility permission or real input events.
-func windowAt(_ windows: [[String: Any]], point: CGPoint, displays: [CGRect], dockPID: Int32?, hitPID: () -> Int32?) -> [String: Any]? {
+func windowAt(_ windows: [[String: Any]], point: CGPoint, displays: [CGRect], dockPID: Int32?, notificationPIDs: Set<Int32> = [], hitPID: () -> Int32?) -> [String: Any]? {
     let covering = windows.filter {
-        // Preserve the existing Notification Center sentinel exception;
-        // its separate banner windows still take clicks and stay in the list.
-        ($0[kCGWindowName as String] as? String) != "Notification Center"
-            && ($0[kCGWindowAlpha as String] as? Double ?? 1) > 0
+        // Only the system process's sentinel is see-through. An ordinary
+        // app can use the same title, and notification banners still block.
+        if $0[kCGWindowName as String] as? String == "Notification Center",
+           let pid = $0[kCGWindowOwnerPID as String] as? Int32,
+           notificationPIDs.contains(pid) { return false }
+        return ($0[kCGWindowAlpha as String] as? Double ?? 1) > 0
             && (frame($0)?.contains(point) ?? false)
     }
     guard let top = covering.first else { return nil }
@@ -48,7 +50,10 @@ let displayError = CGGetActiveDisplayList(UInt32(ids.count), &ids, &count)
 let displays = displayError == .success ? ids.prefix(Int(count)).map { CGDisplayBounds($0) } : []
 let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
     .first { $0.bundleURL?.path == "/System/Library/CoreServices/Dock.app" }?.processIdentifier
-let result = windowAt(windows, point: point, displays: displays, dockPID: dockPID) {
+let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui")
+    .filter { $0.bundleURL?.path == "/System/Library/CoreServices/NotificationCenter.app" }
+    .map { $0.processIdentifier })
+let result = windowAt(windows, point: point, displays: displays, dockPID: dockPID, notificationPIDs: notificationPIDs) {
     guard AXIsProcessTrusted() else {
         fputs("Dock overlay: Accessibility access is unavailable; refusing input.\n", stderr)
         return nil
