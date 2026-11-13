@@ -392,9 +392,10 @@ export class Peers {
       const readLog = async (r: LogRead, by: number): Promise<PersistedEvent[]> => {
         for (;;) {
           const left = by - Date.now();
-          if (left <= 0) throw new Error('out of time');
+          // Out of time asks nothing more, but a page already here still counts.
+          if (left <= 0 && !r.waiting) throw new Error('out of time');
           r.waiting ??= peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId: r.threadId, limit: size, ...(r.before !== undefined ? { beforeSeq: r.before } : {}) });
-          const page = await withTimeout(r.waiting, left);
+          const page = await withTimeout(r.waiting, Math.max(0, left));
           r.waiting = undefined;
           r.log.unshift(...page.events);
           const first = page.events[0]?.seq;

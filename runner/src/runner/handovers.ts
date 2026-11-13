@@ -13,8 +13,11 @@ import type { Drain, ThreadState } from '../runner.ts';
 import { DRAIN_AGENT_MS, DRAIN_BACKGROUND_MS, DRAIN_CHECK_MS, DRAIN_MAX_OLD_MS, DRAIN_SETTLE_MS, newRuntime } from '../runner.ts';
 
 // Runner.openCards: events read from a log at once, kept small as each
-// chunk is read and parsed in one go on a runner still running turns.
+// chunk is read and parsed in one go on a runner still running turns, and
+// how long it reads before giving up: the primary has stopped waiting by
+// then (handover.ts OPEN_CARDS_DEADLINE_MS, 5 s).
 const OPEN_CARDS_CHUNK = 1_000;
+export const OPEN_CARDS_SCAN_MS = 6_000;
 
 // How long a handover waits for an archive's worktree cleanup (letGo).
 // Removing a big worktree can take a while, and a git change still running
@@ -74,7 +77,9 @@ export const handoversPart = {
   // thread a call, so a long log costs only its own thread, and each answer
   // is that thread's cards alone. A chunk at a time with a break between,
   // as this runner is still running those threads' turns.
-  async openCards(this: Runner, threadId: string, chunk = OPEN_CARDS_CHUNK): Promise<PersistedEvent[]> {
+  async openCards(this: Runner, threadId: string, opts: { chunk?: number; scanMs?: number } = {}): Promise<PersistedEvent[]> {
+    const chunk = opts.chunk ?? OPEN_CARDS_CHUNK;
+    const until = Date.now() + (opts.scanMs ?? OPEN_CARDS_SCAN_MS);
     if (!this.draining?.keep.has(threadId) || !this.threads.has(threadId)) throw new RpcError(ErrorCode.moved, 'This runner has handed that thread over to the new one.');
     const log = this.store.log(threadId);
     const last = log.lastSeq;
@@ -82,6 +87,7 @@ export const handoversPart = {
     // over the whole log), not every one the log has had.
     const open = new Map<string, PersistedEvent>();
     for (let from = 1; from <= last; from += chunk) {
+      if (Date.now() > until) throw new RpcError(ErrorCode.busy, 'Out of time reading the thread\'s open cards.');
       for (const e of log.read(from, Math.min(last, from + chunk - 1))) {
         if (e.type === 'approval.resolved') open.delete(e.approvalId);
         else if (openCardEvents([e]).length) open.set((e as { approvalId: string }).approvalId, e);

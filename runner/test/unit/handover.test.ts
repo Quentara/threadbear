@@ -1029,7 +1029,9 @@ test('Runner.openCards: the cards nothing has answered on a kept thread, a chunk
   await assert.rejects(h.runner.openCards(thread.id), moved);
   await h.runner.beginDrain([thread.id, idle.id], { onHandedOver: () => {}, backgroundMs: 30 * MIN });
   const show = (events: PersistedEvent[]) => events.map((e) => [e.type, (e as { title?: string }).title]);
-  assert.deepEqual(show(await h.runner.openCards(thread.id, 2)), [['approval.requested', 'rm -rf build']]);
+  assert.deepEqual(show(await h.runner.openCards(thread.id, { chunk: 2 })), [['approval.requested', 'rm -rf build']]);
+  // Past its time it stops reading: the primary has stopped waiting.
+  await assert.rejects(h.runner.openCards(thread.id, { chunk: 1, scanMs: -1 }), (e: unknown) => e instanceof RpcError && e.code === ErrorCode.busy);
   assert.deepEqual(show(await h.runner.openCards(thread.id)), [['approval.requested', 'rm -rf build']]);
   assert.deepEqual(await h.runner.openCards(idle.id), []);
   await assert.rejects(h.runner.openCards('t-not-here'), moved);
@@ -1091,6 +1093,34 @@ test('Peers.openCards, from a release before drain.openCards: a slow thread past
   const found = await peers.openCards({ deadlineMs: 600 });
   assert.deepEqual(found.map((f) => f.thread.id).sort(), ['t-a', 't-b', 't-slow']);
   assert.equal(slowCalls, 1);
+});
+
+test('Peers.openCards, from a release before drain.openCards: a page that came in time counts though the time is gone', async () => {
+  const h = makeHarness();
+  const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
+  const threads = ['t-a', 't-b'];
+  writeDrainInfo(h.home, { pid: 515151, port: 1, version: 'old', since: new Date().toISOString(), threads });
+  const ts = '2026-11-13T00:00:00.000Z';
+  const client = {
+    call: async (method: string, p: any) => {
+      if (method === 'drain.hello') return { threads, version: 'old' };
+      if (method === 'drain.openCards') throw new RpcClientError(ErrorCode.methodNotFound, 'Unknown method drain.openCards');
+      if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
+      if (method !== 'threads.events') return {};
+      // t-a answers just past its half of 400 ms; t-b never does, and its
+      // share takes all that's left before t-a's second go.
+      if (p.threadId === 't-b') return new Promise(() => {});
+      await new Promise((r) => setTimeout(r, 250));
+      return { events: [{ type: 'question.requested', seq: 1, ts, approvalId: 'q-a', questions: [] }] };
+    },
+    onNotification: () => () => {},
+    waitClosed: () => new Promise<never>(() => {}),
+    close: () => {},
+  };
+  const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect: async () => client as any, alive: () => true });
+  await peers.connectAll();
+  const found = await peers.openCards({ deadlineMs: 400 });
+  assert.deepEqual(found.map((f) => [f.thread.id, f.events.map((e) => (e as { approvalId: string }).approvalId)]), [['t-a', ['q-a']]]);
 });
 
 test('Peers.openCards, from a release before drain.openCards: each summary as it is once every log is read', async () => {
