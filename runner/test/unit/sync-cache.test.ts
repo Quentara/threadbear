@@ -902,3 +902,43 @@ test('a kept thread still on the release before through a second restart still h
   assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
   await third.stop();
 });
+
+// From Codex's second review: the gap's head was forgotten as soon as the
+// thread came across, before its messages were written, so a failed write
+// and a restart before the retry lost the gap after all.
+test("a kept thread's handover gap that fails to go up once it comes across goes with the next start", async () => {
+  const s = setup();
+  const t = s.h.runner.create({ text: 'busy', cwd: s.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await firstStart(s);
+  s.h.runner.send(t.id, 'written during the handover');
+  await settle();
+  await s.h.runner.letGo(s.h.runner.threads.get(t.id)!);
+  s.elsewhere.add(t.id);
+  const second = s.make();
+  second.start();
+  await settle();
+  s.h.clock.advance(SETTLE_MS);
+  await settle();
+  s.h.runner.publish({ method: 'thread.event', params: { threadId: t.id, event: { seq: 99, ts: new Date(s.h.clock.now()).toISOString(), threadId: t.id, type: 'user.message', text: 'forwarded live', images: [] } } } as never);
+  s.h.clock.advance(2000);
+  await settle();
+  await second.flushNow();
+  s.elsewhere.delete(t.id);
+  s.h.runner.adopt(t.id);
+  s.failing.value = 'sync:appendMessages';
+  s.h.clock.advance(2000);
+  await settle();
+  await second.flushNow();
+  await second.stop();
+  s.failing.value = undefined;
+  s.calls.length = 0;
+  const third = s.make();
+  third.start();
+  await settle();
+  s.h.clock.advance(SETTLE_MS);
+  await settle();
+  await third.flushNow();
+  const sent = s.named('sync:appendMessages').flatMap((c) => c.args.messages as { threadId: string; text: string }[]).filter((m) => m.threadId === t.id).map((m) => m.text);
+  assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
+  await third.stop();
+});

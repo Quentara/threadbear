@@ -3172,7 +3172,8 @@ export class ConvexSync {
         messages.unshift(...this.catchUpFromHeads());
         this.catchUpDue = false;
       }
-      if (this.arrivedFrom.size) messages.unshift(...this.catchUpArrived());
+      const arrived = this.arrivedFrom.size ? this.catchUpArrived() : { docs: [], ids: [] };
+      messages.unshift(...arrived.docs);
       // What it finds is written with the next flush (scheduleFlush, below).
       if (this.sharesCheckDue()) await this.reconcileShares(key);
       this.historiesDue = false;
@@ -3193,6 +3194,9 @@ export class ConvexSync {
         return true;
       });
       const notFilled = await this.appendMessages(messages);
+      // Their gap is up: until now a failed write (and a restart before the
+      // retry) still needed the head from before it (Codex's review).
+      for (const id of arrived.ids) if (!notFilled.has(id)) this.arrivedFrom.delete(id);
       this.markFilled(filling.filter((id) => !notFilled.has(id)));
       // A message left out of a closed id: its whole history goes again once
       // it opens (histories()), as messages after it may have gone up, and
@@ -3608,24 +3612,31 @@ export class ConvexSync {
   }
 
   // The kept threads (arrivedFrom) that have come across since: what's
-  // after the head the release before left. One still on that release
+  // after the head the release before left, and which threads that's for
+  // (forgotten by flush once it's written). One still on that release
   // waits; one gone from both (deleted there) is forgotten.
-  private catchUpArrived(): MessageDoc[] {
+  private catchUpArrived(): { docs: MessageDoc[]; ids: string[] } {
     const filled = this.filledThreads();
-    const out: MessageDoc[] = [];
+    const docs: MessageDoc[] = [];
+    const ids: string[] = [];
     for (const [id, from] of [...this.arrivedFrom]) {
       if (this.deps.elsewhere?.(id)) continue;
-      this.arrivedFrom.delete(id);
       let t: ThreadSummary;
       try {
         t = this.deps.runner.get(id);
       } catch {
+        this.arrivedFrom.delete(id);
         continue;
       }
       // One whose whole history isn't up yet is histories()' job.
-      if (filled.has(id)) out.push(...this.messagesAfter(t, from));
+      if (!filled.has(id)) {
+        this.arrivedFrom.delete(id);
+        continue;
+      }
+      docs.push(...this.messagesAfter(t, from));
+      ids.push(id);
     }
-    return out;
+    return { docs, ids };
   }
 
   // Each thread's whole history goes up once per deployment (text and tool
