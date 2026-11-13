@@ -85,34 +85,43 @@ if [ "${1:-}" = "--on-host" ]; then
   umask 022
   mkdir -p "$TMPDIR"
   mv "$base/runs/$id" "$src" || { echo "The copy for run $id isn't on $(hostname -s)." >&2; exit 1; }
-  # Processes still working in this run's temp folder when it ends: a test
+  # Processes still working in this run's temp folder or its copy of the
+  # checkout when it ends (runs here take turns, under the lock): a test
   # that timed out or failed partway can leave a child behind, and with its
   # parent gone it goes to launchd and stays. Six `tb land`s from landing
   # tests sat on Tinker Desk for days, waiting on a check nobody released
   # (7 to 14 Nov), and kept it from ever looking idle. Found by working
   # directory: /proc on Linux, lsof on macOS.
-  left_in_tmp() {
-    local dir
-    dir="$(cd "$TMPDIR" 2>/dev/null && pwd -P)" || return 0
+  left_in_run() {
+    local dirs="" d
+    for d in "$TMPDIR" "$src"; do
+      d="$(cd "$d" 2>/dev/null && pwd -P)" && dirs+="$d"$'\n'
+    done
+    [ -n "$dirs" ] || return 0
     if [ -d /proc/self ]; then
       local p c
       for p in /proc/[0-9]*; do
         c="$(readlink "$p/cwd" 2>/dev/null)" || continue
-        case "$c" in "$dir" | "$dir"/*) echo "${p#/proc/}" ;; esac
+        while IFS= read -r d; do
+          [ -n "$d" ] || continue
+          case "$c" in "$d" | "$d"/*) echo "${p#/proc/}"; break ;; esac
+        done <<<"$dirs"
       done
     else
-      lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null | awk -v d="$dir" '
+      # Through the environment: awk -v won't take a newline on macOS.
+      lsof -nP -a -u "$(id -u)" -d cwd -Fpn 2>/dev/null | LEFT_DIRS="$dirs" awk '
+        BEGIN { n_d = split(ENVIRON["LEFT_DIRS"], d, "\n") }
         /^p/ { pid = substr($0, 2) }
-        /^n/ { n = substr($0, 2); if (n == d || index(n, d "/") == 1) print pid }'
+        /^n/ { n = substr($0, 2); for (i = 1; i <= n_d; i++) if (d[i] != "" && (n == d[i] || index(n, d[i] "/") == 1)) { print pid; break } }'
     fi | grep -vx "$$"
   }
-  stop_left_in_tmp() {
+  stop_left_in_run() {
     local pids
-    pids="$(left_in_tmp | tr '\n' ' ')"
+    pids="$(left_in_run | tr '\n' ' ')"
     [ -n "${pids// /}" ] || return 0
     kill $pids 2>/dev/null
     sleep 1
-    pids="$(left_in_tmp | tr '\n' ' ')"
+    pids="$(left_in_run | tr '\n' ' ')"
     [ -z "${pids// /}" ] || kill -9 $pids 2>/dev/null
   }
 
@@ -121,7 +130,7 @@ if [ "${1:-}" = "--on-host" ]; then
   keep_logs() {
     local rc=$?
     cd "$base" || return
-    stop_left_in_tmp
+    stop_left_in_run
     # A failed run's free space, before its temp files go: if they're what
     # filled the disk, it'd look fine by the time this Mac asks (Codex's
     # review). The Mac falls back to asking if a full disk stops this write.

@@ -128,10 +128,11 @@ export function startTb(args: string[], cwd: string, env: Record<string, string 
   p.stdout.on('data', (d) => (out += d));
   p.stderr.on('data', (d) => (out += d));
   const done = new Promise<{ code: number | null; out: string }>((resolve) => {
+    // Forgotten as soon as it exits, so the hook never signals a group id
+    // that may have been reused. A check it leaves behind gives up by
+    // itself (holdUntil).
     p.on('exit', (code) => {
-      // Its group may still have a check in it (a test that SIGKILLs the
-      // CLI wants that), so only forget it once the group is empty.
-      try { process.kill(-p.pid!, 0); } catch { started.delete(p.pid!); }
+      started.delete(p.pid!);
       resolve({ code, out });
     });
   });

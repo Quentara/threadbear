@@ -17,7 +17,7 @@ function onHost(checkExit: number, df: string, opts: { hang?: boolean; leave?: s
   fs.copyFileSync(path.join(path.dirname(SCRIPT), 'limit-step.mjs'), path.join(copy, 'scripts', 'limit-step.mjs'));
   fs.mkdirSync(path.join(copy, 'runner', 'scripts'), { recursive: true });
   fs.copyFileSync(path.join(path.dirname(SCRIPT), '..', 'runner', 'scripts', 'find-node.sh'), path.join(copy, 'runner', 'scripts', 'find-node.sh'));
-  fs.writeFileSync(path.join(copy, 'check.sh'), `#!/bin/bash\necho made >"$TMPDIR/big"\n${opts.hang ? 'sleep 60\n' : ''}${opts.leave ? `mkdir -p "$TMPDIR/wt"; (cd "$TMPDIR/wt" && exec sleep 300) >/dev/null 2>&1 </dev/null &\necho $! >'${opts.leave}'\n` : ''}exit ${checkExit}\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(copy, 'check.sh'), `#!/bin/bash\necho made >"$TMPDIR/big"\n${opts.hang ? 'sleep 60\n' : ''}${opts.leave ? `mkdir -p "$TMPDIR/wt"; (cd "$TMPDIR/wt" && exec sleep 300) >/dev/null 2>&1 </dev/null &\necho $! >'${opts.leave}'\n(exec sleep 300) >/dev/null 2>&1 </dev/null &\necho $! >>'${opts.leave}'\n` : ''}exit ${checkExit}\n`, { mode: 0o755 });
   const nodeBin = path.join(home, '.nvm', 'versions', 'node', 'v24.0.0', 'bin');
   fs.mkdirSync(nodeBin, { recursive: true });
   fs.symlinkSync(process.execPath, path.join(nodeBin, 'node'));
@@ -47,13 +47,14 @@ test('--on-host records nothing when the run passed', () => {
 
 // A test that timed out left a `tb land` in its temp worktree, and with the
 // run gone it sat on Tinker Desk for days (7 to 14 Nov).
-test('--on-host stops what the run left working in its temp folder', () => {
+test('--on-host stops what the run left working in its temp folder or its copy', () => {
   const pidFile = path.join(shortHome(), 'left.pid');
   const { r } = onHost(0, macDf(100 * GiB), { leave: pidFile });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  const pid = Number(fs.readFileSync(pidFile, 'utf8'));
-  assert.ok(pid > 0);
-  assert.throws(() => process.kill(pid, 0), /ESRCH/, 'the left process is gone');
+  // One in the temp folder, one in the run's copy of the checkout.
+  const pids = fs.readFileSync(pidFile, 'utf8').trim().split('\n').map(Number);
+  assert.equal(pids.length, 2);
+  for (const pid of pids) assert.throws(() => process.kill(pid, 0), /ESRCH/, `${pid} is gone`);
 });
 
 // A host that stops answering partway: 8 Nov, Tinker Desk stopped taking ssh

@@ -17,8 +17,10 @@ const SHIM_DIR = path.join(import.meta.dirname, '..', '..', '..', 'desktop', 'sc
 const FAKE_CARGO = `#!/bin/bash
 # Logs where it ran, then builds desktop/app from desktop/src/main.txt into
 # $CARGO_TARGET_DIR/debug, unless the build there is newer than every source.
+# A held build gives up once the test process has gone, so a failed test
+# can't leave it polling for ever.
 echo "$$ $(pwd -P) $CARGO_TARGET_DIR \${THREADBEAR_SHARED_CARGO_HELD:-} $*" >>"$FAKE_LOG"
-[ -z "\${FAKE_HOLD:-}" ] || { touch "$FAKE_HOLD.started"; while [ ! -e "$FAKE_HOLD.go" ]; do sleep 0.05; done; }
+[ -z "\${FAKE_HOLD:-}" ] || { touch "$FAKE_HOLD.started"; while [ ! -e "$FAKE_HOLD.go" ] && kill -0 ${process.pid} 2>/dev/null; do sleep 0.05; done; }
 [ "\${1:-}" = build ] || exit "\${FAKE_EXIT:-0}"
 d="$CARGO_TARGET_DIR/debug"
 mkdir -p "$d/deps"
