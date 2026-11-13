@@ -1289,7 +1289,7 @@ impl Composer {
         let can_send = self.can_send(cx);
         let side = px(style::size::SEND_BUTTON);
         let circle = || div().flex().items_center().justify_center().size(side).rounded_full();
-        if self.loading_pictures(cx) && !running {
+        if self.loading_pictures(cx) {
             return circle().id("composer-loading-picture").test_support().aria_label("Loading picture")
                 .bg(style::send_faint_fill(cx)).child(Spinner::new().color(style::quiet_text(cx)).with_size(px(14.)))
                 .tip("Loading picture").into_any_element();
@@ -1681,22 +1681,27 @@ pub(crate) fn keep_picture(path: PathBuf) -> PathBuf {
     if !is_picture(&path) || is_staged(&path) || !transient_picture(&path) {
         return path;
     }
-    // Capture only temporary and Photos files. Ordinary documents stay where
-    // they are; opening an offloaded or network picture here could stall UI.
-    // snapshot clones an APFS file, otherwise copies at most the runner's
-    // supported 100 MB, from this app's open descriptor into a private folder.
-    let kept = (|| {
-        let file = threadbear_core::open_policy::local_open(&path).ok()?;
-        if !file.metadata().ok()?.is_file() { return None; }
-        let folder = private_folder(&paste_base())?;
-        let kept = threadbear_core::private_file::snapshot(&file, folder.path(), path.file_name()?.to_str()?, 100 * 1024 * 1024).ok()?;
-        STAGED.lock().unwrap_or_else(|e| e.into_inner()).push((kept.clone(), folder.keep()));
-        Some(kept)
-    })();
-    kept.unwrap_or(path)
+    capture_picture(&path).unwrap_or(path)
 }
 
-fn transient_picture(path: &Path) -> bool {
+/// Read with this app's grant, rather than testing access(2) or making the
+/// runner open the original. APFS clones keep the original bytes cheaply;
+/// other filesystems copy at most the runner's supported 100 MB.
+pub(crate) fn capture_picture(path: &Path) -> Option<PathBuf> {
+    let file = threadbear_core::open_policy::local_open(path).ok()?;
+    if !file.metadata().ok()?.is_file() { return None; }
+    snapshot_picture(&file, path).ok()
+}
+
+pub(crate) fn snapshot_picture(file: &std::fs::File, path: &Path) -> std::io::Result<PathBuf> {
+    let folder = private_folder(&paste_base()).ok_or_else(|| std::io::Error::other("Couldn't prepare a private picture folder"))?;
+    let name = path.file_name().and_then(|n| n.to_str()).ok_or_else(|| std::io::Error::other("The picture has no filename"))?;
+    let kept = threadbear_core::private_file::snapshot(file, folder.path(), name, 100 * 1024 * 1024)?;
+    STAGED.lock().unwrap_or_else(|e| e.into_inner()).push((kept.clone(), folder.keep()));
+    Ok(kept)
+}
+
+pub(crate) fn transient_picture(path: &Path) -> bool {
     path.starts_with(std::env::temp_dir()) || path.starts_with("/var/folders") || path.starts_with("/private/var/folders")
         || path.to_string_lossy().to_ascii_lowercase().contains(".photoslibrary/")
 }

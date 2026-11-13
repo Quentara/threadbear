@@ -1499,7 +1499,7 @@ impl ThreadPane {
                 out
             })
             .collect();
-        json!({ "threadId": self.summary.id, "state": self.load_state(), "atBottom": scroller.at_bottom(), "hasMoreAbove": self.has_more_above(), "spinner": !self.loaded && self.error.is_none() && self.load_failed.is_none(), "timing": self.timing_json(), "rows": rows })
+        json!({ "threadId": self.summary.id, "state": self.load_state(), "error": self.error, "atBottom": scroller.at_bottom(), "hasMoreAbove": self.has_more_above(), "spinner": !self.loaded && self.error.is_none() && self.load_failed.is_none(), "timing": self.timing_json(), "rows": rows })
     }
 
     /// The Swift dump's names, a failure with its message.

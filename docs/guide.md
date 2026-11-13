@@ -479,8 +479,11 @@ On the Mac, screenshots dragged from the floating thumbnail, pictures dragged
 from a browser, HEIC pastes and photos copied from Photos work here too.
 Threadbear keeps its own private copy before the source can take the picture
 back. A picture being copied from another app or fetched from a web URL shows
-a dim chip while it arrives; Send spins until the picture is ready. A web URL is
-fetched by Threadbear without the browser's cookies or sign-in.
+a dim chip while it arrives; Send spins until the picture is ready, including
+while the agent is working. The Stop keyboard shortcut still works. A web URL
+is fetched by Threadbear without the browser's cookies or sign-in, using public
+internet addresses only. For a picture on a local or private-network server,
+copy the picture itself.
 Any other file you paste or drop in (a video, a PDF, a folder) goes in as
 its full path where you drop it, for the agent to open where it is.
 Nothing's copied, so a big one is fine.

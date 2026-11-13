@@ -91,6 +91,8 @@ export type Dump = {
   transcript: {
     threadId?: string;
     state?: string;
+    /** The selected thread's error line (separate from the app's error bar). */
+    error?: string | null;
     atBottom?: boolean;
     hasMoreAbove?: boolean;
     /** The spinner in the middle while it's read (the GPUI app's; the Swift dump has only `state`). */

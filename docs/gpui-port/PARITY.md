@@ -13,16 +13,23 @@ Mac picture input is covered by `features/composer-media.feature`: a
 temporary screenshot deleted as the native drop ends, browser image bytes,
 HEIC-only pasteboards, Photos' image data beside another file, promised
 photos, URL downloads and cutting a chip while its picture loads. The actual
-floating screenshot thumbnail remains a hand check (`@manual`); a scripted
-drop cannot start from that thumbnail. Windows and Linux still use their own
+floating screenshot thumbnail gesture is not scripted (`@manual`); the first
+scenario covers its source-file lifetime. Windows and Linux still use their own
 clipboard representations and the existing file-drop scenarios.
 The Mac promise check uses a real source app on Tinker Desk's desktop, with
 `TB_REAL_SCREEN=1`; the bundle cases exercise the legacy receiver contract.
-On 13 November, all 13 picture scenarios that do not move the pointer passed,
-including a withdrawn promise and HEIC in a card's answer box. The real
-cross-app promise drag also passed separately. The floating-thumbnail check
-is still unverified. These focused runs do not refresh the combined table
-below, which records the earlier four-platform run.
+On 13 November, all 20 picture scenarios that do not move the pointer passed,
+including a busy turn with a loading picture, a protected file's image bytes,
+original file bytes beside a TIFF preview, a missing file's icon,
+private-network URLs and redirects,
+a withdrawn promise, a working promise beside a missing path and HEIC in a
+card's answer box. Rust tests cover cancellation after partial promise receipt,
+late callbacks and filtering the socket addresses used for downloads. The real
+cross-app promise drag also passed separately. The message-chip scenario waits
+for the picture to finish importing before Return; the Windows failure at
+e9903bf4d left the draft unsent because Return arrived while the picture loaded.
+These focused runs do not refresh the combined table below, which records the
+earlier four-platform run.
 
 <!-- parity:start -->
 

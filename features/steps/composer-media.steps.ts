@@ -59,6 +59,58 @@ When('I paste a picture with an unavailable file URL', async function (this: Thr
   await this.app.do({ cmd: 'picture-input', kind: 'unreadable', path: sample });
 });
 
+When('I start a long turn for the picture check', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'send', text: 'Hold the turn for picture input' });
+  await this.until('the turn running', (d) => d.selection?.status === 'running');
+});
+
+Then('the picture-loading button does not stop the turn', async function (this: ThreadbearWorld) {
+  const point = await this.app.do({ cmd: 'label-point', label: 'Loading picture' });
+  const [, x, y] = point.trim().split(/\s+/);
+  assert.ok(x && y, point);
+  if (process.env.TB_MEDIA_BUSY_PROOF) await this.app.shot(process.env.TB_MEDIA_BUSY_PROOF);
+  await this.app.do({ cmd: 'click-at', x: Number(x), y: Number(y) });
+  const until = Date.now() + 2000;
+  while (Date.now() < until) {
+    assert.equal((await this.app.dump()).selection?.status, 'running', 'clicking the pending Send interrupted the turn');
+    await sleep(100);
+  }
+});
+
+When('I paste image bytes beside a protected file containing different bytes', async function (this: ThreadbearWorld) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'threadbear-paste-alternates-'));
+  const picture = path.join(folder, 'bytes.png');
+  fs.copyFileSync(sample, picture);
+  fs.writeFileSync(`${picture}.file.png`, 'this is a readable path, but not the pasted image');
+  try { await this.app.do({ cmd: 'picture-input', kind: 'protected', path: picture }); }
+  finally { fs.rmSync(folder, { recursive: true, force: true }); }
+});
+
+When('I paste an image file beside a different TIFF preview', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'picture-input', kind: 'file-preview', path: sample });
+});
+
+When('I paste an unavailable image file beside a TIFF icon', async function (this: ThreadbearWorld) {
+  const folder = fs.mkdtempSync(path.join(os.tmpdir(), 'threadbear-missing-picture-'));
+  try { await this.app.do({ cmd: 'picture-input', kind: 'file-preview', path: path.join(folder, 'missing.png') }); }
+  finally { fs.rmSync(folder, { recursive: true, force: true }); }
+});
+
+Then('the picture import reports an error', async function (this: ThreadbearWorld) {
+  await this.until('an image import error', (d) => d.transcript.error?.includes("Couldn't add that picture"));
+  assert.equal((await this.app.dump()).composer.images, 0, 'a file icon was imported as the picture');
+});
+
+Then(/^the imported picture contains (?:the pasted bytes|the original file bytes)$/, async function (this: ThreadbearWorld) {
+  await this.until('the imported picture', (d) => d.composer.images === 1);
+  const result = await this.app.do({ cmd: 'composer-peek', number: 1, press: true });
+  const paths = / of (\[.*\])$/.exec(result);
+  assert.ok(paths, result);
+  const imported = (JSON.parse(paths[1]) as string[])[0];
+  assert.ok(fs.readFileSync(imported).equals(fs.readFileSync(sample)), 'the imported bytes did not match the chosen picture');
+  await this.app.do({ cmd: 'viewer', close: true });
+});
+
 When('I paste a bundle promising two pictures beside a normal picture', async function (this: ThreadbearWorld) {
   await this.app.do({ cmd: 'picture-input', kind: 'legacy', path: sample });
 });
@@ -67,6 +119,9 @@ When('I paste a bundle with an unavailable picture and two good pictures beside 
 });
 When('I paste a withdrawn promise beside a normal picture', async function (this: ThreadbearWorld) {
   await this.app.do({ cmd: 'picture-input', kind: 'withdrawn', path: sample });
+});
+When('I paste a working picture promise beside an unavailable file URL', async function (this: ThreadbearWorld) {
+  await this.app.do({ cmd: 'picture-input', kind: 'paired-file-promise', path: sample });
 });
 
 When('I paste a promised photo beside a normal picture', async function (this: ThreadbearWorld) {
@@ -130,14 +185,23 @@ async function browserUrl(world: ThreadbearWorld, delay: number) {
   servers.add(server);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const address = server.address() as { port: number };
-  await drop(world, 'url', `http://127.0.0.1:${address.port}/photo`);
-  if (delay) await world.until('the loading picture chip', (d) => d.composer.text.includes('[Picture 1]'));
+  await drop(world, 'url-fixture', `http://127.0.0.1:${address.port}/photo`);
+  if (delay) {
+    // The outgoing draft omits unfinished pictures. Read the actual inline
+    // token instead, or this test accidentally waits for the download.
+    const until = Date.now() + 5000;
+    while (!(await world.app.do({ cmd: 'composer-chips' })).includes('picture: Picture 1')) {
+      assert.ok(Date.now() < until, 'the pending picture never made a chip');
+      await world.app.dump(); await sleep(50);
+    }
+    assert.equal((await world.app.dump()).composer.images, 0, 'the download finished before the pending-picture check');
+  }
 }
 When('I drop a browser picture offered only as a URL', async function (this: ThreadbearWorld) {
   await browserUrl(this, 0);
 });
 When('I drop a browser picture whose response is delayed', async function (this: ThreadbearWorld) {
-  await browserUrl(this, 10_000);
+  await browserUrl(this, 30_000);
 });
 
 async function ordinaryLink(world: ThreadbearWorld & { fetched?: () => number }, kind: string) {
@@ -155,7 +219,34 @@ When('I drop an ordinary web link', async function (this: ThreadbearWorld & { fe
 When('I drop a linked picture whose link is a webpage', async function (this: ThreadbearWorld & { fetched?: () => number }) {
   await ordinaryLink(this, 'linked-image');
 });
-Then('the link has not been fetched', async function (this: ThreadbearWorld & { fetched?: () => number }) {
+When('I drop a browser image URL pointing to a local service', async function (this: ThreadbearWorld & { fetched?: () => number }) {
+  await ordinaryLink(this, 'url');
+});
+When('I drop a picture URL redirecting to a different local service', async function (this: ThreadbearWorld & { fetched?: () => number; redirectRequests?: () => number }) {
+  let requests = 0;
+  const target = http.createServer((_, response) => { requests++; response.end(fs.readFileSync(sample)); });
+  servers.add(target);
+  await new Promise<void>((resolve) => target.listen(0, '127.0.0.1', resolve));
+  const port = (target.address() as { port: number }).port;
+  let sourceRequests = 0;
+  const source = http.createServer((_, response) => {
+    sourceRequests++;
+    response.writeHead(302, { Location: `http://127.0.0.1:${port}/private.png` }); response.end();
+  });
+  servers.add(source);
+  await new Promise<void>((resolve) => source.listen(0, '127.0.0.1', resolve));
+  this.fetched = () => requests;
+  this.redirectRequests = () => sourceRequests;
+  // Only this source's exact socket is allowed by the automation fixture.
+  // A redirected connection still goes through the public-address policy.
+  await drop(this, 'url-fixture', `http://127.0.0.1:${(source.address() as { port: number }).port}/photo`);
+});
+Then('the link has not been fetched', async function (this: ThreadbearWorld & { fetched?: () => number; redirectRequests?: () => number }) {
+  if (this.redirectRequests) {
+    const until = Date.now() + 5000;
+    while (!this.redirectRequests() && Date.now() < until) await sleep(50);
+    assert.equal(this.redirectRequests(), 1, 'the redirect source was never fetched');
+  }
   await sleep(300);
   assert.equal(this.fetched?.(), 0);
   assert.equal((await this.app.dump()).composer.images, 0);

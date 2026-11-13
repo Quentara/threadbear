@@ -69,7 +69,8 @@ Feature: Sending a message
     And I type "and " in the composer
     And I paste the picture into the composer
     And I type "please" in the composer
-    And I press Return
+    Then the composer holds 2 pictures
+    When I press Return
     Then the transcript shows my message "compare [Picture 1] and [Picture 2] please"
 
   @composer.filedrop @composer.dropanywhere

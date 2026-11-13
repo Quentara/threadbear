@@ -18,6 +18,8 @@ mod card_run;
 mod chips;
 mod colour_space;
 mod composer_media;
+#[cfg(target_os = "macos")]
+mod composer_url;
 mod composer;
 mod composer_card;
 mod composer_account;

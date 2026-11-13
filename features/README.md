@@ -81,3 +81,6 @@ Use `TB_REAL_SCREEN=1` only on Tinker Desk through `remote.sh --desk`, with
 no recording running there. Never run them on the Mac Mike is using. The
 picture-promise case starts its own source window and checks it is in front
 before dragging into its own test app.
+
+`@picture-loading` gives the mock a cancellable scripted turn while a picture
+is delayed. Its script is temporary and no model runs.

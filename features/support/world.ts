@@ -6,12 +6,13 @@ import { sleep, type Driver, type Dump, type Row, type Thread } from './driver.t
 import { GpuiDriver } from './gpui.ts';
 import { longThreadFolder } from './long-thread.ts';
 import { SwiftDriver } from './swift.ts';
-import { removeTempFolders } from './temp.ts';
+import { removeTempFolders, tempFolder } from './temp.ts';
 import { webRuntimeCleanup, webRuntimeSetup } from './web-runtime.ts';
 
 // Whatever a person running the specs asked for (features/README.md), kept
 // apart from the long-thread scenarios setting it for themselves.
 const startingFixtures = process.env.TB_MOCK_FIXTURES;
+const startingScriptedTurns = process.env.MOCK_SCRIPTED_TURNS;
 
 setDefaultTimeout(90_000);
 
@@ -94,6 +95,18 @@ Before({ tags: '@thread.loading or @thread.kept' }, () => {
 });
 After({ tags: '@thread.loading or @thread.kept' }, () => {
   delete process.env.THREADBEAR_MOCK_EVENTS_DELAY_MS;
+});
+
+// A real mock turn that can be interrupted while its picture is loading.
+// Seeded "running" rows have no executing turn for Stop to interrupt.
+Before({ tags: '@picture-loading' }, () => {
+  const file = path.join(tempFolder('threadbear-picture-turn-'), 'turns.json');
+  fs.writeFileSync(file, JSON.stringify([{ match: '^Hold the turn for picture input$', reply: 'Still working. '.repeat(100), chunk: 1, chunkMs: 250 }]));
+  process.env.MOCK_SCRIPTED_TURNS = file;
+});
+After({ tags: '@picture-loading' }, () => {
+  if (startingScriptedTurns === undefined) delete process.env.MOCK_SCRIPTED_TURNS;
+  else process.env.MOCK_SCRIPTED_TURNS = startingScriptedTurns;
 });
 
 Before(async function (this: ThreadbearWorld, { pickle }) {

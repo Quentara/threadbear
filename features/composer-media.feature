@@ -106,3 +106,42 @@ Feature: Pictures from other Mac apps
     Then the composer holds 1 picture
     When I type "still works" in the composer
     Then the composer says the lines "[Picture 1] still works"
+
+  @composer.picturechips @composer.send @picture-loading @swift-pending @windows-pending @linux-pending
+  Scenario: A loading picture never changes a busy thread's Send button into Stop
+    When I start a long turn for the picture check
+    And I type "also look at this " in the composer
+    And I drop a browser picture whose response is delayed
+    Then the picture-loading button does not stop the turn
+    When I stop the turn
+    Then the thread isn't running any more
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: A protected file uses the image bytes beside it
+    When I paste image bytes beside a protected file containing different bytes
+    Then the imported picture contains the pasted bytes
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: A readable image keeps its original bytes instead of its TIFF preview
+    When I paste an image file beside a different TIFF preview
+    Then the imported picture contains the original file bytes
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: An unavailable image reports an error instead of importing its file icon
+    When I paste an unavailable image file beside a TIFF icon
+    Then the picture import reports an error
+
+  @composer.picturechips @swift-pending @windows-pending @linux-pending
+  Scenario: An unavailable file URL uses the working picture promise beside it
+    When I paste a working picture promise beside an unavailable file URL
+    Then the composer holds 2 pictures
+
+  @composer.filedrop @swift-pending @windows-pending @linux-pending
+  Scenario: A browser image cannot fetch a service on this Mac
+    When I drop a browser image URL pointing to a local service
+    Then the link has not been fetched
+
+  @composer.filedrop @swift-pending @windows-pending @linux-pending
+  Scenario: Redirects cannot fetch another local service
+    When I drop a picture URL redirecting to a different local service
+    Then the link has not been fetched

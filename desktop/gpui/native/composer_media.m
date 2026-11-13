@@ -6,12 +6,15 @@
 #import <objc/runtime.h>
 #include <stdbool.h>
 
-typedef void (*TBMediaSink)(void *, int, const char *, const void *, size_t);
+typedef bool (*TBMediaSink)(void *, int, const char *, const void *, size_t);
 static NSPasteboard *dropBoard;
 static bool dropRead;
 #ifdef TB_COMPOSER_AUTOMATION
 static NSPasteboard *fixtureBoard;
 static id fixtureLegacy;
+static bool fixturePairedPromise;
+static NSString *fixtureProtectedPath;
+static void (*fixtureEnded)(void);
 #endif
 static NSArray<NSString *> *imageTypes(void) {
   return @[@"public.png", @"public.heic", @"public.heif", @"public.jpeg", @"com.compuserve.gif", @"org.webmproject.webp", @"public.tiff"];
@@ -79,6 +82,9 @@ static bool readBoard(NSPasteboard *board, bool drag, TBMediaSink sink, void *co
     if ([[NSSet setWithArray:item.types] intersectsSet:promiseTypes] && promiseIndex < promises.count) {
       promise = promises[promiseIndex++];
     }
+#ifdef TB_COMPOSER_AUTOMATION
+    if (fixturePairedPromise && item == items.firstObject) promise = fixtureLegacy;
+#endif
     NSString *fileString = [item stringForType:NSPasteboardTypeFileURL];
     NSURL *file = fileString ? [NSURL URLWithString:fileString] : nil;
     bool photos = [file.path.lowercaseString containsString:@".photoslibrary/"];
@@ -88,14 +94,25 @@ static bool readBoard(NSPasteboard *board, bool drag, TBMediaSink sink, void *co
       taken = true;
       continue;
     }
-    if (file.isFileURL && !photos && [[NSFileManager defaultManager] isReadableFileAtPath:file.path]) {
-      sink(context, 0, file.path.UTF8String, NULL, 0);
+    bool denied = false;
+#ifdef TB_COMPOSER_AUTOMATION
+    // access(2) may say yes even though TCC denies an actual open.
+    denied = [file.path isEqual:fixtureProtectedPath];
+#endif
+    // A file's TIFF representation may be its icon or a preview. Keep the
+    // real image first, opening with this app's grant to keep its bytes. Photos
+    // offers its image beside the library path, as in the Swift app.
+    if (file.isFileURL && !photos && !denied && sink(context, 5, file.path.UTF8String, NULL, 0)) {
       taken = true;
       continue;
     }
     bool saved = false;
+    // If opening the original failed, the bytes beside it can still work.
     for (NSString *type in imageTypes()) {
       if (![item.types containsObject:type]) continue;
+      // Finder also supplies a file icon as TIFF, even for a missing or
+      // protected original. Photos' TIFF is the copied photo itself.
+      if (file.isFileURL && !photos && [type isEqual:NSPasteboardTypeTIFF]) continue;
       NSData *data = [item dataForType:type];
       if ([type isEqual:NSPasteboardTypeTIFF]) {
         data = [[NSBitmapImageRep imageRepWithData:data] representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
@@ -105,16 +122,25 @@ static bool readBoard(NSPasteboard *board, bool drag, TBMediaSink sink, void *co
       saved = taken = true;
       break;
     }
-    if (!saved && file.isFileURL) {
+    if (!saved && picturePromise(promise)) {
+      sink(context, 3, NULL, (__bridge const void *)promise, 0);
+      taken = true;
+      continue;
+    }
+    if (!saved && file.isFileURL && !photos) {
+      // Preserve the runner's useful missing/permission/size error instead
+      // of silently substituting a file icon or dropping this bundle item.
+      sink(context, 0, file.path.UTF8String, NULL, 0);
+      taken = true;
+      continue;
+    }
+    if (!saved && file.isFileURL && photos) {
       // With no alternate representation, read in this app, which has the
       // drag/paste grant; never ask the runner to open a Photos library file.
       NSNumber *size;
       [file getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
       NSData *data = size && size.unsignedLongLongValue <= 100 * 1024 * 1024 ? [NSData dataWithContentsOfURL:file] : nil;
       if (data.length) { sink(context, 1, file.pathExtension.UTF8String, data.bytes, data.length); saved = taken = true; }
-    }
-    if (!saved) {
-      if (picturePromise(promise)) { sink(context, 3, NULL, (__bridge const void *)promise, 0); taken = true; continue; }
     }
     if (!saved && drag && !file.isFileURL) {
       NSString *url = [item stringForType:NSPasteboardTypeURL];
@@ -142,7 +168,7 @@ bool tb_composer_read(bool drag, TBMediaSink sink, void *context) {
 #ifdef TB_COMPOSER_AUTOMATION
   if (!drag && fixtureBoard) {
     bool taken = readBoard(fixtureBoard, false, sink, context);
-    if (fixtureLegacy) { sink(context, 3, NULL, (__bridge const void *)fixtureLegacy, 0); taken = true; }
+    if (fixtureLegacy && !fixturePairedPromise) { sink(context, 3, NULL, (__bridge const void *)fixtureLegacy, 0); taken = true; }
     return taken;
   }
 #endif
@@ -293,6 +319,9 @@ void tb_composer_fixture_end(void) {
   [fixtureBoard releaseGlobally];
   fixtureBoard = nil;
   fixtureLegacy = nil;
+  fixturePairedPromise = false;
+  fixtureProtectedPath = nil;
+  if (fixtureEnded) fixtureEnded();
 }
 // Contract fixture for a legacy receiver that bundles two files. Real
 // NSFilePromiseProvider emits one per item (tested by picture-promise.m).
@@ -304,6 +333,7 @@ void tb_composer_fixture_end(void) {
 @property(nonatomic) bool withdrawn;
 @end
 @implementation TBLegacyPictures
+- (NSArray *)fileTypes { return @[@"public.png"]; }
 - (NSArray *)fileNames { return !self.called ? @[] : self.failFirst ? @[@"missing.png", @"one.png", @"two.png"] : @[@"one.png", @"two.png"]; }
 - (void)receivePromisedFilesAtDestination:(NSURL *)destination options:(NSDictionary *)options operationQueue:(NSOperationQueue *)queue reader:(void (^)(NSURL *, NSError *))reader {
   if (self.withdrawn) [NSException raise:NSRangeException format:@"The source removed its promise items"];
@@ -320,19 +350,30 @@ void tb_composer_fixture_end(void) {
   }
 }
 @end
-void tb_composer_fixture_begin(const char *kindText, const char *pathText) {
+void tb_composer_fixture_begin(const char *kindText, const char *pathText, void (*ended)(void)) {
   tb_composer_fixture_end();
+  fixtureEnded = ended;
   fixtureBoard = [NSPasteboard pasteboardWithUniqueName];
   NSString *kind = @(kindText), *path = @(pathText);
   NSData *data = [NSData dataWithContentsOfFile:path];
   NSPasteboardItem *item = [NSPasteboardItem new];
-  if ([kind isEqual:@"legacy"] || [kind isEqual:@"legacy-error"] || [kind isEqual:@"withdrawn"]) {
+  if ([kind isEqual:@"paired-file-promise"]) {
+    TBLegacyPictures *promise = [TBLegacyPictures new]; promise.data = data; fixtureLegacy = promise; fixturePairedPromise = true;
+    [item setString:@"file:///missing/promised.png" forType:NSPasteboardTypeFileURL];
+  } else if ([kind isEqual:@"legacy"] || [kind isEqual:@"legacy-error"] || [kind isEqual:@"withdrawn"]) {
     TBLegacyPictures *promise = [TBLegacyPictures new]; promise.data = data; promise.failFirst = [kind isEqual:@"legacy-error"]; promise.withdrawn = [kind isEqual:@"withdrawn"]; fixtureLegacy = promise;
     [item setString:[NSURL fileURLWithPath:path].absoluteString forType:NSPasteboardTypeFileURL];
-  } else if ([kind isEqual:@"url"] || [kind isEqual:@"link"] || [kind isEqual:@"linked-image"]) {
+  } else if ([kind isEqual:@"url"] || [kind isEqual:@"url-fixture"] || [kind isEqual:@"link"] || [kind isEqual:@"linked-image"]) {
     [item setString:path forType:NSPasteboardTypeURL];
-    if ([kind isEqual:@"url"]) [item setString:[NSString stringWithFormat:@"<img src=\"%@\">", path] forType:NSPasteboardTypeHTML];
+    if ([kind isEqual:@"url"] || [kind isEqual:@"url-fixture"]) [item setString:[NSString stringWithFormat:@"<img src=\"%@\">", path] forType:NSPasteboardTypeHTML];
     if ([kind isEqual:@"linked-image"]) [item setString:@"<a href=\"https://example.invalid/action\"><img src=\"https://example.invalid/button.png\"></a>" forType:NSPasteboardTypeHTML];
+  } else if ([kind isEqual:@"file-preview"]) {
+    [item setString:[NSURL fileURLWithPath:path].absoluteString forType:NSPasteboardTypeFileURL];
+    [item setData:[NSImage imageNamed:NSImageNameFolder].TIFFRepresentation forType:NSPasteboardTypeTIFF];
+  } else if ([kind isEqual:@"protected"]) {
+    fixtureProtectedPath = [path stringByAppendingString:@".file.png"];
+    [item setString:[NSURL fileURLWithPath:[path stringByAppendingString:@".file.png"]].absoluteString forType:NSPasteboardTypeFileURL];
+    [item setData:data forType:NSPasteboardTypePNG];
   } else if ([kind isEqual:@"unreadable"]) {
     [item setString:@"file:///missing/photo.heic" forType:NSPasteboardTypeFileURL];
     [item setData:data forType:NSPasteboardTypePNG];
