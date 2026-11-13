@@ -146,13 +146,28 @@ impl Threadbear {
     /// follows the selection again; just closed if the ordinary one's open
     /// already.
     pub(crate) fn unpin_panel(&mut self, pin: &str, cx: &mut Context<Self>) {
-        let Some((_, id)) = pinned(pin) else { return };
-        let id = id.to_owned();
+        let Some((owner, id)) = pinned(pin) else { return };
+        let (owner, id) = (owner.to_owned(), id.to_owned());
         if self.dock.read(cx).layout().contains(&id) {
             self.dock.update(cx, |m, cx| m.close(pin, cx));
         } else {
             self.dock.update(cx, |m, cx| m.rename(pin, &id, cx));
         }
+        // The panel brought back is the one in front for the thread it was
+        // pinned from, and for the selected thread if that has it too: what
+        // it opens (a file, a link) opens over it. The side pane's choice only
+        // lives in memory, so after a relaunch, with no thread open yet, the
+        // pinned thread opened on Highlights though Unpin had just put
+        // Previews back (13 Nov, pinned-panels.feature).
+        let mut threads = vec![owner.clone()];
+        if let Some(t) = self.pane_thread().filter(|t| t.id != owner && t.panels().iter().any(|p| p.id == id)) {
+            threads.push(t.id);
+        }
+        self.side.update(cx, |side, cx| {
+            for thread in &threads {
+                side.section_pressed(thread, &id, cx);
+            }
+        });
     }
 
     /// The selected thread's pinned copy of a panel, while it's in the
