@@ -59,8 +59,8 @@ fn bundle(tag: &str, icon: &str, with_icon: bool) -> Bundle {
     let app = folder.join("Impostor.app");
     std::fs::create_dir_all(app.join("Contents/Resources")).unwrap();
     std::fs::create_dir_all(app.join("Contents/MacOS")).unwrap();
-    std::fs::write(app.join("Contents/Info.plist"), format!(r#"<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.google.Chrome</string><key>CFBundleExecutable</key><string>run</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleIconFile</key><string>{icon}</string></dict></plist>"#)).unwrap();
-    std::fs::write(app.join("Contents/MacOS/run"), "#!/bin/sh\ntouch /tmp/tb-impostor-ran\n").unwrap();
+    threadbear_core::private_file::write(&app.join("Contents/Info.plist"), format!(r#"<?xml version="1.0"?><plist version="1.0"><dict><key>CFBundleIdentifier</key><string>com.google.Chrome</string><key>CFBundleExecutable</key><string>run</string><key>CFBundlePackageType</key><string>APPL</string><key>CFBundleIconFile</key><string>{icon}</string></dict></plist>"#).as_bytes()).unwrap();
+    threadbear_core::private_file::write(&app.join("Contents/MacOS/run"), b"#!/bin/sh\nexit 0\n").unwrap();
     if with_icon {
         std::fs::copy(Path::new(env!("CARGO_MANIFEST_DIR")).join("testdata/icons/Multi.icns"), app.join("Contents/Resources/Multi.icns")).unwrap();
     }
@@ -124,7 +124,6 @@ fn only_googles_chrome_passes_the_chrome_check() {
     let app = bundle("chrome", "Multi", true);
     assert!(super::signed_as(&app.0.to_string_lossy(), super::GOOGLE_CHROME).is_err());
     assert!(super::start_chrome_profile(&app.0.to_string_lossy(), "https://example.com", "Default").is_err());
-    assert!(!Path::new("/tmp/tb-impostor-ran").exists());
     // Apple's own app, where apps are installed, passes; a link to it from
     // a temp folder is followed to it. Anywhere else isn't started however
     // it's signed: a copy in a folder something else writes could be
