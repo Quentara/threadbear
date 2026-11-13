@@ -8,8 +8,7 @@ upgraded first. Times are ISO 8601 strings in UTC. Ids are strings.
 ## Auth
 
 The token is the contents of
-`~/Library/Application Support/Threadbear/secrets/runner-token` (another
-Mac's: the copy in `secrets/runners/<id>.token`, see Other runners). It
+`~/Library/Application Support/Threadbear/secrets/runner-token`. It
 never travels: the client proves it has it, and the runner proves the same
 back, so the client knows it reached the real runner before it trusts
 anything it's told. Whoever holds the port while the runner is down (another
@@ -27,8 +26,8 @@ account on the Mac can bind 127.0.0.1:8797 then) learns nothing it can use.
    server, the one on its port that every client talks to, and `drain` for
    a draining runner's own (Handovers), which only a primary taking over
    from it means to reach. `port` is the one the client dialed when it
-   dialed a loopback address, and the challenge's `port` otherwise (another
-   Mac behind `tailscale serve`, where the dialed port is the proxy's).
+   dialed a loopback address, and the challenge's `port` otherwise (behind a
+   proxy, where the dialed port is the proxy's).
 3. The runner answers `{"result":{"proof":"<64 hex>"}}`: the same HMAC of
    `"threadbear-rpc-auth-v1 runner\n" + runnerNonce + "\n" + clientNonce + "\n" + server + " " + port`,
    with its own kind of server and its own listening port.
@@ -114,8 +113,8 @@ registry has noted them. One that deliberately starts a new session and reads
 the token can still pass as the owner, which is why outside Full access
 Claude's file and shell tools are denied the runner's `secrets` folder as well;
 that deny is defence in depth (`SECURITY.md` says what's out of scope). A
-draining runner's own server applies all of this too. `tb runner` and `tb pair`
-use this Mac's keys from disk, so the runner never sees them: from a thread they
+draining runner's own server applies all of this too. `tb runner`
+uses this Mac's keys from disk, so the runner never sees them: from a thread they
 need the real runner to say it isn't limited. A CLI started by a runner older
 than this has no key and isn't recorded with its thread, so it keeps the old
 `tb` until its next start.
@@ -5278,8 +5277,9 @@ kept in `schedules.json` in the data dir.
 
 Step 6 part 2 (docs/step6-plan.md). The Mac app lists every runner's
 threads: this runner's from this runner as always, the others' from the
-backend. To open one of another runner's threads the app connects to that
-runner itself. Runners never talk to each other.
+backend. It opens them through its own runner and the backend ("Other
+runners' threads through the backend", below). Runners never talk to each
+other, and the app never connects to another Mac.
 
 - **The sidebar table.** With a backend of API 12, each runner keeps one
   `threadIndex` row per thread there: `threadId, title, cwd, accountId,
@@ -5329,50 +5329,23 @@ type RemoteRunner = {
   id: string, name: string, icon?: string  // as RunnerInfo
   online: boolean      // heard from in the last 3 minutes
   lastSeenAt: string
-  rpcUrl?: string      // how to reach it: that runner's sync.rpcUrl
-  tokenFile?: string   // absolute path on this Mac of its runner token,
-                       // when one has been copied in
-                       // (<home>/secrets/runners/<id>.token); absent means
-                       // its threads can be listed but not opened
+  followProblem?: string
 }
+// rpcUrl and tokenFile were the direct link between Macs (step 6 part 2),
+// taken out 13 Nov 2026. An app ignores them if an older runner sends them.
 type RemoteThread = { runnerId: string, threadId: string, title, cwd,
   accountId, provider, model?, status: ThreadStatus, needsYou: boolean,
   unread: boolean, preview, createdAt, lastActivityAt, snoozedUntil?,
   archivedAt? }
 ```
 
-- **Opening one.** The client connects to `rpcUrl` (a `wss://` URL served
-  by `tailscale serve` on that Mac, so only the tailnet reaches it) with
-  the token in `tokenFile`, exactly as to its own runner, and uses the
-  normal methods there for that thread: `threads.events`,
-  `threads.subscribe`, `threads.send`, `threads.update`,
-  `approvals.respond`, and so on. Paths in its events (images, blobs,
-  file links) are that Mac's: the client gets them with `files.read` on
-  that runner and keeps its own copy, passing `known` to check it's still
-  current. A link to a folder there answers `files.read` with `Not a file`,
-  and the client then browses it with `files.list`. A sidebar row's actions (archive, hibernate) don't need it open:
-  they connect the same way, and that connection closes a minute later
-  unless one of that runner's threads is on screen.
-- **The token goes to one host only.** The client proves it has the token
-  (Auth) rather than sending it, but it still only dials and proves to the
-  host it was told to by hand. `rpcUrl` comes from the backend,
-  and the owner key can rewrite any runner's (before runner keys, every
-  runner's key could; see Runner keys), so the client
-  sends the token only to the host (not the port) in a file beside it
-  (`<id>.host` next to `<id>.token`, the host and a newline, owner only),
-  copied in from that Mac with the token: `tb pair` there prints both. The
-  client never writes the file and never trusts the mirror's host on its
-  own, not even the first time. No `.host`, or one it can't read: it
-  doesn't dial, and says which file to make and that `tb pair` on that Mac
-  prints the line (it never suggests the mirror's host). An `rpcUrl`
-  naming another host isn't dialled either: the client says the address
-  changed (from which host to which) and that a real move means putting
-  the new host from `tb pair` in the `.host` file.
-- **New threads on another runner** are a `threads.create` on that
-  runner's connection, with its folder (a path on that Mac), account,
-  model and effort from that runner's `hello`.
-- **`sync.rpcUrl`** in a runner's `runner.json` is the URL it tells the
-  backend (in its heartbeat, API 12) for other Macs to reach it by.
+- **The direct link** (13 Nov 2026, gone). Until then the app could
+  also dial another Mac's runner over Tailscale, at the `sync.rpcUrl` it
+  sent in its heartbeat, with that runner's token copied in by hand
+  (`tb pair`, `secrets/runners/<id>.token` and `.host`). The runner no
+  longer sends `rpcUrl` or reads those files, and `tb pair` is gone. A
+  backend still takes `rpcUrl` in a heartbeat from an older runner, and
+  the runner drops it from what it hands the app.
 
 ## Other runners' threads through the backend
 
@@ -5384,10 +5357,8 @@ runner as a `commands` row, as the phone does. The app has no Convex of its
 own and no link to the other Mac; nothing reaches another runner but its
 commands. Only the owner key can do this (`convex/relay.ts`, all owner
 only in Runner keys), so it's the main Mac's runner that answers; a runner
-on a runner key answers `-32000` for another runner's thread. The direct
-link above stays beside it while this is new: the app uses it only with
-**Settings > Runners > Connect to other machines directly** on (off by
-default).
+on a runner key answers `-32000` for another runner's thread. This is the
+only way the app opens another runner's thread.
 
 - **Which threads.** A `THREAD_METHODS` request whose `threadId` isn't this
   runner's (nor a draining runner's) but is in its `remoteThreads` list.
@@ -5532,8 +5503,6 @@ default).
   download) still looks sent here. A backend before 61 would drop them and send the words
   alone, so this runner says the backend needs updating instead (it updates
   with the runner), and an offline runner is said before anything uploads.
-  The direct link sends no pictures yet: the app says to turn it off to send
-  them through Convex.
 - **Reply buttons and slash commands** (backend API 68, 9 Nov 2026).
   `buttons.list` answers from the thread's rows' `buttons` (Sync, "Reply
   buttons"), newest state of each, oldest first, as a `ReplyButton` with
@@ -5556,7 +5525,7 @@ default).
 - **Everything else** about another runner's thread (editing a message,
   highlights, patches and panels, reviews, explain, hibernate-when, a
   sub-agent, ticking an ask, changing its login or model) is `-32000`
-  saying to do it on that Mac or turn the direct link on.
+  saying to do it on that Mac.
 
 ## Asking another runner
 
@@ -6606,7 +6575,7 @@ anyone's); "any runner" is any good key. Anything not sorted is owner only.
 | `removePocketCard` | its own | a card its runner filed |
 | `pocketCards` | its own | lists only the cards its runner filed; the owner sees all, with `filedBy` |
 | `setThreadIndex` | its own | `runnerId`; a new row for a thread another runner has or had is left out, so one thread id is one runner's |
-| `otherRunnersList` | owner only | other runners' `rpcUrl`s |
+| `otherRunnersList` | owner only | other runners' names, icons and when they were last heard |
 | `runnerOrder` | owner only | Mike's runner order, for the main Mac's Settings |
 | `setRunnerOrder` | owner only | a key that could move the order could put its own Mac first for Mike's phone's new threads |
 | `otherRunnersThreads` | owner only | other runners' sidebars |

@@ -127,7 +127,6 @@ extension AppModel {
         thread.runnerId = moving.to == selfId ? nil : moving.to
         thread.moving = nil
         if thread.runnerId != nil { madeRemote.insert(threadId) }
-        liveRemote.remove(threadId)
         if let session = sessions.removeValue(forKey: threadId) { session.unsubscribe() }
         threads[threadId] = thread
         return true

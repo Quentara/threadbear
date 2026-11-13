@@ -11,9 +11,8 @@
 // until its row says where it works, so leaving one out is a choice, with
 // its reason written down.
 //
-// The relay half is what another runner's thread can do from the Mac with
-// the direct link off (the default); with it on, the app talks to that
-// runner itself and everything works. docs/parity.md is made from this
+// The relay half is what another runner's thread can do from the Mac, which
+// opens it through its own runner and Convex. docs/parity.md is made from this
 // (npm run parity-docs).
 
 export type Where = 'yes' | { no: string };
@@ -72,10 +71,8 @@ export function parityDoc(): string {
     "thread request has no row, so a feature can't go missing on another Mac or the phone",
     'without someone deciding it should.',
     '',
-    '"Another Mac" is a thread on another runner opened in the Mac app through Convex, the',
-    'default. With Settings > Runners > Connect to other machines directly on, the app talks',
-    'to that runner itself and everything works. "Phone and web" is the iPhone app and the',
-    'website, which read every thread through Convex.',
+    '"Another Mac" is a thread on another runner opened in the Mac app through Convex. "Phone',
+    'and web" is the iPhone app and the website, which read every thread through Convex.',
     '',
     '| What | Request | Another Mac | Phone and web |',
     '|---|---|---|---|',

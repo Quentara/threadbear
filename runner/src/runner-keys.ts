@@ -2,7 +2,7 @@
 // Mac, whose secrets/convex-key is the owner key, makes a key for one other
 // runner. That key acts as its runner alone on the backend, so a second Mac
 // no longer holds a copy of the key that can do everything. Straight to the
-// backend over HTTP, like tb pair it needs no runner.
+// backend over HTTP, so it needs no runner.
 //
 // The plain key is never printed (an agent running tb would have it in its
 // transcript, and a thread's transcript can command agents): it goes over

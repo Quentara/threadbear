@@ -5,10 +5,8 @@ Made from `runner/src/parity.ts` by `npm run parity-docs` in `runner/`; edit tha
 thread request has no row, so a feature can't go missing on another Mac or the phone
 without someone deciding it should.
 
-"Another Mac" is a thread on another runner opened in the Mac app through Convex, the
-default. With Settings > Runners > Connect to other machines directly on, the app talks
-to that runner itself and everything works. "Phone and web" is the iPhone app and the
-website, which read every thread through Convex.
+"Another Mac" is a thread on another runner opened in the Mac app through Convex. "Phone
+and web" is the iPhone app and the website, which read every thread through Convex.
 
 | What | Request | Another Mac | Phone and web |
 |---|---|---|---|

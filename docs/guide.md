@@ -958,11 +958,7 @@ same way: `list_threads` lists and searches them (each row says which Mac),
 snooze or archive them. A Mac that's off shows
 its threads but can't take a message until it's back. Its archived
 threads are in your Archived list with the rest, to reopen or unarchive.
-Settings > Runners > Connect to other machines directly opens them over
-Tailscale instead, with
-everything, as before: that needs that Mac to be on and its key and host
-copied to this one (run `tb pair` on that Mac and it prints the two files
-to make here and how). To add a Mac, give it a key of its own from this one: `tb runner
+To add a Mac, give it a key of its own from this one: `tb runner
 add <name> --ssh <that Mac>` writes it there, and its runner uses it from
 its next restart. Set that Mac up with `./threadbear setup --existing`, which
 leaves out the Convex login and deploy key (either could do anything to your
@@ -998,15 +994,13 @@ Start it sends the request back for the agent to ask again with one that
 is. The new thread is told which thread asked, and can
 message it back. Agents on this Mac start threads on the other Macs
 without asking.
-With the direct link on, its pictures and files come from that Mac as you open them, but
-pictures can't go to it from here yet: turn the direct link off to send them. To start a
-thread on another Mac, pick it with the machine chip on the composer: the
+To start a thread on another Mac, pick it with the machine chip on the composer: the
 folder, account and model are then that Mac's. New threads start on the
 starred one: change it under Default in that chip's menu, or in
 Settings > Runners, which also lists your runners and whether they're
 online, in your order: drag one to change it. The
 phone has the same order, and a new thread from it starts on the first
-runner that's online in it. Adding, renaming or pairing a runner is done on its own machine,
+runner that's online in it. Adding or renaming a runner is done on its own machine,
 so ask an agent to do it for you. Schedules need your
 Convex backend: with no internet, they wait.
 

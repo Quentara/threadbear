@@ -1098,7 +1098,7 @@ export class Relay {
 
   private unsupported(w: Watch | undefined, what: string): never {
     const name = w ? this.runnerName(w.runnerId) : 'the other runner';
-    throw new RpcError(ErrorCode.other, `${what} isn't possible through Convex yet. Do it on ${name}, or turn on Connect to other machines directly in Settings > Runners.`);
+    throw new RpcError(ErrorCode.other, `${what} isn't possible through Convex yet. Do it on ${name}.`);
   }
 
   /** A thread method about another runner's thread (rpc.ts THREAD_METHODS). */

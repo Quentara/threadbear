@@ -119,8 +119,8 @@ you go.
 - [x] Another Mac's pictures in a transcript stay blank (`transcript.images`).
   In since 12 Nov they're asked of the runner and say "Couldn't get it from
   bruce" (why, on hover), never showing a file of this Mac's at that path.
-  Seeing them waits for connecting to other machines directly, which this
-  app doesn't do yet: through Convex they stay on their Mac
+  Through Convex they stay on their Mac (the direct link that showed them
+  in the Swift app was taken out on 13 Nov)
 
 ### Smaller things
 - [ ] The offer to continue a refused turn sits at the top, not just above the
@@ -132,11 +132,7 @@ you go.
   `rail.originbadge`)
 - [x] Settings > Runners, Devices and Keyboard are placeholders (the Keyboard
   file is picked up live if edited by hand) (`settings.runners`,
-  `settings.devices`, `settings.keyboard`). In since 11 Nov, but for
-  Runners' Connect to other machines directly, as this app has no direct
-  link yet
-- [ ] Connect to other machines directly: other runners' threads only come
-  through Convex here (`settings.runners`, `remote.rs`)
+  `settings.devices`, `settings.keyboard`). In since 11 Nov
 - [ ] Help's two items, the tour and Finish Setting Up, are stubs that say
   so (`menu.help`, `tour.firstrun`, `tour.setup`). About's window, the
   Edit menu, File > Close, the Window menu's Zoom, Bring All to Front and

@@ -215,16 +215,12 @@ Normal thread control uses Convex; steps 4 and 8 are only for direct access.
    `sync.name` (what the sidebar calls this machine). Then, on the first Mac,
    run `tb runner add <name> --ssh <user@server>`. It writes the backend URL,
    a runner id and a separate runner key to this server. Never copy the Mac's
-   main key or deploy key. Add `sync.rpcUrl` (`wss://<tailnet name>:8798/rpc`)
-   only when setting up the direct Tailscale connection in step 8.
+   main key or deploy key.
 7. **Install:** `runner/scripts/install-runner.sh`. On Linux it writes a
    systemd user service, `~/.config/systemd/user/com.mikerosoft.threadbear.runner.service`,
    in place of the LaunchAgent. Turn on lingering once, or it stops when
    nobody is logged in: `sudo loginctl enable-linger $USER`.
-8. **Direct access from the Mac (optional):** `sudo tailscale serve --bg --https=8798
-   http://127.0.0.1:8797` here, then `tb pair` here prints the two files to
-   copy to the Mac.
-9. **Updates:** the runner follows its checkout's `main` like the Mac's
+8. **Updates:** the runner follows its checkout's `main` like the Mac's
    does, so keep that checkout pulling theirs: a systemd user timer that runs
    `git -C <checkout> pull --ff-only` every few minutes.
 

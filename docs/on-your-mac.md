@@ -141,17 +141,7 @@ File references are where to look.
   others;
   `convex-key` is this Mac's key for your Convex backend (the deployment's
   `RUNNER_KEY` on your first Mac, a runner key of its own on any other);
-  `runners/<id>.token` is another Mac's runner token, if you copied one
-  in (only for Settings > Runners > Connect to other machines directly;
-  by default another Mac's threads come through your Convex backend, read
-  by your first Mac's runner while one is open, and nothing connects to
-  that Mac), and `runners/<id>.host` beside it, which you copy in too (`tb pair`
-  on that Mac prints both): the only host the app sends that token to.
-  The app only reads these, and proves it has the token rather than
-  sending it (docs/protocol.md, "Auth"); with no `.host` it dials nowhere;
   `~/Library/Caches/Threadbear/update`;
-  `~/Library/Caches/Threadbear/remote` (copies of pictures and files from
-  threads on your other Macs, at most 512 MB, unused ones go after 30 days);
   `~/Library/Caches/Threadbear/drags` (a copy of a video you drag out of the
   side pane, so what you drop it on gets the file you were watching; a
   clone that takes no space where the disk can make one, cleared after a

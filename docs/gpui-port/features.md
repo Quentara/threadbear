@@ -373,7 +373,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `settings.general` | General | Appearance, ding with sound and volume, default folder, activity log, Updates from Mike | gpui-kit form, but GPUI has no sound API, so the ding needs an audio crate or code on macOS, Windows and Linux. | shim | M | `SettingsView`, `DingPlayer`, `CompletionSound` |
 | `settings.models` | Models | Small-jobs pool, private folders | gpui-kit form and GPUI path prompts. | kit | S | `SettingsView` |
 | `settings.pools` | Pools | List, rename, order, icon, logins, folders | Drawn, with `foundation.reorder`. | build | L | `SettingsView`, `PoolsModel` |
-| `settings.runners` | Runners | Reorder, default, direct connect | Drawn, with `foundation.reorder`. | build | S | `RunnersSettings` |
+| `settings.runners` | Runners | Reorder, default | Drawn, with `foundation.reorder`. | build | S | `RunnersSettings` |
 | `settings.devices` | Phone & browser | QR code, paired list, Revoke, Open signed in | Drawn, with a QR crate. | build | M | `DevicesSettings`, `DevicesModel` |
 | `settings.keyboard` | Keyboard | Rebinding, conflicts, Reset | Drawn capture field over GPUI key bindings, reading our own shortcut list. | build | M | `KeyboardSettings`, `AppShortcuts`, `Shortcuts` |
 | `settings.instructions` | Instructions | Standing instructions, Use These, Clear | `Textarea`. | kit | S | `InstructionsSettings`, `InstructionsModel` |

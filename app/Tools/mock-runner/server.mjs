@@ -350,11 +350,11 @@ applyScriptedThreads();
 const SELF_RUNNER = { id: 'runner_mock', name: 'm5', icon: 'laptopcomputer', self: true };
 const runners = [SELF_RUNNER, { id: 'runner_bruce', name: 'bruce', icon: 'macmini', self: false }];
 // Bruce's own threads (docs/protocol.md, "Other runners' threads"). This
-// mock plays bruce too, on /bruce/rpc with the same token: its threads sit
-// in `threads` marked with `runnerId`, and only a client connected as
-// bruce lists them, gets their events or can act on them. A client of this
-// runner hears of them through remoteThreads.list and remoteThreads.updated,
-// as the real runner passes on what the backend has.
+// mock plays bruce's side of the backend too: its threads sit in `threads`
+// marked with `runnerId`, and a request about one is answered as bruce
+// (`as`, in handle). A client of this runner hears of them through
+// remoteThreads.list and remoteThreads.updated, as the real runner passes
+// on what the backend has.
 const BRUCE = 'runner_bruce';
 // Mike's runner order (backend API 58), every runner's id: set with
 // runners.setOrder and said back in remoteThreads.updated, as the real
@@ -368,9 +368,9 @@ const MORE_RUNNERS = process.env.MOCK_MORE_RUNNERS ? [
   { id: 'runner_pixel', name: 'Pixel', icon: 'smartphone', online: true, lastSeenAt: new Date().toISOString() },
 ] : [];
 let runnerOrder = ['runner_mock', BRUCE, ...MORE_RUNNERS.map((r) => r.id)];
-// Files on bruce's Mac that its threads name, for files.read from
-// /bruce/rpc (docs/protocol.md, "Other runners' threads"): the picture is a
-// real PNG, the rest text. None of these paths exist on this Mac.
+// Files on bruce's Mac that its threads name (docs/protocol.md, "Other
+// runners' threads"): the picture is a real PNG, the rest text. None of
+// these paths exist on this Mac.
 const BRUCE_FILES = {
   picture: '/Users/bruce/Library/Application Support/Threadbear/media/backblaze.png',
   list: '/Volumes/CannMedia/duplicates.txt',
@@ -420,14 +420,6 @@ const token = crypto.randomBytes(24).toString('hex');
 fs.mkdirSync(path.join(dataDir, 'secrets'), { recursive: true });
 fs.mkdirSync(path.join(dataDir, 'inbox'), { recursive: true });
 fs.writeFileSync(path.join(dataDir, 'secrets/runner-token'), token + '\n', { mode: 0o600 });
-// Bruce's token, where the real runner keeps another runner's once it's
-// been copied in (secrets/runners/<id>.token). Bruce is this mock, so it's
-// the same token.
-fs.mkdirSync(path.join(dataDir, 'secrets/runners'), { recursive: true });
-fs.writeFileSync(path.join(dataDir, `secrets/runners/${BRUCE}.token`), token + '\n', { mode: 0o600 });
-// And the host beside it, as `tb pair` on Bruce says to copy: the app sends
-// the token nowhere without one (RunnerHostPin). Its rpcUrl is 127.0.0.1.
-fs.writeFileSync(path.join(dataDir, `secrets/runners/${BRUCE}.host`), '127.0.0.1\n', { mode: 0o600 });
 
 // What `hello` and `runner.status` report. mock.restart bumps the version,
 // as a deploy would, so the app's "Runner restarted" note has two to name.
@@ -454,7 +446,7 @@ let wss = listen(Number(args.port ?? 0));
 // The WebSocket server, on its own so mock.restart can close it and listen
 // again on the same port, the way the real runner goes away and comes back.
 function listen(port) {
-  // No `path`: /rpc is this runner and /bruce/rpc is bruce (onConnection).
+  // No `path`: onConnection turns away anything but /rpc itself.
   const server = new WebSocketServer({ host: '127.0.0.1', port, maxPayload: 64 * 1024 * 1024 });
   server.on('listening', () => {
     const { port } = server.address();
@@ -477,10 +469,11 @@ function listen(port) {
 
 function onConnection(ws, request) {
   const where = (request.url ?? '').split('?')[0];
-  if (where !== '/rpc' && where !== '/bruce/rpc') return ws.close(4404, 'not found');
+  if (where !== '/rpc') return ws.close(4404, 'not found');
   const header = request.headers['authorization'] ?? '';
-  // `as` is whose threads it sees: this runner's (null) or bruce's.
-  const client = { ws, subs: new Set(), authed: header === `Bearer ${token}`, as: where === '/bruce/rpc' ? BRUCE : null };
+  // `as` is whose threads it sees: this runner's (null). handle() answers
+  // a request about one of bruce's as bruce (BRUCE), as the backend would.
+  const client = { ws, subs: new Set(), authed: header === `Bearer ${token}`, as: null };
   clients.add(client);
   ws.on('close', () => clients.delete(client));
   // The real runner's auth challenge (docs/protocol.md, "Auth"), for a
@@ -738,8 +731,8 @@ async function dispatch(client, method, p) {
         permissionMode: p.permissionMode ?? 'full', status: 'starting', live: true, needsYou: false,
         createdAt: now, updatedAt: now, lastActivityAt: now, preview: '', lastSeq: 0, lastSeenSeq: 0,
       };
-      // Made over /bruce/rpc, it's bruce's: only bruce's clients hear of
-      // it, and this runner's through remoteThreads.updated.
+      // Made for bruce (threads.create with its runnerId), it's bruce's:
+      // this runner's clients hear of it through remoteThreads.updated.
       // `fresh`: started this session, so the librarian files it after its first turn
       // (librarianFiles). The demo fixtures never are, so nothing they show changes.
       threads.set(threadId, { summary, events: [], inProgress: new Map(), timers: [], fresh: true, ...(client.as ? { runnerId: client.as } : {}) });
@@ -2440,13 +2433,10 @@ function ownerOf(threadId) {
   return threads.get(threadId)?.runnerId ?? null;
 }
 
-// What remoteThreads.list answers this runner's clients: bruce, online and
-// reachable at this mock's own /bruce/rpc with a token copied in, and its
-// threads as the backend's sidebar table has them. Bruce's own clients
-// see no others.
+// What remoteThreads.list answers this runner's clients: bruce, online,
+// and its threads as the backend's sidebar table has them.
 function remoteThreads(client) {
   if (client.as) return { runners: [], threads: [] };
-  const { port } = wss.address();
   const bruce = runners.find((r) => r.id === BRUCE);
   const rows = [...threads.values()].filter((t) => t.runnerId === BRUCE).map(({ summary: s }) => ({
     runnerId: BRUCE, threadId: s.id, title: s.title, cwd: s.cwd, accountId: s.accountId, provider: s.provider,
@@ -2459,7 +2449,6 @@ function remoteThreads(client) {
   return {
     runners: [{
       id: BRUCE, name: bruce.name, icon: bruce.icon, online: true, lastSeenAt: iso(),
-      rpcUrl: `ws://127.0.0.1:${port}/bruce/rpc`, tokenFile: path.join(dataDir, `secrets/runners/${BRUCE}.token`),
     }, ...MORE_RUNNERS],
     threads: rows,
     order: runnerOrder,

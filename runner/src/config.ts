@@ -139,7 +139,7 @@ export type Config = {
   // THREADBEAR_SYNC=off turns it off for tests and dev runners.
   // urlRefused: why the configured url isn't used (plain http off this
   // Mac, secure-url.ts), so sync is off and tb status says why.
-  sync: { enabled: boolean; url?: string; urlRefused?: string; site?: string; name?: string; runnerId?: string; icon?: string; rpcUrl?: string; pastedPictures?: boolean; full?: boolean };
+  sync: { enabled: boolean; url?: string; urlRefused?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean };
   // The silent on-device secret check (src/secret-check.ts): off unless asked.
   secretCheck?: boolean;
   // Mike's Connectors gateway's base URL (connectors.ts), for the app's
@@ -213,12 +213,12 @@ export type RunnerJson = {
   releases?: { publish?: boolean; signingKey?: string; signingProvider?: string; bringIn?: number | 'important' | 'off' };
   models?: { pool?: string | null; privateFolders?: string[] };
   // icon: an SF Symbol for this runner in lists (machine.ts works one out).
-  // rpcUrl: how a Mac app reaches this runner over the tailnet (step 6 part 2).
+  // An rpcUrl left from the direct link between Macs (gone 13 Nov 2026) is ignored.
   // full: true sends tool output to your Convex deployment as well, scrubbed first
   // (docs/full-convex.md). Off unless you say so.
   // pastedPictures: false keeps pictures you paste off your Convex deployment
   // (docs/on-your-mac.md).
-  sync?: { enabled?: boolean; url?: string; site?: string; name?: string; runnerId?: string; icon?: string; rpcUrl?: string; pastedPictures?: boolean; full?: boolean };
+  sync?: { enabled?: boolean; url?: string; site?: string; name?: string; runnerId?: string; icon?: string; pastedPictures?: boolean; full?: boolean };
   secretCheck?: { enabled?: boolean };
   // Days after a thread is archived that housekeeping clears its pictures
   // (housekeeping.ts). Absent: they're kept. Mike's runners set 30.
@@ -497,8 +497,6 @@ function syncConfig(raw: RunnerJson['sync'], env: NodeJS.ProcessEnv): Config['sy
   if (runnerId) out.runnerId = runnerId;
   const icon = nonEmpty(raw?.icon);
   if (icon) out.icon = icon;
-  const rpcUrl = nonEmpty(raw?.rpcUrl);
-  if (rpcUrl) out.rpcUrl = rpcUrl;
   if (raw?.pastedPictures === false) out.pastedPictures = false;
   if (raw?.full === true) out.full = true;
   return out;

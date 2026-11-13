@@ -1430,8 +1430,8 @@ Fixes from Codex's review of the slice before:
   bruce with the reason on hover and a click to ask again, or On bruce for
   one too big to send whole. Through Convex the runner sends no pictures and
   refuses the read, and now so does the mock (its bruce threads are the only
-  ones that name a picture), so they say Couldn't get it until this app
-  connects to other machines directly.
+  ones that name a picture), so they say Couldn't get it. The direct link
+  that showed them in the Swift app was taken out of both on 13 Nov.
 - Rows under a section that folds or unfolds don't glide any more (the
   rows' glide from 11 Nov): the fold moves them as it eases, and a fold with
   no easing (a script's, or folds from elsewhere) puts them in place at once,
@@ -2360,8 +2360,9 @@ Fixes from Codex's review of the slice before:
   the runners in Mike's order, each with its icon, name, the star where new
   threads start and how it is (This Mac, Online, Offline), dragged by the
   row onto another's place to change the order, saved for the phone too
-  (`runners.setOrder`) and shown at once, as the Runners panel's cards are;
-  then Other machines' threads, saying how they come.
+  (`runners.setOrder`) and shown at once, as the Runners panel's cards are.
+  Other machines' threads and its Connect to other machines directly switch
+  went from both apps on 13 Nov, with the direct link.
 - Phone & browser: Add a phone or browser (Add a browser for a backend on
   this Mac only, with why a phone can't pair, and the bell's line for a
   self-hosted one). Show the code… spins until the runner answers, then puts
@@ -2395,9 +2396,7 @@ Fixes from Codex's review of the slice before:
   (`settings_window.rs`'s `section`, `row_with`, and Pools' `group`).
 - Fixed in the Swift app as well: a revoke the backend refused showed its
   reason only until the list came back a moment later; both apps keep it.
-- Not the same yet: Connect to other machines directly is there but greyed,
-  with a tip saying why, as this app has no direct link (its other runners'
-  threads come through Convex). The list's rows don't slide round the one
+- Not the same yet: the list's rows don't slide round the one
   being dragged: the slot it'd take is dashed, as on the Runners panel. The
   Swift list has Quit and Collapse Threads too: Quit's ⌘Q is fixed here, as
   this app's menu has it, and there's no Collapse Threads yet, so the page
@@ -3468,9 +3467,7 @@ Fixes from Codex's review of the slice before:
 - Not here: the app's own update (the Swift app's AppUpdater section and the
   icon's right-click popover), as this app doesn't build and swap itself in
   yet, so its App section says how a new build goes in; Setup's button, which
-  comes with `tour.setup`; the tour's intros for these panels; and "Not paired
-  with this Mac", as this app reaches other Macs' threads only through Convex
-  so far.
+  comes with `tour.setup`; and the tour's intros for these panels.
 - Both apps' dumps give each panel's lines and whether it's on show
   (`runners`, `updates`, `connectors`) and the rail buttons' `quietDot`. The
   GPUI app takes the Swift app's `runners`, `updates` and `connectors`
@@ -4041,8 +4038,8 @@ Fixes from Codex's review of the slice before:
 
 - Rows from `remoteThreads.list`/`remoteThreads.updated` sit beside this Mac's,
   with the machine's icon in the tile and "On bruce" (faded when offline); opening
-  one reads its events and sends through this Mac's runner, the app's default way
-  in (the direct link's own connections aren't ported, `directRemoteLink`).
+  one reads its events and sends through this Mac's runner, the only way
+  in since the direct link went on 13 Nov.
   The box on such a thread leads with its machine's chip; a thread's logins and
   folders are that runner's once they've come (`remoteThreads.logins`), as is the
   draft's. The new-thread box has the Runs on chip: this Mac, each runner, the star

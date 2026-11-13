@@ -91,9 +91,7 @@ impl SettingsWindow {
         let order = t.runners_panel.order.clone();
         let default = t.new_thread.prefs.remembered.default_runner.clone();
         let orderable = rules::can_order(order.is_some(), &others, &t.remote.all_runners);
-        // The direct link isn't in this app: other machines' threads come
-        // through Convex, so nothing waits on a token being copied in.
-        let rows = rules::settings_rows(this_mac.as_ref(), &others, order.as_deref(), default.as_deref(), orderable, false);
+        let rows = rules::settings_rows(this_mac.as_ref(), &others, order.as_deref(), default.as_deref(), orderable);
         let mut choices = vec![(None, "This Mac".to_owned(), t.self_runner_symbol())];
         choices.extend(others.iter().map(|r| (Some(r.id.clone()), r.name.clone(), icons::runner_symbol(r.icon.as_deref()))));
         Some(Shown { rows, orderable, default, choices })
@@ -119,16 +117,6 @@ impl SettingsWindow {
             sections.push(section("settings-runners", "Runners", rules::runners_about(false), rules::RUNNERS_ASK, rows, cx));
         }
 
-        // How other machines' threads get here.
-        let tip = "This app opens other machines' threads through Convex for now. Connecting directly is in the Swift app.";
-        let switch = div()
-            .id("settings-direct-link-holder")
-            .test_support()
-            .aria_label(tip)
-            .tip(tip)
-            .flex_none()
-            .child(crate::mac_switch::MacSwitch::new("settings-direct-link", false).disabled(true));
-        sections.push(section("settings-other-machines", "Other machines' threads", rules::OTHERS_ABOUT, rules::OTHERS_ASK, vec![row("Connect to other machines directly", switch, cx)], cx));
         sections
     }
 

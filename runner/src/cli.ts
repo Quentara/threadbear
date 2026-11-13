@@ -19,7 +19,6 @@ import { checkoutTop, land, landTargetFromGit, realpath, type LandTarget } from 
 import { landRefusal } from './follow-origin.ts';
 import { landHold } from './land-gate.ts';
 import { activityCommand } from './activity.ts';
-import { pairCommand } from './pair.ts';
 import { runnerKeysCommand } from './runner-keys.ts';
 import { pickRunner } from './moves.ts';
 
@@ -151,8 +150,6 @@ const HELP = `tb: talk to the Threadbear runner
                                   marked "# tb land: hold while red" holds the landings it
                                   would run for while it's red on main; --despite-red
                                   lands anyway, for the fix
-  tb pair                         what to copy to another Mac (this runner's token file and
-                                  host) so its app can open this Mac's threads
   tb runner add <name> (--ssh <host> | --out <file>) [--id <runnerId>]
                                   on the main Mac: a backend key for another runner that acts
                                   as that runner alone, written over ssh into its
@@ -217,7 +214,6 @@ const COMMAND_FLAGS: Record<string, string[]> = {
   export: ['out'],
   rpc: [],
   land: ['dry-run', 'despite-red'],
-  pair: [],
   runner: ['ssh', 'out', 'id', 'json', 'finish', 'replace', 'drop', 'snapshot', 'keys-checked', 'lock-out', 'purge'],
 };
 
@@ -283,17 +279,15 @@ async function main(argv: string[]): Promise<number> {
   if (cmd === 'activity') return activityCommand(cfg, values);
   // Works with no runner too: from any thread/ worktree, by git alone.
   if (cmd === 'land') return landCommand(cfg, Boolean(values['dry-run']), Boolean(values['despite-red']));
-  // tb pair and tb runner use this Mac's keys straight from disk, so the
-  // runner never sees them to refuse them (tb-connect.ts).
-  if (cmd === 'pair' || cmd === 'runner') {
+  // tb runner uses this Mac's keys straight from disk, so the runner never
+  // sees them to refuse them (tb-connect.ts).
+  if (cmd === 'runner') {
     const why = await ownerOnly(cfg);
     if (why) {
       console.error(why);
       return 1;
     }
   }
-  // Read from runner.json alone, on the Mac being paired.
-  if (cmd === 'pair') return pairCommand(cfg);
   // Straight to the backend with this Mac's key, so no runner needed either.
   if (cmd === 'runner') {
     const flags = { ...(typeof values.ssh === 'string' ? { ssh: values.ssh } : {}), ...(typeof values.out === 'string' ? { out: values.out } : {}), ...(typeof values.id === 'string' ? { id: values.id } : {}), json: Boolean(values.json), finish: Boolean(values.finish), replace: Boolean(values.replace), ...(Array.isArray(values.drop) ? { remove: values.drop as string[] } : {}), ...(typeof values.snapshot === 'string' ? { snapshot: values.snapshot } : {}), keysChecked: Boolean(values['keys-checked']), ...(Array.isArray(values['lock-out']) ? { lockOut: values['lock-out'] as string[] } : {}), purge: Boolean(values.purge) };

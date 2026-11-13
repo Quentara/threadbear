@@ -120,7 +120,6 @@ export type SyncConfig = {
   name?: string;
   runnerId?: string;
   icon?: string;
-  rpcUrl?: string;
   pastedPictures?: boolean;
   // Full sync (docs/full-convex.md step 4): tool output, input and diffs go up too.
   // Off unless it's asked for; off, nothing here writes eventBodies.
@@ -222,8 +221,7 @@ export const SCHEDULES_API_VERSION = 9;
 // From this one the heartbeat carries the runner's icon (machine.ts); an
 // older backend's validator would turn the heartbeat down.
 export const RUNNER_ICON_API_VERSION = 11;
-// From this one there's the sidebar table (thread-index.ts) and the
-// heartbeat carries rpcUrl (step 6 part 2).
+// From this one there's the sidebar table (thread-index.ts).
 export const THREAD_INDEX_API_VERSION = 12;
 // From this one a thread's row carries `woke` (back from hibernating, not
 // opened yet), for the phone's "Woke up". An older backend's validator
@@ -3736,7 +3734,6 @@ export class ConvexSync {
       draining: false,
       threadCount: this.deps.runner.list(ALL).length,
       ...(this.deps.config.icon && (this.backendApiVersion ?? 0) >= RUNNER_ICON_API_VERSION ? { icon: this.deps.config.icon } : {}),
-      ...(this.deps.config.rpcUrl && (this.backendApiVersion ?? 0) >= THREAD_INDEX_API_VERSION ? { rpcUrl: this.deps.config.rpcUrl } : {}),
       ...(this.stats?.pressure && (this.backendApiVersion ?? 0) >= RUNNER_STATS_API_VERSION ? { pressure: this.stats.pressure } : {}),
       ...followProblem,
     };

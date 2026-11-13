@@ -14,9 +14,6 @@ pub struct RemoteRunner {
     pub name: String,
     pub icon: Option<String>,
     pub online: bool,
-    /// Where this Mac keeps that runner's token, once one's been copied in
-    /// (`tb pair`): what a direct connection to it needs (Settings › Runners).
-    pub token_file: Option<String>,
 }
 
 /// `RemoteThreads`: what the sidebar shows of the other runners.
@@ -33,8 +30,7 @@ impl RemoteRunner {
     fn decode(v: &Value) -> Option<RemoteRunner> {
         let id = v["id"].as_str().filter(|s| !s.is_empty())?.to_owned();
         let name = v["name"].as_str().filter(|s| !s.is_empty()).unwrap_or(&id).to_owned();
-        let token_file = v["tokenFile"].as_str().filter(|s| !s.is_empty()).map(str::to_owned);
-        Some(RemoteRunner { name, icon: v["icon"].as_str().filter(|s| !s.is_empty()).map(str::to_owned), online: v["online"].as_bool().unwrap_or(false), token_file, id })
+        Some(RemoteRunner { name, icon: v["icon"].as_str().filter(|s| !s.is_empty()).map(str::to_owned), online: v["online"].as_bool().unwrap_or(false), id })
     }
 }
 

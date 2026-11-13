@@ -9,8 +9,6 @@
 // preview line and the last activity time go up with it but never cause a
 // write by themselves: they move all through a turn, and a write is what
 // re-runs every watching query.
-import fs from 'node:fs';
-import path from 'node:path';
 import type { Clock, TimerHandle } from './clock.ts';
 import type { Logger } from './log.ts';
 import type { ThreadSummary } from './protocol.ts';
@@ -41,7 +39,7 @@ export type IndexRow = {
 };
 
 // What the Mac app gets (docs/protocol.md, "Other runners' threads").
-export type RemoteRunner = { id: string; name: string; icon?: string; online: boolean; lastSeenAt: string; rpcUrl?: string; tokenFile?: string; followProblem?: string };
+export type RemoteRunner = { id: string; name: string; icon?: string; online: boolean; lastSeenAt: string; followProblem?: string };
 // `moving`: set by the main Mac's runner for a move it knows of (main.ts
 // remoteMoving), never by the backend's rows.
 export type RemoteThread = IndexRow & { runnerId: string; moving?: import('./moves.ts').ThreadMoving };
@@ -49,7 +47,7 @@ export type RemoteThread = IndexRow & { runnerId: string; moving?: import('./mov
 // one's too, for the app's Settings > Runners. Left out before it's heard.
 export type RemoteThreads = { runners: RemoteRunner[]; threads: RemoteThread[]; order?: string[] };
 
-type RawRunner = { runnerId: string; name: string; icon?: string; lastSeenAt: number; rpcUrl?: string; followProblem?: string };
+type RawRunner = { runnerId: string; name: string; icon?: string; lastSeenAt: number; followProblem?: string };
 type SinceRow = RemoteThread & { updatedMs?: number; deleted?: boolean };
 
 const FLUSH_MS = 1000;
@@ -100,12 +98,6 @@ export function toIndexRow(t: ThreadSummary, withStartedBy = true, withStars = t
 function writeKey(r: IndexRow): string {
   const { preview: _p, lastActivityAt: _l, ...rest } = r;
   return digest(JSON.stringify(rest));
-}
-
-// Where another runner's token goes on this Mac, copied in once, so the app
-// can open its threads (`tokenFile` on RemoteRunner).
-export function runnerTokenFile(home: string, runnerId: string): string {
-  return path.join(home, 'secrets', 'runners', `${runnerId}.token`);
 }
 
 export class ThreadIndex {
@@ -245,7 +237,7 @@ export class ThreadIndex {
       this.appGoneAt = undefined;
       this.watch();
     }
-    return this.withTokens(this.remote);
+    return this.remote;
   }
 
   /** Whether the list has had an answer (or a refusal) to give, for a caller that can wait a moment for one. */
@@ -304,7 +296,7 @@ export class ThreadIndex {
       (v) => {
         this.order = Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
         this.remote = { ...this.remote, order: this.order };
-        this.deps.publish?.({ method: 'remoteThreads.updated', params: this.withTokens(this.remote) });
+        this.deps.publish?.({ method: 'remoteThreads.updated', params: this.remote });
       },
       (e) => this.deps.log.warn('the runner order subscription failed', { error: String(e) }),
     );
@@ -527,7 +519,6 @@ export class ThreadIndex {
           ...(r.icon ? { icon: r.icon } : {}),
           online: now - r.lastSeenAt < ONLINE_MS,
           lastSeenAt: new Date(r.lastSeenAt).toISOString(),
-          ...(r.rpcUrl ? { rpcUrl: r.rpcUrl } : {}),
           ...(r.followProblem ? { followProblem: r.followProblem } : {}),
         })),
       // Only ids of a thread id's shape reach the apps and the agent tools
@@ -536,18 +527,6 @@ export class ThreadIndex {
       threads: (value?.threads ?? []).filter((t) => isThreadIdShape(t?.threadId)),
       ...(this.order ? { order: this.order } : {}),
     };
-    this.deps.publish?.({ method: 'remoteThreads.updated', params: this.withTokens(this.remote) });
-  }
-
-  // The token file is named only when it's there: no file, no way in.
-  private withTokens(r: RemoteThreads): RemoteThreads {
-    return {
-      ...r,
-      threads: r.threads,
-      runners: r.runners.map((x) => {
-        const file = runnerTokenFile(this.deps.home, x.id);
-        return fs.existsSync(file) ? { ...x, tokenFile: file } : x;
-      }),
-    };
+    this.deps.publish?.({ method: 'remoteThreads.updated', params: this.remote });
   }
 }

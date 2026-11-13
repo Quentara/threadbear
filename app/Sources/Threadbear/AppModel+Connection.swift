@@ -81,11 +81,10 @@ extension AppModel {
                 loadConnectors()
                 loadSettings()
                 loadStandingInstructions()
-                // Other runners' threads come back with their own connection.
-                for session in sessions.values where session.state == .loaded && !viaDirectLink(session.threadId) {
+                for session in sessions.values where session.state == .loaded {
                     await session.subscribe()
                 }
-                for session in sessions.values where session.state != .loaded && !viaDirectLink(session.threadId) {
+                for session in sessions.values where session.state != .loaded {
                     session.open(width: transcript.width > 0 ? transcript.width : transcript.currentTableWidth)
                 }
                 if let ref = subagentSelection {
@@ -98,7 +97,7 @@ extension AppModel {
                 // new client; only the loop that owns the client clears it.
                 guard self.client === client else { return }
                 self.client = nil
-                for session in sessions.values where !viaDirectLink(session.threadId) { session.connectionLost() }
+                for session in sessions.values { session.connectionLost() }
                 connection = .lost
                 updateRestart { $0.disconnected(now: Date()) }
                 AppLog.write("connection", "lost the connection to the runner")
@@ -132,11 +131,6 @@ extension AppModel {
         for await notification in client.notifications {
             switch notification {
             case .threadUpdated(let thread):
-                // Another runner's thread from this Mac's runner is the
-                // relay's (a share changing there), a summary from the
-                // sidebar's table: on the direct link its own runner's
-                // fuller one is what counts, card and seqs and all.
-                if directRemoteLink, threads[thread.id]?.isRemote == true { break }
                 receive(thread)
             case .threadEvent(let threadId, let event):
                 sessions[threadId]?.receive(event)
@@ -198,13 +192,6 @@ extension AppModel {
     func useClientForTesting(_ client: RPCClient) {
         self.client = client
         connection = .connected
-    }
-
-    /// And other runners' connections over fake ones.
-    func useRemoteClientsForTesting(_ clients: RemoteClients) {
-        remoteClients.closeAll()
-        remoteClients = clients
-        wireRemoteClients()
     }
 
     /// Tests feed it what the runner would: a notice, a status, a drop.
