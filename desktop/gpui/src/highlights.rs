@@ -223,6 +223,12 @@ pub(crate) struct SidePane {
     /// The chosen section per thread (`panelChoice`).
     pub(crate) chosen: HashMap<String, String>,
     pub(crate) previews: HashMap<String, PanePreview>,
+    /// Each thread's section and open file as last left, saved across
+    /// launches (pane_store.rs): a file comes back the first time its
+    /// thread shows after a restart.
+    places: HashMap<String, crate::pane_store::Place>,
+    /// Threads whose remembered file has had its one chance to come back.
+    restored: HashSet<String>,
     pub(crate) flags: HashMap<String, RowFlags>,
     /// Asks being ticked, by "<thread>/<seq>/<index>".
     ticking: HashSet<String>,
@@ -264,6 +270,8 @@ impl SidePane {
             collapsed: crate::highlights_store::load_collapsed(),
             chosen: HashMap::new(),
             previews: HashMap::new(),
+            places: crate::pane_store::load(),
+            restored: HashSet::new(),
             flags: HashMap::new(),
             ticking: HashSet::new(),
             projects: HashMap::new(),
@@ -281,6 +289,7 @@ impl SidePane {
             explain: Default::default(),
             _subs: vec![],
         };
+        pane.chosen = pane.places.iter().filter_map(|(id, p)| Some((id.clone(), p.section.clone()?))).collect();
         // The pane follows the window's model: what's selected, and each
         // summary's seq and highlight stamp for "fetch again".
         if let Some(app) = pane.app.upgrade() {
@@ -485,9 +494,45 @@ impl SidePane {
             self.previews.remove(thread_id);
         }
         self.chosen.insert(thread_id.to_owned(), id.to_owned());
+        self.remember(thread_id);
         self.menu = None;
         self.section_shown(id, thread_id, cx);
         cx.notify();
+    }
+
+    /// Saves where `thread_id`'s pane is, if that changed (pane_store.rs).
+    fn remember(&mut self, thread_id: &str) {
+        let preview = self.previews.get(thread_id);
+        // A web page only passes through on its way to the browser
+        // (`begin_preview`), so what was open before it stays remembered.
+        if preview.is_some_and(|p| matches!(p.target, Target::Page(_))) {
+            return;
+        }
+        let open = preview.map(|p| {
+            let (path, folder) = match &p.target {
+                Target::Folder(path) => (path.clone(), true),
+                Target::File(path) | Target::Page(path) => (path.clone(), false),
+            };
+            crate::pane_store::Open { path, folder, title: p.title.clone(), from: p.from.clone() }
+        });
+        let section = self.chosen.get(thread_id).cloned();
+        if self.places.get(thread_id).is_some_and(|p| p.section == section && p.open == open) {
+            return;
+        }
+        self.places.insert(thread_id.to_owned(), crate::pane_store::Place { section, open, at: crate::pane_store::now() });
+        crate::pane_store::save(&self.places);
+    }
+
+    /// The file the thread had open when the app last quit, opened again the
+    /// first time the thread shows. Once in a launch: anything done in the
+    /// pane since is what's remembered from then on.
+    fn restore_preview(&mut self, thread_id: &str, cx: &mut Context<Self>) {
+        if self.previews.contains_key(thread_id) || !self.restored.insert(thread_id.to_owned()) {
+            return;
+        }
+        let Some(open) = self.places.get(thread_id).and_then(|p| p.open.clone()) else { return };
+        let target = if open.folder { Target::Folder(open.path) } else { Target::File(open.path) };
+        self.show_preview(PanePreview::new(target, open.title, open.from), thread_id, cx);
     }
 
     pub(crate) fn section_shown(&mut self, id: &str, thread_id: &str, cx: &mut Context<Self>) {
@@ -499,6 +544,7 @@ impl SidePane {
     }
 
     fn file_shown(&mut self, thread_id: &str, cx: &mut Context<Self>) {
+        self.restore_preview(thread_id, cx);
         // The selected thread's current section may want fresh data.
         if let Some(section) = self.chosen.get(thread_id).cloned() {
             self.section_shown(&section, thread_id, cx);
@@ -592,6 +638,7 @@ impl SidePane {
         }
         self.chosen.entry(thread_id.to_owned()).or_insert_with(|| preview.from.clone());
         self.previews.insert(thread_id.to_owned(), preview);
+        self.remember(thread_id);
         self.menu = None;
         if let Some(thread) = self.thread(cx) {
             self.begin_preview(&thread, cx);
@@ -618,12 +665,14 @@ impl SidePane {
                 }
             }
         }
+        self.remember(thread_id);
         cx.notify();
     }
 
     pub(crate) fn close_preview(&mut self, thread_id: &str, cx: &mut Context<Self>) {
         self.leave_edit(thread_id, cx);
         self.previews.remove(thread_id);
+        self.remember(thread_id);
         cx.notify();
     }
 

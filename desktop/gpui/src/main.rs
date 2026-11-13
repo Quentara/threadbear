@@ -63,6 +63,7 @@ mod open_anything;
 mod open_gate;
 mod open_motion;
 mod pane_cache;
+mod pane_store;
 mod patch_icons;
 mod patches;
 mod pinned_panels;

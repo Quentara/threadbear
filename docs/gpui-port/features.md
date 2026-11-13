@@ -312,6 +312,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | ID | Feature | What it does | How in GPUI | Route | Size | Swift |
 |---|---|---|---|---|---|---|
 | `file.host` | Preview host | File or page replaces the panel, Back | Drawn pane state. | build | M | `PaneModel`, `HighlightsView` (`PreviewBody`) |
+| `file.restore` | Open file kept across restarts | The file or folder open in a thread's pane, and its section, come back after a relaunch | `pane_store.rs`, `desktop-pane.json` in the data folder. | build | S | none (GPUI only) |
 | `file.picture` | Picture view | Copy Image, drag out | Drawn image, with original bytes on the clipboard and drag out through `drag.fileout`. | build | S | `HighlightsView` (`FilePreviewView`) |
 | `file.video` | Video view | Plays in pane | On a Mac, AVKit's player over the pane (`media_view.rs`), as the Swift pane's: the web runtime's Chromium has no H.264. Windows and Linux open it in its app for now. | hard | L | `HighlightsView` (`FilePreviewView`) |
 | `file.quicklook` | Quick Look fallback | PDFs and anything else | On a Mac, PDFs in PDFKit's view over the pane (`media_view.rs`); everything else, and PDFs on Windows and Linux, opens in its default app under the same code-runner rule. | hard | L | `HighlightsView` (`QuickLookView`) |

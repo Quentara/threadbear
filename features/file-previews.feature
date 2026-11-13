@@ -14,6 +14,21 @@ Feature: Files opened in the side pane
     When I press Back in the pane
     Then the pane shows Highlights
 
+  # The Swift app is frozen (AGENTS.md, "The GPUI port"), so this is GPUI's only.
+  @file.restore @swift-pending
+  Scenario: A file open in the pane is open again after a relaunch, until Back closes it
+    When I open the thread "Rebuild the three landing pages"
+    And I click the highlight "copy-review.md"
+    Then the pane is showing the file "docs/copy-review.md"
+    When the app is quit and opened again
+    And I open the thread "Rebuild the three landing pages"
+    Then the pane is showing the file "docs/copy-review.md"
+    And the pane shows a "markdown" page with the words "Copy review: home, pricing, docs"
+    When I press Back in the pane
+    And the app is quit and opened again
+    And I open the thread "Rebuild the three landing pages"
+    Then the pane shows Highlights
+
   @file.markdown
   Scenario: A Markdown file is drawn as a page
     When I open the thread "Rebuild the three landing pages"

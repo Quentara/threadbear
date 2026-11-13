@@ -51,7 +51,8 @@ File references are where to look.
   does (its menu's Default) in `desktop-links.json` there, the side pane's
   folded headings in `desktop-highlights.json`, and how it shows files and
   folders (Preview or Markdown, list or icons, the sort, hidden files) in
-  `desktop-files.json`, and the deployment each Convex panel shows in
+  `desktop-files.json`, the section and file or folder each thread's pane
+  was left on (its last 300 threads) in `desktop-pane.json`, and the deployment each Convex panel shows in
   `desktop-web-panels.json`. Every file it writes there (those, and its
   drafts, review drafts, crash and hang records) is readable by your account
   only from the moment it's made (`desktop/core/src/private_file.rs`). Both apps claim `threadbear://` links (BrowserBear's
