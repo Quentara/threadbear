@@ -151,7 +151,7 @@ impl Threadbear {
         };
         let Some(panel) = panel else { return FRAMES.with(|f| f.borrow().get(target).copied()) };
         let controller = &self.dock.read(cx).controller;
-        if !controller.is_showing(panel) || controller.layout.is_floating(panel) || !self.panel_available(panel) {
+        if !controller.is_showing(panel) || controller.layout.is_floating(panel) || !self.panel_available(panel, cx) {
             return None;
         }
         let group = controller.layout.group_containing(panel)?;
