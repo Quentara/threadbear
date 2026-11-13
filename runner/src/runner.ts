@@ -2994,7 +2994,9 @@ export class Runner {
           rt.releaseWhenIdle = true;
           if (!rt.turn) this.releaseSession(st);
         });
-        if (sayNextTurn()) nextTurn.push(params.permissionMode === 'ask' ? 'Ask before edits' : params.permissionMode === 'auto' ? 'Auto' : params.permissionMode === 'plan' ? 'Plan first' : 'Full access');
+        // Full counts at once even on Codex: what the turn would ask, the
+        // runner answers itself (codex/approvals.ts, fullAccess).
+        if (sayNextTurn() && params.permissionMode !== 'full') nextTurn.push(params.permissionMode === 'ask' ? 'Ask before edits' : params.permissionMode === 'auto' ? 'Auto' : 'Plan first');
       }
     }
     if (nextTurn.length) {

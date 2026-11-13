@@ -481,6 +481,7 @@ export class CodexSession implements AgentSession {
       runsAsCode: (file) => runsAsCodeByName(file) || (opts.runsAsCode?.(file) ?? false),
       callTool: (params, o) => this.tools.call(params, o),
       now: this.now,
+      fullAccess: () => this.mode === 'full',
     });
     this.proc.onNotification = (method, params) => this.enqueue(() => this.route(method, params));
     this.proc.onRequest = (id, method, params) => this.enqueue(() => this.request(id, method, params));

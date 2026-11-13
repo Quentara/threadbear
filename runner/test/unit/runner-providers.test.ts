@@ -243,6 +243,11 @@ test('a Codex settings change during a turn says it applies from the next turn',
   );
   assert.deepEqual(s.modes, ['ask']);
   assert.deepEqual(s.models, ['gpt-6-luna']);
+  // Full counts at once: the runner answers what the turn asks.
+  const said = notes(h, thread.id).length;
+  h.runner.update({ threadId: thread.id, permissionMode: 'full' });
+  assert.equal(notes(h, thread.id).length, said, 'no "next turn" note for Full');
+  h.runner.update({ threadId: thread.id, permissionMode: 'ask' });
   // Between turns there's nothing to say.
   s.result();
   const before = notes(h, thread.id).length;
