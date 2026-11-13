@@ -504,9 +504,10 @@ test('snooze releases the CLI, hides the thread, and brings it back unread', asy
 
 // Archived while hibernating, it woke in the archive anyway: a "Woke up"
 // and an unread mark there, and any message it had queued started while it
-// was still archived (13 Nov 2026, the implicit state machines scan). It
-// keeps its hibernation for when it's brought back.
-test('a hibernating thread that is archived stays asleep in the archive, and wakes when brought back after its time', () => {
+// was still archived (13 Nov 2026, the implicit state machines scan). Its
+// hibernation now just ends there, quietly, so brought back it's in the
+// inbox, as it would have been.
+test('a hibernating thread that is archived stays quiet in the archive, and is in the inbox when brought back after its time', () => {
   const h = makeHarness();
   const { thread } = create(h);
   h.adapter.last.init();
@@ -520,9 +521,31 @@ test('a hibernating thread that is archived stays asleep in the archive, and wak
   assert.equal(t.needsYou, false);
   assert.ok(!h.events(thread.id).some((e) => e.type === 'system.note' && e.text.startsWith('Woke up')));
   assert.deepEqual(h.runner.list(['archived']).map((x) => x.id), [thread.id]);
+  assert.equal(h.runner.get(thread.id).snoozedUntil, undefined, 'its hibernation ended');
   h.runner.update({ threadId: thread.id, archived: false });
-  assert.match(h.events(thread.id).at(-1).text, /^Woke up after hibernating/);
   assert.deepEqual(h.runner.list().map((x) => x.id), [thread.id]);
+  assert.ok(!h.events(thread.id).some((e) => e.type === 'system.note' && e.text.startsWith('Woke up')));
+});
+
+// From Codex's review of that fix: skipping archived threads at start left
+// a hibernation in words that was still being worked out (its answer lost
+// with the old runner) with its year-9999 time for good, so bringing the
+// thread back left it asleep with nothing to wake it.
+test('an archived thread whose hibernation in words was cut short by a restart is in the inbox when brought back', () => {
+  const h = makeHarness();
+  const { thread } = create(h);
+  h.adapter.last.init();
+  h.adapter.last.result();
+  h.runner.update({ threadId: thread.id, archived: true });
+  const st = h.runner.threads.get(thread.id)!;
+  st.rec.snoozedUntil = '9999-01-01T00:00:00.000Z';
+  st.rec.wakeWhen = { said: 'when the build is done', pending: true } as never;
+  h.runner.markDirty(st);
+  h.runner.flush?.();
+  const again = h.restart();
+  again.runner.update({ threadId: thread.id, archived: false });
+  assert.deepEqual(again.runner.list().map((x) => x.id), [thread.id]);
+  assert.equal(again.runner.get(thread.id).snoozedUntil, undefined);
 });
 
 // Archived (or snoozed) during a turn with a message queued behind it: the

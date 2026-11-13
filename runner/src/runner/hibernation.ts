@@ -396,8 +396,6 @@ export const hibernationPart = {
   // this isn't the one it went to sleep on, or a wake-when whose answer was
   // lost with the old runner.
   wakesOnStart(this: Runner, rec: ThreadState['rec']): boolean {
-    // Archived while hibernating: it stays put away (armSnoozeTimer says why).
-    if (rec.archivedAt) return false;
     if (rec.wakeWhen?.pending) return true;
     if (!rec.snoozedUntilRestart) return false;
     return !rec.untilRelease || rec.untilRelease !== this.release;
@@ -410,12 +408,7 @@ export const hibernationPart = {
     const now = this.clock.now();
     let next = Infinity;
     for (const st of this.threads.values()) {
-      // An archived thread keeps its hibernation for when it's brought
-      // back (unarchiving looks again), but doesn't wake in the archive:
-      // that gave it a "Woke up" and an unread mark there, and started any
-      // message it had queued while still archived (13 Nov 2026, the
-      // implicit state machines scan).
-      if (!st.rec.snoozedUntil || st.rec.archivedAt) continue;
+      if (!st.rec.snoozedUntil) continue;
       const t = Date.parse(st.rec.snoozedUntil);
       if (t <= now) this.wake(st, 'time');
       else next = Math.min(next, t);
@@ -431,6 +424,17 @@ export const hibernationPart = {
   // inbox with nothing to say why (30 Oct).
   wake(this: Runner, st: ThreadState, cause: 'time' | 'restart' | { why: string }): void {
     const { rec } = st;
+    // Archived since it went to sleep: its hibernation just ends, quietly.
+    // Waking it there gave it a "Woke up" and an unread mark in the
+    // archive, and started any message it had queued while still archived
+    // (13 Nov 2026, the implicit state machines scan). Brought back later,
+    // it's in the inbox, as it would have been.
+    if (rec.archivedAt) {
+      this.endHibernation(st);
+      st.rec.updatedAt = this.isoNow();
+      this.markDirty(st);
+      return;
+    }
     const now = this.clock.now();
     const since = rec.snoozedAt && Date.parse(rec.snoozedAt) <= now ? rec.snoozedAt : undefined;
     // Under a minute (a wake-when cut short by a restart) isn't worth saying.
@@ -444,16 +448,21 @@ export const hibernationPart = {
     // Starting "Woke up" is what gives it the bear in the app (RowContent.isWakeNote).
     this.emit(st, { type: 'system.note', text });
     rec.woke = { at: new Date(now).toISOString(), ...(since ? { since } : {}) };
-    delete rec.snoozedAt;
-    delete st.rec.snoozedUntil;
-    delete st.rec.snoozedUntilRestart;
-    delete st.rec.untilRelease;
-    delete st.rec.wakeWhen;
-    delete st.rec.waitingOn;
+    this.endHibernation(st);
     st.rec.forceUnread = true;
     st.rec.updatedAt = this.isoNow();
     this.markDirty(st);
     this.kickQueue(st);
+  },
+
+  endHibernation(this: Runner, st: ThreadState): void {
+    const { rec } = st;
+    delete rec.snoozedAt;
+    delete rec.snoozedUntil;
+    delete rec.snoozedUntilRestart;
+    delete rec.untilRelease;
+    delete rec.wakeWhen;
+    delete rec.waitingOn;
   },
 };
 
