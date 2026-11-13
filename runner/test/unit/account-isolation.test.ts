@@ -105,6 +105,9 @@ test('unit-test guard follows a fixture symlink back to a real account', () => {
     import fs from 'node:fs';
     import os from 'node:os';
     const alias = process.env.HOME + '/alias';
+    fs.symlinkSync(process.env.HOME, alias);
+    fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe');
+    fs.unlinkSync(alias);
     fs.symlinkSync(os.userInfo().homedir, alias);
     try { fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe'); } catch {}
   `);

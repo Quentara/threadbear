@@ -293,7 +293,9 @@ test("a moved worktree that changes what trust covers is held to the stored hash
   const wt = path.join(fs.realpathSync(tmpDir('tb-move-wt-')), 'slot');
   g(repo, 'worktree', 'add', '-q', '-b', 'thread/x', wt, base);
   const w = { repo: 'r', mainCheckout: repo, path: wt, branch: 'thread/x', base };
-  const home = tmpDir('tb-move-home-');
+  // The home must contain the worktree: Claude scans every ancestor up
+  // to it. An unrelated sibling sends that walk into the real home.
+  const home = path.dirname(repo);
   const reset = () => {
     g(wt, 'reset', '-q', '--hard', base);
     g(wt, 'clean', '-qfdx');
