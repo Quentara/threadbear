@@ -615,6 +615,13 @@ impl Composer {
         cx.notify();
     }
 
+    /// The box holding exactly `text` from the next frame: the tour's first
+    /// message, written for them.
+    pub(crate) fn replace_text(&mut self, text: String, cx: &mut Context<Self>) {
+        self.pending_box = Some((text, vec![]));
+        cx.notify();
+    }
+
     /// The box holding exactly `text`, its marks as chips of `images`.
     fn set_box(&mut self, text: String, images: Vec<ImageRef>, window: &mut Window, cx: &mut Context<Self>) {
         self.input.update(cx, |s, cx| s.set_value("", window, cx));
@@ -1572,7 +1579,8 @@ impl Render for Composer {
                     .max_w(px(style::MAX_CONTENT_WIDTH))
                     .children(refusal)
                     // Overlapping the box's border, so the two read as one piece.
-                    .when_some(shelves, |s, shelves| s.child(div().px(px(style::COMPOSER_RADIUS)).mb(gpui_kit::px(-0.5)).child(shelves)))
+                    // The chips themselves measured for the tour's Patches step.
+                    .when_some(shelves, |s, shelves| s.child(div().px(px(style::COMPOSER_RADIUS)).mb(gpui_kit::px(-0.5)).child(h_flex().child(div().relative().flex_none().child(shelves).children(crate::tour::mark(threadbear_core::tour::Target::ActionChips))))))
                     .child(
                 div()
                     .relative()
@@ -1606,7 +1614,9 @@ impl Render for Composer {
                             window.refresh();
                         }
                     }, |_, _, _, _| {}).absolute().size_full())
-                    .children(palette),
+                    .children(palette)
+                    // The main panel's box, for the tour's first thread.
+                    .children(crate::tour::mark_composer(self.thread_id.as_deref())),
                     ),
             )
             .children(self.render_peek(cx))

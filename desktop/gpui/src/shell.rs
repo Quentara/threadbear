@@ -31,6 +31,8 @@ pub(crate) const TERMINAL: &str = "threadbear.terminal";
 pub(crate) const UPDATES: &str = "threadbear.updates";
 pub(crate) const CONNECTORS: &str = "threadbear.connectors";
 pub(crate) const RUNNERS: &str = "threadbear.runners";
+/// Finish setting up (setup_panel.rs), open until Mike closes it.
+pub(crate) const SETUP: &str = "threadbear.setup";
 
 /// How often the settings file is written during a burst of changes.
 const SAVE_THROTTLE_MS: i64 = 300;
@@ -253,6 +255,7 @@ fn panel_symbol(panel: &str) -> Option<&'static str> {
         UPDATES => "arrow.down.circle",
         CONNECTORS => "powerplug",
         RUNNERS => "server.rack",
+        SETUP => "checklist",
         TERMINAL => "terminal",
         HIGHLIGHTS => "pin",
         FILES => "folder",
@@ -438,6 +441,7 @@ impl Threadbear {
             UPDATES => "Updates".into(),
             CONNECTORS => "Connectors".into(),
             RUNNERS => "Runners".into(),
+            SETUP => "Finish setting up".into(),
             TERMINAL => "Terminal".into(),
             HIGHLIGHTS => "Highlights".into(),
             FILES => "Files".into(),
@@ -471,7 +475,7 @@ impl Threadbear {
     /// sidebar, the main panel, one of the activity bar's panels or a thread
     /// in a panel of its own.
     pub(crate) fn is_pane_section(panel: &str) -> bool {
-        !matches!(panel, THREADS | MAIN | USAGE | UPDATES | CONNECTORS | RUNNERS | TERMINAL) && crate::thread_panels::pinned_thread(panel).is_none() && crate::pinned_panels::pinned(panel).is_none()
+        !matches!(panel, THREADS | MAIN | USAGE | UPDATES | CONNECTORS | RUNNERS | SETUP | TERMINAL) && crate::thread_panels::pinned_thread(panel).is_none() && crate::pinned_panels::pinned(panel).is_none()
     }
 
     /// `available` in `RootView.content`: Highlights, Files and a thread's own
@@ -549,7 +553,7 @@ impl Threadbear {
             return;
         }
         let under = self.dock.read(cx).layout().group_containing(THREADS).map(|g| DockDrop::edge(g.id, DockEdge::Bottom)).unwrap_or(DockDrop::window(DockEdge::Left));
-        let near: Vec<&str> = [USAGE, UPDATES, CONNECTORS, RUNNERS].into_iter().filter(|p| *p != panel).collect();
+        let near: Vec<&str> = [USAGE, UPDATES, SETUP, CONNECTORS, RUNNERS].into_iter().filter(|p| *p != panel).collect();
         self.dock.update(cx, |m, cx| m.show(panel, &near, under, cx));
     }
 
@@ -736,7 +740,9 @@ impl Threadbear {
             Command::ToggleFrameRate => self.toggle_frame_rate(window, cx),
             Command::About => self.show_about(window, cx),
             Command::RestartToUpdate => self.restart_to_update(cx),
-            Command::TakeTheTour | Command::FinishSettingUp => window.push_notification("That isn't in this app yet.", cx),
+            // Help's replay of the tour can be skipped (tour.rs).
+            Command::TakeTheTour => self.tour_start(true, window, cx),
+            Command::FinishSettingUp => self.show_setup(cx),
             Command::HibernateHour => self.hibernate_open("hour", window, cx),
             Command::HibernateEvening => self.hibernate_open("evening", window, cx),
             Command::HibernateTomorrow => self.hibernate_open("tomorrow", window, cx),
@@ -1380,6 +1386,8 @@ impl Threadbear {
             window.focus(&self.root_focus, cx);
         }
         // On a project's page, the panels it borrows from one of its threads.
+        // What the tour and the intros watch for (tour.rs).
+        self.tour_watch(window, cx);
         let has_rail = self.pane_thread().is_some();
         let rail = has_rail.then(|| self.render_right_rail(cx));
         let root = div()
@@ -1401,12 +1409,14 @@ impl Threadbear {
             .child(self.page_swipe_watch(cx))
             .child(self.row_press_watch(cx))
             .child(self.render_activity_bar(window, cx))
-            .child(div().flex_1().min_w_0().h_full().child(self.dock_view.clone()))
+            .child(div().relative().flex_1().min_w_0().h_full().child(self.dock_view.clone()).child(crate::tour::dock_origin_mark()))
             .when_some(rail, |s, r| s.child(r))
             // An archived or hibernated thread's page on its way to its
             // heading, over the sidebar and the panel alike (archive_flight.rs).
             .child(self.flight.overlay(cx))
             .children(self.render_swipe_card(cx).map(|card| deferred(card).with_priority(1)))
+            // The tour and the pages' intros, over everything (tour.rs).
+            .children(self.render_tour(window, cx))
             // A click or a key in the window means he's at it, for a window
             // the system never tells it's in front of (an X server with no
             // window manager): reading needs one (`looking_changed`).
@@ -1451,6 +1461,7 @@ impl Threadbear {
             RUNNERS => self.activity_panel_view(RUNNERS, ghost, window, cx),
             UPDATES => self.activity_panel_view(UPDATES, ghost, window, cx),
             CONNECTORS => self.activity_panel_view(CONNECTORS, ghost, window, cx),
+            SETUP => self.activity_panel_view(SETUP, ghost, window, cx),
             USAGE => self.usage_panel(ghost, window, cx),
             // The Terminal (terminal.rs): the open thread's shell. A drag's
             // ghost is the empty panel: the shell's view is drawn in one place.

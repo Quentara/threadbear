@@ -275,6 +275,10 @@ pub struct Threadbear {
     pub(crate) flight: crate::archive_flight::Flights,
     /// How the next thread opens, and the new-thread page coming up (open_motion.rs).
     pub(crate) opening: crate::open_motion::Openings,
+    /// The first-run tour and the pages' intros (tour.rs).
+    pub(crate) tour: crate::tour::TourState,
+    /// Finish setting up's devices (setup_panel.rs).
+    pub(crate) setup: crate::setup_panel::SetupState,
     _events: Task<()>,
     _subs: Vec<Subscription>,
 }
@@ -534,6 +538,8 @@ impl Threadbear {
             swipe_nav: Default::default(),
             flight: Default::default(),
             opening: Default::default(),
+            tour: crate::tour::TourState::new(),
+            setup: Default::default(),
             _events: events,
             _subs: vec![appearance, searching, frame, menus, looking, quitting, side_changed, main_context],
         };
@@ -790,6 +796,7 @@ impl Threadbear {
                     self.load_remote(cx);
                     self.load_clis(cx);
                     self.load_connectors(cx);
+                    self.load_setup_devices(cx);
                     self.side.update(cx, |side, cx| side.connected(cx));
                     for pane in self.pane.iter().chain(self.thread_panels.panes()) {
                         pane.update(cx, |p, cx| p.load(cx));
@@ -1495,6 +1502,9 @@ impl Threadbear {
         dump["importNote"] = json!(self.import_note);
         // Panels pinned to their threads (pinned_panels.rs).
         dump["pinnedPanels"] = self.pinned_panels_dump(cx);
+        // The tour or a page's intro on show, and Finish setting up (tour.rs, setup_panel.rs).
+        dump["tour"] = self.tour_dump(cx);
+        dump["setup"] = self.setup_dump(cx);
         // Videos and PDFs up in the system's views, in any window (media_view.rs).
         dump["media"] = crate::media_view::dump();
         // The card a page swipe shows while it's under way (swipe_nav.rs).

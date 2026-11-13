@@ -231,6 +231,21 @@ async fn run(app: &WeakEntity<Threadbear>, window: AnyWindowHandle, cmd: &Value,
     } else {
         window
     };
+    // The first-run tour (tour.rs): {"do": "start"|"next"|"back"|"end"|"pools"},
+    // or nothing to read where it's at. Says the step, its title and what it
+    // lights up, once the card and the spotlight have had their move.
+    if cmd["cmd"] == "tour" {
+        cx.update_window(window, |_, window, cx| crate::thread::scripted_input(|| app.update(cx, |t, cx| t.tour_command(cmd, window, cx)))).map_err(|e| e.to_string())??;
+        cx.background_executor().timer(std::time::Duration::from_millis(400)).await;
+        // Drawn twice: the marks are measured in one frame, the overlay
+        // placed by them in the next.
+        cx.update_window(window, |_, window, cx| {
+            window.render_frame(cx);
+            window.render_frame(cx);
+        })
+        .ok();
+        return Ok(json!(cx.update(|cx| app.read(cx).tour_line(cx))));
+    }
     // Until what the window shows holds every condition given (or with
     // "not", none), as the Swift command: read from the same `dump` a
     // script reads next (threadbear_core::wait_for), every 50 ms.

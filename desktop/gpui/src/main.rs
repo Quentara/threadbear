@@ -110,6 +110,8 @@ mod terminal_element;
 mod thread;
 mod tips;
 mod thread_panels;
+mod tour;
+mod setup_panel;
 mod unsent;
 mod updates_panel;
 mod usage;
@@ -253,6 +255,8 @@ fn main() {
         // The Swift app's settings and drafts, brought across once, before
         // anything reads them (swift_import.rs).
         let brought = swift_import::run_once(&mut settings, cx);
+        // And whether they'd seen its tour, apart (swift_import.rs).
+        swift_import::tour_once(&mut settings);
         let bounds = initial_bounds(&settings, cx);
         // Back from an update's restart made while another app was in front:
         // the window comes back behind it, not taking the keys (app_update.rs).

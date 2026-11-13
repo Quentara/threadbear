@@ -1534,8 +1534,11 @@ impl Threadbear {
             .when(!show_buttons, |s| s.child(render_trailing(&trailing, id.clone(), p)));
 
         let actions = mode.actions();
+        let is_sample = t.sample == Some(true);
         let buttons = if show_buttons {
-            Some(self.render_row_actions(t, actions, cx))
+            // A sample's, measured for the tour's "Star or put away".
+            let b = self.render_row_actions(t, actions, cx);
+            Some(if is_sample { div().relative().child(b).children(crate::tour::mark(threadbear_core::tour::Target::RowButtons)).into_any_element() } else { b })
         } else {
             None
         };
@@ -1586,6 +1589,8 @@ impl Threadbear {
             .child(tile)
             .child(v_flex().flex_1().min_w_0().gap(px(3.)).child(h_flex().child(title_el).when(show_buttons, |s| s.child(div().flex_none().w(px(actions_room)).h(px(1.))))).child(second_line))
             .when_some(buttons, |s, b| s.child(h_flex().absolute().right(px(TRAILING - 5.)).top_0().bottom_0().items_center().gap(px(2.)).child(b)))
+            // A tour sample's row, for the tour to light it (tour.rs).
+            .when(is_sample, |s| s.children(crate::tour::mark(threadbear_core::tour::Target::SampleRow(t.title.clone()))))
             .into_any_element();
         self.swipe_slot(&id, swipe_action, row, cx)
     }

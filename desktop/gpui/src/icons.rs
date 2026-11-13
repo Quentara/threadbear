@@ -194,6 +194,8 @@ pub fn try_symbol(name: &str) -> Option<Icon> {
         "wrench.and.screwdriver.fill" => IconName::Wrench,
         "person.crop.circle.badge.exclamationmark" => IconName::UserRoundX,
         "checkmark.circle.fill" => IconName::CircleCheck,
+        // Finish setting up's item still to do.
+        "circle" => IconName::Circle,
         "arrow.up.right" => IconName::ArrowUpRight,
         "arrow.up.left.and.arrow.down.right" => IconName::Maximize2,
         "key" => IconName::Key,

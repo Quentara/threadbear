@@ -196,6 +196,13 @@ impl Threadbear {
         // each with its dot: the accent when only Mike can do something, grey
         // while something sorts itself out.
         let mut foot = vec![];
+        // Finish setting up, with how many are left: only while something's
+        // left and it isn't hidden (setup_panel.rs).
+        if self.setup_shows_icon() {
+            let mut button = RailButton::new("rail-setup", "checklist", "Finish setting up", self.activity_panel_showing(shell::SETUP, cx));
+            button.badge = Some(self.setup_checklist().left());
+            foot.push(rail_button(button, |this, _, cx| this.toggle_under_threads(shell::SETUP, cx), cx));
+        }
         if self.connectors_on() {
             let status = self.connectors_panel.status.as_ref();
             let mut button = RailButton::new("rail-connectors", "powerplug", threadbear_core::connectors::tooltip(status), self.activity_panel_showing(shell::CONNECTORS, cx));
@@ -248,7 +255,9 @@ impl Threadbear {
                     .pb(px(10.))
                     .gap(px(4.))
                     .child(self.window_grip())
-                    .child(v_flex().items_center().gap(px(4.)).children(views))
+                    // The views together, for the tour to light up (not the
+                    // icons at the foot).
+                    .child(v_flex().relative().items_center().gap(px(4.)).children(views).children(crate::tour::mark(threadbear_core::tour::Target::ActivityBar)))
                     .child(div().flex_1().min_h(px(8.)))
                     .children(foot)
                     .child(usage)
@@ -282,7 +291,9 @@ impl Threadbear {
         let mut highlights = RailButton::new("rail-highlights", "pin", "Highlights", highlights_shown);
         highlights.dot = open_ask;
         if !project_page {
-            column.push(rail_button(highlights, |this, _, cx| this.click_rail(shell::HIGHLIGHTS, cx), cx));
+            let button = rail_button(highlights, |this, _, cx| this.click_rail(shell::HIGHLIGHTS, cx), cx);
+            // The tour's Highlights step lights this when the panel's closed.
+            column.push(div().relative().child(button).children(crate::tour::mark(threadbear_core::tour::Target::HighlightsRail)).into_any_element());
         }
         for (panel, shown) in panels {
             // Its own icon, with where it came from in the corner and in the
