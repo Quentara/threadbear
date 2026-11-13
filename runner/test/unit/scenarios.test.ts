@@ -60,3 +60,28 @@ test('each known difference is still a difference, and says why', async () => {
     assert.ok(differs, `${k.field} on ${k.route} is the same as here now: take it out of KNOWN`);
   }
 });
+
+// The same real backend as the route scenarios: a second pane already has
+// every row except an older reply. Reopening it must restore that reply
+// without replaying all the synthetic markers it already showed.
+test('another Mac reopens a thread with only the reply its pane missed', async () => {
+  const { relay, relayEvents, threadId, refused } = await threeWays((p) => {
+    p.say('The earlier reply.');
+    p.endTurn({ needs: 'nothing' });
+    p.send('Carry on.');
+    p.say('The latest reply.');
+    p.endTurn({ needs: 'nothing' });
+  });
+  assert.deepEqual(refused, []);
+  const missing = relayEvents.find((e) => e.type === 'assistant.text' && e.text === 'The earlier reply.');
+  assert.ok(missing);
+  const seen: [number, number][] = [];
+  for (const seq of relayEvents.map((e) => Number(e.seq)).filter((seq) => seq !== missing.seq).sort((a, b) => a - b)) {
+    const last = seen.at(-1);
+    if (last && seq <= last[1] + 1) last[1] = Math.max(seq, last[1]);
+    else seen.push([seq, seq]);
+  }
+  const reply = await relay.call(threadId, 'threads.subscribe', { afterSeq: Math.max(...relayEvents.map((e) => Number(e.seq))), relaySeen: seen }) as { events: Record<string, unknown>[] };
+  assert.deepEqual(reply.events.map((e) => e.seq), [missing.seq]);
+  assert.equal(reply.events[0]?.text, 'The earlier reply.');
+});

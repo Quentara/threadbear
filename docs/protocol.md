@@ -5445,6 +5445,9 @@ other, and the app never connects to another Mac.
 ```ts
 type RemoteThreads = {
   runners: RemoteRunner[], threads: RemoteThread[]
+  ready?: boolean      // false until this watch has its backend answer;
+                       // keep known rows and defer totals while false.
+                       // Absent on an older runner (treat as ready).
   order?: string[]     // Mike's runner order (backend API 58, sync:runnerOrder,
                        // owner key only): every runner's id, this one's too.
                        // Left out until heard, and by an older runner
@@ -5514,7 +5517,11 @@ only way the app opens another runner's thread.
   answers and turn ends) from the first range onward. An empty list means it has no events.
   This keeps another subscriber's older pages out of its reply. Older
   clients omit it and still get late events replayed from everything given
-  before; a seq the app already has does nothing. Every page and
+  before (turn starts too); a seq the app already has does nothing. A gap
+  holds back turn markers inside its uncertain interval while messages
+  stay readable; the markers arrive late when those rows are known. A
+  subscribed watch retries a failed gap read on its regular sweep, even
+  when the remote thread is idle and its tail never changes. Every page and
   event is in relay seqs, and so are `afterSeq` and `beforeSeq`. A page also
   has `relay: { runnerId, runnerName, atStart? }`; `atStart` says there's
   nothing older. Events can arrive with gaps and late (a tool's result

@@ -45,7 +45,7 @@ export type RemoteRunner = { id: string; name: string; icon?: string; online: bo
 export type RemoteThread = IndexRow & { runnerId: string; moving?: import('./moves.ts').ThreadMoving };
 // `order`: Mike's runner order (backend API 58), every runner's id, this
 // one's too, for the app's Settings > Runners. Left out before it's heard.
-export type RemoteThreads = { runners: RemoteRunner[]; threads: RemoteThread[]; order?: string[] };
+export type RemoteThreads = { runners: RemoteRunner[]; threads: RemoteThread[]; order?: string[]; ready?: boolean };
 
 type RawRunner = { runnerId: string; name: string; icon?: string; lastSeenAt: number; followProblem?: string };
 type SinceRow = RemoteThread & { updatedMs?: number; deleted?: boolean };
@@ -237,7 +237,7 @@ export class ThreadIndex {
       this.appGoneAt = undefined;
       this.watch();
     }
-    return this.remote;
+    return { ...this.remote, ready: this.heard() };
   }
 
   /** Whether the list has had an answer (or a refusal) to give, for a caller that can wait a moment for one. */
@@ -296,7 +296,7 @@ export class ThreadIndex {
       (v) => {
         this.order = Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
         this.remote = { ...this.remote, order: this.order };
-        this.deps.publish?.({ method: 'remoteThreads.updated', params: this.remote });
+        this.deps.publish?.({ method: 'remoteThreads.updated', params: { ...this.remote, ready: this.heard() } });
       },
       (e) => this.deps.log.warn('the runner order subscription failed', { error: String(e) }),
     );
@@ -527,6 +527,6 @@ export class ThreadIndex {
       threads: (value?.threads ?? []).filter((t) => isThreadIdShape(t?.threadId)),
       ...(this.order ? { order: this.order } : {}),
     };
-    this.deps.publish?.({ method: 'remoteThreads.updated', params: this.remote });
+    this.deps.publish?.({ method: 'remoteThreads.updated', params: { ...this.remote, ready: this.heard() } });
   }
 }

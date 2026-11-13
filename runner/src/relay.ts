@@ -955,15 +955,18 @@ export class Relay {
   private async fill(w: Watch): Promise<void> {
     try {
       while (w.hole) {
-        const { after } = w.hole;
+        const { after, until: requestedUntil } = w.hole;
         const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE, ...this.withNotes() })) as Page;
         for (const m of page.messages) w.rows.set(m.seq, m);
         trimHeld(w);
         const last = page.messages[page.messages.length - 1]?.seq;
         // Against the hole as it is now: a tail meanwhile may have made it longer.
         const until = w.hole?.until ?? 0;
-        if (last === undefined || !page.hasMore || last >= until) w.hole = undefined;
-        else w.hole = { after: last, until };
+        // hasMore belongs to the read's snapshot, not a newer tail. If
+        // that tail grew the hole while HTTP was in flight, read again
+        // after its arrival before trusting an empty/final page.
+        if ((last !== undefined && last >= until) || (until <= requestedUntil && (last === undefined || !page.hasMore))) w.hole = undefined;
+        else w.hole = { after: last ?? after, until };
       }
     } catch (e) {
       this.deps.log.warn('relay could not fill a gap', { threadId: w.threadId, error: String(e) });
@@ -1012,6 +1015,7 @@ export class Relay {
     }
     for (const [id, w] of this.watches) {
       if (this.deps.subscribed(id)) {
+        this.retryGap(w);
         w.idleSince = undefined;
         w.usedAt = now;
         continue;
@@ -1213,7 +1217,8 @@ export class Relay {
         // given before: it may have arrived while the app was away, and the
         // app takes a seq it already has as nothing.
         const from = seen ? (seen[0]?.[0] ?? after) : (w.given.size ? oldestGiven(w.given) : after);
-        const late = (seq: number) => seq % SCALE !== 0 && seq % SCALE !== 1;
+        // Turn starts can also arrive late, after a gap's first row is known.
+        const late = (seq: number) => seq % SCALE !== 1;
         const events = all.filter((e) => e.seq > after || (e.seq >= from && (seen ? !hasSeen(seen, e.seq) : late(e.seq))));
         for (const e of events) w.given.add(e.seq);
         if (!w.given.size) w.given.add(after);

@@ -114,11 +114,13 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
     const events = h.runner.events(id, {}).events as Record<string, any>[];
     return { needs: t.needs, asks: (t.asks ?? []) as Ask[], next: lastNext(events), looseEnds: (t.looseEnds?.ends ?? []).map((e) => e.text), review: events.filter((e) => e.type === 'turn.completed').at(-1)?.review, plans: plansOf(events), messages: messagesOf(events), notes: loginNotes(events), failed: lastFailed(events) };
   };
+  let relayEvents: Record<string, any>[] = [];
   const viaRelay = async (): Promise<View> => {
     // A turn's end is held back until that runner's row has said so for 4 s.
     await relay.call(id, 'threads.events', { threadId: id });
     h.clock.advance(5000);
     const { events } = (await relay.call(id, 'threads.events', { threadId: id })) as { events: Record<string, any>[] };
+    relayEvents = events;
     const end = events.filter((e) => e.type === 'turn.completed').at(-1);
     // The loose ends as the app gets them: on the thread's row in the
     // sidebar's list, for the done card's own seq.
@@ -132,7 +134,7 @@ export async function threeWays(play: (p: Play) => void | Promise<void>) {
   };
   const views = { here: here(), relay: await viaRelay(), phone: await viaPhone() };
   await sync.stop();
-  return { views, refused, backend: b, threadId: id };
+  return { views, refused, backend: b, threadId: id, relay, relayEvents };
 }
 
 // Without a subscriber of its own a ConvexSync opens a real Convex client for its url, and

@@ -144,9 +144,12 @@ test('other runners’ threads are watched only while a Mac app is connected', a
   // An app connecting asks for the list, which starts the watch at once.
   app = true;
   assert.deepEqual(index.list().threads, []);
+  assert.equal(index.list().ready, false, 'an unanswered empty list is not a deletion');
   assert.equal(watching(), true);
   remote({ runners: [{ runnerId: 'r-bruce', name: 'bruce', lastSeenAt: h.clock.now() }], threads: [] });
   assert.equal(heard.length, 1);
+  assert.equal(heard[0]!.ready, true);
+  assert.equal(index.list().ready, true);
 
   // A relaunch, gone for under two minutes, keeps the watch.
   app = false;

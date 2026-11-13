@@ -170,7 +170,7 @@ test('a subscribe watches a tail and the row, and new rows reach clients only', 
   await h.relay.call(T, 'threads.events', { threadId: T });
   const back = (await h.relay.call(T, 'threads.subscribe', { threadId: T, afterSeq: 119 })) as { events: { seq: number }[] };
   // Nothing new; only what could have come late, again (the app ignores seqs it has).
-  assert.ok(back.events.every((e) => e.seq <= 119 && [2, 3, 4, 7].includes(e.seq % SCALE)));
+  assert.ok(back.events.every((e) => e.seq <= 119 && [0, 2, 3, 4, 7].includes(e.seq % SCALE)));
   const tail = h.subs.get('relay:remoteTail')![0]!;
   assert.equal(tail.args.limit, 15);
   assert.ok(h.subs.get('relay:remoteThread'));
@@ -253,6 +253,29 @@ test('a gap fill cannot publish an invented early turn end to a reader or live l
   assert.ok(!events.some((e) => e.seq === 119 && e.type === 'turn.completed'));
 });
 
+test('a stale final gap page cannot erase a newer tail hole', async () => {
+  for (const empty of [false, true]) {
+    let release!: (value: unknown) => void;
+    const gap = new Promise((resolve) => { release = resolve; });
+    const readAfter: number[] = [];
+    const h = harness({ row: () => ({ runnerId: 'bruce', status: 'running' }), readMessages: (args) => {
+      if (args.afterSeq === undefined) return { messages: rows, hasMore: false };
+      readAfter.push(Number(args.afterSeq));
+      if (readAfter.length === 1) return gap;
+      return { messages: [{ seq: 45, role: 'assistant', text: 'Must not disappear', turn: 'c', at: at(45) }], hasMore: false };
+    } });
+    await h.relay.call(T, 'threads.subscribe', { afterSeq: 0 });
+    const tail = h.subs.get('relay:remoteTail')![0]!;
+    tail.onUpdate({ messages: [{ seq: 20, role: 'user', text: 'Second turn', turn: 'c', at: at(30) }], hasMore: true });
+    tail.onUpdate({ messages: [{ seq: 50, role: 'user', text: 'Third turn', turn: 'd', at: at(50) }], hasMore: true });
+    release({ messages: empty ? [] : [{ seq: 30, role: 'assistant', text: 'Earlier page', turn: 'c', at: at(40) }], hasMore: false });
+    await new Promise((r) => setImmediate(r));
+    assert.deepEqual(readAfter, [14, empty ? 14 : 30], 'read again after the new tail, even though the old answer said final');
+    const page = await h.relay.call(T, 'threads.events', {}) as { events: { text?: string }[] };
+    assert.ok(page.events.some((e) => e.text === 'Must not disappear'));
+  }
+});
+
 test('a failed gap fill leaves the thread readable and a read retries it without a new tail', async () => {
   let reads = 0;
   const h = harness({ row: () => ({ runnerId: 'bruce', status: 'running' }), readMessages: (args) => {
@@ -288,6 +311,38 @@ test('another tail during a gap fill cannot publish boundaries inside the merged
   const events = h.published.map((n) => (n as { params: { event: { seq: number; type: string } } }).params.event);
   assert.ok(!events.some((e) => e.seq === 119 || e.seq === 167));
   assert.ok(events.some((e) => e.seq === 247));
+});
+
+test('an idle subscribed thread retries a failed gap read without any app read or tail change', async () => {
+  let reads = 0;
+  const h = harness({ row: () => ({ runnerId: 'bruce', status: 'running' }), readMessages: (args) => {
+    if (args.afterSeq === undefined) return { messages: rows, hasMore: false };
+    if (++reads === 1) throw new Error('network still waking up');
+    return { messages: [{ seq: 18, role: 'assistant', text: 'End', turn: 'bbbb2222', at: at(29) }], hasMore: false };
+  } });
+  await h.relay.call(T, 'threads.subscribe', { afterSeq: 0 });
+  h.subscribed.add(T);
+  h.subs.get('relay:remoteTail')![0]!.onUpdate({ messages: [{ seq: 20, role: 'user', text: 'Next', turn: 'c', at: at(30) }], hasMore: true });
+  await new Promise((r) => setImmediate(r));
+  h.clock.advance(15_000);
+  await new Promise((r) => setImmediate(r));
+  assert.equal(reads, 2);
+  assert.ok(h.published.some((n) => (n as { params: { event: { seq: number } } }).params.event.seq === 151));
+});
+
+test('an older client gets turn starts that a gap delayed below its last seq', async () => {
+  let release!: (value: unknown) => void;
+  const gap = new Promise((resolve) => { release = resolve; });
+  const h = harness({ row: () => ({ runnerId: 'bruce', status: 'running' }), readMessages: (args) => args.afterSeq === undefined ? { messages: rows, hasMore: false } : gap });
+  await h.relay.call(T, 'threads.subscribe', { afterSeq: 0 });
+  h.subs.get('relay:remoteTail')![0]!.onUpdate({ messages: [{ seq: 20, role: 'user', text: 'Next', turn: 'c', at: at(30) }], hasMore: true });
+  const page = await h.relay.call(T, 'threads.events', {}) as { events: { seq: number }[] };
+  assert.ok(page.events.some((e) => e.seq === 161));
+  assert.ok(!page.events.some((e) => e.seq === 160));
+  release({ messages: [{ seq: 18, role: 'assistant', text: 'End', turn: 'bbbb2222', at: at(29) }], hasMore: false });
+  await new Promise((r) => setImmediate(r));
+  const sub = await h.relay.call(T, 'threads.subscribe', { afterSeq: 161 }) as { events: { seq: number }[] };
+  assert.ok(sub.events.some((e) => e.seq === 160), 'no relaySeen in an older client');
 });
 
 test("a turn ends a moment after the row says it stopped, so its last messages come first", async () => {
