@@ -1118,6 +1118,11 @@ Send again sends your last message again once you're done. For a thread on
 another Mac the line says which Mac to sign in on, as Terminal here would
 only sign in this Mac.
 
+The sign-in command comes from the runner's provider list, so Cursor opens
+`agent login`, for example. If a runner sends an unreadable thread field or
+row, readable threads still appear. An empty or partly unreadable list keeps
+the previous rows and their Terminal shells until a complete list arrives.
+
 If Claude stops with a safeguards refusal, a small box above the message
 field offers **Continue with Codex Sol**, when Sol is available on a Codex
 login with room. Clicking it moves this thread to GPT-6.1-Sol and asks it

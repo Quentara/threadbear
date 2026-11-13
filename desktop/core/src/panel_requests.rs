@@ -11,17 +11,24 @@ use std::collections::HashSet;
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct PanelRequest {
+    #[serde(default, deserialize_with = "crate::wire::id")]
     pub id: String,
     /// "highlights", "browser", "patches", "usage", "updates", "connectors",
     /// or one of the thread's panels' ids.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub panel: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: String,
     /// "tab", "left", "right", "top", "bottom" or "window".
     #[serde(rename = "where")]
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub place: Option<String>,
     /// `pin` with `show`: the pin to open (the panel is "highlights").
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub highlight: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub reload: Option<bool>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub at: String,
 }
 

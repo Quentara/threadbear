@@ -849,7 +849,7 @@ impl Threadbear {
             }
             Seen::Note(method, params) => match method.as_str() {
                 "thread.updated" => {
-                    if let Ok(mut t) = serde_json::from_value::<ThreadSummary>(params["thread"].clone()) {
+                    if let Some(mut t) = threadbear_core::wire::read::<ThreadSummary>(params["thread"].clone()) {
                         // Another runner's thread from this Mac's runner (the
                         // relay) stays marked as that runner's.
                         // Relay summaries carry runnerId. A local update for
@@ -1039,10 +1039,13 @@ impl Threadbear {
             this.update(cx, |this, cx| {
                 match res {
                     Ok(v) => {
-                        let list: Vec<ThreadSummary> = serde_json::from_value(v["threads"].clone()).unwrap_or_default();
-                        let before = std::mem::take(&mut *this.threads);
-                        *this.threads = list.into_iter().map(|t| (t.id.clone(), t)).collect();
-                        let confirmed: std::collections::HashSet<_> = this.threads.keys().cloned().collect();
+                        let list = match threadbear_core::inbox::ThreadList::decode(&v) {
+                            Ok(list) => list,
+                            Err(message) => { this.list_error = Some(message.into()); cx.notify(); return; }
+                        };
+                        let confirmed: std::collections::HashSet<_> = list.rows.iter().map(|t| t.id.clone()).collect();
+                        let before = (*this.threads).clone();
+                        let cleanup = list.apply(&mut this.threads);
                         let reload: std::collections::HashSet<_> = confirmed.iter().filter(|id| {
                             this.remote.made.contains(*id) || before.get(*id).is_some_and(|t| t.is_remote())
                         }).cloned().collect();
@@ -1059,7 +1062,7 @@ impl Threadbear {
                         // finished then isn't sent again), and each pane's
                         // reload reads its own summary (Codex's review, 12 Nov).
                         this.sync_thread_panes(&reload, cx);
-                        crate::terminal::list_loaded(&this.threads, cx);
+                        if cleanup { crate::terminal::list_loaded(&this.threads, cx); }
                         this.note_failed_accounts(&before);
                         // Other runners' rows stay listed beside these (and
                         // kept threads no longer listed go, remote.rs).

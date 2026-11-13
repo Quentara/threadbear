@@ -984,7 +984,7 @@ impl Threadbear {
         let name = threadbear_core::logins::provider_title(provider);
         let (text, tip) = match (&account, &remote) {
             (Some(a), _) => (format!("{name} needs you to sign in again."), format!("The login {} was refused: signed out, or its session ran out", a.title)),
-            (None, Some(runner)) => (format!("{name} on {runner} needs you to sign in again."), format!("Sign in on {runner} itself: {} in its Terminal", sign_in::login_command(provider))),
+            (None, Some(runner)) => (format!("{name} on {runner} needs you to sign in again."), format!("Sign in on {runner} itself: {} in its Terminal", self.logins.login_command(provider))),
             (None, None) => (String::new(), String::new()),
         };
         h_flex()
@@ -1023,6 +1023,7 @@ impl Threadbear {
     /// not on the PATH), asked for now so it's the one in use.
     pub(crate) fn sign_in(&mut self, account: SignInAccount, cx: &mut Context<Self>) {
         let client = self.client.clone();
+        let command = self.logins.login_command(&account.provider).to_owned();
         cx.spawn(async move |this, cx| {
             let clis = call(client, "clis.list", json!({})).await.ok();
             let path = clis
@@ -1033,7 +1034,7 @@ impl Threadbear {
                 .unwrap_or("")
                 .to_owned();
             let file = std::env::temp_dir().join(format!("threadbear-sign-in-{}.command", sign_in::file_safe(&account.id)));
-            let written = write_script(&file, &sign_in::script(&account, &path));
+            let written = write_script(&file, &sign_in::script_with_command(&account, &path, &command));
             this.update(cx, |this, cx| match written {
                 // The script this app just wrote, every word of it quoted.
                 Ok(()) => crate::open_gate::open_own(&file, cx),

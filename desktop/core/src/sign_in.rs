@@ -38,6 +38,8 @@ pub struct SignInAccount {
 pub fn login_command(provider: &str) -> &'static str {
     match provider {
         "codex" => "codex login",
+        "cursor" => "agent login",
+        "opencode" => "opencode auth login",
         _ => "claude auth login",
     }
 }
@@ -62,6 +64,11 @@ pub fn file_safe(id: &str) -> String {
 /// (Codex is often Threadbear's own copy, not on the PATH); empty uses the
 /// PATH's.
 pub fn script(account: &SignInAccount, cli_path: &str) -> String {
+    script_with_command(account, cli_path, login_command(&account.provider))
+}
+
+/// The hello's command is a program and arguments, never shell source.
+pub fn script_with_command(account: &SignInAccount, cli_path: &str, command: &str) -> String {
     let codex = account.provider == "codex";
     let mut env = String::new();
     if codex && !account.config_dir.is_empty() {
@@ -72,10 +79,13 @@ pub fn script(account: &SignInAccount, cli_path: &str) -> String {
     }
     let name = crate::logins::provider_title(&account.provider);
     // "claude auth login": the program, then what it's asked to do.
-    let mut words = login_command(&account.provider).split(' ');
+    let mut words = command.split_whitespace();
     let program = words.next().unwrap_or("claude");
-    let command = words.collect::<Vec<_>>().join(" ");
-    let binary = if cli_path.is_empty() { program.to_owned() } else { quoted(cli_path) };
+    let argument = |s: &str| {
+        if !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || "-_./".contains(c)) { s.to_owned() } else { quoted(s) }
+    };
+    let command = words.map(argument).collect::<Vec<_>>().join(" ");
+    let binary = if cli_path.is_empty() { argument(program) } else { quoted(cli_path) };
     let first = quoted(&format!("Signing in to {name} for Threadbear ({}).", one_line(&account.title)));
     format!(
         "#!/bin/zsh -l\nexport PATH=\"$HOME/.local/bin:$PATH\"\nprintf '%s\\n' {first}\necho\n{env}{binary} {command}\necho\necho \"Done. Go back to Threadbear and press Send again. You can close this window.\"\n"

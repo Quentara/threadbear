@@ -5,6 +5,12 @@ The app and the runner talk JSON-RPC 2.0 over a WebSocket at
 Both sides must ignore unknown fields and unknown event types so either can be
 upgraded first. Times are ISO 8601 strings in UTC. Ids are strings.
 
+Readers keep valid fields and list entries when another field or entry has
+the wrong type. An unreadable identity drops that row. Decode diagnostics name
+only the type or position, never values or user text. A failed, empty or partly
+unreadable thread list is not evidence that previously listed threads were
+deleted: clients keep those rows and must not run missing-thread cleanup.
+
 ## Auth
 
 The token is the contents of

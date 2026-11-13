@@ -8,63 +8,85 @@ use serde::Deserialize;
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ReplyButton {
+    #[serde(default, deserialize_with = "crate::wire::id")]
     pub id: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub created_at: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub start: Option<Start>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub send: Option<Send>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub run: Option<Run>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub running: Option<At>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub pressed: Option<Pressed>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub failed: Option<Failed>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Start {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub text: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub cwd: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Send {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub thread_id: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub thread_title: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub text: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Run {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub command: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub cwd: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct At {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub at: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Pressed {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub at: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub thread_id: String,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Failed {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub at: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub error: String,
 }
 
 impl ReplyButton {
     pub fn decode(v: &serde_json::Value) -> Option<ReplyButton> {
-        let button: ReplyButton = serde_json::from_value(v.clone()).ok()?;
+        let button: ReplyButton = crate::wire::read(v.clone())?;
         (!button.id.is_empty()).then_some(button)
     }
 

@@ -6,84 +6,170 @@ use std::collections::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
 
+pub struct ThreadList {
+    pub rows: Vec<ThreadSummary>,
+    complete: bool,
+}
+
+impl ThreadList {
+    pub fn decode(value: &Value) -> Result<Self, &'static str> {
+        let Some(values) = value["threads"].as_array() else {
+            crate::wire::dropped::<Self>("thread list envelope");
+            return Err("The runner sent an unreadable thread list. Keeping the previous threads.");
+        };
+        let mut rows = Vec::new();
+        let mut ids = std::collections::HashSet::new();
+        for (i, value) in values.iter().enumerate() {
+            match serde_json::from_value::<ThreadSummary>(value.clone()) {
+                Ok(row) if ids.insert(row.id.clone()) => rows.push(row),
+                _ => crate::wire::dropped::<ThreadSummary>(&format!("thread list entry at {i}")),
+            }
+        }
+        let complete = !rows.is_empty() && rows.len() == values.len();
+        Ok(Self { rows, complete })
+    }
+
+    pub fn apply(self, threads: &mut HashMap<String, ThreadSummary>) -> bool {
+        // Missing rows only mean deletion in a fully readable, nonempty list.
+        // In particular, never stop Terminal shells on an empty snapshot.
+        if self.complete { threads.clear(); }
+        threads.extend(self.rows.into_iter().map(|t| (t.id.clone(), t)));
+        self.complete
+    }
+}
+
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase", default)]
+#[serde(rename_all = "camelCase")]
 pub struct ThreadSummary {
+    #[serde(deserialize_with = "crate::wire::id")]
     pub id: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub cwd: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub provider: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub model: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub model_in_use: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub account_id: String,
     /// The pool that picks its login; none when it's pinned to `account_id`.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub pool_id: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub effort: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub effort_in_use: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub permission_mode: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub context_tokens: Option<i64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub context_window: Option<i64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub cost_usd: Option<f64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub status: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub needs_you: bool,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub needs: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub asks: Option<Vec<OpenAsk>>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub asks_seq: Option<u64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub pending_reviews: Option<u64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub last_activity_at: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub snoozed_until: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub snoozed_until_restart: Option<bool>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub snoozed_until_release: Option<bool>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub wake_when: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub waiting_on: Option<Vec<Value>>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub woke: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub starred_at: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub archived_at: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub waiting_for_room: Option<Value>,
     /// Whether a turn that hits its login's limit waits for room and carries
     /// on by itself: on unless Mike turned it off on the limit box, when the
     /// runner sends `false` (and nothing otherwise).
     #[serde(default = "carry_on_by_default")]
+    #[serde(deserialize_with = "crate::wire::default_true")]
     pub carry_on_at_reset: bool,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub waiting_for_network: Option<Value>,
     /// Kept as it came: the reducer reads its own `BackgroundTask` from these.
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub background: Option<Vec<Value>>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub subagents: Option<Vec<Value>>,
     /// The runner's loose-ends check for the done card (protocol "Loose
     /// ends"), kept as it came and read with `loose_ends_check`, so one
     /// the reducer can't read leaves the rest of the summary standing.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub loose_ends: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub projects: Option<Vec<Project>>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub started_by: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub schedule: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub moving: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub asked: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub preview: String,
     /// The librarian's search words, for finding a thread by what it's about
     /// when its title and preview don't say it (`matches`).
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub keywords: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub last_seq: u64,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub last_seen_seq: u64,
     /// The rail's panel buttons (`ThreadSummary.panels`) and Patches, as they
     /// came: the window shell draws a button for each. Kept as they came and
     /// decoded leniently on demand (highlights.rs), as `background` and
     /// `subagents` are.
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub panels: Option<Vec<Value>>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub actions: Option<Vec<Value>>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub patches: Option<Vec<Value>>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub hooks: Option<Vec<Value>>,
     /// Moves when a pin, a removal or a brief changes what `threads.highlights`
     /// would answer, without a new event.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub highlights_at: Option<String>,
     /// The thread's worktree, while it has one (protocol "Worktrees").
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub worktree: Option<Value>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub on_old_runner: Option<bool>,
     /// Sharing (protocol "Sharing"): `{ access, slug }`.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub share: Option<Value>,
     /// When it was made (the About window's numbers, den.rs).
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub created_at: Option<String>,
     /// One of the tour's made-up threads (`threads.samples`): left out of
     /// the About window's numbers.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub sample: Option<bool>,
     /// Which other runner it lives on; none for this Mac's own threads.
     /// Never on the wire: a runner's summaries are all its own (Swift
@@ -92,25 +178,37 @@ pub struct ThreadSummary {
     pub runner_id: Option<String>,
     /// A panel the agent asked to show Mike, waiting for him to look at the
     /// thread (panel_requests.rs).
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub panel_request: Option<crate::panel_requests::PanelRequest>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct OpenAsk {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub action: String,
     #[serde(rename = "where")]
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub place: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub why: Option<String>,
+    // These positions match `suggested` and `optionNotes`. A bad label must
+    // drop this field, rather than shift a different choice into its place.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub options: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub suggested: Option<usize>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub ticked: Option<bool>,
     /// What each option does, the reply a plain ask wants, and the ask's
     /// links, as they came: a decision on a project's page draws the thread's
     /// card from these (`projects::decision_asks`), as its composer draws it
     /// from the turn.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub option_notes: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub reply: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::optional_list")]
     pub links: Option<Vec<Value>>,
 }
 
@@ -146,11 +244,16 @@ fn carry_on_by_default() -> bool {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct Project {
+    #[serde(default, deserialize_with = "crate::wire::id")]
     pub id: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: String,
     /// "mike", "agent" or "librarian".
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub by: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub pinned: bool,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub why: Option<String>,
 }
 
@@ -184,7 +287,7 @@ impl ThreadSummary {
     }
     /// The background list, read leniently: a malformed entry is left out.
     pub fn background_tasks(&self) -> Vec<BackgroundTask> {
-        self.background.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+        self.background.iter().flatten().filter_map(|v| crate::wire::read(v.clone())).collect()
     }
     /// What's still open on the done card, as the reducer takes it
     /// (Swift `ThreadSummary.looseEnds`, which decodes it leniently too).
@@ -279,14 +382,14 @@ impl ThreadSummary {
     }
     /// Its action chips, read leniently.
     pub fn actions(&self) -> Vec<crate::highlights::Action> {
-        self.actions.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+        self.actions.iter().flatten().filter_map(|v| crate::wire::read(v.clone())).collect()
     }
     /// The patches that apply to it, read leniently.
     pub fn patches(&self) -> Vec<crate::highlights::PatchInfo> {
-        self.patches.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+        self.patches.iter().flatten().filter_map(|v| crate::wire::read(v.clone())).collect()
     }
     pub fn hooks(&self) -> Vec<crate::highlights::HookInfo> {
-        self.hooks.iter().flatten().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect()
+        self.hooks.iter().flatten().filter_map(|v| crate::wire::read(v.clone())).collect()
     }
     /// A thread on another runner, shown here (`isRemote`).
     pub fn is_remote(&self) -> bool {
@@ -299,8 +402,11 @@ impl ThreadSummary {
 #[serde(default)]
 pub struct BackgroundTask {
     /// "agent", "shell", "monitor" or "other"; anything else reads as "other".
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub kind: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub description: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub finished: bool,
 }
 

@@ -83,6 +83,8 @@ fn summary(row: &Value) -> Option<ThreadSummary> {
         starred_at: row["starredAt"].as_str().filter(|s| parse_ms(s).is_some()).map(str::to_owned),
         started_by: row.get("startedBy").filter(|v| !v.is_null()).cloned(),
         asked: row["asked"].as_str().filter(|s| !s.is_empty()).map(str::to_owned),
+        keywords: row["keywords"].as_str().map(str::to_owned),
+        created_at: row["createdAt"].as_str().filter(|s| parse_ms(s).is_some()).map(str::to_owned),
         moving: row.get("moving").filter(|v| !v.is_null()).cloned(),
         last_seq: if unread { 1 } else { 0 },
         last_seen_seq: 0,

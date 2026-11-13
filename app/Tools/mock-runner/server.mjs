@@ -332,6 +332,9 @@ const settings = {
 
 /** threadId -> { summary, events: [], inProgress: Map(itemId -> {type,text}), timers: [] } */
 const threads = new Map();
+// A reconnect spec's deliberately unreadable list, without damaging its
+// transcripts or real summaries. No live runner implements this method.
+let summaryListOverride;
 loadFixtures();
 addFillers(fillerCount);
 addDemoPanels();
@@ -664,6 +667,7 @@ async function dispatch(client, method, p) {
       return { clis };
     }
     case 'threads.list': {
+      if (summaryListOverride !== undefined && client.as === null) return summaryListOverride;
       // THREADBEAR_MOCK_LIST_DELAY_MS: answer late, to see the sidebar's
       // loading rows.
       const listDelay = Number(process.env.THREADBEAR_MOCK_LIST_DELAY_MS ?? 0);
@@ -1827,6 +1831,9 @@ async function dispatch(client, method, p) {
       if (!oldRunner) broadcast('pools.updated', { pools });
       return { accounts: publicAccounts(), old: oldRunner };
     }
+    case 'mock.summaryList':
+      summaryListOverride = p.value;
+      return { ok: true };
     case 'mock.restart':
       return restartNow(p);
     // The runner going away with no notice first (it crashed, or was

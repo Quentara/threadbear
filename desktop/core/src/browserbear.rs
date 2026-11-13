@@ -41,26 +41,43 @@ pub fn tabs_file(home: &Path) -> PathBuf {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", default)]
 pub struct AgentTab {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub tab_id: i64,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub target_id: Option<String>,
     /// In one of Mike's own Chrome profiles rather than the agents' browser.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub bridge: Option<bool>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub profile: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub profile_name: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub profile_email: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub url: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: String,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub thread: Option<String>,
     /// working, yours or idle (BrowserBear's service/marks.mjs); none when unmarked.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub state: Option<String>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub action: Option<String>,
     /// The agent is waiting on `handoff --wait`, so Done means something.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub finish: Option<bool>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub status: Option<String>,
     /// Goes up each time the agent hands this tab to Mike.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub handoffs: Option<i64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub handoff_at: Option<f64>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub popup: Option<bool>,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub opened_at: Option<f64>,
 }
 
@@ -122,9 +139,12 @@ fn host(url: &str) -> Option<String> {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AgentState {
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub port: i64,
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub socket: String,
     /// The browser it runs: Helium, or Google Chrome without it.
+    #[serde(default, deserialize_with = "crate::wire::field")]
     pub browser: Option<String>,
     #[serde(deserialize_with = "capped_tabs")]
     pub tabs: Vec<AgentTab>,
@@ -142,16 +162,27 @@ fn capped_tabs<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<AgentTab>, 
         fn visit_seq<A: serde::de::SeqAccess<'de>>(self, mut seq: A) -> Result<Self::Value, A::Error> {
             let mut tabs = vec![];
             while tabs.len() < MAX_TABS {
-                match seq.next_element::<AgentTab>()? {
-                    Some(tab) => tabs.push(tab),
+                match seq.next_element::<Value>()? {
+                    Some(value) => { if let Some(tab) = crate::wire::read(value) { tabs.push(tab); } }
                     None => return Ok(tabs),
                 }
             }
             while seq.next_element::<serde::de::IgnoredAny>()?.is_some() {}
             Ok(tabs)
         }
+        // A wrongly typed tabs field leaves the host's other fields usable.
+        fn visit_map<A: serde::de::MapAccess<'de>>(self, mut map: A) -> Result<Self::Value, A::Error> {
+            while map.next_entry::<serde::de::IgnoredAny, serde::de::IgnoredAny>()?.is_some() {}
+            crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![])
+        }
+        fn visit_bool<E: serde::de::Error>(self, _: bool) -> Result<Self::Value, E> { crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![]) }
+        fn visit_i64<E: serde::de::Error>(self, _: i64) -> Result<Self::Value, E> { crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![]) }
+        fn visit_u64<E: serde::de::Error>(self, _: u64) -> Result<Self::Value, E> { crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![]) }
+        fn visit_f64<E: serde::de::Error>(self, _: f64) -> Result<Self::Value, E> { crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![]) }
+        fn visit_str<E: serde::de::Error>(self, _: &str) -> Result<Self::Value, E> { crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![]) }
+        fn visit_unit<E: serde::de::Error>(self) -> Result<Self::Value, E> { crate::wire::dropped::<AgentState>("tabs field"); Ok(vec![]) }
     }
-    d.deserialize_seq(Capped)
+    d.deserialize_any(Capped)
 }
 
 /// The biggest tabs.json read: a few hundred pages is a few hundred KB.
