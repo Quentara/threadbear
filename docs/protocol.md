@@ -1588,8 +1588,8 @@ restart wait for busy threads. It hands over instead:
   all, costs only that thread its card, not the others or the
   startup. A runner from before `drain.openCards` answers it "method not
   found", and its logs are read instead, a thread at a time, each with a
-  fair share of the time left and then, for one not read in it, whatever
-  is over (`threads.events`, a page at a time from the end). It puts them back on
+  fair share of the time left and then, for one not read in it, carrying
+  on with whatever is over (`threads.events`, a page at a time from the end). It puts them back on
   the thread's row and marks every thread it read, then writes
   (`Peers.openCards`, `ConvexSync.seedCards`, `release`). A card asked for
   or answered on the draining runner later reaches the row with the

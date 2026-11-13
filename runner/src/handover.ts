@@ -386,35 +386,40 @@ export class Peers {
       // it, with any amount of work after it (Codex's review, 13 Nov). Each
       // thread first gets a fair share of the time left, so one that has
       // stopped answering can't take the rest's (THREADBEAR-1Z), then any not
-      // read in its share tries again with whatever time is over.
-      const readLog = async (threadId: string, by: number): Promise<PersistedEvent[]> => {
-        const log: PersistedEvent[] = [];
-        let before: number | undefined;
+      // read in its share carries on, from the page it was waiting for, with
+      // whatever time is over.
+      type LogRead = { threadId: string; log: PersistedEvent[]; before?: number; waiting?: Promise<{ events: PersistedEvent[] }> };
+      const readLog = async (r: LogRead, by: number): Promise<PersistedEvent[]> => {
         for (;;) {
           const left = by - Date.now();
           if (left <= 0) throw new Error('out of time');
-          const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
-          log.unshift(...page.events);
+          r.waiting ??= peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId: r.threadId, limit: size, ...(r.before !== undefined ? { beforeSeq: r.before } : {}) });
+          const page = await withTimeout(r.waiting, left);
+          r.waiting = undefined;
+          r.log.unshift(...page.events);
           const first = page.events[0]?.seq;
           // Not a short page: an edit's cut can make one short mid-log.
-          if (first === undefined || first <= 1) return log;
-          before = first;
+          if (first === undefined || first <= 1) return r.log;
+          r.before = first;
         }
       };
       const read: Read[] = [];
-      const late: string[] = [];
+      const late: LogRead[] = [];
       for (const [i, threadId] of ids.entries()) {
+        const r: LogRead = { threadId, log: [] };
         try {
-          read.push({ peer, threadId, events: openCardEvents(await readLog(threadId, Date.now() + (until - Date.now()) / (ids.length - i))) });
+          read.push({ peer, threadId, events: openCardEvents(await readLog(r, Date.now() + (until - Date.now()) / (ids.length - i))) });
         } catch {
-          late.push(threadId);
+          late.push(r);
         }
       }
-      for (const threadId of late) {
+      for (const r of late) {
         try {
-          read.push({ peer, threadId, events: openCardEvents(await readLog(threadId, until)) });
+          read.push({ peer, threadId: r.threadId, events: openCardEvents(await readLog(r, until)) });
         } catch (e) {
-          this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
+          // Nothing more to wait for, but a page still coming is not a failure.
+          r.waiting?.catch(() => {});
+          this.deps.log.warn("could not read a draining runner's open cards", { threadId: r.threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
         }
       }
       return read;
