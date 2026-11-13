@@ -225,9 +225,13 @@ on this backend (`remoteThreads.updated` with runners), or either is already tru
 few minutes after it starts (`sync:listTokens` and the other-runners list). The
 question names what happened ("You've paired your phone. Want it to show this
 Mac's tool output and diffs too, even when the Mac's asleep?"). It then notes
-`sync.fullAsked` and `sync.fullAskedThread` so it never asks again, and that thread
-sets the answer with `tb settings full on|off` (no answer leaves it off), the only
-thread that may, whatever its mode (`src/rpc-gate.ts`). An install with `sync.full`
+`sync.fullAsked` and `sync.fullAskedThread` so it never asks again. Mike's pick on
+that thread's card sets the answer: the runner does it itself, from the message's
+`answers` (Runner's `answered`, `fullSyncAnswerer`), and forgets the thread so it
+happens once (no answer leaves it off). The thread's agent can't set it unless it's
+on Full: an agent only reads the answer as words, and until 13 Nov any thread of the
+same mode could send it those words and have it run `tb settings full on` (Daybreak
+121). Agents' messages never carry `answers` (`src/rpc-gate.ts` takes them out). An install with `sync.full`
 set either way is never asked or changed, and a runner key's machine is never asked.
 `tb status` estimates this runner's use against Free and warns past 70% ("Warning
 before the limits" in docs/convex-backend.md); for its first day it shows what's

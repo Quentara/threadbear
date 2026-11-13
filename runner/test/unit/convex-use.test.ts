@@ -23,12 +23,12 @@ test('only a main runner with no answer yet may be asked, once', () => {
   assert.equal(shouldAskFullSync({ syncOn: true, key: undefined, full: undefined, asked: undefined }), false);
 });
 
-test('the question names both answers and the commands that set them', () => {
+test('the question names both answers, and the agent is told the pick sets it, not it', () => {
   const b = askBrief("'/x/tb'");
   assert.match(b.text, /Turn it on/);
   assert.match(b.text, /Leave it off/);
-  assert.match(b.text, /'\/x\/tb' settings full on/);
-  assert.match(b.text, /'\/x\/tb' settings full off/);
+  assert.doesNotMatch(b.text, /settings full on/);
+  assert.match(b.text, /the runner does that itself/);
   assert.match(b.text, /isn't a guarantee/);
 });
 

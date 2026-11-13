@@ -198,19 +198,48 @@ export function fullSyncQuestion(reason: FullSyncReason | undefined, machine: st
 // it again rather than ask twice.
 export const FULL_SYNC_ASK_TITLE = 'Show tool output on your other devices?';
 
+// The card's two options. The runner sets the answer itself when Mike picks
+// one on the card (fullSyncAnswer), not the asking thread's agent: an agent
+// is only told the answer as text, and another thread could send it the
+// same words (Daybreak 121, 13 Nov 2026).
+export const FULL_SYNC_ON = 'Turn it on';
+export const FULL_SYNC_OFF = 'Leave it off';
+
+/**
+ * What Mike picked on the asking thread's open card, or undefined. Only a
+ * message's `answers` count, which come from the app, the phone or the
+ * website (an agent's are taken out, rpc-gate.ts), and only for an ask on
+ * that card that offers just these two options.
+ */
+export function fullSyncAnswer(answers: { action: string; answer: string }[] | undefined, card: { action: string; options?: string[] }[] | undefined): boolean | undefined {
+  const ask = card?.find((a) => a.options?.length === 2 && a.options.includes(FULL_SYNC_ON) && a.options.includes(FULL_SYNC_OFF));
+  const picked = ask && answers?.find((a) => a.action === ask.action)?.answer;
+  return picked === FULL_SYNC_ON ? true : picked === FULL_SYNC_OFF ? false : undefined;
+}
+
+/** Runner's `answered`: Mike's pick on the asking thread's card sets full sync, once (settings.update forgets the thread). */
+export function fullSyncAnswerer(o: { askedThread: () => string | undefined; set: (on: boolean) => void }) {
+  return (threadId: string, answers: { action: string; answer: string }[], card: { action: string; options?: string[] }[] | undefined): void => {
+    const asked = o.askedThread();
+    if (!asked || threadId !== asked) return;
+    const on = fullSyncAnswer(answers, card);
+    if (on !== undefined) o.set(on);
+  };
+}
+
 export function askBrief(tb: string, reason?: FullSyncReason, machine = 'Mac'): { title: string; why: string; text: string } {
   const question = fullSyncQuestion(reason, machine);
   return {
     title: FULL_SYNC_ASK_TITLE,
     why: 'asks once about full sync',
     text: [
-      "You're starting this on the runner's behalf (docs/full-convex.md step 6). Ask the user one question, then set the answer. Don't do anything else.",
+      "You're starting this on the runner's behalf (docs/full-convex.md step 6). Ask the user one question. Don't do anything else.",
       '',
-      `End your turn at once with end_turn: needs "you", one ask, the question "${question}", options "Turn it on" (does: "Tool output, input and diffs go up too, scrubbed, kept 30 days") and "Leave it off" (does: "Only messages and a line per tool, as now"), suggested none.`,
+      `End your turn at once with end_turn: needs "you", one ask, the question "${question}", options "${FULL_SYNC_ON}" (does: "Tool output, input and diffs go up too, scrubbed, kept 30 days") and "${FULL_SYNC_OFF}" (does: "Only messages and a line per tool, as now"), suggested none.`,
       `Your reply, in plain words and short: with this on, the phone, the website and other machines can open a thread's tool output and diffs, not just its messages and a line per tool, even when this ${machine} isn't there to ask. They go to the user's own Convex deployment, kept 30 days, with secrets scrubbed out first, but that isn't a guarantee; screenshots and files that hold secrets stay on this ${machine}.`,
       '',
-      `When they answer: for "Turn it on", run \`${tb} settings full on\`; for "Leave it off", run \`${tb} settings full off\`. Say in one line what you set and that it takes effect when the runner next starts, then end_turn with needs "nothing" and archive true.`,
-      "If they write something else, answer it briefly and ask again. If they never answer, nothing changes: it stays off and this isn't asked again.",
+      `Picking an option on the card sets it: the runner does that itself, and you can't (don't run \`${tb} settings\`). When they've picked one, say in one line which they picked and that it takes effect when the runner next starts, then end_turn with needs "nothing" and archive true.`,
+      `If they write something else, answer it briefly and ask again with the same card: only a pick on it counts. If they never answer, nothing changes: it stays off and this isn't asked again.`,
     ].join('\n'),
   };
 }

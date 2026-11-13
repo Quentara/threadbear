@@ -42,7 +42,7 @@ import { ClaudeAdapter } from './adapters/claude/adapter.ts';
 import { ProcessRegistry } from './proc.ts';
 import { Runner } from './runner.ts';
 import { startOwnThread } from './own-threads.ts';
-import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncReason } from './convex-use.ts';
+import { askBrief, ConvexUseTally, FullSyncOffer, fullSyncAnswerer, fullSyncReason } from './convex-use.ts';
 // How long after starting the runner looks for a reason to ask about full sync,
 // and how long after a pairing or a new machine it asks (convex-use.ts).
 const ASK_FULL_SYNC_AFTER_MS = 5 * 60_000;
@@ -318,6 +318,9 @@ async function main(): Promise<void> {
   const instructions = new InstructionsStore({ home: cfg.home, token, publish: (n) => runner.publish(n) });
   runner = new Runner({
     threadKey: (id) => makeThreadKey(token, id),
+    // Mike's pick on the full sync question's card sets it, once: the asking
+    // thread's agent can't (Daybreak 121, convex-use.ts fullSyncAnswer).
+    answered: fullSyncAnswerer({ askedThread: () => readRunnerJson(cfg.home).sync?.fullAskedThread, set: (on) => void settings.update({ fullSync: on }) }),
     standingInstructions: () => instructions.given(),
     projects,
     atMac: () => atMac,
@@ -1115,7 +1118,7 @@ async function main(): Promise<void> {
     methods,
     remote: peers,
     relay,
-    gate: new CallerGate({ runner, remote: peers, schedules: scheduler, fullSyncAskThread: () => readRunnerJson(cfg.home).sync?.fullAskedThread }),
+    gate: new CallerGate({ runner, remote: peers, schedules: scheduler }),
     callerOfPort: (port) => threadOfPort(port, { registry, known: (id) => runner.has(id) || peers.owns(id), log }),
     updates: () => (draining ? undefined : runnerUpdates()),
     appHello: (build, app) => appRestarts.appHello(build, app),

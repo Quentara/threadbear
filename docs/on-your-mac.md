@@ -578,8 +578,8 @@ show each thread's tool output and diffs, not just its messages, even when the
 machine that ran it is asleep or gone, so it only helps once there's something
 other than this Mac to read them on. The main runner asks once, in a thread of its
 own, when that happens: a phone or the website paired, or another machine added.
-It does what you answer, and never asks again (`tb settings full on|off` sets it any
-time). An install with `sync.full` set either way is never asked or changed; a Linux
+Your pick on its card sets it (the runner does that itself, not the thread's agent),
+and it never asks again (`tb settings full on|off` sets it any time). An install with `sync.full` set either way is never asked or changed; a Linux
 runner has whatever its own `runner.json` says. `"sync": { "full": false }` keeps tool output,
 diffs and tool screenshots on that runner, and then nothing below happens. With it on, from then on (older tools aren't sent), that
 runner also sends each finished tool's output, its full input, its diffs and the

@@ -143,7 +143,11 @@ export class SettingsService {
     if (u.bringIn !== undefined) json.releases = { ...json.releases, bringIn: u.bringIn };
     // Saved only: the mirror reads it when the runner starts. Either answer is
     // an answer, so the runner never asks about it again (convex-use.ts).
-    if (u.fullSync !== undefined) json.sync = { ...json.sync, full: u.fullSync };
+    // And the question's thread can't answer it again (Daybreak 121).
+    if (u.fullSync !== undefined) {
+      const { fullAskedThread: _t, ...sync } = json.sync ?? {};
+      json.sync = { ...sync, full: u.fullSync };
+    }
     if (folders !== undefined || pool !== undefined) {
       json.models = { ...json.models };
       if (pool !== undefined) json.models.pool = this.cfg.models.pool = pool;

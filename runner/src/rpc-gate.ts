@@ -67,9 +67,6 @@ export type CallerGateDeps = {
     find(idOrPrefix: string): { id: string; title: string; threadId?: string; permissionMode?: PermissionMode; check?: string; paused?: boolean };
     list(threadId?: string): { threadId?: string; check?: string }[];
   };
-  // The thread the runner started to ask about full sync (convex-use.ts), the
-  // one that may set it whatever its mode, as it's only told the answer.
-  fullSyncAskThread?: () => string | undefined;
 };
 
 const ALL = ['inbox', 'snoozed', 'archived'] as const;
@@ -175,10 +172,6 @@ export class CallerGate {
         return this.scheduleRun(caller, p, needs);
       case 'schedules.delete':
         return p;
-      case 'settings.update':
-        // Just full sync, from just the thread the runner started to ask about it.
-        if (Object.keys(p).length === 1 && typeof p.fullSync === 'boolean' && threadId === this.deps.fullSyncAskThread?.()) return p;
-        throw needs(`calling ${method}`);
       default:
         throw needs(`calling ${method}`);
     }

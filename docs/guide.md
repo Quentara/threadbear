@@ -2054,7 +2054,7 @@ your phone, the website and your other machines can show each tool's output and
 diffs too, even when your Mac's asleep: its output, its input and diffs go up, after
 the same scrubbing, and are kept 30 days; output from files and commands that
 usually hold secrets stays on your Mac, and so do tool screenshots. Threadbear asks
-once, when you pair a phone or add a machine; Send tool output to Convex in Settings
+once, when you pair a phone or add a machine, and your pick on that card sets it; Send tool output to Convex in Settings
 (⌘,) > General > Full sync, or `tb settings full on|off`, sets it any time, from the
 runner's next start. `tb status` estimates how much of Convex's Free plan you're using and
 warns before you get near its limits. Pictures you paste into

@@ -33,6 +33,7 @@ import type {
   EventBody,
   ImageRef,
   InProgressItem,
+  Ask,
   AskAnswer,
   MessageOrigin,
   ModelChoice,
@@ -546,6 +547,11 @@ export const DRAIN_AGENT_MS = 4 * 60 * 60_000;
 export const SAVE_RETRY_MS = 5000;
 
 export type RunnerDeps = {
+  // A message that answers the thread's open card (`answers`, which only
+  // the app, the phone and the website send: an agent's are taken out,
+  // rpc-gate.ts), with that card's asks. For an answer the runner acts on
+  // itself, like the full sync question's (main.ts).
+  answered?: (threadId: string, answers: AskAnswer[], card: Ask[] | undefined) => void;
   // The release it runs, when not this code's own (tests).
   release?: string;
   // A thread's RPC credential, for its CLI's environment (rpc-auth.ts).
@@ -767,8 +773,10 @@ export class Runner {
   atMac?: () => boolean | undefined;
 
   private threadKey?: (threadId: string) => string;
+  private answered?: RunnerDeps['answered'];
   constructor(deps: RunnerDeps) {
     this.threadKey = deps.threadKey;
+    this.answered = deps.answered;
     if ('release' in deps) this.release = deps.release;
     this.cfg = deps.config;
     this.store = deps.store;
@@ -1523,6 +1531,14 @@ export class Runner {
 
   sendTo(st: ThreadState, text: string, images: ImageRef[], opts: SendOptions = {}): string {
     const { rec, rt } = st;
+    if (opts.answers?.length && fromMike(text, opts) && this.answered) {
+      const open = rec.needs?.needs === 'you' && rec.needs.seq === rec.lastTurnCompletedSeq ? rec.needs.asks : undefined;
+      try {
+        this.answered(rec.id, opts.answers, open);
+      } catch (e) {
+        this.log.warn('acting on an answer failed', { threadId: rec.id, error: String((e as Error)?.message ?? e) });
+      }
+    }
     if (opts.origin !== 'runner') {
       rt.hookTurns = undefined;
       delete rec.stoppedWorkWakes;
