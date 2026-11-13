@@ -179,7 +179,7 @@ runner, like a second Mac: its threads show in the Mac app's sidebar and on
 the phone, and the composer's machine chip starts threads there. It runs the
 runner only, no app. Ubuntu 24.04 on x86_64 is what's been tried, on a
 Hetzner cloud server with 8 GB. Do this as an ordinary user with sudo, not root.
-Normal thread control uses Convex; steps 4 and 8 are only for direct access.
+Threads on it are opened and steered from the Mac through Convex, so nothing connects to it directly.
 
 1. **Packages:** `sudo apt-get install -y git build-essential imagemagick
    librsvg2-bin bubblewrap jq lsof rsync` (ImageMagick and rsvg-convert stand in for
