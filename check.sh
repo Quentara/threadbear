@@ -22,8 +22,10 @@
 #   --quick       runner typecheck and unit tests (about a minute), plus
 #                 the Swift Mac app's release build when it changed,
 #                 the desktop app's core and client tests when
-#                 desktop/ changed, and the public site's build (site/)
-#                 when it or the guide changed
+#                 desktop/ changed, the public site's build (site/)
+#                 when it or the guide changed, and the GPUI specs'
+#                 pairing check (features/verify-pairing.mjs) when a
+#                 spec, its steps or docs/gpui-port/features.md changed
 #   --runner      only the runner's typecheck and unit tests, nothing else
 #                 that --quick adds (Convex, web, app tools, iPhone kit), on
 #                 main too: the runner's self-update runs this (deploy.mjs),
@@ -333,6 +335,16 @@ if [ "$APP_ONLY" = 0 ] && [ "$RUNNER_ONLY" = 0 ]; then
     step "site build" "$ROOT/site" node scripts/build.mjs --check
   else
     skip "site build" "nothing the site reads changed"
+  fi
+  # The GPUI specs (features/) line up with their step files, and every
+  # scenario has a features.md id tag of its own: the Desktop workflow's
+  # first step. On 13 Nov a spec tagged on its Feature line only passed
+  # tb land, then failed that workflow on all three systems and held up
+  # every desktop landing after it. Plain node, no packages, under a second.
+  if needed '^features/|^docs/gpui-port/features\.md$'; then
+    step "feature pairing" "$ROOT/features" node verify-pairing.mjs
+  else
+    skip "feature pairing" "no spec, step file or features.md changed"
   fi
 fi
 if [ "$APP_ONLY" = 0 ]; then
