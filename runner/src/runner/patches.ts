@@ -830,6 +830,13 @@ export const patchesPart = {
     return [...this.threads.values()].filter((st) => st.rt.hooksRunning && !st.rt.deleted).map((st) => st.rec.id);
   },
 
+  // The threads going back to an earlier message (editMessage), which a
+  // restart waits for too: one cut off between putting the files back and
+  // writing thread.rewound loses the edit but keeps the files' undoing.
+  threadsEditing(this: Runner): string[] {
+    return [...this.threads.values()].filter((st) => st.rt.editing && !st.rt.deleted).map((st) => st.rec.id);
+  },
+
   async runHookList(this: Runner, st: ThreadState, hooks: PatchSet['hooks']): Promise<void> {
     for (const hook of hooks) {
       if (st.rt.deleted || this.stopping) return;

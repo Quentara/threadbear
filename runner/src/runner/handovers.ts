@@ -45,8 +45,10 @@ export const handoversPart = {
       // count that as busy, but its result may start a turn, and an archive
       // waiting for it (archiveWhenGone) isn't saved anywhere to pick up.
       // And one hibernating in words whose model is still working out when
-      // (readyToHandOver): the new runner would wake it.
-      keep: new Set([...keep, ...[...this.threads.values()].filter((st) => st.rt.cleaning || st.rt.hooksRunning || st.rec.wakeWhen?.pending).map((st) => st.rec.id)].filter((id) => this.threads.has(id))),
+      // (readyToHandOver): the new runner would wake it. And one going back
+      // to an earlier message: letting it go mid-edit saved the record from
+      // before the cut, after the files had been put back (13 Nov 2026).
+      keep: new Set([...keep, ...[...this.threads.values()].filter((st) => st.rt.cleaning || st.rt.hooksRunning || st.rt.editing || st.rec.wakeWhen?.pending).map((st) => st.rec.id)].filter((id) => this.threads.has(id))),
       going: new Set(),
       gone: new Set(),
       onHandedOver: opts.onHandedOver,
@@ -157,7 +159,7 @@ export const handoversPart = {
   // builder agent an agent left running was cut off after 30 minutes).
   readyToHandOver(this: Runner, st: ThreadState, d: Drain): boolean {
     const { rt } = st;
-    if (rt.turn || rt.approvals.size || rt.wakeTimer || rt.hooksRunning || rt.runningActions?.size) return false;
+    if (rt.turn || rt.approvals.size || rt.wakeTimer || rt.hooksRunning || rt.runningActions?.size || rt.editing) return false;
     // Hibernating in words: its model is still working out when. Crossing
     // now, the new runner would wake it (wakesOnStart) and this one's answer
     // would go nowhere. Not past DRAIN_MAX_OLD_MS, as for background work.

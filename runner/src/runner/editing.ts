@@ -135,6 +135,8 @@ export const editingPart = {
         // Messages sent while it failed still go.
         if (!rt.turn) this.kickQueue(st);
       }
+      // A handover that began meanwhile kept the thread for the edit.
+      if (this.draining) this.queueHandoverCheck();
       this.markDirty(st);
     }
   },

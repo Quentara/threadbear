@@ -162,7 +162,7 @@ export function threadEnv(threadId: string, home: string, basePath = process.env
 }
 
 export type RestarterDeps = {
-  runner: Pick<Runner, 'list' | 'get' | 'send' | 'note' | 'notice' | 'onNotification' | 'events' | 'backgroundWork' | 'threadsWithHooksRunning' | 'refuseNewTurns'>;
+  runner: Pick<Runner, 'list' | 'get' | 'send' | 'note' | 'notice' | 'onNotification' | 'events' | 'backgroundWork' | 'threadsWithHooksRunning' | 'threadsEditing' | 'refuseNewTurns'>;
   home: string;
   clock: Clock;
   log: Logger;
@@ -391,6 +391,8 @@ export class Restarter {
     // for it would wait for the next runner. Hooks end by themselves (runCommand's
     // timeout), so no limit like background work's.
     for (const id of this.deps.runner.threadsWithHooksRunning()) ids.add(id);
+    // An edit cutting the session back: a few seconds at most.
+    for (const id of this.deps.runner.threadsEditing()) ids.add(id);
     return [...ids];
   }
 
