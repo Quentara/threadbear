@@ -1969,6 +1969,18 @@ time, a topic, or both:
   woodworking in "Router table jig"."). A topic with no time has the far-off
   `snoozedUntil`; with one, whichever comes first wakes it.
 
+The thread's own agent can ask the same in end_turn's snooze ("until the
+GPUI app replaces the Swift app"). Then the model is told it's an agent
+waiting for something to happen, and a topic is that thing said as done
+("the GPUI app has replaced the Swift app"). The runner keeps who asked
+(`by: 'agent'`, never in a `ThreadSummary`), the librarian's look lists
+those separately and wakes one only when the looked-at thread shows it has
+happened, not when it's planned or talked about, and the thread wakes
+("Woke up: to check whether …, from "GPUI Port Coordinator".") with a
+runner message giving the agent a turn to check for itself and snooze again
+with the same words if it hasn't. That message names the other thread's id
+only when send_message would let it without a card.
+
 The thread gets a `system.note` saying what was worked out ("Hibernating
 until Saturday 31 October, 9 am. You said "at the weekend"."). A model
 that can't say (no pool room, an answer that isn't a time or a topic)

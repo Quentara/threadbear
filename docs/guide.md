@@ -632,7 +632,10 @@ You can also ask a thread to do it to itself ("hibernate this until
 Thursday", "archive this when you're done"). It finishes its reply first,
 then goes, with a note in the thread saying when it'll be back. A time
 works, or words like "until the phone arrives", read the same way as Wake
-when…. It won't put itself away while it's waiting on you. A thread
+when…. When the words are something to happen ("until the GPUI app
+replaces the Swift app"), the librarian wakes it once another thread shows
+it has, not just when it's talked about, and the thread gets a turn to
+check for itself: if it hasn't really happened, it goes back to sleep. It won't put itself away while it's waiting on you. A thread
 whose next step waits on other threads hibernates by itself until they
 finish, then wakes with what they said and carries on; its row says
 Waiting on and which. If it was given more access while it slept, and

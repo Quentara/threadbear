@@ -2558,7 +2558,7 @@ export class Runner {
     if (until === undefined) {
       // A failure puts the thread back in the inbox (hibernateWhen), so
       // Mike sees it, with a note saying why.
-      this.hibernateWhen({ threadId: rec.id, said: when }).catch((e: unknown) => {
+      this.hibernateWhen({ threadId: rec.id, said: when, by: 'agent' }).catch((e: unknown) => {
         if (st.rt.deleted) return;
         this.emit(st, { type: 'system.note', text: `Not hibernated, as the agent was asked to: ${e instanceof Error ? e.message : String(e)}` });
       });
@@ -3573,7 +3573,11 @@ export class Runner {
     if (rec.snoozedUntil) s.snoozedUntil = rec.snoozedUntil;
     if (rec.snoozedUntilRestart) s.snoozedUntilRestart = true;
     if (rec.snoozedUntilRestart && rec.untilRelease) s.snoozedUntilRelease = true;
-    if (rec.wakeWhen && rec.snoozedUntil) s.wakeWhen = { ...rec.wakeWhen };
+    if (rec.wakeWhen && rec.snoozedUntil) {
+      // Who set it stays in the runner (WakeWhen.by): the protocol has none.
+      const { by: _by, ...wakeWhen } = rec.wakeWhen;
+      s.wakeWhen = wakeWhen;
+    }
     if (rec.waitingOn && rec.snoozedUntil) s.waitingOn = rec.waitingOn.map((w) => ({ threadId: w.threadId, title: w.title, ...(w.until ? { until: w.until } : {}), ...(w.done ? { done: true as const } : {}) }));
     if (rec.woke && rec.forceUnread) s.woke = { ...rec.woke };
     if (rec.archivedAt) {

@@ -60,7 +60,7 @@ export type LibrarianHost = {
   setKeywords?(threadId: string, words: string): void;
   // Threads hibernating until Mike next talks about something
   // (wake-when.ts), and waking one he just did.
-  waitingTopics?(): { threadId: string; title: string; topic: string }[];
+  waitingTopics?(): { threadId: string; title: string; topic: string; happened?: true }[];
   wakeForTopic?(threadId: string, inThreadId: string): boolean;
   // Threads hibernating until this one has done something in particular
   // (end_turn's waitFor until), and saying one has.
@@ -711,9 +711,15 @@ export class Librarian {
     const worked = [...(this.workedIn.get(rec.id) ?? [])].filter((r) => !this.edited.get(rec.id)?.has(r)).map((r) => this.tilde(r));
     if (worked.length) lines.push(`Ran commands in: ${worked.join(', ')}`);
     const waiting = this.waitingFor(rec);
-    if (waiting.length) {
+    const talk = waiting.filter((w) => !w.happened);
+    const happen = waiting.filter((w) => w.happened);
+    if (talk.length) {
       lines.push('', 'Hibernating threads waiting for the user to talk about something:');
-      for (const w of waiting) lines.push(`- ${w.threadId.slice(0, 8)} "${w.title}": ${w.topic}`);
+      for (const w of talk) lines.push(`- ${w.threadId.slice(0, 8)} "${w.title}": ${w.topic}`);
+    }
+    if (happen.length) {
+      lines.push('', 'Hibernating threads waiting until something has happened:');
+      for (const w of happen) lines.push(`- ${w.threadId.slice(0, 8)} "${w.title}": ${w.topic}`);
     }
     // Not a waiter in a private folder: its title and condition aren't
     // sent, so its wait only ends at its time. Kept for apply, so an
@@ -962,7 +968,7 @@ export class Librarian {
   }
 
   // The other threads waiting on a topic.
-  private waitingFor(rec: ThreadRecord): { threadId: string; title: string; topic: string }[] {
+  private waitingFor(rec: ThreadRecord): { threadId: string; title: string; topic: string; happened?: true }[] {
     return (this.host.waitingTopics?.() ?? []).filter((w) => w.threadId !== rec.id);
   }
 
@@ -1580,7 +1586,7 @@ Reply with JSON only, no prose and no code fence:
  "title": null, or a new title when the thread's title no longer says what it's about (see below),
  "keywords": "${KEYWORDS_ASK}",
  "retitle": {"<project id>": "the project's new name"} for a project it's in whose name has gone out of date (see below), else {},
- "wake": ["<ids of hibernating threads the user is talking about here>"], or [] (see below),
+ "wake": ["<ids of hibernating threads the user is talking about here, or whose thing has happened here>"], or [] (see below),
  "met": {"<id of a thread waiting until this one has done something>": "what shows it has, in a few words"}, or {} (see below),
  "pocket": null, or {"save": [{"title": "short name", "text": "the card", "place": "optional", "icon": "optional"}], "remove": ["title"]} (see below),
  "why": "one short line"}
@@ -1595,7 +1601,7 @@ Keep the thread's title (title null) unless it no longer says what the thread is
 
 Keep projects' names too, unless one the thread is in has gone out of date: the thing it's about was renamed (an app renamed from Scribble to Inkwell leaves "Scribble" or a vaguer "drawing app" behind), or a project named for what it does now has a name of its own. Give the new name the user would say, keeping the old words in brackets when they still help: "Inkwell (drawing app)". A better wording of the same name is no reason, and never rename one marked as named by the user. Most looks rename none.
 
-Some hibernating threads are waiting for the user to talk about something again ("woodworking"). Put one in wake when the user's own messages in this thread are about that: they're working on it, planning it or asking about it. A passing mention, or only the agent bringing it up, isn't enough. Most looks wake none.
+Some hibernating threads are waiting for the user to talk about something again ("woodworking"). Put one in wake when the user's own messages in this thread are about that: they're working on it, planning it or asking about it. A passing mention, or only the agent bringing it up, isn't enough. Others are waiting until something has happened ("the GPUI app has replaced the Swift app"): put one of those in wake only when this thread's messages, the agent's or the user's, show it has: done, shipped or decided, not only planned, under way or talked about. Most looks wake none.
 
 Some hibernating threads are waiting until this thread has done something ("until it reports the I/O saving"). Put one in met when this thread's messages, the agent's or the user's, show it has: done, measured, reported or decided, not only planned, started or still going. Most looks meet none.
 

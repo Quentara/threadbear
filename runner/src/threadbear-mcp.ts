@@ -1482,7 +1482,7 @@ export function buildThreadbearTools(
         snooze: z
           .string()
           .optional()
-          .describe('Hibernates this thread once the turn is over, until 2h, 1d, tomorrow, an ISO time with its offset, "restart" (the runner next starting), "release" (it starting on a new release) or words saying when ("when the phone arrives"), with needs "nothing": when the user asked for that, or when the rest waits on a message (one wakes it), until it should have come. It only brings the thread back, it doesn\'t run you: for a step of your own later, use schedule_message. Asked after you called end_turn? Call it again with this.'),
+          .describe('Hibernates this thread once the turn is over, until 2h, 1d, tomorrow, an ISO time with its offset, "restart" (the runner next starting), "release" (it starting on a new release) or words saying when ("when the phone arrives"), with needs "nothing": when the user asked for that, or when the rest waits on a message (one wakes it), until it should have come. It only brings the thread back, it doesn\'t run you: for a step of your own later, use schedule_message. The one exception is words for something to happen ("until the GPUI app replaces the Swift app"): once another thread shows it has, you wake with a turn to check, and snooze again with the same words if it hasn\'t. Asked after you called end_turn? Call it again with this.'),
         waitFor: waitForArg,
         findings: findingsArg,
       },
@@ -1587,7 +1587,7 @@ export function buildThreadbearTools(
         snooze: z
           .string()
           .optional()
-          .describe('Hibernate this thread once the turn is over, until 30m, 2h, 1d, tomorrow, an ISO time with its offset, "restart" (until the runner next starts), "release" (until it starts on a new release), or words saying when ("when the phone arrives"). Only with needs "nothing": when the user has asked for this thread to be snoozed or hibernated, or when the rest waits on a message (one wakes it), until it should have come. It only brings the thread back, it doesn\'t run you: for a step of your own later, use schedule_message. If they ask after you have called end_turn, call it again with this.'),
+          .describe('Hibernate this thread once the turn is over, until 30m, 2h, 1d, tomorrow, an ISO time with its offset, "restart" (until the runner next starts), "release" (until it starts on a new release), or words saying when ("when the phone arrives"). Only with needs "nothing": when the user has asked for this thread to be snoozed or hibernated, or when the rest waits on a message (one wakes it), until it should have come. It only brings the thread back, it doesn\'t run you: for a step of your own later, use schedule_message. The one exception is words for something to happen ("until the GPUI app replaces the Swift app"): once another thread shows it has, you wake with a turn to check, and snooze again with the same words if it hasn\'t. If they ask after you have called end_turn, call it again with this.'),
         waitFor: waitForArg,
         findings: findingsArg,
       },
