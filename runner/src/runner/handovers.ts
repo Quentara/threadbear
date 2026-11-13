@@ -12,8 +12,9 @@ import type { ThreadRecord } from '../store.ts';
 import type { Drain, ThreadState } from '../runner.ts';
 import { DRAIN_AGENT_MS, DRAIN_BACKGROUND_MS, DRAIN_CHECK_MS, DRAIN_MAX_OLD_MS, DRAIN_SETTLE_MS, newRuntime } from '../runner.ts';
 
-// Runner.openCards: events read from a log at once (threads.events' most).
-const OPEN_CARDS_CHUNK = 10_000;
+// Runner.openCards: events read from a log at once, kept small as each
+// chunk is read and parsed in one go on a runner still running turns.
+const OPEN_CARDS_CHUNK = 1_000;
 
 // How long a handover waits for an archive's worktree cleanup (letGo).
 // Removing a big worktree can take a while, and a git change still running
@@ -72,8 +73,7 @@ export const handoversPart = {
   // the primary rather than the log (THREADBEAR-1Z, Peers.openCards). One
   // thread a call, so a long log costs only its own thread, and each answer
   // is that thread's cards alone. A chunk at a time with a break between,
-  // as this runner is still running those threads' turns: no longer a stall
-  // than the threads.events pages it replaces.
+  // as this runner is still running those threads' turns.
   async openCards(this: Runner, threadId: string, chunk = OPEN_CARDS_CHUNK): Promise<PersistedEvent[]> {
     if (!this.draining?.keep.has(threadId) || !this.threads.has(threadId)) throw new RpcError(ErrorCode.moved, 'This runner has handed that thread over to the new one.');
     const log = this.store.log(threadId);

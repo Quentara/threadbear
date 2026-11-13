@@ -1036,6 +1036,31 @@ test('Runner.openCards: the cards nothing has answered on a kept thread, a chunk
   ac.abort();
 });
 
+test('Peers.openCards, from a release before drain.openCards: a thread that stops answering first costs only its own share of the time', async () => {
+  const h = makeHarness();
+  const { writeDrainInfo, Peers } = await import('../../src/handover.ts');
+  const threads = ['t-hung', 't-a', 't-b'];
+  writeDrainInfo(h.home, { pid: 494949, port: 1, version: 'old', since: new Date().toISOString(), threads });
+  const ts = '2026-11-13T00:00:00.000Z';
+  const client = {
+    call: async (method: string, p: any) => {
+      if (method === 'drain.hello') return { threads, version: 'old' };
+      if (method === 'drain.openCards') throw new RpcClientError(ErrorCode.methodNotFound, 'Unknown method drain.openCards');
+      if (method === 'threads.list') return { threads: threads.map((id) => ({ id, title: id, status: 'waiting', lastActivityAt: ts })) };
+      if (method === 'threads.events' && p.threadId === 't-hung') return new Promise(() => {});
+      if (method === 'threads.events') return { events: [{ type: 'question.requested', seq: 1, ts, approvalId: `q-${p.threadId}`, questions: [] }] };
+      return {};
+    },
+    onNotification: () => () => {},
+    waitClosed: () => new Promise<never>(() => {}),
+    close: () => {},
+  };
+  const peers = new Peers({ home: h.home, token: 't', log: nullLogger, runner: { adopt: () => undefined, publish: () => {}, waitedOnDeleted: () => {} }, sweep: async () => {}, connect: async () => client as any, alive: () => true });
+  await peers.connectAll();
+  const found = await peers.openCards({ deadlineMs: 300 });
+  assert.deepEqual(found.map((f) => [f.thread.id, f.events.map((e) => (e as { approvalId: string }).approvalId)]), [['t-a', ['q-t-a']], ['t-b', ['q-t-b']]]);
+});
+
 test('Peers.openCards, from a release before drain.openCards: each summary as it is once every log is read', async () => {
   const h = makeHarness();
   const { writeDrainInfo, Peers } = await import('../../src/handover.ts');

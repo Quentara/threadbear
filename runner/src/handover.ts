@@ -383,14 +383,17 @@ export class Peers {
       // A release from before drain.openCards: its logs, one thread at a time
       // so only one page waits on the connection, the whole log a page at a
       // time from the end: a sub-agent's card can outlive the turn that asked
-      // it, with any amount of work after it (Codex's review, 13 Nov).
+      // it, with any amount of work after it (Codex's review, 13 Nov). Each
+      // thread gets a fair share of the time left, so one that has stopped
+      // answering can't take the rest's (THREADBEAR-1Z).
       const read: Read[] = [];
-      for (const threadId of ids) {
+      for (const [i, threadId] of ids.entries()) {
         const log: PersistedEvent[] = [];
+        const by = Date.now() + (until - Date.now()) / (ids.length - i);
         try {
           let before: number | undefined;
           for (;;) {
-            const left = until - Date.now();
+            const left = by - Date.now();
             if (left <= 0) throw new Error('out of time');
             const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
             log.unshift(...page.events);
