@@ -32,7 +32,7 @@ const WAITING_LIMIT = 50;
 
 const row = v.object({ ...threadFields, view: v.union(...views.map((x) => v.literal(x))) });
 const message = v.object({ seq: v.number(), role: v.union(v.literal('user'), v.literal('assistant')), text: v.string(), origin: v.optional(v.string()), at: v.string() });
-const pageMessage = v.object({ seq: v.number(), role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool')), text: v.string(), origin: v.optional(v.string()), toolKind: v.optional(v.string()), summary: v.optional(v.boolean()), plan: v.optional(v.boolean()), turn: v.optional(v.string()), wokeBy: v.optional(v.array(v.object({ kind: v.string(), description: v.string() }))), buttons: v.optional(v.array(messageButton)), at: v.string() });
+const pageMessage = v.object({ seq: v.number(), role: v.union(v.literal('user'), v.literal('assistant'), v.literal('tool'), v.literal('note')), text: v.string(), origin: v.optional(v.string()), toolKind: v.optional(v.string()), summary: v.optional(v.boolean()), plan: v.optional(v.boolean()), turn: v.optional(v.string()), wokeBy: v.optional(v.array(v.object({ kind: v.string(), description: v.string() }))), buttons: v.optional(v.array(messageButton)), at: v.string() });
 // phone:thread's newest text messages for an old phone, and how far back it
 // looks past tool rows for them.
 const MESSAGES_SHOWN = 20;
@@ -379,15 +379,18 @@ export const heldPicture = query({
 export const messages = query({
   // noImages (API 37): for a client watching phone:images instead, so a new
   // message doesn't read every picture row again.
-  args: { token: v.string(), threadId: v.string(), beforeSeq: v.optional(v.number()), limit: v.optional(v.number()), tools: v.optional(v.boolean()), noImages: v.optional(v.boolean()) },
+  // notes (API 79): also the lines a thread writes when its login runs out
+  // (role "note"), for an app that draws them. One built before can't read
+  // the role, so it's only for the asking.
+  args: { token: v.string(), threadId: v.string(), beforeSeq: v.optional(v.number()), limit: v.optional(v.number()), tools: v.optional(v.boolean()), noImages: v.optional(v.boolean()), notes: v.optional(v.boolean()) },
   // images: from the page's first row on (share.ts), a shared thread's
   // uploaded pictures (API 8), so Mike's page shows what the shared one
   // does, and any thread's reply and pinned pictures (API 24).
   returns: v.object({ messages: v.array(pageMessage), hasMore: v.boolean(), images: v.optional(v.array(phoneImage)) }),
-  handler: async (ctx, { token, threadId, beforeSeq, limit, tools, noImages }) => {
+  handler: async (ctx, { token, threadId, beforeSeq, limit, tools, noImages, notes: withNotes }) => {
     await checkPhoneToken(ctx, token);
     const want = pageLimit(limit, PAGE_DEFAULT, PAGE_MAX);
-    const out: { seq: number; role: 'user' | 'assistant' | 'tool'; text: string; origin?: string; toolKind?: string; summary?: boolean; turn?: string; buttons?: Doc<'messages'>['buttons']; at: string }[] = [];
+    const out: { seq: number; role: 'user' | 'assistant' | 'tool' | 'note'; text: string; origin?: string; toolKind?: string; summary?: boolean; turn?: string; buttons?: Doc<'messages'>['buttons']; at: string }[] = [];
     const q = ctx.db
       .query('messages')
       .withIndex('by_thread_seq', (x) => (beforeSeq === undefined ? x.eq('threadId', threadId) : x.eq('threadId', threadId).lt('seq', beforeSeq)))
@@ -400,12 +403,12 @@ export const messages = query({
     let hasMore = false;
     let notes = 0;
     for await (const m of q) {
-      // A login's note (API 78) is for the other runners: it names logins,
-      // and no phone app draws one yet. Looked past without counting as
-      // one of the page's rows: counted, a page asked for under a few
-      // notes came back empty saying there was more, with no row to page
-      // from (Codex's review, 13 Nov).
-      if (m.role === 'note') {
+      // A login's note (API 78) goes only to an app that asks for them
+      // (`notes`, API 79): one built before can't read the role. For the
+      // rest it's looked past without counting as one of the page's rows:
+      // counted, a page asked for under a few notes came back empty saying
+      // there was more, with no row to page from (Codex's review, 13 Nov).
+      if (m.role === 'note' && !withNotes) {
         if (++notes > NOTE_ROWS_SKIPPED || (bytes += docBytes(m)) > PAGE_BYTES) {
           hasMore = true;
           break;

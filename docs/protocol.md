@@ -5996,8 +5996,10 @@ the mirror back as state. The Mac app doesn't use it.
   login and nothing on the Mac said so, 13 Nov 2026). `relay:remoteTail` and
   `relay:remoteMessages` give note rows to a runner that asks with
   `notes: true` (one from before API 78 would draw a note as a tool call),
-  which plays them as `system.note` again; the phone's queries, its search
-  and the shared page leave them out, as a note names logins. A note a
+  which plays them as `system.note` again. `phone:messages` gives them to an
+  app that asks the same way (API 79: the iPhone app and the website draw
+  them as the Mac does; one built before can't read the role). `phone:thread`,
+  the phone's search and the shared page leave them out: a note names logins. A note a
   backend from before 78 couldn't take waits on the runner and goes up once
   it can. No other note goes up. The mirror keeps every one, and each
   thread's whole history goes up once per deployment. A start sends what's

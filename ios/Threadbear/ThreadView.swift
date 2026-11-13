@@ -179,6 +179,7 @@ struct ThreadView: View {
                         case let .tools(run): ToolRunView(items: run)
                         case let .worked(worked): WorkedView(worked: worked)
                         case let .gap(gap): GapView(gap: gap)
+                        case let .note(note): LoginNoteView(text: note.text)
                         }
                     }
                     ForEach(pins.trailing) { PinnedPicture(image: $0) }
@@ -519,7 +520,7 @@ struct ThreadView: View {
     private func followMessages() async {
         guard model.hasMessagePages, let backend = model.backend else { return }
         do {
-            for try await value in backend.messages(threadId, limit: ThreadView.firstPage) { receive(value) }
+            for try await value in backend.messages(threadId, limit: ThreadView.firstPage, notes: model.hasLoginNotes) { receive(value) }
         } catch {
             model.report(error)
         }
@@ -569,7 +570,7 @@ struct ThreadView: View {
         Task {
             defer { loadingChunk = false }
             do {
-                let chunk = try await backend.olderMessages(threadId, beforeSeq: seq, limit: ThreadView.morePerPage)
+                let chunk = try await backend.olderMessages(threadId, beforeSeq: seq, limit: ThreadView.morePerPage, notes: model.hasLoginNotes)
                 if scrolling { heldChunk = (chunk, seq) } else { putIn(chunk: chunk, before: seq) }
             } catch {
                 model.report(error)
@@ -920,6 +921,10 @@ struct MessageView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         case .tool:
             ToolRunView(items: [message])
+        // Drawn by the thread as an item of its own (ThreadItem.note); here
+        // only if one is ever handed a message view.
+        case .note:
+            LoginNoteView(text: message.text)
         }
     }
 

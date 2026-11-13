@@ -308,6 +308,23 @@ struct WorkedView: View {
 /// "6 min later · Mine the repo finished": a thin rule with the wait in the
 /// middle, before a turn the agent started by itself (TurnGap). Quiet, like
 /// a chat app's day divider, as on the Mac.
+/// "Moved to mike@example.org: mike@example.net hit its 5-hour limit, back
+/// at 11:30 am.": the runner's line when a thread's login ran out and it
+/// moved to another or is waiting for room. Quiet and centred, as on the
+/// Mac, and on as many lines as it needs.
+struct LoginNoteView: View {
+    let text: String
+
+    var body: some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 2)
+    }
+}
+
 struct GapView: View {
     let gap: TurnGap
 
@@ -355,6 +372,7 @@ struct WorkedItems: View {
                 case let .tools(run): ToolRunView(items: run)
                 case let .worked(inner): WorkedView(worked: inner)
                 case let .gap(gap): GapView(gap: gap)
+                case let .note(note): LoginNoteView(text: note.text)
                 }
             }
         }

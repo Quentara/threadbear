@@ -1116,7 +1116,7 @@ the one it's on runs out, before a turn or partway through one, it moves to
 another login in the pool with room, and carries on from where it was. A
 quiet line in the conversation says so each time: the login it moved to,
 the one that ran out, and when that one is back (for a thread on another
-of your machines too, though not on the phone or the website yet). When
+of your machines too, and on the phone and the website). When
 none has room, the thread waits and carries on by itself once a limit
 resets, and the line says when that is. With only one login, that means it waits for that login's limit to
 reset. A thread pinned to one login does the same on that login. Either

@@ -557,8 +557,10 @@ Queries:
   is kept since API 2, and with `tools: true` there's one row per tool call
   too (`role: "tool"`, a one-line `text` such as "Run the unit tests" or
   "Edited ~/dev/x.ts", and `toolKind`). A login's note (`role: "note"`,
-  API 78) is never in a page, here or in `phone:thread`: those rows are for
-  the other runners (`relay:remoteMessages`). It reads Convex alone, so it works
+  API 78: the line a thread writes when its login runs out) is in a page
+  only when it's asked for with `notes: true` (API 79), as the website and
+  iPhone app builds after 1.0.4 do; an app built before can't read the role.
+  `phone:thread` never has them. It reads Convex alone, so it works
   while the Mac is asleep. The website watches only the newest 30 with it and
   reads older pages once, with `beforeSeq` (`web/src/transcript.ts`). The
   iPhone does the same with an 80-row live page and chunks of 200

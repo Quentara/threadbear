@@ -2,8 +2,9 @@
 // on one login and moved to another said nothing about it on the Mac: the
 // runner's "Moved to ..." note never left that runner (13 Nov 2026). Now a
 // login's note goes up as a message row (role "note", backend API 78),
-// another runner plays it as the system.note it was, and nothing else that
-// reads the rows (the phone, the website, a shared page) is given it.
+// another runner plays it as the system.note it was, the iPhone app and the
+// website get it when they ask (API 79), and an app built before, the
+// phone's search and a shared page never do.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { toMessageDoc } from '../../src/sync.ts';
@@ -82,7 +83,7 @@ test("a kind of row this runner doesn't know is left out, not drawn as a tool ca
   assert.equal(ev.some((e) => e.type === 'tool.call'), false);
 });
 
-test('through the backend: the other Mac gets the note; the phone, the website and a shared page never do', async () => {
+test('through the backend: the other Mac gets the note, the phone and the website when they ask, a shared page never', async () => {
   const { views, refused, backend: b, threadId } = await threeWays((p) => {
     p.say('Half way there.');
     p.endTurn({ needs: 'nothing' });
@@ -95,11 +96,17 @@ test('through the backend: the other Mac gets the note; the phone, the website a
   assert.deepEqual(views.phone.notes, []);
   const stored = (await b.ctx.db.query('messages').collect()) as unknown as { role: string; text: string }[];
   assert.deepEqual(stored.filter((m) => m.role === 'note').map((m) => m.text), [moved], 'the row is in the backend');
-  // phone:messages with tool rows on (the iPhone app and the website).
+  // phone:messages with tool rows on, as an iPhone app built before API 79
+  // asks: it can't read the role, so it isn't given one.
   const phone = load('phone');
   const page = (await call(b.ctx, phone.messages, { token: 'phone-token', threadId, tools: true })) as { messages: { role: string; text: string }[] };
   assert.ok(page.messages.length > 0);
   assert.equal(page.messages.some((m) => m.role === 'note' || m.text.includes('mike@example')), false);
+  // And as the website and a newer iPhone app ask: the note, in its place.
+  const asked = (await call(b.ctx, phone.messages, { token: 'phone-token', threadId, tools: true, notes: true })) as { messages: { role: string; text: string; seq: number }[] };
+  assert.deepEqual(asked.messages.filter((m) => m.role === 'note').map((m) => m.text), [moved]);
+  assert.equal(asked.messages.length, page.messages.length + 1);
+  assert.deepEqual(asked.messages.map((m) => m.seq), [...asked.messages.map((m) => m.seq)].sort((x, y) => x - y));
   // Asked for one row with the note on top: the row under it, not an empty
   // page saying there's more (from Codex's review).
   const one = (await call(b.ctx, phone.messages, { token: 'phone-token', threadId, tools: true, limit: 1 })) as { messages: { role: string }[]; hasMore: boolean };

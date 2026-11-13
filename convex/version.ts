@@ -365,4 +365,9 @@
 //    says on the Mac that it changed login; phone:thread, phone:messages,
 //    phone:search and share's page leave them out. A runner sends one only
 //    from 78, and keeps any it couldn't send till then.
-export const API_VERSION = 78;
+// 79: phone:messages takes `notes: true` and then includes those rows
+//    (role "note"), so the iPhone app and the website say when a thread
+//    changed login, as the Mac does. Without it the page is as before, for
+//    apps built earlier. phone:thread, phone:search and share's page still
+//    leave them out.
+export const API_VERSION = 79;
