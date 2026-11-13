@@ -755,13 +755,15 @@ impl ThreadPane {
         }
         let name = if header.title.is_empty() { header.thread_id.clone() } else { header.title.clone() };
         let line = line.child(symbol("arrow.turn.down.right")).child(div().flex_none().whitespace_nowrap().child("From the agent in "));
-        let known = self.composer.read(cx).app.upgrade().is_some_and(|a| a.read(cx).threads.contains_key(&header.thread_id));
-        if !known {
+        // The runner's header carries the sender's 8-character prefix
+        // (threadbear-mcp.ts `from`), not its whole id, so it's looked up
+        // through the index that knows prefixes, as the Swift app did.
+        let Some(id) = self.thread_ids(cx).resolve(&header.thread_id).map(str::to_owned) else {
             return line.child(div().min_w_0().truncate().child(name)).into_any_element();
-        }
+        };
         let key = SharedString::from(format!("agent-chip-{row}"));
-        let card = card_shown(&key, QUICK).then(|| self.thread_card_for(&header.thread_id, cx)).flatten().map(|card| under(16., card));
-        let (hover_key, id) = (key.clone(), header.thread_id.clone());
+        let card = card_shown(&key, QUICK).then(|| self.thread_card_for(&id, cx)).flatten().map(|card| under(16., card));
+        let hover_key = key.clone();
         let pill = chip_pill(key, name.clone(), 16., cx)
             .min_w_0()
             .truncate()
@@ -788,8 +790,8 @@ impl ThreadPane {
             RowContent::User(message) => match message.agent_header() {
                 Some(header) => {
                     let mut chips = Vec::new();
-                    if header.moved_to.is_none() && index.resolve(&header.thread_id).is_some() {
-                        chips.push((if header.title.is_empty() { header.thread_id.clone() } else { header.title.clone() }, header.thread_id.clone()));
+                    if let Some(id) = index.resolve(&header.thread_id).filter(|_| header.moved_to.is_none()) {
+                        chips.push((if header.title.is_empty() { header.thread_id.clone() } else { header.title.clone() }, id.to_owned()));
                     }
                     let body = crate::rows::markdown::pictures(header.body.trim(), self.summary.runner_id.is_none());
                     chips.extend(link_thread_ids(&body, &resolve).1);
