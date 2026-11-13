@@ -89,7 +89,7 @@ test('a copy that fails with plenty of room is still just unreachable: 255', () 
   const r = s.run('h1', 3600, '', { RSYNC_FAILS_ON: 'h1' });
   assert.equal(r.status, 255, r.stdout + r.stderr);
   assert.match(r.stderr, /Couldn't copy this checkout to h1; trying the others\./);
-  assert.match(r.stderr, /None of h1 can run this check now\./);
+  assert.match(r.stderr, /None of h1 can be reached/);
 });
 
 // Codex's review of the above.

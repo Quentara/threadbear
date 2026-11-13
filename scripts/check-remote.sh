@@ -401,6 +401,14 @@ if [ "$QUICK" = 1 ] && [ "$ALL" = 0 ] && [ -z "$SHOTS" ] && [ -s "$changed" ] \
 # it from a clone on main, where nothing has, and with Tinker Desk away a
 # Linux host should still take it rather than this Mac (Codex, 9 Nov).
 if [ "$RUNNER_ONLY" = 1 ] && [ -z "$SHOTS" ]; then linux_ok=1; fi
+# Why it needs a Mac, for the message when only Linux hosts answered.
+MAC_WHY="it isn't --quick"
+if [ "$QUICK" = 1 ]; then
+  if [ -n "$SHOTS" ]; then MAC_WHY="--shots"
+  elif [ "$ALL" = 1 ]; then MAC_WHY="--all"
+  elif [ ! -s "$changed" ]; then MAC_WHY="nothing changed from main, so it runs everything"
+  else MAC_WHY="it changes ios/, app/, dock/ or check.sh"; fi
+fi
 
 # The disk a run wants free on its host. On 7 Nov Tinker Desk fell under 1 GiB
 # and an --app check died with a CodeSign error that said nothing about space,
@@ -467,8 +475,15 @@ pass_over() {
   echo "Passing over $1: it has $FREE_GIB GiB free, and this check wants $MIN_FREE_GIB GiB." >&2
   LOW+="${LOW:+, }$1 has $FREE_GIB GiB free"
 }
+# Hosts that answered but can't run this kind of check, with why. They're
+# reachable, so a run none can take isn't this Mac's either (exit 1, each
+# host's reason said): only hosts nobody can reach send it here (255). On
+# 13 Nov a landing that asked only for the cloud box, with Swift in its
+# group, ran the runner's suites and the app's release build on Mike's M5.
+CANT=""
+cant_run() { CANT+="${CANT:+; }$1: $2"; }
 choose() {
-  HOST="" HOST_OS="" remote_base="" FREE=0 LOW="$LOW_COPY"
+  HOST="" HOST_OS="" remote_base="" FREE=0 LOW="$LOW_COPY" CANT=""
   local first="" first_os="" first_base="" h out rc b os state kb
   for h in "${HOSTS[@]}"; do
     # An ssh host, never something ssh would take for an option.
@@ -511,8 +526,8 @@ choose() {
     case "$b" in */$BASE_REL) ;; *) echo "Unexpected folder on $h: '$b'" >&2; continue ;; esac
     case "$os" in
       Darwin) ;;
-      Linux) [ "$linux_ok" = 1 ] || continue ;;
-      *) continue ;;
+      Linux) [ "$linux_ok" = 1 ] || { cant_run "$h" "it's Linux, and this check needs a Mac ($MAC_WHY)"; continue; } ;;
+      *) cant_run "$h" "it runs $os, not macOS or Linux"; continue ;;
     esac
     # After the system, so a host that couldn't run this anyway isn't named.
     # Busy or free alike: waiting for a full disk gets nobody anywhere.
@@ -726,7 +741,11 @@ while :; do
       echo "No check host has room for this check: $LOW, and it wants $MIN_FREE_GIB GiB. Free some space there and run it again." >&2
       exit "$BUSY_EXIT"
     fi
-    echo "None of $HOST_LIST can run this check now." >&2
+    if [ -n "$CANT" ]; then
+      echo "None of $HOST_LIST can run this check ($CANT), and it doesn't run on this Mac instead. Add a host that can to THREADBEAR_CHECK_HOST, or leave it unset for runner.json's." >&2
+      exit "$BUSY_EXIT"
+    fi
+    echo "None of $HOST_LIST can be reached, so this check can't run on any of them now." >&2
     exit 255
   fi
   if [ "$HOST" = "$copied_host" ]; then

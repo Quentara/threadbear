@@ -65,7 +65,7 @@ test('with no other host, one that stops answering ends as unreachable, so check
   const r = s.run('h1', 3600, '', quickPing);
   assert.equal(r.status, 255, r.stdout + r.stderr);
   assert.match(r.stderr, /h1 stopped answering/);
-  assert.match(r.stderr, /None of h1 can run this check now\./);
+  assert.match(r.stderr, /None of h1 can be reached/);
 });
 
 test('a host that stops answering during the copy is dropped too', () => {
