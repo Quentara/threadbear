@@ -27,6 +27,7 @@ function hostsFor(env: Record<string, string | undefined>, configured?: string[]
   const base: NodeJS.ProcessEnv = { ...process.env, THREADBEAR_HOME: home, THREADBEAR_NODE: process.execPath };
   delete base.THREADBEAR_CHECK_HOST;
   delete base.THREADBEAR_CHECK_PREFER;
+  delete base.THREADBEAR_CHECK_GROUP;
   for (const [k, v] of Object.entries(env)) {
     if (v === undefined) delete base[k];
     else base[k] = v;
@@ -47,6 +48,11 @@ test("a group's check goes to the configured hosts with those asked for first, w
   // The holder asked for this Mac (empty): the group still goes to a host.
   assert.equal(hostsFor({ THREADBEAR_CHECK_HOST: '', THREADBEAR_CHECK_PREFER: 'cloud' }, ['tinker-desk', 'cloud']),
     'hosts=tinker-desk,cloud prefer=cloud');
+  // The holder asked for this Mac and nobody asked for anything.
+  assert.equal(hostsFor({ THREADBEAR_CHECK_HOST: '', THREADBEAR_CHECK_GROUP: '1' }, ['tinker-desk', 'cloud']),
+    'hosts=tinker-desk,cloud prefer=');
+  // Nothing configured or asked for: the holder's, as before.
+  assert.equal(hostsFor({ THREADBEAR_CHECK_HOST: 'cloud', THREADBEAR_CHECK_GROUP: '1' }), 'hosts=cloud prefer=');
   // Nothing configured: the hosts asked for are the list.
   assert.equal(hostsFor({ THREADBEAR_CHECK_PREFER: 'cloud' }), 'hosts=cloud prefer=cloud');
 });

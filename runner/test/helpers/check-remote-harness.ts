@@ -211,6 +211,7 @@ export function setup(hosts: Record<string, Host>, opts: { home?: string } = {})
       const base: NodeJS.ProcessEnv = { ...process.env };
       delete base.XDG_CACHE_HOME;
       delete base.THREADBEAR_CHECK_PREFER;
+      delete base.THREADBEAR_CHECK_GROUP;
       const r = spawnSync('bash', [path.join(repo, 'scripts', 'check-remote.sh'), hostList, '--quick'], {
         encoding: 'utf8',
         env: { ...base, HOME: home, TMPDIR: tmpdir, PATH: `${bin}:${process.env.PATH}`, FAKE: fake, PEEK: peek, THREADBEAR_CHECK_STAY_SECS: String(staySecs), ...env },

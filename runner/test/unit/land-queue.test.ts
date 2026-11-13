@@ -645,7 +645,7 @@ test("a group's check hears the hosts each landing in it asked for, the holder's
   // environment only.
   const { root, main } = makeRepo();
   const [a, b, c, d] = branches(main, ['a', 'b', 'c', 'd']);
-  const check = `${slowCheck(root)}; echo "prefer=\${THREADBEAR_CHECK_PREFER-unset}" >> '${root}/prefers'`;
+  const check = `${slowCheck(root)}; echo "prefer=\${THREADBEAR_CHECK_PREFER-unset} group=\${THREADBEAR_CHECK_GROUP-unset}" >> '${root}/prefers'`;
   const first = land({ ...a, check }, { ...capture().opts, checkHost: 'tinker-desk' });
   await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
   const caps = [capture(), capture(), capture()];
@@ -665,5 +665,5 @@ test("a group's check hears the hosts each landing in it asked for, the holder's
   // a by itself hears nothing; the group's holder (b, c or d) passes on
   // cloud, and its own, if it's b, only once.
   const lines = fs.readFileSync(path.join(root, 'prefers'), 'utf8').trim().split('\n');
-  assert.deepEqual(lines, ['prefer=unset', 'prefer=cloud']);
+  assert.deepEqual(lines, ['prefer=unset group=unset', 'prefer=cloud group=1']);
 });

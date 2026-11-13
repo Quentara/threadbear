@@ -112,14 +112,20 @@ if [ "$LOCAL" = 0 ] && [ "$E2E" = 0 ]; then
     [ -x "$NODE" ] && [ -f "$RUNNER_JSON" ] && "$NODE" -e '
       try { const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const h = Array.isArray(j.checkHosts) ? j.checkHosts : j.checkHost; const l = (Array.isArray(h) ? h : [h]).filter((x) => typeof x === "string" && /^[A-Za-z0-9][A-Za-z0-9._@-]*$/.test(x)); if (l.length) console.log(l.join(",")) } catch {}' "$RUNNER_JSON"
   }
-  # A grouped landing's check (tb land sets THREADBEAR_CHECK_PREFER from what
-  # each landing in it asked for) goes to the configured hosts, those asked
-  # for tried first (scripts/check-remote.sh): never just the holder's own
-  # THREADBEAR_CHECK_HOST, which could leave out every Mac the group needs, or
-  # with an empty one run everyone's check on this Mac (Codex's review).
-  if [ -n "${THREADBEAR_CHECK_PREFER:-}" ]; then
-    CHECK_HOST="$(configured_hosts)"
-    [ -n "$CHECK_HOST" ] || CHECK_HOST="$THREADBEAR_CHECK_PREFER"
+  # A grouped landing's check (tb land sets THREADBEAR_CHECK_GROUP, and
+  # THREADBEAR_CHECK_PREFER from what each landing in it asked for) goes to
+  # the configured hosts, those asked for tried first (scripts/check-remote.sh):
+  # never just the holder's own THREADBEAR_CHECK_HOST, which could leave out
+  # every Mac the group needs, or with an empty one run everyone's check on
+  # this Mac (Codex's reviews). With nothing configured or asked for, it's the
+  # holder's, as before.
+  GROUP_HOSTS=""
+  if [ -n "${THREADBEAR_CHECK_GROUP:-}${THREADBEAR_CHECK_PREFER:-}" ]; then
+    GROUP_HOSTS="$(configured_hosts)"
+    [ -n "$GROUP_HOSTS" ] || GROUP_HOSTS="${THREADBEAR_CHECK_PREFER:-}"
+  fi
+  if [ -n "$GROUP_HOSTS" ]; then
+    CHECK_HOST="$GROUP_HOSTS"
   elif [ -n "${THREADBEAR_CHECK_HOST+set}" ]; then
     CHECK_HOST="$THREADBEAR_CHECK_HOST"
   else
@@ -166,7 +172,7 @@ FALLBACK="${THREADBEAR_CHECK_FALLBACK:-}"
 # check-remote tests run under it would otherwise exit with it (Codex, 9 Nov).
 unset THREADBEAR_HOME THREADBEAR_DATA_DIR THREADBEAR_PORT THREADBEAR_URL THREADBEAR_LOG \
   THREADBEAR_THREAD_ID THREADBEAR_THREAD_KEY THREADBEAR_RUNNER_VERSION THREADBEAR_RUNNER_HOME THREADBEAR_CHECK_BUSY_EXIT THREADBEAR_CHECK_FALLBACK \
-  THREADBEAR_CHECK_PREFER
+  THREADBEAR_CHECK_PREFER THREADBEAR_CHECK_GROUP
 # And their old names, which the runner and tb would otherwise take for these.
 for v in $(compgen -e | grep '^THREADBARE_' || true); do unset "$v"; done
 # The jobs the tests' runners start get no lower than the check itself

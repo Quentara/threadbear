@@ -1096,7 +1096,10 @@ async function landLocked(
       const prefer = group.length
         ? checkPreference(opts.checkHost ?? process.env.THREADBEAR_CHECK_HOST, group.map((g) => g.entry.checkHost))
         : undefined;
-      const r = await runCheck(check, t.path, opts.shell, prefer ? { THREADBEAR_CHECK_PREFER: prefer } : {});
+      // THREADBEAR_CHECK_GROUP says it's a group's check even when nobody
+      // asked for a host, so check.sh never takes the holder's own (an empty
+      // one would run everyone's check on this Mac; Codex's second review).
+      const r = await runCheck(check, t.path, opts.shell, group.length ? { THREADBEAR_CHECK_GROUP: '1', ...(prefer ? { THREADBEAR_CHECK_PREFER: prefer } : {}) } : {});
       setRunning(common, undefined);
       // Whether the check ran on the commit it's logged for: asked before the
       // line is written, as the runner's updater takes a passing line as
@@ -1341,6 +1344,7 @@ function runCheck(command: string, cwd: string, shell = ['/bin/sh', '-c'], extra
     // Never one left over from whatever started this tb: only a group sets it.
     const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv };
     if (!extraEnv.THREADBEAR_CHECK_PREFER) delete env.THREADBEAR_CHECK_PREFER;
+    if (!extraEnv.THREADBEAR_CHECK_GROUP) delete env.THREADBEAR_CHECK_GROUP;
     const child = spawn(bin, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'] });
     child.stdout.on('data', take);
     child.stderr.on('data', take);
