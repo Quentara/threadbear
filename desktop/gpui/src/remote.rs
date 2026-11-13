@@ -1,7 +1,7 @@
 // Other runners' threads (docs/protocol.md, "Other runners' threads" and "...
 // through the backend"), a port of the parts of RemoteRunners.swift the app
 // needs while it reaches them through this Mac's runner and Convex (the
-// default; the direct link's own connections aren't ported yet). Their rows
+// only route since the direct link was removed on 13 Nov 2026). Their rows
 // come from this Mac's runner, marked with `runnerId`, and sit in
 // `Threadbear::threads` beside this Mac's own, so the sidebar and the
 // transcript take them as they are: every request about one goes to this
@@ -48,6 +48,31 @@ pub(crate) struct RemoteState {
 }
 
 impl Threadbear {
+    pub(crate) fn moved_away(&mut self, id: &str, cx: &mut Context<Self>) -> bool {
+        let self_id = self.remote.all_runners.iter().find(|r| r.is_self).map(|r| r.id.as_str());
+        let Some(kept) = self.threads.get(id).and_then(|t| remote::moved_away(t, self_id)) else { return false };
+        if kept.is_remote() {
+            self.remote.made.insert(id.to_owned());
+        }
+        self.kept.forget(id, cx);
+        let panes: Vec<_> = self.pane.iter().chain(self.subagent_pane.iter()).chain(self.thread_panels.panes()).cloned().collect();
+        for pane in panes {
+            if pane.read(cx).summary.id == id {
+                pane.update(cx, |p, cx| {
+                    p.unsubscribe();
+                    p.summary_changed(&kept, cx);
+                    p.load(cx);
+                });
+            }
+        }
+        self.threads.insert(id.to_owned(), kept);
+        // The destination may already have listed it before the old runner
+        // let go. Adopt that row now; keep waiting if the index is still old.
+        self.apply_remote_index(cx);
+        self.refresh_dock_badge();
+        true
+    }
+
     /// The list after hello; `remoteThreads.updated` replaces it from then
     /// on (`loadRemoteThreads`). A runner from before them answers -32601,
     /// which is none: the sidebar has only this Mac's.
@@ -114,6 +139,7 @@ impl Threadbear {
         // Mike's runner order, for the Runners panel.
         self.receive_runner_order();
         self.apply_remote_index(cx);
+        self.consider_milestone(cx);
         self.apply_default_runner(cx);
         // The Dock badge counts other runners' threads too, as Swift's does.
         self.refresh_dock_badge();
@@ -129,6 +155,9 @@ impl Threadbear {
         for summary in self.remote.index.threads.clone() {
             // Never in place of one of this Mac's own.
             if self.threads.get(&summary.id).is_some_and(|t| t.runner_id.is_none()) {
+                continue;
+            }
+            if self.remote.made.contains(&summary.id) && self.threads.get(&summary.id).is_some_and(|t| t.runner_id != summary.runner_id) {
                 continue;
             }
             listed.insert(summary.id.clone());

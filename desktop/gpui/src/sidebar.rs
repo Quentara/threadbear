@@ -1608,8 +1608,16 @@ impl Threadbear {
                 }
                 RowAction::Snooze => {
                     let id = id.clone();
-                    let listener = cx.listener(move |this, ev: &ClickEvent, window, cx| this.open_hibernate_menu(id.clone(), below(ev.position()), window, cx));
-                    icon_button(key, icon(symbol, 13., p.secondary), tip, &p, listener).into_any_element()
+                    let anchor = std::rc::Rc::new(std::cell::Cell::new(None::<Bounds<Pixels>>));
+                    let measured = anchor.clone();
+                    let listener = cx.listener(move |this, ev: &ClickEvent, window, cx| {
+                        let at = anchor.get().map(|b| point(b.left(), b.bottom() + px(4.))).unwrap_or_else(|| below(ev.position()));
+                        this.open_hibernate_menu(id.clone(), at, window, cx);
+                    });
+                    div().relative().flex_none().size(px(22.))
+                        .child(canvas(move |bounds, _, _| measured.set(Some(bounds)), |_, _, _, _| {}).absolute().size_full())
+                        .child(icon_button(key, icon(symbol, 13., p.secondary), tip, &p, listener))
+                        .into_any_element()
                 }
                 RowAction::Archive => {
                     let id = id.clone();
@@ -1654,7 +1662,7 @@ impl Threadbear {
         let selected = self.selected.as_deref() == Some(t.id.as_str());
         // Under Inbox and Starred only a running one shows.
         let finished_shown = section != "inbox" && section != "starred";
-        let shown = rows::subagent_rows(&all, selected, None, now, finished_shown);
+        let shown = rows::subagent_rows(&all, selected, selected_sub.as_deref(), now, finished_shown);
         let last = shown.len().saturating_sub(1);
         shown
             .iter()
@@ -1668,7 +1676,8 @@ impl Threadbear {
     pub(crate) fn sidebar_dump(&self, cx: &App) -> Value {
         let now = now_ms();
         let clock: Clock = rows::local_now();
-        let selected_sub = self.selected.clone();
+        let selected_thread = self.selected.clone();
+        let selected_sub = self.subagent.as_ref();
         let wakes = threadbear_core::inbox::wakes(&self.scheduled.list);
         let row = |t: &ThreadSummary, section: Option<&str>| -> Value {
             let key = section.unwrap_or("inbox");
@@ -1687,10 +1696,11 @@ impl Threadbear {
             let subagents: Vec<Value> = if matches!(key, "hibernating" | "archived") {
                 vec![]
             } else {
-                let is_selected = selected_sub.as_deref() == Some(t.id.as_str());
-                rows::subagent_rows(&rows::subagents(t), is_selected, None, now, finished_shown)
+                let is_selected = selected_thread.as_deref() == Some(t.id.as_str());
+                let opened = selected_sub.filter(|(thread, _)| thread == &t.id).map(|(_, sub)| sub.as_str());
+                rows::subagent_rows(&rows::subagents(t), is_selected, opened, now, finished_shown)
                     .iter()
-                    .map(|s| json!({ "id": s.subagent.id, "depth": s.depth, "status": s.subagent.status, "title": rows::subagent_title(&s.subagent), "detail": rows::subagent_detail(&s.subagent), "selected": false }))
+                    .map(|s| json!({ "id": s.subagent.id, "depth": s.depth, "status": s.subagent.status, "title": rows::subagent_title(&s.subagent), "detail": rows::subagent_detail(&s.subagent), "selected": opened == Some(s.subagent.id.as_str()) }))
                     .collect()
             };
             json!({

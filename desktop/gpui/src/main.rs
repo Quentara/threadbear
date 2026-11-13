@@ -103,6 +103,7 @@ mod slash_resize;
 mod spinner;
 mod style;
 mod swift_import;
+mod milestones;
 mod swipe_nav;
 mod terminal;
 mod terminal_element;

@@ -534,7 +534,7 @@ impl ThreadPane {
             let prepared = cx.background_executor().spawn(async move { prepare(v, Some(root)) }).await;
             // A pane let go while it read (evicted, pane_cache.rs) stops
             // here: subscribing for it would leave a subscription nobody ends.
-            let Ok(after_seq) = this
+            let Ok((after_seq, relay_seen)) = this
                 .update(cx, |this, cx| {
                     let Prepared { mut model, buttons, at_start: _, bytes, decode_ms, fold_ms } = prepared;
                     this.timing.request_ms = request_ms;
@@ -571,7 +571,7 @@ impl ThreadPane {
                     this.load_older_if_near_top(cx);
                     this.timing.ready_ms = Some(this.timing.since());
                     cx.notify();
-                    this.feed.accepted_seq()
+                    (this.feed.accepted_seq(), this.feed.relay_seen())
                 })
             else {
                 return;
@@ -581,7 +581,11 @@ impl ThreadPane {
             if this.update(cx, |_, _| ()).is_err() {
                 return;
             }
-            let sub = call(client, "threads.subscribe", json!({ "threadId": id, "afterSeq": after_seq })).await;
+            let mut params = json!({ "threadId": id, "afterSeq": after_seq });
+            if let Some(seen) = relay_seen {
+                params["relaySeen"] = json!(seen);
+            }
+            let sub = call(client, "threads.subscribe", params).await;
             this.update(cx, |this, cx| match sub.ok().and_then(|v| EventsPage::decode(&v)) {
                 Some(page) => {
                     let action = this.feed.finish_subscribe(page.events, &page.in_progress);
@@ -676,14 +680,18 @@ impl ThreadPane {
             return self.load(cx);
         }
         self.feed.begin_subscribe();
-        let (client, id, after_seq) = (self.client.clone(), self.summary.id.clone(), self.feed.accepted_seq());
+        let (client, id, after_seq, relay_seen) = (self.client.clone(), self.summary.id.clone(), self.feed.accepted_seq(), self.feed.relay_seen());
         cx.spawn(async move |this, cx| {
             after_unsubscribe(&id).await;
             // Let go while it waited: no subscription for a pane that's gone.
             if this.update(cx, |_, _| ()).is_err() {
                 return;
             }
-            let sub = call(client, "threads.subscribe", json!({ "threadId": id, "afterSeq": after_seq })).await;
+            let mut params = json!({ "threadId": id, "afterSeq": after_seq });
+            if let Some(seen) = relay_seen {
+                params["relaySeen"] = json!(seen);
+            }
+            let sub = call(client, "threads.subscribe", params).await;
             this.update(cx, |this, cx| match sub.ok().and_then(|v| EventsPage::decode(&v)) {
                 Some(page) => {
                     crate::reply_buttons::fold(&page.events, &this.summary.id);

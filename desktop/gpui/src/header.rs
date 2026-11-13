@@ -1296,6 +1296,9 @@ impl Threadbear {
         if let Some(text) = self.import_note.clone() {
             return overlay.child(self.render_import_note(text, cx)).into_any_element();
         }
+        if let Some(tier) = self.milestone.note {
+            return overlay.child(self.render_milestone_toast(tier, cx)).into_any_element();
+        }
         div().into_any_element()
     }
 

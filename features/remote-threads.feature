@@ -19,6 +19,13 @@ Feature: Other runners' threads
     And the transcript shows a reply starting "Found 14 duplicates"
     And the composer is on the runner "bruce"
 
+  @sidebar.move @remote-threads
+  Scenario: An old index row cannot undo a move to another Mac
+    When I open the thread "Morning brief"
+    And its runner lets the thread go to bruce while the old Mac still lists it
+    Then the row "Morning brief" is on the runner "On bruce"
+    And the composer is on the runner "bruce"
+
   # Its picture is a path on bruce: asked of the runner, which keeps another
   # Mac's files there for now, so the tile says it couldn't get it, and never
   # shows whatever this Mac has at that path.
@@ -62,6 +69,13 @@ Feature: Other runners' threads
     Then a thread called "Check the backup drive's health" opens
     And the transcript shows my message "Check the backup drive's health"
     And the row "Check the backup drive's health" is on the runner "On bruce"
+
+  @sidebar.move @remote-threads
+  Scenario: A moved thread stays in the sidebar before its destination lists it
+    When I open the thread "Morning brief"
+    And its runner lets the thread go to bruce
+    Then the row "Morning brief" is on the runner "On bruce"
+    And the composer is on the runner "bruce"
 
   @sidebar.move @remote-threads
   Scenario: Move to offers the other machines from the row

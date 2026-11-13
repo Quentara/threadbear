@@ -1586,6 +1586,40 @@ async function dispatch(client, method, p) {
       t.subagentEvents?.delete(p.subagentId);
       return { ok: true };
     }
+    case 'mock.finishSubagents': {
+      const t = need(p.threadId);
+      for (const sub of t.summary.subagents ?? []) {
+        sub.status = 'completed';
+        sub.endedAt = iso();
+      }
+      t.summary.status = 'idle';
+      t.summary.background = [];
+      // This demo also has a check-in. Without it finishing puts it under
+      // Hibernating rather than Inbox, which isn't what this example tests.
+      schedules = schedules.filter((s) => s.threadId !== t.summary.id);
+      broadcastSchedules();
+      broadcastSummary(t.summary.id);
+      return { ok: true };
+    }
+    // The old runner's delete during a move arrives before the destination
+    // lists the thread. Keep the destination's first row held until asked.
+    case 'mock.moveAway': {
+      const t = need(p.threadId);
+      t.summary.moving = { moveId: 'demo-move', to: BRUCE, toName: 'bruce', state: 'copying' };
+      broadcastSummary(t.summary.id);
+      t.runnerId = BRUCE;
+      delete t.summary.moving;
+      broadcast('thread.deleted', { threadId: t.summary.id });
+      if (p.staleIndex) {
+        for (const c of clients) if (c.authed && c.as === null) {
+          const index = remoteThreads(c);
+          index.runners.push({ id: 'runner_old', name: 'the old Mac', online: true, lastSeenAt: iso() });
+          index.threads = index.threads.map((row) => row.threadId === t.summary.id ? { ...row, runnerId: 'runner_old' } : row);
+          send(c, 'remoteThreads.updated', index);
+        }
+      }
+      return { ok: true };
+    }
     // The librarian's search words on a thread, by title, as it leaves
     // them after reading it: for searching by what a thread is about.
     case 'mock.keywords': {

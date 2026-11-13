@@ -7,6 +7,20 @@
 use crate::inbox::{iso_time, parse_ms, ThreadSummary};
 use serde_json::Value;
 
+/// The old runner deleted its copy during a move. Keep the row as the
+/// destination's until that runner's index catches up (`movedAway`).
+pub fn moved_away(thread: &ThreadSummary, self_id: Option<&str>) -> Option<ThreadSummary> {
+    let moving = thread.moving.as_ref()?;
+    if matches!(moving["state"].as_str(), Some("failed" | "cancelled")) {
+        return None;
+    }
+    let to = moving["to"].as_str().filter(|id| !id.is_empty())?;
+    let mut kept = thread.clone();
+    kept.runner_id = (Some(to) != self_id).then(|| to.to_owned());
+    kept.moving = None;
+    Some(kept)
+}
+
 /// A runner the backend knows of (`RemoteRunner`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct RemoteRunner {
@@ -254,6 +268,20 @@ mod tests {
         assert_eq!(check.seq, 47);
         assert_eq!(check.ends[0].text, "Look at how the experiment went");
         assert!(list.threads[1].loose_ends.is_none(), "one that isn't an object is left off");
+    }
+
+    #[test]
+    fn a_move_keeps_the_thread_as_its_destinations_until_the_index_arrives() {
+        let mut thread = ThreadSummary { id: "t".into(), moving: Some(json!({ "to": "bruce", "state": "copying" })), ..Default::default() };
+        let kept = moved_away(&thread, Some("m5")).unwrap();
+        assert_eq!(kept.id, "t");
+        assert_eq!(kept.runner_id.as_deref(), Some("bruce"));
+        assert!(kept.moving.is_none());
+        assert!(moved_away(&thread, Some("bruce")).unwrap().runner_id.is_none());
+        thread.moving.as_mut().unwrap()["state"] = json!("failed");
+        assert!(moved_away(&thread, Some("m5")).is_none());
+        thread.moving = None;
+        assert!(moved_away(&thread, Some("m5")).is_none(), "an ordinary delete still deletes");
     }
 
     #[test]

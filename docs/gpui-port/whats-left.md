@@ -125,7 +125,9 @@ you go.
 ### Smaller things
 - [ ] The offer to continue a refused turn sits at the top, not just above the
   composer (`banner.refusal`)
-- [ ] No milestone toast (`toast.milestone`)
+- [x] The milestone capsule shows at 100 threads and each thousand, once,
+  when you are there to see it (`toast.milestone`). Its bear and entrance
+  are with the bears and motion review.
 - [ ] Highlights: no Notion board (`highlights.board`)
 - [ ] An image panel has no Open Simulator button; `.app`, `.icns` and PDF
   icons fall back to a symbol (`panel.image`, `patches.icons`,
@@ -152,8 +154,9 @@ you go.
   inbox zero, the message rising from the box,
   the Librarian's wobble (`juice.*`, `foundation.bear`, `transcript.working`,
   `transcript.woke`, `transcript.sendlift`, `librarian.picture`)
-- [ ] The system accent colour isn't followed (always blue), and Reduce Motion
-  isn't read (`foundation.theme`, `foundation.reducemotion`)
+- [x] The Mac's accent colour is followed, and Reduce Motion is read by the
+  kit at launch and again when the app comes back to the front
+  (`foundation.theme`, `foundation.reducemotion`).
 - [ ] The switches are smaller than macOS 27's (the Usage helper's note: one
   fix for Settings, the Librarian page and Usage). Settings' are macOS's now
   (`mac_switch.rs`: 36 by 16 with a pill knob, as measured in the Swift

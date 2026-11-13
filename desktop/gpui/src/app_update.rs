@@ -329,12 +329,12 @@ fn app_active() -> bool {
 /// Mac (the hang watch's own question), which with the app in front is input
 /// to it. Covers every window of the app, Settings and the review window too.
 #[cfg(target_os = "macos")]
-fn idle_seconds() -> f64 {
+pub(crate) fn idle_seconds() -> f64 {
     crate::hang_watch::idle_seconds().unwrap_or(0.)
 }
 
 #[cfg(windows)]
-fn idle_seconds() -> f64 {
+pub(crate) fn idle_seconds() -> f64 {
     #[repr(C)]
     struct LastInput { size: u32, tick: u32 }
     #[link(name = "user32")]
@@ -351,7 +351,7 @@ fn idle_seconds() -> f64 {
 /// On Linux there's no asking yet, so it never counts as idle: in front it
 /// waits for Restart to Update or for another app to be in front.
 #[cfg(not(any(target_os = "macos", windows)))]
-fn idle_seconds() -> f64 {
+pub(crate) fn idle_seconds() -> f64 {
     0.
 }
 

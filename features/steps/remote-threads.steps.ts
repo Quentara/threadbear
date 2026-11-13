@@ -5,6 +5,18 @@ import type { ThreadbearWorld } from '../support/world.ts';
 
 // The mock's threads on "bruce" (@remote-threads turns them on, world.ts).
 
+When('its runner lets the thread go to bruce', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  assert.ok(d.selection?.id);
+  await this.app.do({ cmd: 'mock', method: 'moveAway', params: { threadId: d.selection.id } });
+});
+
+When('its runner lets the thread go to bruce while the old Mac still lists it', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  assert.ok(d.selection?.id);
+  await this.app.do({ cmd: 'mock', method: 'moveAway', params: { threadId: d.selection.id, staleIndex: true } });
+});
+
 Then('the row {string} is on the runner {string}', async function (this: ThreadbearWorld, title: string, runner: string) {
   await this.until(`"${title}" on ${runner}`, (d) => this.thread(d, title)?.runner === runner);
 });

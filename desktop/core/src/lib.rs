@@ -70,6 +70,7 @@ pub mod wait_for;
 pub mod web_runtime;
 pub mod zoom;
 pub mod local_files;
+pub mod milestones;
 #[cfg(windows)]
 mod local_path;
 pub use chrono;

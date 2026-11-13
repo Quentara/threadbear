@@ -202,6 +202,7 @@ impl Threadbear {
         if let Some(box_top) = self.opening.box_top.get() {
             self.opening.next = Some(crate::open_motion::Opening::FromNewPage { box_top });
         }
+        self.consider_milestone(cx);
         self.open(id, window, cx);
         self.apply_default_runner(cx);
         cx.notify();

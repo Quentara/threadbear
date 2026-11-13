@@ -782,6 +782,24 @@ pub enum Link {
     Url(String),
 }
 
+/// The printed address/path under a terminal cell. OSC 8 links use their
+/// explicit URI instead; this is for ordinary build output and shell text.
+pub fn link_word(chars: &[char], at: usize) -> Option<String> {
+    let boundary = |c: char| c.is_whitespace() || "\"'<>`".contains(c) || c.is_control();
+    if at >= chars.len() || boundary(chars[at]) { return None; }
+    let mut first = at;
+    let mut last = at + 1;
+    while first > 0 && !boundary(chars[first - 1]) { first -= 1; }
+    while last < chars.len() && !boundary(chars[last]) { last += 1; }
+    while first < last && "([{".contains(chars[first]) { first += 1; }
+    loop {
+        let tail = *chars.get(last.checked_sub(1)?)?;
+        let unmatched = [(')', '('), (']', '['), ('}', '{')].iter().any(|(close, open)| tail == *close && chars[first..last].iter().filter(|c| **c == *close).count() > chars[first..last].iter().filter(|c| **c == *open).count());
+        if first < last && (".,;!".contains(tail) || unmatched) { last -= 1; } else { break; }
+    }
+    (first <= at && at < last && last - first <= 4096).then(|| chars[first..last].iter().collect())
+}
+
 pub fn link_target(link: &str, folder: &str, home: &str, exists: impl Fn(&str) -> bool) -> Option<Link> {
     if link.is_empty() || link.len() > 4096 {
         return None;
@@ -1231,5 +1249,16 @@ mod tests {
         assert_eq!(link_target("main.swift:12", "/w", "/Users/me", exists), Some(Link::Url("main.swift:12".into())));
         assert_eq!(link_target("no scheme here", "/w", "/Users/me", exists), None);
         assert_eq!(link_target("", "/w", "/Users/me", exists), None);
+    }
+
+    #[test]
+    fn printed_terminal_links_keep_url_punctuation_and_file_positions() {
+        let word = |line: &str, at| link_word(&line.chars().collect::<Vec<_>>(), at);
+        assert_eq!(word("see (https://example.com/a(b)).", 12).as_deref(), Some("https://example.com/a(b)"));
+        assert_eq!(word("error: src/main.rs:12:4", 12).as_deref(), Some("src/main.rs:12:4"));
+        assert_eq!(word("雪 https://example.com", 8).as_deref(), Some("https://example.com"));
+        assert_eq!(word("https://example.com foo", 19), None);
+        assert_eq!(word("[x]", 0), None);
+        assert_eq!(word("()", 1), None);
     }
 }

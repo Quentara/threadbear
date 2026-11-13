@@ -26,6 +26,7 @@ use threadbear_dock::{DockLayout, DockModel, DockView};
 use tokio::sync::mpsc;
 
 pub struct Threadbear {
+    pub(crate) milestone: crate::milestones::Milestones,
     pub(crate) client: Arc<Client>,
     pub(crate) status: Status,
     pub(crate) threads: HashMap<String, ThreadSummary>,
@@ -280,6 +281,10 @@ pub struct Threadbear {
 
 impl Threadbear {
     pub(crate) fn new(settings: Settings, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let mut settings = settings;
+        if settings.saved.thread_milestone_shown.is_none() && crate::installed::launch().installed && crate::installed::on_real_data() {
+            settings.saved.thread_milestone_shown = crate::swift_import::milestone_shown();
+        }
         let anything_recent = settings.saved.open_anything_recent.clone().unwrap_or_default();
         // gpui-kit starts in its light theme whatever the system says; follow
         // the system's light or dark, and keep following it when it changes,
@@ -292,6 +297,7 @@ impl Threadbear {
         // as it changes.
         crate::style::set_appearance(crate::style::Appearance::from_name(settings.saved.appearance.as_deref().unwrap_or("system")), window, cx);
         let appearance = window.observe_window_appearance(|window, cx| {
+            crate::style::refresh_system_accent(cx);
             if crate::style::appearance() == crate::style::Appearance::System {
                 Theme::sync_system_appearance(Some(window), cx);
             }
@@ -381,7 +387,10 @@ impl Threadbear {
         // front): coming back reads the open one (appBecameActive). The
         // Settings window says so too (`SettingsWindow::new`).
         crate::thread::set_looking(crate::thread::window_key(window), window.is_window_active());
-        let looking = cx.observe_window_activation(window, |this, window, cx| this.looking_changed(crate::thread::window_key(window), window.is_window_active(), cx));
+        let looking = cx.observe_window_activation(window, |this, window, cx| {
+            this.milestone.active = window.is_window_active();
+            this.looking_changed(crate::thread::window_key(window), window.is_window_active(), cx);
+        });
         // A pin an agent asked to show may only be in Highlights once they've
         // been fetched: their coming is a moment to try it again.
         let side_changed = cx.observe(&side, |this: &mut Threadbear, _, cx| this.serve_panel_request(cx));
@@ -409,6 +418,7 @@ impl Threadbear {
             None => HashSet::from(["hibernating", "archived"]),
         };
         let mut this = Threadbear {
+            milestone: crate::milestones::Milestones::new(window.is_window_active()),
             client,
             status,
             threads: HashMap::new(),
@@ -609,6 +619,14 @@ impl Threadbear {
     /// front, the open thread is read.
     pub(crate) fn looking_changed(&mut self, window: u64, active: bool, cx: &mut Context<Self>) {
         crate::thread::set_looking(window, active);
+        if active {
+            crate::style::refresh_system_accent(cx);
+            // A script's explicit motion choice is independent of the test
+            // host's setting, including when both happened to start equal.
+            if !cfg!(feature = "automation") || !matches!(std::env::var("THREADBEAR_REDUCE_MOTION").as_deref(), Ok("on" | "off")) {
+                gpui_kit::base::apply_system_reduce_motion(cx);
+            }
+        }
         // ⌘-Tab away lets ⌘ go in the other app, so this one never hears it.
         if !active {
             self.hints_reset(cx);
@@ -817,12 +835,14 @@ impl Threadbear {
                 "thread.deleted" => {
                     let id = params["threadId"].as_str().unwrap_or("");
                     crate::terminal::thread_deleted(id, cx);
-                    self.kept.forget(id, cx);
-                    // Its panel of its own goes with it (`forget`).
-                    self.close_thread_panel(id, cx);
-                    self.threads.remove(id);
-                    self.failed_on_account.remove(id);
-                    self.refresh_dock_badge();
+                    if !self.moved_away(id, cx) {
+                        self.kept.forget(id, cx);
+                        // Its panel of its own goes with it (`forget`).
+                        self.close_thread_panel(id, cx);
+                        self.threads.remove(id);
+                        self.failed_on_account.remove(id);
+                        self.refresh_dock_badge();
+                    }
                 }
                 "runner.notice" => {
                     // A restart notice moves the quiet banner along (the
@@ -884,6 +904,7 @@ impl Threadbear {
                 _ => {}
             },
         }
+        self.consider_milestone(cx);
         cx.notify();
     }
 
@@ -961,6 +982,12 @@ impl Threadbear {
                         let list: Vec<ThreadSummary> = serde_json::from_value(v["threads"].clone()).unwrap_or_default();
                         let before = std::mem::take(&mut this.threads);
                         this.threads = list.into_iter().map(|t| (t.id.clone(), t)).collect();
+                        // A destination's first index row can lag behind a
+                        // reconnect. Keep known remote rows until the remote
+                        // index reconciles them, including moves in flight.
+                        for old in before.values().filter(|t| t.is_remote()) {
+                            this.threads.entry(old.id.clone()).or_insert_with(|| old.clone());
+                        }
                         // Open panes take the summaries as they are now: on
                         // a reconnect this list is the only word of what
                         // changed while it was away (a loose-ends check that
@@ -979,6 +1006,7 @@ impl Threadbear {
                         this.apply_remote_index(cx);
                         this.list_error = None;
                         this.sidebar.loaded = true;
+                        this.consider_milestone(cx);
                         this.refresh_dock_badge();
                         this.open_pending(cx);
                         this.try_waiting_link(cx);
@@ -1469,6 +1497,8 @@ impl Threadbear {
             let dropped = self.pane.as_ref().filter(|_| self.selected.as_deref() == Some(id.as_str())).and_then(|p| p.read(cx).entering.box_drop());
             json!({ "thread": id, "how": how.name(), "boxDrop": dropped })
         });
+        dump["milestoneNote"] = json!(self.milestone.note.map(threadbear_core::milestones::title));
+        dump["systemAccent"] = json!(Rgba::from(crate::style::control_accent(cx)));
         // ⌘K's box, while it's up (open_anything.rs).
         dump["anything"] = self.open_anything_dump(cx);
         // The last time the panels moved (a panel opened or closed): where

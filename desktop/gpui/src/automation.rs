@@ -833,6 +833,7 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         "explain" => crate::explain_pane::explain_command(app, cmd, window, cx),
         // What the open gate would have opened, as a scripted app opens nothing.
         "opened" => Ok(json!(format!("ok {}", serde_json::to_string(&crate::open_gate::take_opened()).unwrap_or_default()))),
+        "milestone" => Ok(crate::milestones::automation(app, cmd, cx)),
         // Thread chips in a row's words, as the Swift app's `chip`.
         "chip" => crate::chips::chip_command(app, cmd, window, cx),
         // Quits as the app menu's Quit does once it's said yes (the quit

@@ -140,6 +140,16 @@ fn read_defaults(stand_in: Option<&std::ffi::OsStr>) -> Result<std::collections:
     })
 }
 
+/// This toast arrived after the main one-time import. Keep a milestone the
+/// Swift app already showed, even when that import finished on an older build.
+pub(crate) fn milestone_shown() -> Option<usize> {
+    let defaults = read_defaults(None).ok()?;
+    match defaults.get("threadMilestoneShown")? {
+        Plist::Integer(tier) => usize::try_from(*tier).ok(),
+        _ => None,
+    }
+}
+
 /// The Swift app's settings as an XML property list, through cfprefsd, so
 /// they're as the Swift app last left them. None where there's no Swift app
 /// or they're too big to be real; an error when `defaults` failed.

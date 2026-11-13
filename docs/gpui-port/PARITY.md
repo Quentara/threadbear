@@ -4471,3 +4471,40 @@ Fixes from Codex's review of the slice before:
 - Remaining: the rest of the daily driver.
 - Verification: `TB_APP=swift cucumber-js` on Tinker Desk, 24 of 24 scenarios;
   `TB_APP=gpui cucumber-js` on `cloud` under Xvfb, 17 of 24 at this point.
+
+### 2026-11-13 Other Macs and the audit's smaller leftovers
+
+- A move keeps the sidebar row as the destination Mac's until its first
+  index row arrives. The open transcript reloads through that runner, and
+  an old source row cannot take the move back.
+- Relay subscriptions can say which sparse event ranges that pane already
+  has (`relaySeen`); only missing events in its loaded window come back.
+  Another reader's page cannot consume live events owed to existing readers.
+  A gap's uncertain turn boundaries wait for the missing rows, while known
+  messages stay readable and a failed gap fetch is retried on the next read.
+- Direct runner connections are deliberately absent: they were removed from
+  the runner and the Swift app on 13 Nov. Both apps use their own runner and
+  Convex. The Swift remote-video copy path now fails the same `files.read`
+  request as GPUI: Convex keeps another runner's files there. This is a shared
+  backend limit, not a direct connection still waiting to be ported. Neither
+  app should open a same-named local file in its place.
+- The Mac's accent is read from AppKit in both appearances and refreshed on
+  return from System Settings. The vendored kit already reads Reduce Motion
+  at startup on Mac, Windows and Linux; the app re-reads it on activation
+  (the script's explicit override still wins).
+- Command-click a Terminal link (Control-click off the Mac), including OSC 8
+  links and printed paths, through the existing open gate. Plain selection
+  and a program's mouse reporting still work.
+- The milestone capsule keeps the Swift thresholds, words, saved highest
+  tier, active/idle checks and dismissal. Scripted and dev apps do not spend
+  the installed app's milestone; the motion thread owns the bear and entrance
+  after Mike reviews its clips (`milestones.rs`, `milestone_bear`).
+- The moon's menu hangs from its button, and a completed sub-agent whose
+  transcript is open stays listed under Inbox.
+- Verification: focused relay tests, core tests on cloud, a debug Mac build,
+  and seven user-flow scenarios on Tinker Desk (68 steps) covering moves,
+  sub-agents, milestone dismissal/return, printed and labelled Terminal
+  links, and a program link that must not execute. The static milestone and
+  retained sub-agent were also inspected in the scripted app. A follow-up
+  run passed five scenarios (43 steps), including an additional stale-source
+  index case.

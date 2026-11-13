@@ -738,6 +738,10 @@ stops when the thread is archived or deleted, and they all stop when you
 quit Threadbear. The Terminal is a panel like the others: drag it
 beside the thread, into a tab, or out into a window of its own.
 
+⌘-click a web address, a file path or a labelled link printed in the
+Terminal to open it (Ctrl-click on Windows and Linux). Programs and links
+that start another app ask first, as they do elsewhere in Threadbear.
+
 A shell command an agent gives you (a ```` ```bash ````, `sh`, `zsh` or
 `shell` block) has a play icon and a copy icon at its top right. Play
 opens the Terminal with the command typed at the prompt and the keyboard
