@@ -226,6 +226,23 @@ test('a folder move on a released Codex session resumes there on the next turn',
   assert.equal(notes(h, thread.id).at(-1), `Moved to ${path.resolve(other)}. The session carries on there.`);
 });
 
+test('lowering access in the same call as a login change still reaches the running Codex turn', () => {
+  const h = codexHarness();
+  const { thread } = h.runner.create({ text: 'x', accountId: 'codex-main', permissionMode: 'full' });
+  const s = h.codex.last;
+  s.init('019a-3', 'gpt-6.1-sol');
+  h.runner.update({ threadId: thread.id, permissionMode: 'ask', accountId: 'claude-3' });
+  assert.deepEqual(s.modes, ['ask'], 'the old session is lowered now, not left on Full till it goes');
+});
+
+test('Plan first to Full on a running Codex turn still says the turn keeps planning till it ends', () => {
+  const h = codexHarness();
+  const { thread } = h.runner.create({ text: 'x', accountId: 'codex-main', permissionMode: 'plan' });
+  h.codex.last.init('019a-3', 'gpt-6.1-sol');
+  h.runner.update({ threadId: thread.id, permissionMode: 'full' });
+  assert.equal(notes(h, thread.id).at(-1), 'Full access applies from the next turn. This turn carries on as it started.');
+});
+
 // ------------------------------------------------------------ next-turn note
 
 test('a Codex settings change during a turn says it applies from the next turn', () => {

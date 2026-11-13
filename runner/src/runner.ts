@@ -2974,6 +2974,7 @@ export class Runner {
       }
     }
     if (params.permissionMode !== undefined && params.permissionMode !== rec.permissionMode) {
+      const wasMode = rec.permissionMode;
       // What approving a plan goes back to.
       if (params.permissionMode === 'plan') rec.modeBeforePlan = rec.permissionMode;
       else delete rec.modeBeforePlan;
@@ -2989,14 +2990,20 @@ export class Runner {
         rt.session.askBeforeEveryTool?.();
         rt.releaseWhenIdle = true;
       }
-      if (rt.session && !release) {
+      // A session on its way out (another login or folder in the same
+      // call) still hears a lowering: its turn runs on till the next
+      // message, and on Full a Codex one answers its own approvals.
+      if (rt.session && (!release || params.permissionMode !== 'full')) {
         rt.session.setPermissionMode(params.permissionMode).catch(() => {
           rt.releaseWhenIdle = true;
           if (!rt.turn) this.releaseSession(st);
         });
         // Full counts at once even on Codex: what the turn would ask, the
-        // runner answers itself (codex/approvals.ts, fullAccess).
-        if (sayNextTurn() && params.permissionMode !== 'full') nextTurn.push(params.permissionMode === 'ask' ? 'Ask before edits' : params.permissionMode === 'auto' ? 'Auto' : 'Plan first');
+        // runner answers itself (codex/approvals.ts, fullAccess). Not out
+        // of Plan first, whose turn keeps planning till it ends.
+        if (sayNextTurn() && (params.permissionMode !== 'full' || wasMode === 'plan')) {
+          nextTurn.push(params.permissionMode === 'ask' ? 'Ask before edits' : params.permissionMode === 'auto' ? 'Auto' : params.permissionMode === 'plan' ? 'Plan first' : 'Full access');
+        }
       }
     }
     if (nextTurn.length) {
