@@ -21,7 +21,7 @@ const log = (line) => fs.appendFileSync(path.join(home, 'app.log'), line + '\\n'
 const panic = () => {
   fs.mkdirSync(path.join(home, 'crashes'), { recursive: true });
   fs.writeFileSync(path.join(home, 'crashes', 'panic-2026-11-13-120000-000.json'), JSON.stringify({ at: 'now', main_thread: true, message: 'selection out of range', location: 'desktop/gpui/src/terminal.rs:42:9', frames: ['threadbear_gpui::terminal::select'], reported: false }));
-  process.stderr.write("thread 'main' panicked at desktop/gpui/src/terminal.rs:42:9\\n");
+  process.stderr.write("thread 'main' panicked at desktop/gpui/src/terminal.rs:42:9:\\nbyte index 3 is not a char boundary; it is inside 'é' of \`private words\`\\nnote: run with RUST_BACKTRACE=1\\n");
 };
 log('started');
 const server = net.createServer((s) => {
@@ -91,6 +91,9 @@ test('a dropped reply says the app is still running, with its panic, log and out
   assert.match(fs.readFileSync(path.join(dir, 'app.log'), 'utf8'), /terminal/);
   assert.match(fs.readFileSync(path.join(dir, 'output.txt'), 'utf8'), /panicked/);
   assert.equal(fs.statSync(dir).mode & 0o077, 0, 'only this user can read it');
+  // Rust's own hook prints the panic's raw message; only the scrubbed record's is kept.
+  assert.doesNotMatch(error, /private words/);
+  assert.doesNotMatch(fs.readFileSync(path.join(dir, 'output.txt'), 'utf8'), /private words/);
 });
 
 test("an older app's \"the app stopped\" gets the same evidence", { skip: process.platform === 'win32' }, async (t) => {
@@ -111,6 +114,17 @@ test('an app that exits mid-command fails it at once, with the exit and the pani
   assert.match(error, /exited with code 101|is still running/);
   assert.match(error, /selection out of range/);
   assert.equal(app.keptEvidence.length, 1);
+});
+
+test('pruning old evidence leaves alone anything else in its folder', { skip: process.platform === 'win32' }, async (t) => {
+  const { app, kept } = await driver(t, 'drop');
+  fs.mkdirSync(kept, { recursive: true });
+  for (let i = 0; i < 25; i++) fs.writeFileSync(path.join(kept, `000-report-${i}`), '');
+  for (let i = 0; i < 22; i++) fs.mkdirSync(path.join(kept, `2020-01-01T00-00-${String(i).padStart(2, '0')}-000Z-abcdef`));
+  await app.do({ cmd: 'dump' }).catch(() => {});
+  const left = fs.readdirSync(kept);
+  assert.equal(left.filter((n) => n.startsWith('000-report-')).length, 25);
+  assert.equal(left.filter((n) => !n.startsWith('000-report-')).length, 20);
 });
 
 test("an ordinary refusal stays short and keeps nothing: specs poll for those", { skip: process.platform === 'win32' }, async (t) => {

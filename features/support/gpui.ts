@@ -35,6 +35,19 @@ function specShell(): NodeJS.ProcessEnv {
   return { SHELL: '/bin/zsh', ZDOTDIR: zdotdir };
 }
 
+/** The folders `keepEvidence` makes: its ISO time, then mkdtemp's six characters. */
+const KEPT_NAME = /^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d-\d{3}Z-[A-Za-z0-9]{6}$/;
+
+/**
+ * What the app printed, less each panic's message. Rust's own panic hook,
+ * which runs after the app's (crash_reporting.rs), prints the message as it
+ * was, and it can hold any text the app had; the kept record's is scrubbed,
+ * and `evidence` shows that one instead.
+ */
+export function printed(output: string): string {
+  return output.replace(/(panicked at [^\n]*\n)[\s\S]*?(?=\nnote: |\n\n|\nthreadbear: |$)/g, '$1(its message is left out here: see the panic record)');
+}
+
 async function waitForFile(file: string, what: string, ms: number): Promise<void> {
   const until = Date.now() + ms;
   while (!fs.existsSync(file)) {
@@ -294,7 +307,7 @@ export class GpuiDriver implements Driver {
     if (panics.length > 3) parts.push(`(and ${panics.length - 3} older panics)`);
     const log = (await this.appLog()).trimEnd().split('\n').slice(-25).join('\n').slice(-2500);
     if (log) parts.push(`The end of its log:\n${log}`);
-    const said = this.log.trimEnd().slice(-2500);
+    const said = printed(this.log).trimEnd().slice(-2500);
     if (said) parts.push(`The end of what it printed:\n${said}`);
     if (keep && this.home) {
       const dir = this.keepEvidence(panics);
@@ -313,9 +326,10 @@ export class GpuiDriver implements Driver {
       for (const file of panics) fs.copyFileSync(file, path.join(dir, 'crashes', path.basename(file)));
       const log = path.join(this.home, 'app.log');
       if (fs.existsSync(log)) fs.copyFileSync(log, path.join(dir, 'app.log'));
-      fs.writeFileSync(path.join(dir, 'output.txt'), this.log, { mode: 0o600 });
+      fs.writeFileSync(path.join(dir, 'output.txt'), printed(this.log).slice(-64_000), { mode: 0o600 });
       this.keptEvidence.push(dir);
-      const runs = fs.readdirSync(root).sort();
+      // Only this driver's folders: TB_SPEC_EVIDENCE may be a folder with other things in it.
+      const runs = fs.readdirSync(root).filter((n) => KEPT_NAME.test(n)).sort();
       for (const old of runs.slice(0, Math.max(0, runs.length - 20))) fs.rmSync(path.join(root, old), { recursive: true, force: true });
       return dir;
     } catch {
