@@ -12,6 +12,7 @@ import { readRunnerJson } from '../../src/config.ts';
 import { toOwnedScheduleDoc, SCHEDULE_POOLS_API_VERSION } from '../../src/sync.ts';
 import { keptCheckFile } from '../../src/schedule-check.ts';
 import { scheduledSendMethods, sendScheduled } from '../../src/handover.ts';
+import { DRAIN_MAX_OLD_MS, DRAIN_SETTLE_MS } from '../../src/runner.ts';
 
 const MIN = 60_000;
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -95,7 +96,7 @@ function idleThread(h: ReturnType<typeof makeHarness>) {
   return { thread, s };
 }
 
-for (const backend of [false, true]) test(`a scheduled continuation reaches a draining runner held by a blocked shell (${backend ? 'backend' : 'local'})`, async () => {
+for (const backend of [false, true]) for (const hibernated of [false, true]) test(`a scheduled continuation reaches a draining runner held by a blocked shell (${backend ? 'backend' : 'local'}, ${hibernated ? 'hibernating' : 'awake'})`, async () => {
   const old = makeHarness();
   const { thread } = old.runner.create({ text: 'Measure', accountId: 'claude-3' });
   const session = old.adapter.last;
@@ -124,12 +125,18 @@ for (const backend of [false, true]) test(`a scheduled continuation reaches a dr
     session.result('completed');
     await tick(8);
     assert.equal(sched.find(sc.id).lastRun, undefined, 'a busy old runner leaves the slot due');
+    if (hibernated) {
+      const rec = old.runner.mustGet(thread.id).rec;
+      rec.snoozedUntil = iso(old.clock.now() + 24 * 60 * MIN);
+      rec.wakeWhen = { said: 'when the perf job finishes' };
+    }
     h.clock.advance(MIN);
     await tick(8);
     assert.equal(session.sent.length, 2, 'starts after the turn despite the blocked shell');
     const msg = old.events(thread.id).filter((e) => e.type === 'user.message').at(-1)!;
     assert.equal(msg.origin, 'schedule');
     assert.equal(msg.scheduleId, sc.id);
+    assert.equal(old.runner.get(thread.id).snoozedUntil, undefined);
     assert.equal(sched.find(sc.id).runs, 1);
     h.clock.advance(2 * MIN);
     await tick(8);
@@ -238,6 +245,55 @@ test('concurrent Run now requests send a local message once', async () => {
     const results = await Promise.allSettled([sched.runNow(sc.id), sched.runNow(sc.id)]);
     assert.equal(results.filter((r) => r.status === 'fulfilled').length, 1);
     assert.equal(s.sent.length, 2);
+  } finally { sched.stop(); }
+});
+
+test('scheduled turns leave the quiet spell an old runner needs to hand over', async () => {
+  const h = makeHarness();
+  const { thread } = h.runner.create({ text: 'Measure', accountId: 'claude-3' });
+  const s = h.adapter.last;
+  s.init();
+  s.out({ kind: 'tasks', tasks: [{ id: 'shell', type: 'local_bash', kind: 'shell', description: 'never-ending monitor' }] });
+  s.result('completed');
+  const handed: string[] = [];
+  await h.runner.beginDrain([thread.id], { onHandedOver: (id) => handed.push(id), checkMs: MIN });
+  h.runner.draining!.since = h.clock.now() - DRAIN_MAX_OLD_MS;
+  const deliver = scheduledSendMethods(h.runner)['drain.sendScheduled'];
+  assert.throws(() => deliver({ threadId: thread.id, text: 'Inspect', scheduleId: 's1' }), (e: RpcError) => e.code === ErrorCode.busy);
+  h.clock.advance(DRAIN_SETTLE_MS);
+  await tick(8);
+  assert.deepEqual(handed, [thread.id]);
+  assert.equal(s.sent.length, 1);
+});
+
+for (const rescheduled of [false, true]) test(`editing a local schedule during a send preserves its result (${rescheduled ? 'new time' : 'rename'})`, async () => {
+  const h = makeHarness();
+  const { thread } = idleThread(h);
+  let finish!: () => void;
+  let calls = 0;
+  const sched = new Scheduler({
+    runner: h.runner, home: h.home, clock: h.clock, log: nullLogger,
+    elsewhere: () => true,
+    sendElsewhere: async () => { calls++; await new Promise<void>((resolve) => { finish = resolve; }); return { turnId: 'queued' }; },
+  });
+  sched.start();
+  try {
+    const sc = await sched.create({ text: 'Inspect', at: iso(h.clock.now() + MIN), threadId: thread.id });
+    h.clock.advance(MIN);
+    await tick(6);
+    const later = iso(h.clock.now() + 10 * MIN);
+    await sched.update({ scheduleId: sc.id, title: 'Renamed', ...(rescheduled ? { at: later } : {}) });
+    finish();
+    await tick(6);
+    const edited = sched.find(sc.id);
+    assert.equal(edited.title, 'Renamed');
+    assert.equal(edited.runs, 1);
+    assert.equal(edited.lastRun?.outcome, 'sent');
+    if (rescheduled) { assert.equal(edited.nextRunAt, later); assert.equal(edited.finishedAt, undefined); }
+    else assert.ok(edited.finishedAt);
+    h.clock.advance(2 * MIN);
+    await tick(6);
+    assert.equal(calls, 1, 'the old slot is not sent again');
   } finally { sched.stop(); }
 });
 

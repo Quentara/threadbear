@@ -24,6 +24,7 @@ import { openCardEvents } from './open-cards.ts';
 import { ErrorCode, RpcError } from './protocol.ts';
 import type { PermissionMode, PersistedEvent, ThreadSummary } from './protocol.ts';
 import type { Notification, Runner } from './runner.ts';
+import { DRAIN_MAX_OLD_MS } from './runner.ts';
 import type { UsageReading } from './usage.ts';
 import type { AgentApprovalRequest, ProjectControl, RemoteControl, ScheduleControl, ThreadControl } from './threadbear-mcp.ts';
 import type { RemoteThreads } from './thread-index.ts';
@@ -132,7 +133,7 @@ export function isMoved(e: unknown): boolean {
 
 // Only installed on the draining server. Older releases refuse this method,
 // so the primary keeps their run due rather than steering into a busy turn.
-export function scheduledSendMethods(runner: Pick<Runner, 'send' | 'has' | 'mustGet' | 'unqueue'>) {
+export function scheduledSendMethods(runner: Pick<Runner, 'send' | 'has' | 'mustGet' | 'unqueue' | 'draining' | 'clock'>) {
   return {
     'drain.sendScheduled': (p: Record<string, unknown>) => {
       if (typeof p.threadId !== 'string' || typeof p.text !== 'string' || typeof p.scheduleId !== 'string') throw new RpcError(ErrorCode.badParams, 'threadId, text and scheduleId must be strings');
@@ -140,7 +141,10 @@ export function scheduledSendMethods(runner: Pick<Runner, 'send' | 'has' | 'must
       const { rt, rec } = runner.mustGet(p.threadId);
       // A queued message on an old runner is discarded on crash recovery.
       // Leave it due on the primary until this runner can start it now.
-      if (rt.turn || rt.editing || rt.moving || rt.cleaning || rt.preparing || rt.closing || rt.approvals.size || rec.queue.length || rec.wakeWhen || !rt.tasks.length) throw new RpcError(ErrorCode.busy, 'That thread cannot start its scheduled turn yet; try again in a moment.');
+      if (rt.turn || rt.editing || rt.moving || rt.cleaning || rt.preparing || rt.closing || rt.approvals.size || rec.queue.length || rec.wakeWhen?.pending || !rt.tasks.length) throw new RpcError(ErrorCode.busy, 'That thread cannot start its scheduled turn yet; try again in a moment.');
+      // Recurring check-ins must eventually leave a quiet spell for the
+      // old runner to hand over, even if its background shell never ends.
+      if (runner.draining && runner.clock.now() - runner.draining.since >= DRAIN_MAX_OLD_MS) throw new RpcError(ErrorCode.busy, 'That old runner is waiting to hand this thread over; try again in a moment.');
       const sent = runner.send(p.threadId, p.text, [], { origin: 'schedule', scheduleId: p.scheduleId, queue: true });
       if (runner.unqueue(p.threadId, sent.turnId)) throw new RpcError(ErrorCode.busy, 'That scheduled turn could not start yet; try again in a moment.');
       return sent;

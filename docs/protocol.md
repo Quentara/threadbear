@@ -5322,6 +5322,8 @@ kept in `schedules.json` in the data dir.
   immediately, the run stays due on the primary: recovery after an old
   runner crashes discards its unsent queue. A slow draining process holds
   only its own schedule's send, while other schedules continue.
+  After 12 hours on the old release, scheduled messages wait for handover
+  so recurring check-ins can't keep resetting its quiet spell.
   A draining release that
   doesn't know this method leaves the run due until its thread comes across.
   An archived or snoozed thread comes back to the inbox, as with any message. One it

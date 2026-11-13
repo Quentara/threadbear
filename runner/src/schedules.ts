@@ -784,7 +784,8 @@ export class Scheduler {
     if (res.outcome !== 'sent') throw new RpcError(ErrorCode.other, res.note ?? "Couldn't run it.");
     // A one-off run now has used its time: that slot isn't due again.
     const slot = rec.at ? rec.nextRunAt : undefined;
-    if (rec.at) this.finish(rec);
+    if (this.mode === 'local') this.completeLocal(rec, rec.nextRunAt, true);
+    else if (rec.at) this.finish(rec);
     if (this.mode === 'backend') await this.recordRun(rec, true, undefined, slot);
     this.changed();
     return { schedule: this.view(rec), threadId: res.threadId!, turnId: res.turnId! };
@@ -968,10 +969,10 @@ export class Scheduler {
           return;
         }
         if (checked === 'later') return;
+        const slot = rec.nextRunAt;
         const res = await this.send(rec, false, checked);
         if (res.outcome === 'retry') return;
-        if (rec.at) this.finish(rec);
-        else this.plan(rec);
+        this.completeLocal(rec, slot);
         this.changed();
         // Replan from the next slot, rather than the old slot's retry timer.
         this.tick();
@@ -986,6 +987,18 @@ export class Scheduler {
     // next regular check, not straight away over and over.
     const wait = next <= now ? TICK_MS : Math.min(next - now, TICK_MS);
     this.timer = this.clock.setTimeout(() => this.tick(), wait);
+  }
+
+  // An edit replaces the local record while a send waits for its reply.
+  // Carry the result into that record, preserving a newly booked time.
+  private completeLocal(rec: ScheduleRecord, slot: string | undefined, manual = false): void {
+    const live = this.items.get(rec.id);
+    if (!live || live.createdAt !== rec.createdAt) return;
+    live.lastRun = rec.lastRun;
+    live.runs = Math.max(live.runs, rec.runs);
+    if (live.nextRunAt !== slot) return;
+    if (live.at) this.finish(live);
+    else if (!manual) this.plan(live);
   }
 
   // The backend's version of tick: the same runs, each taken with a claim
