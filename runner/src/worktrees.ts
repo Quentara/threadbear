@@ -1202,9 +1202,15 @@ async function landLocked(
           await moveGoneBranch(g.entry, g.tip);
         }
       }
-      const moved = (await git(t.path, ['update-ref', `refs/heads/${t.branch}`, checked, own])).ok &&
-        (await git(t.path, ['checkout', '-q', t.branch])).ok;
-      if (moved) fs.rmSync(detachedMarker(gitDir), { force: true });
+      // Through leaveStack, as a commit made since the check was looked at
+      // would otherwise be checked out away.
+      const moved = (await git(t.path, ['update-ref', `refs/heads/${t.branch}`, checked, own])).ok
+        ? await leaveStack(t, checked, checked)
+        : undefined;
+      if (moved?.ok) {
+        fs.rmSync(detachedMarker(gitDir), { force: true });
+        if (moved.carried) out(moved.carried);
+      } else if (moved) err(`It landed, and ${t.branch} is on what landed. ${moved.reason}`);
       else err(`It landed, but ${t.branch} couldn't be moved to it in ${t.path}: HEAD is detached at what landed. Run git checkout ${t.branch} there and git reset --keep ${MAIN}.`);
       mine = (await gitOut(t.path, ['log', '--oneline', '--first-parent', `${group.at(-1)!.tip}..${checked}`])) ?? mine;
     }

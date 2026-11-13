@@ -374,6 +374,38 @@ test('a commit made in the holder while its group check runs is carried onto its
   assert.ok(!fs.existsSync(path.join(main, 'fix.txt')));
 });
 
+test('a commit made in the holder after its group check passed, before main moves, is kept on its branch', async () => {
+  const { root, main } = makeRepo();
+  const [a, b, c] = branches(main, ['a', 'b', 'c']);
+  const check = `${slowCheck(root)}; if test -f b.txt && test -f c.txt; then touch '${root}/group-passed'; fi`;
+  // Asked once more after the check: the agent commits just then.
+  let committed = '';
+  const hold = async (cwd: string) => {
+    if (!committed && fs.existsSync(path.join(root, 'group-passed'))) {
+      commit(cwd, { 'late.txt': 'late\n' }, 'Late fix');
+      committed = cwd;
+    }
+    return undefined;
+  };
+  const first = land({ ...a, check }, capture().opts);
+  await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const caps = [capture(), capture()];
+  const rest = [b, c].map((t, i) => land({ ...t, check }, { ...caps[i].opts, hold }));
+  try {
+    await until(() => caps.every((x) => x.out.some((l) => l.startsWith('Waiting for another landing'))), 'b and c waiting');
+  } finally {
+    write(root, { release: '' });
+  }
+  assert.equal(await first, 0);
+  assert.deepEqual(await Promise.all(rest), [0, 0], caps.map((x) => x.err.join('\n')).join('\n'));
+  assert.ok(committed, 'the hold ran after the group check');
+  const h = [b, c].find((t) => fs.realpathSync(t.path) === fs.realpathSync(committed))!;
+  for (const n of ['b', 'c']) assert.ok(fs.existsSync(path.join(main, `${n}.txt`)));
+  assert.ok(!fs.existsSync(path.join(main, 'late.txt')));
+  assert.equal(sh(h.path, 'git rev-parse --abbrev-ref HEAD'), h.branch);
+  assert.equal(sh(h.path, `git log --format=%s main..${h.branch}`), 'Late fix');
+});
+
 test('a commit made empty on purpose lands with its group, as a rebase would keep it', async () => {
   const { root, main } = makeRepo();
   const [a, b, c] = branches(main, ['a', 'b', 'c']);
