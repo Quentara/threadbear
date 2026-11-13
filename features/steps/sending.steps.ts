@@ -157,3 +157,4 @@ Then('the composer holds the link to the thread {string}', async function (this:
   const t = await this.until(`a thread called "${title}"`, (d) => this.thread(d, title));
   await this.until(`the link to "${title}" in the composer`, (d) => d.composer.text === `[${title}](thread:${t.id})`);
 });
+

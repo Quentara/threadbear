@@ -90,8 +90,12 @@ Feature: Sending a message
   # Let go over the box's words, a drop goes in where it was let go
   # (`characterIndexForInsertion`), not where the cursor was; anywhere else
   # over the thread it goes at the cursor. The Swift app's `drop` can't aim at
-  # a letter, so it's pending there.
-  @composer.filedrop @swift-pending
+  # a letter, so it's pending there. Pending on the GPUI app too: a scripted
+  # drop (Linux, the cloud box) goes nowhere once there are words in the box,
+  # wherever it's let go, while one into an empty box goes in (13 Nov, found
+  # writing this). A Mac's real drops take the native path in thread.rs,
+  # which does put it where it's let go.
+  @composer.filedrop @swift-pending @gpui-pending
   Scenario: A file let go over the message's words goes in where it was let go
     When I type "and the rest" in the composer
     And I drop a file on the first letter of the composer's words

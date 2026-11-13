@@ -315,7 +315,7 @@ impl Threadbear {
         for runner in &self.remote.runners {
             lines.push(format!("    {}{}", if default.as_deref() == Some(runner.id.as_str()) { "[x] " } else { "[ ] " }, runner.name));
         }
-        if let Some(runner) = chosen.as_deref().filter(|r| self.remote.logins.contains_key(*r)) {
+        if let Some(runner) = chosen.as_deref() {
             let current = self.draft_summary().cwd;
             lines.push("---".to_owned());
             lines.push("[ ] Folder".to_owned());
@@ -367,7 +367,7 @@ impl Threadbear {
         // On another runner there's no "+": its folders are here, always with
         // Other… to type one, so a first thread on a fresh Mac can still pick
         // its folder (`remoteFolderMenu`).
-        if let Some(runner) = chosen.as_deref().filter(|r| self.remote.logins.contains_key(*r)) {
+        if let Some(runner) = chosen.as_deref() {
             let current = self.draft_summary().cwd;
             let mut folders: Vec<MenuRow> = self.listed_remote_folders(runner, &current).into_iter().map(|f| { let on = f == current; MenuRow::runner_folder(f, on) }).collect();
             if !folders.is_empty() {

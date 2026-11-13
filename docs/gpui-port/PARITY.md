@@ -307,11 +307,15 @@ built parsers and gates with no launch of the app, which is the trap.)
 From the coordinator's recheck of everything inside a thread
 (`~/Library/Caches/Threadbear/parity-audit/recheck-thread.md`):
 
-- A past Done card in the transcript is the Swift one now: a quiet card
-  with one grey "✓ Done" line and Archive at its right (`doneText` with
-  `isOpen` false). It was the old placeholder, a bold "Done" over every old
-  follow-up, and every finished turn leaves one. A past card of asks is a
-  grey "Needed you" over the asks in grey, numbered when there are several.
+- A closed card's row draws as the Swift one does: a quiet card with one
+  grey "✓ Done" line and Archive at its right (`doneText` with `isOpen`
+  false), or a grey "Needed you" over the asks in grey, numbered when
+  there are several. It was the old placeholder (a bold "Done" over every
+  old follow-up). The recheck took this for something on screen after
+  every turn, but both apps' reducers leave a closed card out of the rows
+  ("A card that's been answered or moved past isn't shown", 28 Oct;
+  `TranscriptReducer.swift:1604`, `core/src/reducer/model.rs:2066`), so
+  neither shows one today; this only keeps the drawing the same.
 - Return in the model picker's search picks the first model it lists, as
   the Swift search's `onSubmit` does.
 - A new thread on another Mac: Runs on's Folder is always there, with
@@ -337,6 +341,19 @@ From the coordinator's recheck of everything inside a thread
   can't go out as a URL, and the kit's selectable text takes a press on a
   link as the start of a selection, so a file link has no drag to start
   from yet. Both stay open under `drag.fileout`.
+- Found on the way, not fixed: on the cloud box (Linux) a scripted file drop
+  goes nowhere once the box has words in it, wherever it's let go; into an
+  empty box it goes in. The new drop-point scenario is `@gpui-pending` for
+  it. A Mac's real drops take the native capture path in thread.rs instead.
+- No shot of Other…'s dialog: the app's `shot` draws the window without its
+  dialog layer. The typed folder was checked in the scripted app ("Starts in
+  backup on bruce").
+
+Verification: on the cloud box, composer-chips, remote-threads, sending,
+drag-out and composer-cards: 81 scenarios, all passing but the two then
+fixed or marked (remote-threads again afterwards: 27 of 27). `cargo check
+-p threadbear-gpui --features automation` on Tinker Desk. The scripted app
+in dark mode for the Runs on lines and Other….
 
 ### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
 
