@@ -256,3 +256,40 @@ test("a trim waits for another one on the same host, so a run can't start betwee
   assert.equal(r.status, 0, r.stderr);
   assert.ok(Number(/took (\d+)/.exec(r.stdout)![1]) >= 2, r.stdout);
 });
+
+// 13 Nov: the cloud box filled during a spec run, every scenario failed with
+// ENOSPC, and the run still ended 0.
+test('a run that leaves the host nearly full fails, whatever its command said, and says why', (t) => {
+  const h = host(t, 40, {});
+  const full = path.join(h.root, 'full');
+  fs.writeFileSync(path.join(h.bin, 'ssh'), `#!/bin/bash\nshift\ncd "$HOME" && eval "$*"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h.bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
+  // Room to start, then 300 MiB once the command has run.
+  fs.writeFileSync(path.join(h.bin, 'df'), `#!/bin/bash
+echo "Filesystem 1024-blocks Used Available Capacity Mounted"
+if [ -e ${JSON.stringify(full)} ]; then echo "fake 0 0 307200 0% /"; else echo "fake 0 0 $((40 * 1048576)) 0% /"; fi
+`, { mode: 0o755 });
+  const findNode = path.join(import.meta.dirname, '..', '..', 'scripts', 'find-node.sh');
+  fs.writeFileSync(path.join(h.bin, 'rsync'), `#!/bin/bash
+dest="$HOME/\${!##*:}"
+mkdir -p "$dest/runner/scripts"
+cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
+`, { mode: 0o755 });
+  // A host each: the fake ssh runs here, so a run's in-use marker keeps the
+  // last run's turn lock open, which the real ssh would have dropped.
+  const run = (where: string, ...cmd: string[]) => spawnSync('/bin/bash', [path.join(SCRIPTS, 'remote.sh'), where, '--', ...cmd], { env: h.env, encoding: 'utf8', timeout: 30_000 });
+
+  // Remote builds keep line numbers, not the full debug info that filled it.
+  const fine = run('host1', 'bash', '-c', 'echo "debug=$CARGO_PROFILE_DEV_DEBUG"');
+  assert.equal(fine.status, 0, fine.stderr);
+  assert.match(fine.stdout, /debug=line-tables-only/);
+
+  const filled = run('host2', 'touch', full);
+  assert.equal(filled.status, 1);
+  assert.match(filled.stderr, /host2 has only 300 MiB free after this run/);
+  // A failure keeps its own code.
+  fs.rmSync(full);
+  const failed = run('host3', 'bash', '-c', `touch ${JSON.stringify(full)}; exit 7`);
+  assert.equal(failed.status, 7);
+  assert.match(failed.stderr, /300 MiB free/);
+});

@@ -20,7 +20,7 @@ TRIM_GIB=12
 # Under these a run isn't started at all: it would take the last of the disk
 # from whatever else runs on the host. A first build writes far more than one
 # with a target to build on.
-REFUSE_GIB=3
+REFUSE_GIB=5
 REFUSE_COLD_GIB=8
 # A target with anything changed this recently is in use. Cargo writes as it
 # compiles, and remote.sh touches .in-use inside it every minute of a run, so

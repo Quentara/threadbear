@@ -117,6 +117,12 @@ fi
 # A target folder per checkout. Cargo's names for path crates ignore where the
 # checkout is, so with a shared one each checkout's build replaced the other's.
 export CARGO_TARGET_DIR="\$HOME/$target" CARGO_HTTP_MULTIPLEXING=false CARGO_NET_RETRY=10
+# Debug builds keep line numbers (enough for a panic's backtrace) but not the
+# rest of the debug info, which was most of a target: one checkout's reached
+# 15 GB in an hour on the 75 GB cloud box, the threadbear-gpui test binary
+# alone 1.1 GB, and four of them filled it (13 Nov). Nothing reads the rest
+# there: no debugger runs on these hosts.
+export CARGO_PROFILE_DEV_DEBUG=line-tables-only
 export TMPDIR="\$HOME/$base/tmp"
 mkdir -p "\$TMPDIR"
 # What the specs need, the first time this folder's used.
@@ -125,13 +131,31 @@ for dir in features app/Tools/mock-runner runner; do
 done
 PRELUDE
 
+# A disk that fills during the run fails it in ways that can look like a pass:
+# on 13 Nov every spec scenario failed with ENOSPC on the cloud box, cargo said
+# nothing, and the run ended 0. So a run that leaves the host under 1 GiB free
+# fails, whatever its command said, and says why.
+read -r -d '' postlude <<POSTLUDE || true
+kb="\$(df -Pk "\$HOME/$base" 2>/dev/null | awk 'END { print \$4 }')"
+case "\$kb" in
+  ""|*[!0123456789-]*) ;;
+  *) if [ "\$kb" -lt 1048576 ]; then
+       echo "remote.sh: $host has only \$((kb / 1024)) MiB free after this run, so whatever it wrote may have failed for want of space, even if it said it passed. Treating it as failed. Run it again: it gives back idle build folders there first, or says why it can't." >&2
+       [ "\$rc" != 0 ] || rc=1
+     fi ;;
+esac
+exit "\$rc"
+POSTLUDE
+run="$prelude
+rc=0
+$cmd || rc=\$?
+$postlude"
+
 if [ "$desk" = 1 ]; then
   script=".cache/threadbear-check/gpui/run-$$.sh"
-  ssh "$host" "cat > $script" <<<"$prelude
-$cmd"
+  ssh "$host" "cat > $script" <<<"$run"
   # Desk Runner needs the screen awake for anything it draws.
   ssh "$host" "caffeinate -u -t 2 >/dev/null 2>&1 || true; ~/.local/bin/desk \"bash \\\$HOME/$script\"; rc=\$?; rm -f $script; exit \$rc"
 else
-  ssh "$host" "bash -s" <<<"$prelude
-$cmd"
+  ssh "$host" "bash -s" <<<"$run"
 fi
