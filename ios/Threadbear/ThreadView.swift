@@ -115,7 +115,10 @@ struct ThreadView: View {
                 model.draftText = nil
             }
         }
-        .task(id: "\(threadId):\(model.hasMessagePages):\(model.connection)") { await followMessages() }
+        // hasLoginNotes too: the page is asked for with or without the notes,
+        // and a watch begun on the backend version kept from last time stays
+        // as it was asked when the real one arrives (Codex's review, 13 Nov).
+        .task(id: "\(threadId):\(model.hasMessagePages):\(model.hasLoginNotes):\(model.connection)") { await followMessages() }
         .task(id: "\(threadId):\(history.lateImagesFrom ?? -1):\(model.connection):\(model.apiVersion ?? 0)") { await followLateImages() }
         .task(id: "\(sent?.id ?? ""):\(model.connection)") { await followCommand() }
         .task(id: answeredCommand) {

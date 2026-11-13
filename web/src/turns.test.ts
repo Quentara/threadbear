@@ -74,6 +74,10 @@ test("a login's note stays out of the work, between what came before it and the 
   assert.deepEqual(withNote.filter((k) => !k.startsWith('note:')), without);
   assert.equal(withNote.at(-1), 'assistant:Landed.');
   assert.equal(withNote.at(-2), `note:${moved}`);
+  // The login ran out before the turn did anything, so the folded work is
+  // all from after the move: the note still goes under the limit's words.
+  const early = [user('fix it', 0), said("You've hit your limit", 1, { turn: 'aaaa1111' }), note(moved, 2), user('Carry on.', 3, 'runner'), tool('Edited a file', 4), said('Fixed.', 9, { turn: 'bbbb2222' })];
+  assert.deepEqual(shown(fold(early, false)), ['user:fix it', 'worked', "assistant:You've hit your limit", `note:${moved}`, 'assistant:Fixed.']);
   // While the thread waits for room it's the last thing there, under the work.
   const waiting = shown(fold([user('land it', 0), tool('Ran tb land', 5), said("You've hit your 5-hour limit", 60), note('Every login in Claude is out of room. Carrying on at 11:30 am.', 61)], false));
   assert.equal(waiting.at(-1), 'note:Every login in Claude is out of room. Carrying on at 11:30 am.');

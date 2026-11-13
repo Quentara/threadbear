@@ -36,7 +36,7 @@ public enum Turns {
         guard !notes.isEmpty else { return foldTurns(messages, busy: busy) }
         var out = foldTurns(messages.filter { $0.role != .note }, busy: busy)
         for note in notes {
-            let at = out.firstIndex { $0.firstSeq > note.seq } ?? out.count
+            let at = out.firstIndex { ($0.placedSeq ?? .min) > note.seq } ?? out.count
             out.insert(.note(note), at: at)
         }
         return out
@@ -355,14 +355,17 @@ public struct AskAnswer: Codable, Sendable, Hashable {
 }
 
 extension ThreadItem {
-    /// Where an item sits among the thread's rows: a turn's folded work at
-    /// its first row, so a note from part way through it goes after the
-    /// line. A divider goes with the row after it.
-    var firstSeq: Int {
+    /// Where an item sits among the thread's rows, for placing a note. A
+    /// turn's folded work has no place of its own: its line goes above the
+    /// turn's replies whichever rows it holds, so a login that ran out
+    /// before doing anything put the note above the limit's own words, by
+    /// the work that came after (Codex's review, 13 Nov). The note goes by
+    /// the messages instead. A divider goes with the row after it.
+    var placedSeq: Int? {
         switch self {
         case let .message(m), let .note(m): m.seq
-        case let .tools(items): items.first?.seq ?? 0
-        case let .worked(w): w.items.map(\.firstSeq).min() ?? 0
+        case let .tools(items): items.first?.seq
+        case .worked: nil
         case let .gap(g): g.seq
         }
     }

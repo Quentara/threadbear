@@ -62,17 +62,20 @@ export function fold<M extends TurnMessage>(messages: M[], busy: boolean): Item<
   if (!notes.length) return foldTurns(messages, busy);
   const out = foldTurns(messages.filter((m) => !isNote(m)), busy);
   for (const m of notes) {
-    const at = out.findIndex((item) => firstSeq(item) > m.seq);
+    const at = out.findIndex((item) => (placedSeq(item) ?? -Infinity) > m.seq);
     out.splice(at < 0 ? out.length : at, 0, { kind: 'note', m });
   }
   return out;
 }
 
-// Where an item sits among the thread's rows: a turn's folded work at its
-// first row, so a note from part way through it goes after the line.
-function firstSeq(item: Item): number {
-  if (item.kind === 'tools') return item.items[0]?.seq ?? 0;
-  if (item.kind === 'worked') return item.key;
+// Where an item sits among the thread's rows, for placing a note. A turn's
+// folded work has no place of its own: its line goes above the turn's
+// replies whichever rows it holds, so a login that ran out before doing
+// anything put the note above the limit's own words, by the work that came
+// after (Codex's review, 13 Nov). The note goes by the messages instead.
+function placedSeq(item: Item): number | undefined {
+  if (item.kind === 'worked') return undefined;
+  if (item.kind === 'tools') return item.items[0]?.seq;
   return item.m.seq;
 }
 

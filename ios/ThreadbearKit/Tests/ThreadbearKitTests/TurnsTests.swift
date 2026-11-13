@@ -216,6 +216,21 @@ import Testing
         #expect(with.dropLast().last == "note:\(moved)")
     }
 
+    /// The login ran out before the turn did anything, so the folded work
+    /// is all from after the move: the note still goes under the limit's
+    /// words (from Codex's review).
+    @Test func aLimitHitBeforeAnyWorkKeepsTheNoteUnderIt() {
+        let rows = [
+            m(1, .user, "fix it", at: 0),
+            m(2, .assistant, "You've hit your limit", at: 1, turn: "aaaa1111"),
+            m(3, .note, moved, at: 2),
+            m(4, .user, "Carry on.", at: 3, origin: "runner", turn: "bbbb2222"),
+            m(5, .tool, "Edited a file", at: 4, turn: "bbbb2222"),
+            m(6, .assistant, "Fixed.", at: 9, turn: "bbbb2222"),
+        ]
+        #expect(shown(Turns.fold(rows, busy: false)) == ["user:fix it", "worked", "assistant:You've hit your limit", "note:\(moved)", "assistant:Fixed."])
+    }
+
     @Test func aThreadWaitingForRoomEndsOnItsNote() {
         let wait = "Every login in Claude is out of room. Carrying on at 11:30 am."
         let rows = [m(1, .user, "land it", at: 0), m(2, .tool, "Ran tb land", at: 5), m(3, .assistant, "You've hit your 5-hour limit", at: 60), m(4, .note, wait, at: 61)]
