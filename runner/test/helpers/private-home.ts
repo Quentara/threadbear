@@ -38,9 +38,14 @@ function reject(file: string): never {
   throw new Error(`Unit test reached a real account folder: ${file}`);
 }
 function canonicalPath(named: string): string {
+  // The kernel refuses paths this long. Do not walk thousands of missing
+  // ancestors in malformed-path tests just to discover the same failure.
+  if (Buffer.byteLength(named) > 4096) return named;
   let ancestor = named;
   while (true) {
-    try { return path.join(resolve(ancestor), path.relative(ancestor, named)); } catch { /* Try its parent. */ }
+    try { return path.join(resolve(ancestor), path.relative(ancestor, named)); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENAMETOOLONG') return named;
+    }
     const parent = path.dirname(ancestor);
     if (parent === ancestor) return named;
     ancestor = parent;
