@@ -965,6 +965,11 @@ folded one shows how many are under it. Its page
 says what's coming up next with a few numbers: how many are on, due in the
 next day, repeating, set by threads, paused, and how often they've run.
 
+With Convex sync on, schedules need a connection to your backend. If the
+first connection fails after a restart, the runner tries again after a
+second, then waits longer between attempts, up to a minute. Try saving
+again once the connection is back.
+
 A schedule's message brings an archived thread out of the archive while it
 runs. If the run ends with nothing for you, the thread goes back into the
 archive, so a watcher you've put away only lands in your inbox when it has

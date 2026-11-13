@@ -319,6 +319,10 @@ File references are where to look.
   rewrites anything: a commit made only there stays, and `tb status` says so.
   `tb land` refuses in that repo. If `origin` is Mike's repo rather than
   your own, leave this off.
+- **Convex heartbeat** (`runner/src/sync.ts`): with sync on, the runner
+  tells your deployment it is online once a minute. Before the first
+  successful heartbeat, a failed request is retried after 1 second,
+  doubling up to a minute. Key refusals and rate limits wait a minute.
 - **Schedule checks** (`runner/src/schedule-check.ts`): a schedule's
   check command, if it has one, runs in
   `/bin/sh` before each run, as you, for at most a minute (or up to five,

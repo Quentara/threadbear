@@ -1333,6 +1333,7 @@ export class ConvexSync {
   private cacheTimer?: TimerHandle;
   private cacheChanged = false;
   private backendHeard = false;
+  private startupHeartbeatRetryMs = 1000;
   private settling = false;
   private settleTimer?: TimerHandle;
   // Rows on their way, by digest: a row marked meanwhile is compared with what
@@ -3921,6 +3922,14 @@ export class ConvexSync {
         // Only that: while a network blip lasted, this would leave `turn` and
         // the like off message rows, and they're never written again.
         if (!this.backendHeard && /validat/i.test(String(e))) this.backendApiVersion = undefined;
+        // Schedules and the other runners' index wait for this handshake.
+        // A single failed request at startup used to leave them unavailable
+        // for a whole minute, even after the connection had recovered.
+        if (this.running && !this.backendHeard && !this.keyRejected && !refused && !refusedForGood(e) && !retryLater(e)) {
+          this.heartbeatTimer?.cancel();
+          this.heartbeatTimer = this.deps.clock.setTimeout(() => this.heartbeat(), this.startupHeartbeatRetryMs);
+          this.startupHeartbeatRetryMs = Math.min(this.startupHeartbeatRetryMs * 2, HEARTBEAT_MS);
+        }
       },
     );
     if (this.deps.clock.now() - this.sharesCheckedAt >= SHARE_RECONCILE_MS && !this.sharesDue) {

@@ -5361,7 +5361,12 @@ kept in `schedules.json` in the data dir.
   schedule keeps 400 bytes of its 16 KB for that run record. Making, changing and
   deleting go straight to the backend and answer once it has them; with
   no backend reachable they fail with `-32000` saying so. Nothing fires
-  without the backend. The first time a runner meets a backend of API 9
+  without the backend. After a failed first heartbeat, the runner retries
+  after 1 second, doubling the delay up to a minute until it hears the
+  backend, so a brief startup outage doesn't hold schedules for a minute.
+  Key refusals and rate limits keep the normal minute interval. Once the
+  first heartbeat succeeds, heartbeats stay a minute apart.
+  The first time a runner meets a backend of API 9
   it moves its own `schedules.json` up, under its `runnerId`, and from
   then on the file is only the copy. With sync off, or an older backend,
   schedules stay the runner's own file as before.

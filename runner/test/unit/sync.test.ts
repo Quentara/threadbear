@@ -7,7 +7,7 @@ import path from 'node:path';
 import { makeHarness, tick, tmpDir } from '../helpers/fakes.ts';
 import { ConvexSync, forBackend, RELAY_CARDS_API_VERSION, ASKED_API_VERSION, LINKS_API_VERSION, PROJECTS_DIFF_API_VERSION, STARS_API_VERSION, NETWORK_WAIT_API_VERSION, OPTION_NOTES_API_VERSION, BACKEND_API_VERSION, MAC_RUNNER_STATS_API_VERSION, TURNS_API_VERSION, ICONS_API_VERSION, RUNNER_ICON_API_VERSION, SCHEDULES_API_VERSION, SHARE_API_VERSION, WOKE_API_VERSION, STARTED_BY_API_VERSION, SECTIONS_API_VERSION, MODELS_API_VERSION, REPLY_IMAGES_API_VERSION, REPLY_IMAGES_LOOKBACK_MS, REPLY_IMAGES_SCANS_PER_FLUSH, toAccountDoc, PRESENCE_MS, SYNC_COALESCE_MS, HEARTBEAT_MS, SHARED_USAGE_POLL_MS, SYNC_BATCH, ensureRunnerId, toThreadDoc, convexPoster, convexUploader, pictureName, type ThreadDoc } from '../../src/sync.ts';
 import type { Project } from '../../src/protocol.ts';
-import type { ScheduleBackend } from '../../src/schedules.ts';
+import { Scheduler, type ScheduleBackend } from '../../src/schedules.ts';
 import { nullLogger, type Logger } from '../../src/log.ts';
 import { AT_MAC_IDLE_MS, isAtMac } from '../../src/presence.ts';
 import { loadConfig, paths, readRunnerJson } from '../../src/config.ts';
@@ -341,6 +341,120 @@ test('heartbeats once a minute; stop with bye says goodbye, stop without does no
   again.h.clock.advance(SYNC_COALESCE_MS * 2);
   await tick();
   assert.equal(again.calls.filter((c) => c.fn === 'sync:upsertThreads').length, 0);
+});
+
+test('a failed startup heartbeat retries soon and attaches schedules before the next minute', async () => {
+  let beats = 0;
+  let scheduler!: Scheduler;
+  const { h, sync, calls } = setup({
+    answer: (fn) => {
+      if (fn !== 'sync:heartbeat') return null;
+      if (++beats === 1) throw new Error('fetch failed');
+      return { apiVersion: SCHEDULES_API_VERSION };
+    },
+    schedules: { attach: (b) => scheduler.attach(b), inBackend: () => scheduler.inBackend() },
+  });
+  fs.writeFileSync(path.join(h.home, 'schedules.json'), JSON.stringify({ version: 2, schedules: [] }));
+  scheduler = new Scheduler({ runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, syncOn: true, self: { id: 'r1', name: 'TestMac' } });
+  scheduler.start();
+  const schedule = { text: 'Continue the review', at: new Date(h.clock.now() + 300_000).toISOString(), cwd: h.cfg.defaults.cwd, accountId: 'claude-3' };
+  sync.start();
+  await tick();
+  await assert.rejects(scheduler.create(schedule), /Schedules live in the Convex backend/);
+  h.clock.advance(999);
+  await tick();
+  assert.equal(beats, 1);
+  h.clock.advance(1);
+  await tick();
+  assert.equal(beats, 2);
+  const saved = await scheduler.create(schedule);
+  assert.equal(calls.filter((c) => c.fn === 'sync:saveSchedule').length, 1, 'saved once after the handshake');
+  assert.equal(scheduler.find(saved.id).text, schedule.text);
+  h.clock.advance(HEARTBEAT_MS - 1);
+  await tick();
+  assert.equal(beats, 2, 'successful startup returns to the normal interval');
+  h.clock.advance(1);
+  await tick();
+  assert.equal(beats, 3);
+  scheduler.stop();
+  await sync.stop();
+});
+
+test('startup heartbeat retries back off to a minute and stop cancels them', async () => {
+  let beats = 0;
+  const { h, sync } = setup({ answer: (fn) => {
+    if (fn === 'sync:heartbeat') { beats++; throw new Error('fetch failed'); }
+    return null;
+  } });
+  sync.start();
+  await tick();
+  for (const delay of [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]) {
+    const before = beats;
+    h.clock.advance(delay - 1);
+    await tick();
+    assert.equal(beats, before);
+    h.clock.advance(1);
+    await tick();
+    assert.equal(beats, before + 1);
+  }
+  await sync.stop();
+  const before = beats;
+  h.clock.advance(HEARTBEAT_MS * 2);
+  await tick();
+  assert.equal(beats, before);
+});
+
+test('a startup heartbeat refused for its key or rate keeps the normal interval', async () => {
+  for (const kind of ['auth', 'forbidden', 'badArgs', 'tooMany', 'rateLimited', 'retryLater']) {
+    let beats = 0;
+    const { h, sync } = setup({ answer: (fn) => {
+      if (fn === 'sync:heartbeat') { beats++; throw Object.assign(new Error('refused'), { data: { kind } }); }
+      return null;
+    } });
+    sync.start();
+    await tick();
+    h.clock.advance(HEARTBEAT_MS - 1);
+    await tick();
+    assert.equal(beats, 1, kind);
+    h.clock.advance(1);
+    await tick();
+    assert.equal(beats, 2, kind);
+    await sync.stop();
+  }
+});
+
+test('a startup heartbeat that fails after stop cannot schedule a retry', async () => {
+  let fail!: (e: Error) => void;
+  const heartbeat = new Promise((_, reject) => { fail = reject; });
+  const { h, sync, calls } = setup({ answer: (fn) => fn === 'sync:heartbeat' ? heartbeat : null });
+  sync.start();
+  await sync.stop();
+  fail(new Error('fetch failed'));
+  await tick();
+  h.clock.advance(HEARTBEAT_MS * 2);
+  await tick();
+  assert.equal(calls.filter((c) => c.fn === 'sync:heartbeat').length, 1);
+});
+
+test('a heartbeat failure after startup keeps the normal minute interval', async () => {
+  let beats = 0;
+  const { h, sync } = setup({ answer: (fn) => {
+    if (fn !== 'sync:heartbeat') return null;
+    if (++beats > 1) throw new Error('fetch failed');
+    return { apiVersion: SCHEDULES_API_VERSION };
+  } });
+  sync.start();
+  await tick();
+  h.clock.advance(HEARTBEAT_MS);
+  await tick();
+  assert.equal(beats, 2);
+  h.clock.advance(HEARTBEAT_MS - 1);
+  await tick();
+  assert.equal(beats, 2);
+  h.clock.advance(1);
+  await tick();
+  assert.equal(beats, 3);
+  await sync.stop();
 });
 
 test('off without a url, a key or when disabled, and says why', async () => {
