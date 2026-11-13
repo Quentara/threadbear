@@ -300,6 +300,8 @@ impl Threadbear {
             // empty line in a composer.
             let focus = self.tour.focus.get_or_insert_with(|| cx.focus_handle()).clone();
             window.focus(&focus, cx);
+            // And AppKit's keyboard with it, or a web panel's page keeps it.
+            crate::web_panels::keyboard_to_app(window);
         }
         if task.is_some() {
             self.tour.patience = Some(cx.spawn(async move |this, cx| {
