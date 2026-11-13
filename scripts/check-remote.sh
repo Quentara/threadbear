@@ -316,7 +316,7 @@ BUSY_EXIT="${THREADBEAR_CHECK_BUSY_EXIT:-1}"
 case "$BUSY_EXIT" in [1-9]|[1-9][0-9]|1[01][0-9]|12[0-3]) ;; *) BUSY_EXIT=1 ;; esac
 over_time() {
   echo "This check has been going for $((MAX_SECS / 60)) minutes, waiting in line included, so it was stopped." >&2
-  rm -f "$files" "$changed"
+  rm -f "$files" "$changed" "$left_out"
   if [ "${1:-}" = busy ]; then exit "$BUSY_EXIT"; fi
   exit 1
 }
@@ -502,9 +502,15 @@ choose() {
 
 # The files check.sh would see, less what no check reads: the pictures in
 # docs/ and site/ (about 50 MB of the repo). TourTests reads site's JSON.
+# The site's build (site/scripts/build.mjs --check) checks every link lands
+# on a file, so it's told what was left out (.check-left-out), and takes
+# those as there.
 files="$(mktemp)"
+left_out="$(mktemp)"
 (cd "$ROOT" && git ls-files -co --exclude-standard -z) | tr '\0' '\n' \
   | grep -vE '^(docs|site)/.*\.(png|gif|jpe?g|mp4|mov|webp)$' | tr '\n' '\0' >"$files"
+(cd "$ROOT" && git ls-files -co --exclude-standard) \
+  | grep -E '^(docs|site)/.*\.(png|gif|jpe?g|mp4|mov|webp)$' >"$left_out"
 BASE_ARGS=(${ARGS[@]+"${ARGS[@]}"})
 SKIP=""
 tries=0
@@ -596,7 +602,7 @@ while :; do
     FREE=0
   elif ! choose; then
     [ -z "$copied_host" ] || watched "$copied_host" "${SSH[@]}" "$copied_host" "rm -rf '$remote_run'" 2>/dev/null
-    rm -f "$files" "$changed"
+    rm -f "$files" "$changed" "$left_out"
     if [ -n "$LOW" ]; then
       # Not 255: a disk to clear isn't a reason to run it all on this Mac.
       echo "No check host has room for this check: $LOW, and it wants $MIN_FREE_GIB GiB. Free some space there and run it again." >&2
@@ -624,7 +630,7 @@ while :; do
     # files.
     copylock="$lock_dir/copy-$key-$(printf '%s' "$HOST" | tr -c 'A-Za-z0-9._-' '_').lock"
     if ! { [ -d "$(dirname "$lock_dir")" ] || mkdir -p "$(dirname "$lock_dir")"; } || ! private_dir "$lock_dir" || ! take_copylock "$copylock"; then
-      rm -f "$files" "$changed"
+      rm -f "$files" "$changed" "$left_out"
       # Not 255: running it here instead isn't the answer to a broken lock.
       echo "Couldn't take the lock on this checkout's copy ($copylock; its folder must be this user's own, mode 700)." >&2
       exit 1
@@ -636,7 +642,8 @@ while :; do
         && rsync -azc --from0 --files-from="$files" -e "${SSH[*]}" "$ROOT/" "$HOST:$mirror/" \
         && rsync -a -e "${SSH[*]}" "$files" "$HOST:$remote_run.files" \
         && "${SSH[@]}" "$HOST" "rsync -a --from0 --files-from='$remote_run.files' '$mirror/' '$remote_run/' && rm -f '$remote_run.files'" \
-        && rsync -a -e "${SSH[*]}" "$changed" "$HOST:$remote_run/.check-changed"
+        && rsync -a -e "${SSH[*]}" "$changed" "$HOST:$remote_run/.check-changed" \
+        && rsync -a -e "${SSH[*]}" "$left_out" "$HOST:$remote_run/.check-left-out"
     }
     watched "$HOST" copy_it
     rc=$?
@@ -731,7 +738,7 @@ while :; do
   fi
   break
 done
-rm -f "$files" "$changed"
+rm -f "$files" "$changed" "$left_out"
 
 # The disk as the failure left it (keep_logs), or as it is now if that couldn't
 # be written. -s: a full disk can leave the file empty.

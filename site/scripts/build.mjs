@@ -35,6 +35,12 @@ const src = join(root, "src");
 const CHECK = process.argv.includes("--check");
 const dist = CHECK ? mkdtempSync(join(tmpdir(), "threadbear-site-check-")) : join(root, "dist");
 if (CHECK) process.on("exit", () => rmSync(dist, { recursive: true, force: true }));
+// A check host's copy leaves out the pictures in site/ (scripts/check-remote.sh), and lists them in
+// .check-left-out, so a link to one of them still counts as landing.
+const leftOutFile = join(root, "..", ".check-left-out");
+const leftOut = new Set(CHECK && existsSync(leftOutFile)
+  ? readFileSync(leftOutFile, "utf8").split("\n").filter((f) => f.startsWith("site/public/")).map((f) => f.slice("site/public".length))
+  : []);
 
 if (APP_STORE_LIVE && !/^https:\/\/apps\.apple\.com\/app\/id\d+$/.test(APP_STORE_URL)) {
   throw new Error("APP_STORE_LIVE is on, so site.mjs needs APP_STORE_URL (https://apps.apple.com/app/id<Apple ID>)");
@@ -462,7 +468,7 @@ for (const [name, { html }] of built) {
     // `npm run media -- check` checks they're up.
     if (clean.startsWith("/media/")) continue;
     const page = built.get(pageName);
-    if (!page && !existsSync(join(dist, clean))) throw new Error(`${name}.html: ${attr}="${target}" goes nowhere`);
+    if (!page && !existsSync(join(dist, clean)) && !leftOut.has(clean)) throw new Error(`${name}.html: ${attr}="${target}" goes nowhere`);
     if (anchor && !(page ?? built.get(name)).html.includes(` id="${anchor}"`)) throw new Error(`${name}.html: ${target} has no #${anchor}`);
   }
 }
