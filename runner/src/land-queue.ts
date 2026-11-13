@@ -120,7 +120,13 @@ export function waiting(common: string): QueueEntry[] {
 }
 
 // What the lock's holder is checking, for the waiting line.
-export type Running = { startedAt: number; branches: string[] };
+export type Running = {
+  startedAt: number;
+  branches: string[];
+  // Optional so a tb waiting on an older holder can still read its status.
+  pid?: number;
+  entries?: string[];
+};
 
 export function setRunning(common: string, r: Running | undefined): void {
   try {
@@ -132,7 +138,8 @@ export function setRunning(common: string, r: Running | undefined): void {
 }
 
 export function readRunning(common: string): Running | undefined {
-  return readJson<Running>(runningFile(common));
+  const running = readJson<Running>(runningFile(common));
+  return running?.pid !== undefined && !alive(running.pid) ? undefined : running;
 }
 
 // How long a passing check usually takes here: the median of the last 20
@@ -164,13 +171,17 @@ const minutes = (s: number): string => (s < 60 ? 'under a minute' : s < 90 ? '1 
 // rest of this check to go; the others wait for this check and one more.
 export function waitingLine(common: string, timesFile: string, me: QueueEntry | undefined, now = Date.now()): string {
   const running = readRunning(common);
-  const all = waiting(common).filter((e) => !running?.branches.includes(e.branch));
+  // A new tb can join on the same branch after its old one was killed.
+  // The old entry's commit may be in the check, but the new one's isn't.
+  const checking = (e: QueueEntry): boolean => !!running && (running.entries
+    ? running.entries.includes(e.id) : running.branches.includes(e.branch));
+  const all = waiting(common).filter((e) => !checking(e));
   const ahead = me ? all.filter((e) => e.id !== me.id && (e.at < me.at || (e.at === me.at && e.id < me.id))).length : all.length;
   const typical = typicalCheckSeconds(timesFile);
   const parts: string[] = [];
   if (running) {
     const ago = Math.max(0, Math.round((now - running.startedAt) / 1000));
-    if (me && running.branches.includes(me.branch)) {
+    if (me && checking(me)) {
       const peers = running.branches.length - 1;
       const withOthers = peers ? ` with ${peers} other landing${peers === 1 ? '' : 's'}` : '';
       const estimate = typical !== undefined

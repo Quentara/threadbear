@@ -421,7 +421,7 @@ export async function land(t: LandTarget, opts: LandOptions = {}): Promise<numbe
       // An earlier tb of this branch, killed, may have landed while this one
       // waited.
       await recoverLandedFor(t, common, out);
-      return await landLocked(t, opts, { file: timesFile, waitedMs: Date.now() - asked }, common, gitDir, mine?.limit);
+      return await landLocked(t, opts, { file: timesFile, waitedMs: Date.now() - asked, entryId: entry?.id }, common, gitDir, mine?.limit);
     } finally {
       await release();
     }
@@ -895,7 +895,7 @@ async function stackWaiting(
 async function landLocked(
   t: LandTarget,
   opts: LandOptions,
-  times: { file: string; waitedMs: number },
+  times: { file: string; waitedMs: number; entryId?: string },
   common: string,
   gitDir: string,
   startLimit: number | undefined,
@@ -969,7 +969,10 @@ async function landLocked(
       out(group.length
         ? `Running the check, together with ${together.join(', ')}: ${check}`
         : `Running the check: ${check}`);
-      setRunning(common, { startedAt: Date.now(), branches: [t.branch, ...together] });
+      setRunning(common, {
+        startedAt: Date.now(), branches: [t.branch, ...together], pid: process.pid,
+        entries: [...(times.entryId ? [times.entryId] : []), ...group.map((g) => g.entry.id)],
+      });
       const r = await runCheck(check, t.path, opts.shell);
       setRunning(common, undefined);
       // Whether the check ran on the commit it's logged for: asked before the

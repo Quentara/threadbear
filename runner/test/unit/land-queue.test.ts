@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { land, landTargetFromGit, type LandTarget } from '../../src/worktrees.ts';
-import { joinQueue, queueDir, setRunning, waiting, waitingLine } from '../../src/land-queue.ts';
+import { joinQueue, queueDir, readRunning, setRunning, waiting, waitingLine } from '../../src/land-queue.ts';
 import { capture, commit, makeBranch, makeRepo, sh, until, write } from '../helpers/worktrees-harness.ts';
 
 // A check that writes down which of the files it saw, and holds the first
@@ -29,9 +29,14 @@ function branches(main: string, names: string[]): LandTarget[] {
 async function queuedBehindA(root: string, main: string, others: LandTarget[], a: LandTarget, check: string) {
   const first = land({ ...a, check }, capture().opts);
   await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const common = path.join(main, '.git');
+  const running = readRunning(common);
+  const holderEntries = waiting(common).filter((e) => e.branch === a.branch).map((e) => e.id);
   const caps = others.map(() => capture());
   const rest = others.map((t, i) => land({ ...t, check }, caps[i].opts));
   try {
+    assert.equal(running?.pid, process.pid);
+    assert.deepEqual(running?.entries, holderEntries);
     await until(() => caps.every((c) => c.out.some((l) => l.startsWith('Waiting for another landing'))), 'the others waiting');
   } finally {
     write(root, { release: '' });
@@ -145,8 +150,30 @@ test('the waiting line counts only landings outside the running group as ahead',
   me.at = Math.max(active.at, ahead.at, me.at) + 1;
   setRunning(common, { startedAt: now - 120_000, branches: ['thread/holder', active.branch] });
   assert.equal(waitingLine(common, times, me, now), ': the check for thread/holder and 1 more has been running 2 min; 1 more waiting ahead of this one, all checked together with it next, so roughly 10 min to go (a check takes about 6 min here).');
-  // A caller without an entry (such as sync-main) is outside this check.
+  // A caller without an entry (such as a dry run) is outside this check.
   assert.equal(waitingLine(common, times, undefined, now), ': the check for thread/holder and 1 more has been running 2 min; 2 more waiting ahead of this one, all checked together with it next, so roughly 10 min to go (a check takes about 6 min here).');
+});
+
+test('the waiting line distinguishes a new entry on a branch already being checked', () => {
+  const { main } = makeRepo();
+  const common = path.join(main, '.git');
+  const times = path.join(common, 'threadbear-land-times.log');
+  fs.writeFileSync(times, JSON.stringify({ ok: true, seconds: 360 }) + '\n');
+  const now = Date.now();
+  const me = joinQueue(common, { branch: 'thread/me', path: '/me', base: 'b', commit: 'new' });
+  setRunning(common, { startedAt: now - 120_000, branches: ['thread/holder', me.branch], pid: process.pid, entries: ['holder', 'old-entry'] });
+  assert.equal(waitingLine(common, times, me, now), ': the check for thread/holder and 1 more has been running 2 min; this one is checked next, so roughly 10 min to go (a check takes about 6 min here).');
+  setRunning(common, { startedAt: now - 120_000, branches: ['thread/holder', me.branch], pid: process.pid, entries: ['holder', me.id] });
+  assert.equal(waitingLine(common, times, me, now), ': this landing is being checked with 1 other landing; the check has been running 2 min, so roughly 4 min to go (a check takes about 6 min here).');
+});
+
+test('the waiting line ignores a running record left by a dead holder', () => {
+  const { main } = makeRepo();
+  const common = path.join(main, '.git');
+  const me = joinQueue(common, { branch: 'thread/me', path: '/me', base: 'b', commit: 'c' });
+  setRunning(common, { startedAt: Date.now() - 45 * 60_000, branches: ['thread/dead', me.branch], pid: 2 ** 22 + 12345, entries: [me.id] });
+  assert.equal(waitingLine(common, path.join(common, 'no-times'), me), '...');
+  assert.ok(fs.existsSync(path.join(common, 'threadbear-land-running.json')), 'reading status does not change the record');
 });
 
 test('a landing that asks for a different check is never put in another one', async () => {
