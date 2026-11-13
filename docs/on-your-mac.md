@@ -43,8 +43,8 @@ File references are where to look.
   taken off again; it deletes the note then.
 - **Apps:** `~/Applications/Threadbear.app` and
   `~/Applications/Threadbear Runner.app`, both built and signed on your Mac.
-  If you turn on the `gpuiApp` experiment and run
-  `desktop/scripts/install-app.sh`, also `~/Applications/Threadbear GPUI.app`,
+  If you press Start using the new app in the Swift app (or run
+  `desktop/scripts/install-app.sh`), also `~/Applications/Threadbear GPUI.app`,
   which keeps its window and panel layout in `desktop-settings.json` and
   `gpui-prefs.json` in the data folder, what a click on a link in a reply
   does (its menu's Default) in `desktop-links.json` there, the side pane's
@@ -57,6 +57,17 @@ File references are where to look.
   Open thread pill), so install-app.sh makes the GPUI app the one macOS opens
   them with (`--keep-links` leaves them where they are), and
   `desktop/scripts/thread-links.sh swift` gives them back to the Swift app.
+- **Rust, only if you start using the new app** (the Swift app's Start
+  using the new app, `desktop/scripts/switch-from-swift.sh`): the new app is
+  built on your Mac from your checkout's `main`, so if there's no `cargo`
+  it installs Rust first, with rustup's own installer from
+  `https://sh.rustup.rs` (the minimal profile, about 850 MB with the crates
+  the build fetches, in `~/.rustup` and `~/.cargo`; it doesn't touch your
+  shell's startup files). The build runs at background priority, takes
+  about 10 minutes the first time, and keeps about 1.6 GB in
+  `~/Library/Caches/Threadbear/update-desktop`, which its updates reuse. Its
+  output goes to `~/Library/Logs/threadbear-new-app.log`. `rustup self
+  uninstall` takes Rust off again.
 - **The GPUI app's web runtime, only if you install it** (its Install web
   runtime button, or Settings > General > Web runtime; nothing is fetched
   until you press one): Chromium, as CEF's official minimal build 156.0.26,

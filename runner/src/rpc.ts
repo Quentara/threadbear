@@ -248,10 +248,10 @@ export class RpcServer {
   }
 
   // Whether the Mac app itself is connected (hello's client), for presence.ts.
-  // The GPUI app counts too once it's switched on (experiment gpuiApp), but not
-  // for a browser panel, which only the Swift app has.
+  // The GPUI app counts too, but not for a browser panel, which only the
+  // Swift app has.
   appConnected(browserPanel = false): boolean {
-    const desktopCounts = !browserPanel && experimentOn(this.opts.runner.cfg.home, 'gpuiApp');
+    const desktopCounts = !browserPanel;
     for (const c of this.conns) if (c.authed && (c.client === 'threadbear-mac' || (desktopCounts && c.client === 'threadbear-desktop')) && (!browserPanel || c.browserPanel) && c.ws.readyState === WebSocket.OPEN) return true;
     return false;
   }

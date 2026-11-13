@@ -483,13 +483,11 @@ test("a thread's connection can't pass as the Mac app in hello", async () => {
   }
 });
 
-test('the GPUI app counts as the app being open only once its experiment is on', async () => {
-  const { h, server, token, url } = await serve();
+test('the GPUI app counts as the app being open', async () => {
+  const { server, token, url } = await serve();
   try {
     const app = await RunnerClient.connect(url, token);
     await app.call('hello', { client: 'threadbear-desktop' });
-    assert.equal(server.appConnected(), false);
-    fs.writeFileSync(path.join(h.home, 'runner.json'), JSON.stringify({ experiments: { gpuiApp: true } }));
     assert.equal(server.appConnected(), true);
     assert.equal(server.appConnected(true), false, 'only the Swift app has a browser panel');
     app.close();

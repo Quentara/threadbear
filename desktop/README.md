@@ -70,8 +70,8 @@ the app with `THREADBEAR_HOME=/tmp/tb-mock`.
 
 ## Installing it on a Mac
 
-It's an experiment (`runner/src/experiments/gpuiApp.md`): turn it on in
-`runner.json`, then:
+The Swift app offers it ("Try the new Threadbear app", which runs
+`scripts/switch-from-swift.sh`), or from a terminal:
 
 ```bash
 scripts/install-app.sh                      # builds here, about 10 minutes

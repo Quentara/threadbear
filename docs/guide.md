@@ -147,7 +147,7 @@ diagram that can't be drawn says why above its code. A page is only shown,
 never run: its scripts are off, it can't reach the internet or your files,
 and it can't open anything, so only its own styles, SVG and `data:`
 pictures appear. Your phone draws them the same way, with the arrows
-opening it full screen. The new desktop app (the `gpuiApp` experiment) draws
+opening it full screen. The new desktop app draws
 them with Chromium, which it downloads the first time one needs it: the box
 asks "Show this diagram? It needs the web runtime, a 135 MB download, once."
 with Install web runtime and Not now, and shows the code until then (or
@@ -1610,8 +1610,7 @@ back to where it started. Closing a panel, or picking another thread,
 pauses anything it's playing. A panel's address can carry the thread
 it's beside, as `{threadId}` (docs/protocol.md, "Patches"), and an agent
 that has changed a panel's page can have it load afresh as it shows you
-(`show_panel` with `reload`). The new desktop app (the `gpuiApp`
-experiment) shows a panel's page, and the Convex dashboard, with the same
+(`show_panel` with `reload`). The new desktop app shows a panel's page, and the Convex dashboard, with the same
 Chromium it draws diagrams with: until that's installed the panel asks for
 it (Install web runtime, or Not now) and has Open in browser, and there a
 link to another site always opens in your browser.
@@ -1767,7 +1766,7 @@ up to about 4 hours after the thread's last turn. If one goes on longer it's
 stopped, and the thread gets told and wakes by itself to check on it, so you'll
 see it pick back up rather than go quiet.
 
-The new desktop app (the `gpuiApp` experiment) follows `main` too, from the
+The new desktop app follows `main` too, from the
 checkout you installed it from. Its build takes every core of a Mac for
 minutes, so it builds on another Mac you name for it (`updateBuildHosts`
 in `runner.json`, a list of ssh hosts) and only the finished app comes
@@ -1827,7 +1826,25 @@ turn it off, in Settings (⌘,) > General > Updates from Mike.
 
 ### Moving to the new desktop app
 
-The first time the new desktop app (the `gpuiApp` experiment) opens, it
+The Mac app is being replaced by a new desktop app that looks and works the
+same and runs on Windows and Linux too. The Mac app tells you about it once
+when it starts, in a window with Not now and Start using the new app, and
+keeps a card at the top of the sidebar until you start or press Later
+(which hides it for a week); the card's Start using it brings the window
+back. Start using the new app builds it on your Mac from your checkout's
+`main`, at background priority, which takes about 10 minutes the first time
+and installs Rust first if there's no `cargo` (docs/on-your-mac.md says
+what that puts where). The window shows how it's going, and you can hide it
+and keep working; the card shows it too. Then it installs the app as
+`~/Applications/Threadbear GPUI.app`, makes it the one `threadbear://`
+links open, and opens it. If your `runner.json` has check hosts, it builds
+on a Mac named in `updateBuildHosts` instead, as its updates do. The Mac
+app stays installed and keeps working, and
+`desktop/scripts/thread-links.sh swift` gives the links back to it. A few
+things still only work in the Mac app: `docs/gpui-port/PARITY.md` lists
+them. Neither shows once the new app is installed.
+
+The first time the new desktop app opens, it
 brings across what the Mac app remembers: the zoom, folded sections, the
 Inbox's order, the appearance, the panel layout, where the window was, the
 ding, Ask before quitting, the activity log switch, what a click on a link
@@ -1870,7 +1887,7 @@ It's off until you turn it on. It's kept in the `activity` folder of
 Threadbear's data folder, a file a day, and each file is deleted after 30
 days. Threadbear never sends it anywhere, though once an agent has read
 some of it, that's part of its thread like anything else it reads. The new
-desktop app (the `gpuiApp` experiment) keeps the same log in the same files,
+desktop app keeps the same log in the same files,
 with its own switch in its Settings, and marks its lines as its own.
 
 ### Keeping the Mac awake
