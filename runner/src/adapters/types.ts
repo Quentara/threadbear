@@ -118,7 +118,10 @@ export type AdapterOutput =
   | { kind: 'cliTurn'; note?: string }
   // The Stop hook sent a turn back to call end_turn, as its message is the
   // reply (end_turn's handler then doesn't ask for another).
-  | { kind: 'endTurnNudge' }
+  // With `reopen`, the turn had its end_turn and reply, and is sent back for
+  // a card the reply asked for (needs.ts, REPLY_ASKS): the next end_turn is
+  // taken, not refused as a repeat, and the reply written stands.
+  | { kind: 'endTurnNudge'; reopen?: true }
   // Background work the CLI is running (shells, async subagents). Replaces
   // the previous list.
   | { kind: 'tasks'; tasks: BackgroundTask[] }

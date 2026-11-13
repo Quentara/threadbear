@@ -3294,6 +3294,19 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   work it started is still running (the turn that work wakes ends it),
   nor a second time (`stop_hook_active`). Codex's final answer ends its
   turn, so it gets no such check.
+- **Asking under a done card.** With one reply, the same hook sends a turn
+  back once when its `end_turn` said nothing was needed and the reply after
+  it closes by asking for an answer (`replyAsks`: its last sentence is a
+  question, or its closing paragraph has a question put to the user or a
+  go-ahead like "Say go and I'll..."; fenced drafts, quotes and optional
+  offers don't count). The thread would show as done with no card to answer
+  on: two real questions went out that way in 2,935 done turns, and the
+  check finds those two and no others. The adapter's `endTurnNudge` output
+  carries `reopen: true`, so the `end_turn` that follows is taken rather
+  than refused as a repeat, answers "Stop here" (the reply written stands),
+  and its card replaces the first; text written on the way is dropped. An
+  agent that needs no answer just stops. Mike chose this over widening the
+  card to every offer (13 Nov 2026).
 - **A subagent's card.** A background subagent's approval or question is
   between it and Mike, so it isn't tied to a turn. It opens none (a turn
   would hold Mike's messages back, and ending it would clear the parent's

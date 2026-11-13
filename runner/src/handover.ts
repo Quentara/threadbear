@@ -700,6 +700,10 @@ export class ThreadRouter implements ThreadControl {
     return this.runner.unreadMessage(threadId);
   }
 
+  cardReopened(threadId: string): boolean {
+    return this.runner.cardReopened(threadId);
+  }
+
   openSubagentCards(threadId: string): string[] {
     return this.runner.openSubagentCards(threadId);
   }

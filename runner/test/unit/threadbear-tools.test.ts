@@ -661,6 +661,65 @@ test('an end_turn refused for an unread message does not leave its card behind',
   assert.equal(t.archivedAt, undefined, 'nor its archive');
 });
 
+// The Stop hook found the reply asking over a done card and sent the turn
+// back (adapter.ts, onStop; needs.ts, REPLY_ASKS). The end_turn that follows
+// is the card, the reply already written stands, and anything else the agent
+// writes on the way is dropped.
+test('one reply: a turn sent back for a card its reply asked for takes one more end_turn, and keeps its reply', async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  const send = async (itemId: string, input: Record<string, unknown>) => {
+    toolCall(s, itemId, END_TURN, input);
+    const r = await call('end_turn', input);
+    s.out({ kind: 'event', event: { type: 'tool.result', itemId, ok: !r.error, text: r.text, truncated: false, images: [] } });
+    return r;
+  };
+  const first = await send('e1', { headline: 'Ready to go live', needs: 'nothing' });
+  assert.match(first.text, /Now write your reply/);
+  s.text('m1', "Yes, it's ready.\n\nSay go and I'll merge main into prod.");
+  s.out({ kind: 'endTurnNudge', reopen: true });
+  // Words on the way to the card aren't a second reply.
+  s.out({ kind: 'event', event: { type: 'reasoning', itemId: 'r1', text: 'Right, that needs a card.' } });
+  s.text('m2', 'Adding the card.');
+  const second = await send('e2', { headline: 'Release the examples page?', needs: 'you', asks: [{ question: 'Release the examples page to convex.dev?', options: [{ label: 'Go' }, { label: 'Not yet' }] }] });
+  assert.equal(second.error, false, second.text);
+  assert.match(second.text, /will wait in Needs you/);
+  assert.match(second.text, /your message above is the reply/);
+  s.text('m3', 'Card added.');
+  // Only that one: the next is a repeat again.
+  const third = await send('e3', { headline: 'Again', needs: 'nothing' });
+  assert.match(third.text, /Already ended/);
+  s.result('completed');
+  await tick();
+  const texts = h.events(thread.id).filter((e) => e.type === 'assistant.text').map((e) => e.type === 'assistant.text' && [e.itemId, e.final]);
+  assert.deepEqual(texts, [['m1', true]], 'the reply stands, alone');
+  assert.ok(!h.events(thread.id).some((e) => e.type === 'reasoning'));
+  const t = h.runner.get(thread.id);
+  assert.equal(t.needs, 'you');
+  assert.equal(t.preview, 'Release the examples page?');
+});
+
+// Without that nudge a second end_turn is still a repeat, and one that came
+// before any end_turn changes nothing.
+test('one reply: only a turn that had its end_turn is reopened for a card', async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  s.text('m0', 'Which do you want first?');
+  // The plain nudge (no end_turn yet) doesn't reopen anything.
+  s.out({ kind: 'endTurnNudge' });
+  assert.equal(h.runner.cardReopened(thread.id), false);
+  s.out({ kind: 'endTurnNudge', reopen: true });
+  assert.equal(h.runner.cardReopened(thread.id), false, 'nothing to reopen before an end_turn is taken');
+  toolCall(s, 'e1', END_TURN, { headline: 'Pick one', needs: 'nothing' });
+  const r = await call('end_turn', { headline: 'Pick one', needs: 'nothing' });
+  s.out({ kind: 'event', event: { type: 'tool.result', itemId: 'e1', ok: !r.error, text: r.text, truncated: false, images: [] } });
+  toolCall(s, 'e2', END_TURN, { headline: 'Pick one', needs: 'you', asks: [{ question: 'Which first?' }] });
+  const again = await call('end_turn', { headline: 'Pick one', needs: 'you', asks: [{ question: 'Which first?' }] });
+  assert.match(again.text, /Already ended/);
+});
+
 // Thread 46de9389 (7 Nov 2026): a `tb land` sent to the background finished
 // just before the agent's "landing now" end_turn, in the same CLI turn. The
 // CLI handed the agent its notification with that end_turn's result, and the

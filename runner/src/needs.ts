@@ -720,6 +720,91 @@ export const ONE_REPLY_WRITE_NUDGE =
   'Write your reply now, as ordinary text: the user sees only what you write after end_turn, with the card under it. ' +
   'Include any requested draft, explanation or descriptions of choices in full. Leave the question and button labels on the card.';
 
+// A reply that closes by asking the user for an answer, under an end_turn that
+// said nothing was needed: the thread shows as done, with no card to answer
+// on. In the week to 13 Nov 2026 two real questions went out that way among
+// some 1,800 done turns ("Which do you want to start with?", thread 7a98a6fd;
+// "Say go and I'll merge main into prod", 0222c475), and Mike picked a check
+// over wider wording: the Stop hook sends the turn back once for the card
+// (adapter.ts, onStop). Only a question or a go-ahead: an optional offer
+// ("tell me if you want X and I'll set it up") stays a sentence, which he
+// chose over rows on the done card. Returns the asking sentence, for the nudge
+// to quote.
+// A draft for someone else (a fenced block, a quote) isn't the agent asking.
+const FENCE = /^\s*(?:```|~~~)/;
+// Mid-paragraph, only a question that is plainly put to the user: "Why does
+// this matter? Because..." is the agent talking.
+const TO_THE_USER = /^(?:want me to|shall i|should i|do you want|would you like|which (?:one|of|do|would|should)|can i|may i|ok(?:ay)? (?:to|if)|is it ok(?:ay)?|are you (?:happy|ok(?:ay)?)|happy for me to|ready for me to)\b/i;
+// "Say go and I'll...", "Reply yes to...", "...once you say the word". Not
+// "I'd say yes", which is the agent's own view.
+const GO = '(?:(?:the|a|your)\\s+)?["“\'‘`*]*(?:go(?:[- ]ahead)?|yes|ok(?:ay)?|the word|the nod)["”\'’`*]*(?=[\\s,.:;!)]|$)';
+const SAY_GO = new RegExp(`^(?:just\\s+|so\\s+)?(?:say|reply|type|send|give me)\\s+${GO}|\\b(?:when|once|if|until|as soon as)\\s+you\\s+(?:say|give(?:\\s+me)?)\\s+${GO}`, 'i');
+
+export function replyAsks(reply: string): string | undefined {
+  const lines: string[] = [];
+  let fenced = false;
+  for (const line of reply.replace(/\r\n/g, '\n').split('\n')) {
+    if (FENCE.test(line)) {
+      fenced = !fenced;
+      // A block breaks the paragraph around it.
+      lines.push('');
+    } else if (fenced || /^\s*>/.test(line)) lines.push('');
+    else lines.push(line);
+  }
+  while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
+  let from = lines.length;
+  while (from > 0 && lines[from - 1].trim()) from--;
+  // The closing paragraph, or the list it ends with: each line on its own, as
+  // a sentence doesn't run across list items.
+  const closing = lines.slice(from).slice(-12);
+  const sentences = closing.flatMap((l) => sentencesOf(l));
+  if (!sentences.length) return undefined;
+  const last = sentences[sentences.length - 1];
+  if (/\?$/.test(last)) return last;
+  for (let i = sentences.length - 1; i >= 0; i--) {
+    const s = sentences[i];
+    if (SAY_GO.test(s) || (/\?$/.test(s) && TO_THE_USER.test(s))) return s;
+  }
+  return undefined;
+}
+
+// A line's sentences, without its list mark or the markdown around them.
+function sentencesOf(line: string): string[] {
+  const text = line.replace(/^\s*(?:\d{1,2}[.)]|[-*•])\s+/, '').trim().slice(-1200);
+  const out: string[] = [];
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (!'.!?'.includes(text[i])) continue;
+    // The end of a sentence: the marks, any closing quote or emphasis, then
+    // a space or the end. Not the dot in "convex.dev" or "v1.2".
+    let end = i + 1;
+    while (end < text.length && '.!?"”\'’*_)`'.includes(text[end])) end++;
+    if (end < text.length && !/\s/.test(text[end])) continue;
+    out.push(tidy(text.slice(start, end)));
+    start = end;
+    i = end - 1;
+  }
+  if (start < text.length) out.push(tidy(text.slice(start)));
+  return out.filter(Boolean);
+}
+
+// A closing quote stays on, so words the agent is quoting (someone asks "how
+// is this different?") don't end in the question mark and aren't its question.
+function tidy(sentence: string): string {
+  return sentence.trim().replace(/^[*_`(]+/, '').replace(/[*_`)\s]+$/, '');
+}
+
+export const REPLY_ASKS = 'Your reply closes by asking the user something';
+export function replyAsksNudge(sentence: string): string {
+  const quoted = sentence.length > 160 ? `${sentence.slice(0, 160)}…` : sentence;
+  return (
+    `${REPLY_ASKS} ("${quoted}"), but your end_turn said nothing is needed, so the thread shows as done with no card to answer on. ` +
+    'If you need their answer before you can go on, call end_turn again now with needs "you" and that as its ask, with its likely answers as options (a go-ahead takes "Go" and "Not yet"). ' +
+    "Your message above is the reply: don't write it again, and write nothing else. " +
+    'If it needs no answer from them, stop here with no more text.'
+  );
+}
+
 // What a compaction between an accepted one-reply end_turn and its reply
 // adds after the summary (adapter.ts, onCompact), with the card's
 // questions, as the summary may not have them.

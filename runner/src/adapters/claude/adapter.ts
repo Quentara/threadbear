@@ -22,7 +22,7 @@ import { codeWriteNote, codeWriteReason, runsAsCodeByName, type CodeWrite } from
 import path from 'node:path';
 import { RUNNER_VERSION } from '../../config.ts';
 import { stripModelSuffix } from '../../accounts.ts';
-import { END_TURN_FULL_NAME, END_TURN_NUDGE, endTurnMessageStands, endTurnWantsReply, ONE_REPLY_END_TURN_NUDGE, ONE_REPLY_WRITE_NUDGE, owedReplyAfterCompact, WakeRead } from '../../needs.ts';
+import { END_TURN_FULL_NAME, END_TURN_NUDGE, endTurnMessageStands, endTurnWantsReply, needsFromTool, ONE_REPLY_END_TURN_NUDGE, ONE_REPLY_WRITE_NUDGE, owedReplyAfterCompact, replyAsks, replyAsksNudge, WakeRead } from '../../needs.ts';
 
 // Variables a parent Claude Code session sets for its own children. If the
 // runner was started from inside one (tests, a terminal in T3), they would
@@ -415,6 +415,13 @@ class ClaudeSession implements AgentSession {
   private messageStands = false;
   private pastEndTurn = false;
   private endTurnCall?: string;
+  // Each end_turn call's arguments until its result, then whether the one
+  // taken said nothing was needed, and the words written after it: a reply
+  // that closes on a question under a done card is sent back for its card
+  // (onStop; needs.ts, REPLY_ASKS).
+  private endTurnInputs = new Map<string, unknown>();
+  private doneCard = false;
+  private replyAfterEnd = '';
   // Whether the agent has read a background task's notification that came
   // into the turn: from then its end_turn is behind it, so the Stop hook
   // asks for another (needs.ts, WakeRead).
@@ -531,6 +538,7 @@ class ClaudeSession implements AgentSession {
     const stop = input as { stop_hook_active?: boolean; background_tasks?: unknown[] };
     const ended = this.endTurnTaken;
     const wrote = this.wroteAfterEnd || this.messageStands;
+    const asks = this.doneCard && this.wroteAfterEnd ? replyAsks(this.replyAfterEnd) : undefined;
     this.forgetEndTurn();
     // A turn that ended in plain text leaves the runner reading the card
     // from the prose (needs.ts, needsFromText), which drops what end_turn
@@ -543,7 +551,15 @@ class ClaudeSession implements AgentSession {
     if (!this.hasEndTurn || stop.stop_hook_active || stop.background_tasks?.length) return {};
     // One reply: end_turn without words after it leaves no reply, so the
     // agent is asked for it, once (the hook's own guard, stop_hook_active).
-    if (ended) return this.oneReply && !wrote ? { decision: 'block', reason: ONE_REPLY_WRITE_NUDGE } : {};
+    if (ended && this.oneReply && !wrote) return { decision: 'block', reason: ONE_REPLY_WRITE_NUDGE };
+    // ...and one whose reply closes by asking for an answer, over a card that
+    // said nothing was needed, is asked for the card, once. The runner is told
+    // first, so the end_turn it brings isn't refused as a repeat.
+    if (ended && this.oneReply && asks) {
+      this.sink.output({ kind: 'endTurnNudge', reopen: true });
+      return { decision: 'block', reason: replyAsksNudge(asks) };
+    }
+    if (ended) return {};
     this.sink.output({ kind: 'endTurnNudge' });
     return { decision: 'block', reason: this.oneReply ? ONE_REPLY_END_TURN_NUDGE : END_TURN_NUDGE };
   }
@@ -568,6 +584,8 @@ class ClaudeSession implements AgentSession {
     this.messageStands = false;
     this.pastEndTurn = false;
     this.endTurnCall = undefined;
+    this.doneCard = false;
+    this.replyAfterEnd = '';
   }
 
   private onEndTurn(input: HookInput): Record<string, never> {
@@ -733,6 +751,7 @@ class ClaudeSession implements AgentSession {
           this.wake.reset();
           this.owedReply = undefined;
           this.endTurnAsks.clear();
+          this.endTurnInputs.clear();
           this.openCalls.clear();
           this.checkedCalls.clear();
         }
@@ -759,18 +778,26 @@ class ClaudeSession implements AgentSession {
             if (this.wake.see(ev)) this.forgetEndTurn();
             if (ev.type === 'tool.call' && ev.name === END_TURN_FULL_NAME) {
               this.endTurnCall = ev.itemId;
+              this.endTurnInputs.set(ev.itemId, ev.input);
               const asks = Array.isArray(ev.input.asks) ? (ev.input.asks as { question?: unknown; action?: unknown }[]) : [];
               this.endTurnAsks.set(ev.itemId, asks.map((a) => String(a?.question ?? a?.action ?? '')).filter(Boolean));
             }
             else if (ev.type === 'tool.result' && ev.itemId === this.endTurnCall && ev.ok) {
               this.pastEndTurn = true;
               this.messageStands = endTurnMessageStands(ev);
+              // Only a call that asked for its reply next: after "Stop here"
+              // the words that count were written before it.
+              this.doneCard = endTurnWantsReply(ev) && (needsFromTool(this.endTurnInputs.get(ev.itemId))?.needs ?? 'nothing') === 'nothing';
+              this.replyAfterEnd = '';
               // Only an accepted call's own card: a refused repeat's result
               // isn't ok, and its questions never showed.
               if (endTurnWantsReply(ev)) this.owedReply = this.endTurnAsks.get(ev.itemId) ?? [];
             }
             else if (ev.type === 'assistant.text' && !ev.itemId.includes('/') && ev.text.trim()) {
-              if (this.pastEndTurn) this.wroteAfterEnd = true;
+              if (this.pastEndTurn) {
+                this.wroteAfterEnd = true;
+                this.replyAfterEnd = ev.text;
+              }
               this.owedReply = undefined;
             }
           }

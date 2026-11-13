@@ -62,6 +62,9 @@ export type ThreadControl = {
   unpin?: (...args: Parameters<Runner['unpin']>) => Aw<ReturnType<Runner['unpin']>>;
   showPanel?: (threadId: string, ask: Parameters<Runner['showPanel']>[1]) => ReturnType<Runner['showPanel']>;
   endTurnNudged?: (threadId: string) => boolean;
+  // The Stop hook sent the turn back for a card its reply asked for, after an
+  // end_turn it took (needs.ts, REPLY_ASKS): the next one isn't a repeat.
+  cardReopened?: (threadId: string) => boolean;
   // A message the agent can't have read when it wrote this end_turn
   // (needs.ts, UNREAD_MESSAGE). Asking counts as a refusal for it.
   unreadMessage?: (threadId: string) => boolean;
@@ -1373,6 +1376,8 @@ export function buildThreadbearTools(
   const repeatEndTurn = (events: PersistedEvent[], input: { needs?: unknown; archive?: unknown; snooze?: unknown }): string | undefined => {
     const taken = takenEndTurn(events, SERVER_NAME);
     if (!taken) return undefined;
+    // Sent back for a card its reply asked for: this call is that card.
+    if (control.cardReopened?.(selfId)) return undefined;
     const waiting = input.needs === 'you' || needsFromTool(taken)?.needs === 'you';
     if (input.archive === true && !waiting) return ARCHIVE_ADDED;
     // So does snooze, for the same reason (needs.ts, snoozeFromTool).

@@ -360,6 +360,9 @@ export type Turn = {
   // The Stop hook sent this turn back to call end_turn, so what it already
   // wrote is the reply (threadbear-mcp.ts, needs.ts oneReplyAlreadyWritten).
   endTurnNudged?: boolean;
+  // ...or back for a card its reply asked for, after an end_turn it took:
+  // the next end_turn is that card, not a repeat (needs.ts, REPLY_ASKS).
+  cardReopened?: boolean;
   // Whether the agent has read a background task's notification that came
   // into the turn (needs.ts, WakeRead).
   wake?: WakeRead;
@@ -1383,6 +1386,12 @@ export class Runner {
     return this.threads.get(threadId)?.rt.turn?.endTurnNudged === true;
   }
 
+  // For end_turn's handler: whether the Stop hook sent the running turn back
+  // for a card its reply asked for, so this call isn't a repeat.
+  cardReopened(threadId: string): boolean {
+    return this.threads.get(threadId)?.rt.turn?.cardReopened === true;
+  }
+
   // For end_turn's handler: whether a message sent into the running turn is
   // one the agent can't have read when it wrote the call (needs.ts,
   // UNREAD_MESSAGE). It counts as a refusal for each (adapters/types.ts).
@@ -2082,6 +2091,7 @@ export class Runner {
             if (endTurnRefusedRepeat(ev) || endTurnRefusedUnread(ev) || (!ev.ok && (rt.turn.ended || rt.turn.tookEndTurn))) rt.turn.endTurn = rt.turn.endTurnBefore;
             else if (endTurnTaken(ev)) {
               rt.turn.tookEndTurn = true;
+              rt.turn.cardReopened = false;
               // Every taken one, Codex's older "Noted." too: one that isn't
               // one-reply means text after it isn't the reply (from Codex's
               // review). A "Done." after one took a full reply's place on
@@ -2211,6 +2221,12 @@ export class Runner {
         break;
       case 'endTurnNudge':
         if (rt.turn) rt.turn.endTurnNudged = true;
+        // Sent back for a card under a reply already written: that reply
+        // stands, so words from here are dropped like any after end_turn.
+        if (rt.turn && o.reopen && rt.turn.ended) {
+          rt.turn.cardReopened = true;
+          rt.turn.replyAfter = false;
+        }
         break;
       case 'tasks': {
         const endedTasks = rt.tasks.filter((t) => !o.tasks.some((n) => n.id === t.id));

@@ -9,7 +9,7 @@ import { nullLogger } from '../../src/log.ts';
 import { tmpDir } from '../helpers/fakes.ts';
 import { cardDecisive } from '../../src/tools.ts';
 import { ALWAYS_ASK_TOOLS, NEVER_ASK_TOOLS } from '../../src/threadbear-mcp.ts';
-import { END_TURN_FULL_NAME, END_TURN_NUDGE, ONE_REPLY_END_TURN_NUDGE, ONE_REPLY_WRITE_NUDGE, oneReplyAccepted, oneReplyAlreadyWritten } from '../../src/needs.ts';
+import { END_TURN_FULL_NAME, END_TURN_NUDGE, ONE_REPLY_END_TURN_NUDGE, ONE_REPLY_WRITE_NUDGE, oneReplyAccepted, oneReplyAlreadyWritten, REPLY_ASKS } from '../../src/needs.ts';
 
 test('"Always allow" keeps only allow rules, scoped to the session', () => {
   const { updates, rules } = alwaysAllow('Bash', [
@@ -322,6 +322,41 @@ test('Stop hook: no nudge for a reply when end_turn said the message above is it
   await state.frame!({ type: 'user', session_id: 's', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'e1', content: oneReplyAlreadyWritten(false) }] } });
   assert.deepEqual(await stop({ hook_event_name: 'Stop', stop_hook_active: false }), {});
   state.close!();
+});
+
+// Threads 0222c475 and 7a98a6fd (Nov 2026): a reply that closed on "Say go
+// and I'll merge main into prod", or "Which do you want to start with?", under
+// an end_turn that said nothing was needed. Mike had no card to answer on.
+test('Stop hook: a reply that closes by asking, under a done card, is sent back once for the card', async () => {
+  const run = async (input: Record<string, unknown>, reply: string, oneReply = true) => {
+    const { state, outputs } = start([], {}, { mcpServersFor: () => ({ threadbear: { type: 'sdk', name: 'threadbear' } }), oneReply: () => oneReply });
+    const stop = state.options.hooks.Stop[0].hooks[0];
+    await state.frame!({ type: 'assistant', session_id: 's', message: { id: 'a', role: 'assistant', content: [{ type: 'tool_use', id: 'e1', name: END_TURN_FULL_NAME, input }] } });
+    await state.options.hooks.PostToolUse[0].hooks[0]({ hook_event_name: 'PostToolUse', tool_name: END_TURN_FULL_NAME });
+    await state.frame!({ type: 'user', session_id: 's', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'e1', content: oneReplyAccepted(input.needs === 'you') }] } });
+    await state.frame!({ type: 'assistant', session_id: 's', message: { id: 'b', role: 'assistant', content: [{ type: 'text', text: reply }] } });
+    const first = await stop({ hook_event_name: 'Stop', stop_hook_active: false });
+    const reopens = outputs.filter((o: AdapterOutput) => o.kind === 'endTurnNudge' && o.reopen).length;
+    return { first, reopens, stop, state };
+  };
+  const asked = await run({ headline: 'Ready', needs: 'nothing' }, "Yes, it's ready to go live.\n\nSay go and I'll merge main into prod.");
+  assert.equal(asked.first.decision, 'block');
+  assert.ok(asked.first.reason.startsWith(`${REPLY_ASKS} ("Say go and I'll merge main into prod.")`), asked.first.reason);
+  assert.equal(asked.reopens, 1, 'the runner is told, so the next end_turn is not a repeat');
+  // Once: the stop after the card, or after the agent decides none is needed.
+  assert.deepEqual(await asked.stop({ hook_event_name: 'Stop', stop_hook_active: true }), {});
+  asked.state.close!();
+  // The card already asks, the reply doesn't, or the session isn't one-reply.
+  for (const [input, reply, oneReply] of [
+    [{ headline: 'Ready', needs: 'you', asks: [{ question: 'Release it?' }] }, 'It is ready. Which do you want first?', true],
+    [{ headline: 'Ready', asks: [{ question: 'Release it?' }] }, 'It is ready. Which do you want first?', true],
+    [{ headline: 'Released', needs: 'nothing' }, 'It is live on convex.dev.', true],
+    [{ needs: 'nothing' }, 'It is ready. Which do you want first?', false],
+  ] as const) {
+    const quiet = await run({ ...input }, reply, oneReply);
+    assert.deepEqual([quiet.first, quiet.reopens], [{}, 0], JSON.stringify(input));
+    quiet.state.close!();
+  }
 });
 
 test('Stop hook: no nudge in a session without the threadbear server', async () => {
