@@ -31,6 +31,10 @@ futures = "=0.3.34"
 # `syntect` colours the code a file preview shows (a pure-Rust highlighter,
 # about the languages of the Swift app's Highlightr).
 gpui-kit = { version = "=0.9.0", features = ["syntect"] }
+# gpui-kit's AllAssets uses this same RustEmbed version. Unify debug-embed
+# into it too: dev-app.sh brings debug binaries back from the build Mac,
+# where RustEmbed would otherwise leave the SVGs in its Cargo registry.
+rust-embed = { version = "=8.13.0", features = ["debug-embed"] }
 # The markdown tree gpui-kit parses into, for the reply text's own pieces
 # (reply_buttons.rs's pills): the kit's own version, already in the build.
 markdown = "=1.0.0"

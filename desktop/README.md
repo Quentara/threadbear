@@ -120,6 +120,12 @@ dev runner's `--home`, then `do`, `dump`, `shot`, `rebuild`, `log` and
 data folder and its live runner, and copies to a pasteboard of its own
 (`gpui/src/scripted.rs`).
 
+The build runs on an `updateBuildHosts` Mac and comes back here. Its Lucide
+SVGs are embedded in debug builds too (`rust-embed/debug-embed` in
+`gpui/Cargo.toml`), so it needs no files from that Mac's Cargo registry.
+`cargo test -p threadbear-gpui --test assets` checks the whole icon catalog
+comes from embedded bytes, even when the registry is present.
+
 ## Seeing it on a server
 
 `scripts/shot.sh OUT_DIR [--home DIR] [--click X,Y | --type TEXT | --key KEY]...`
