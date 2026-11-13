@@ -6,14 +6,27 @@
 import { execFileSync } from 'node:child_process';
 import { GpuiDriver } from '../support/gpui.ts';
 import { sleep } from '../support/driver.ts';
-import { assertInFront, swiftTool, windowFrame } from './real-screen.ts';
+import { guardInput, guardWindowMove, movePointer, pointer, swiftTool, windowFrame, type Point } from './real-screen.ts';
 import { ensurePerfLock } from './perf-lock.ts';
 
 await ensurePerfLock();
 
 const dragger = swiftTool('realdrag');
 
+/** A click, checked just before it's posted. */
+function click(at: Point): void {
+  guardInput(app.pid!, [at]);
+  execFileSync(dragger, [String(at[0]), String(at[1]), String(at[0]), String(at[1]), '0', '']);
+}
+/** A drag by a grip on the window, which may move it: checked just before it's posted. */
+function gripDrag(from: Point, to: Point): void {
+  guardWindowMove(app.pid!, from, to);
+  // Moving straight away, as a hand does: a press held still is a panel drag.
+  execFileSync(dragger, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), '0.1', ''], { env: { ...process.env, RD_PRESS: '0.02' } });
+}
+
 const app = new GpuiDriver();
+const pointerWas = pointer();
 await app.start();
 try {
   for (let i = 0; i < 300; i += 1) {
@@ -25,14 +38,10 @@ try {
   await app.do({ cmd: 'open', id });
   await sleep(1200);
   const frame = () => windowFrame(app.pid!);
-  {
-    const [x, y] = windowFrame(app.pid!);
-    assertInFront(app.pid!, [[x + 700, y + 480], [x + 24, y + 14], [x + 400, y + 14], [x + 1100, y + 14]]);
-  }
   // A click on a blank part of the transcript first, to make the window key.
   const [x0, y0, w0, h0] = frame();
   console.log(`window ${w0} x ${h0}`);
-  execFileSync(dragger, [String(x0 + 700), String(y0 + 480), String(x0 + 700), String(y0 + 480), '0', '']);
+  click([x0 + 700, y0 + 480]);
   await sleep(500);
   const spots: [string, number, number][] = [
     ['activity bar, top', 24, 14],
@@ -46,8 +55,7 @@ try {
   let stayed = 0;
   for (const [name, dx, dy] of spots) {
     const [x, y] = frame();
-    // Moving straight away, as a hand does: a press held still is a panel drag.
-    execFileSync(dragger, [String(x + dx), String(y + dy), String(x + dx + 70), String(y + dy + 50), '0.1', ''], { env: { ...process.env, RD_PRESS: '0.02' } });
+    gripDrag([x + dx, y + dy], [x + dx + 70, y + dy + 50]);
     await sleep(700);
     const [nx, ny] = frame();
     console.log(`${nx !== x || ny !== y ? 'moved' : 'STAYED'}  ${name}  (${x},${y}) -> (${nx},${ny})`);
@@ -59,13 +67,13 @@ try {
     }
     if (nx !== x || ny !== y) {
       // Back where it was, by the same grip.
-      execFileSync(dragger, [String(nx + dx), String(ny + dy), String(x + dx), String(y + dy), '0.1', ''], { env: { ...process.env, RD_PRESS: '0.02' } });
+      gripDrag([nx + dx, ny + dy], [x + dx, y + dy]);
       await sleep(700);
     }
   }
   // A plain click on the title still renames.
   const [x, y] = frame();
-  execFileSync(dragger, [String(x + 400), String(y + 14), String(x + 400), String(y + 14), '0', '']);
+  click([x + 400, y + 14]);
   await sleep(700);
   const renaming = (await app.dump()).header?.renaming === true;
   console.log(renaming ? 'a click on the title renames' : 'CLICK ON THE TITLE DID NOT RENAME');
@@ -75,5 +83,10 @@ try {
   process.exitCode = 1;
 } finally {
   await app.stop();
+  try {
+    movePointer(pointerWas);
+  } catch {
+    // Putting it back is a courtesy; the run's result stands.
+  }
   process.exit();
 }

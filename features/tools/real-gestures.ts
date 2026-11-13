@@ -11,7 +11,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { GpuiDriver } from '../support/gpui.ts';
 import { sleep, type Dump } from '../support/driver.ts';
-import { assertInFront, swiftTool, windowFrame } from './real-screen.ts';
+import { guardInput, movePointer, pointer, swiftTool, windowFrame, type Point } from './real-screen.ts';
 import { ensurePerfLock } from './perf-lock.ts';
 
 await ensurePerfLock();
@@ -31,10 +31,21 @@ try {
 const fingers = (contentDx: number) => (natural ? contentDx : -contentDx);
 /** Two fingers at a screen point: `moves` content-way steps across, then lift. */
 function swipe(x: number, y: number, moves: [number, number][], momentum = false): void {
+  guardInput(app.pid!, [[x, y]]);
   const tokens = moves.map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`);
   execFileSync(gesture, [String(x), String(y), '0', ...tokens, ...(momentum ? ['M'] : [])]);
 }
 const steps = (total: number, count: number): [number, number][] => Array.from({ length: count }, () => [total / count, 0]);
+
+/**
+ * A real mouse drag (or a click, when the two are the same), checked just
+ * before it's posted: the press and the drop both on this app's window.
+ */
+function drag(from: Point, to: Point, hold: number, pid = app.pid!): void {
+  guardInput(app.pid!, [from]);
+  guardInput(pid, [to]);
+  execFileSync(dragger, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), String(hold), '']);
+}
 
 const app = new GpuiDriver();
 const results: string[] = [];
@@ -68,6 +79,7 @@ async function rowPoint(title: string): Promise<[number, number]> {
   return [wx + x, wy + y];
 }
 
+const pointerWas = pointer();
 await app.start();
 try {
   for (let i = 0; i < 300; i += 1) {
@@ -88,12 +100,12 @@ try {
   await open('Morning brief');
   await open('Make uploads resume after a crash');
   let row = await rowPoint('Morning brief');
-  assertInFront(app.pid!, [row, middle]);
   // A click on a blank part of the transcript first, to make the window key.
-  execFileSync(dragger, [String(middle[0]), String(middle[1]), String(middle[0]), String(middle[1]), '0', '']);
+  drag(middle, middle, 0);
   await sleep(400);
 
   // A row: the fingers held part way, it's that far along...
+  guardInput(app.pid!, [row]);
   const held = spawn(gesture, [String(row[0]), String(row[1]), '1500', ...steps(-40, 8).map(([dx, dy]) => `${fingers(dx)},${natural ? dy : -dy}`)]);
   await sleep(1100);
   const along = await app.do({ cmd: 'row-swipe' });
@@ -141,9 +153,12 @@ try {
   check('a swipe right over a row goes back', await until((d) => d.selection?.title === 'Morning brief'), (await app.dump()).selection?.title);
   await open('Make uploads resume after a crash');
 
-  // The mouse: a row dragged left past the line is archived too.
+  // The mouse: a row dragged left past the line is archived too. The line is
+  // about a third of the row's width along (RowSwipe::threshold), so the drop can stay on the
+  // window rather than go 220 points left, past its edge and maybe the
+  // screen's, where the Dock comes up.
   row = await rowPoint('Morning brief');
-  execFileSync(dragger, [String(row[0]), String(row[1]), String(row[0] - 220), String(row[1]), '0.1', '']);
+  drag(row, [Math.max(row[0] - 220, windowFrame(app.pid!)[0] + 30), row[1]], 0.1);
   check('a row dragged left past the line is archived', await until((d) => section(d, 'Morning brief') === 'Archived'), section(await app.dump(), 'Morning brief'));
   await app.do({ cmd: 'undo-archive' });
   await until((d) => section(d, 'Morning brief') === 'Inbox');
@@ -153,7 +168,7 @@ try {
   // A row dragged into the open thread goes into its message as its chip,
   // and the thread the press opened gives way to the one it's dropped on.
   row = await rowPoint('Morning brief');
-  execFileSync(dragger, [String(row[0]), String(row[1]), String(middle[0]), String(middle[1]), '0.2', '']);
+  drag(row, middle, 0.2);
   await sleep(700);
   const chips = await app.do({ cmd: 'composer-chips' }).catch((e) => String(e));
   const after = (await app.dump()).selection?.title;
@@ -172,8 +187,8 @@ try {
     drops.stdout.on('data', (d) => (said += d));
     for (let i = 0; i < 50 && !said.includes('ready'); i += 1) await sleep(100);
     try {
-      assertInFront(app.pid!, [from]);
-      execFileSync(dragger, [String(from[0]), String(from[1]), String(to[0]), String(to[1]), '0.4', '']);
+      // The drop goes to our own drop target, checked by its pid.
+      drag(from, to, 0.4, drops.pid!);
       await sleep(1200);
       const dropped = said.split('\n').find((l) => l.startsWith('dropped '))?.slice('dropped '.length) ?? '';
       check(`${what} dragged out of the window goes as its file`, dropped.endsWith(`/${name}`), dropped || 'nothing dropped');
@@ -220,5 +235,10 @@ try {
   console.log(failed === 0 && !process.exitCode ? 'PASS' : 'FAIL');
   if (failed) process.exitCode = 1;
   await app.stop();
+  try {
+    movePointer(pointerWas);
+  } catch {
+    // Putting it back is a courtesy; the run's result stands.
+  }
   process.exit();
 }
