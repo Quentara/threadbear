@@ -21,6 +21,7 @@ import { atomicWriteFileSync, readJsonSync } from './fsutil.ts';
 // `browserbear handoff <tab> --wait` sits silent with no CPU until he
 // presses Done (5 Nov: two nudges in a row for one). The shell's command
 // lines show it, so it's told apart from a loop that can never end.
+// So is a `tb land`, which waits its turn in the landing line (isLanding).
 //
 // Claude only: its jobs write to output files under /tmp/claude-<uid>
 // (a sub-agent's is a link to its transcript), which give the start and
@@ -91,11 +92,51 @@ export function waitsOnUserMs(commandLine: string): number | undefined {
   return (Number.isFinite(secs) && secs > 0 ? secs : HANDOFF_DEFAULT_WAIT_S) * 1000;
 }
 
+// How long a `tb land` is left to wait before it counts as stuck after all.
+// It sits silent with no CPU by design: queued for the landing lock behind
+// other threads' checks, or with its own check running on another machine
+// (docs/thread-worktrees.md, "Landing together"). On 13 Nov, with 20
+// landings queued and waits past 30 minutes, this check told a dozen
+// threads their `tb land` looked stuck. Agents stopped it and ran it again,
+// which sent them to the back of the line, and when the one stopped was
+// running the group's check, that check went with it: three checks of 11,
+// 14 and 13 branches were thrown away in half an hour, each making the
+// waits longer and the next nudge surer, and nothing landed for 35 minutes.
+// Three hours is how long a check waits for a host of its own accord
+// (scripts/check-remote.sh); git commands under it give up after five minutes.
+export const LAND_WAIT_MS = 3 * 60 * 60_000;
+
+// Whether a process is a real `tb land`: `node …/tb land`, as tb's shebang
+// runs it, at whatever priority (taskpolicy and nice exec it). Never a
+// shell whose text merely mentions it, nor node's inline code, as for
+// waitsOnUserMs: `tb land; while true; do sleep 3; done` is still judged
+// once the landing has gone. A dry run counts too: it waits in the same line.
+//
+// ps joins the arguments with spaces and the installed tb's path has one
+// (…/Application Support/Threadbear/runner/releases/<id>/bin/tb), so the
+// script is the words up to the first that ends in /tb, as long as none
+// before it is a script of its own (node other.mjs "x/tb land"). A script
+// with no extension and such arguments can't be told from a path with a
+// space; all it would get is the same three hours.
+export function isLanding(commandLine: string): boolean {
+  const words = commandLine.trim().split(/\s+/);
+  if (!/(^|\/)node$/.test(words[0] ?? '')) return false;
+  const first = words.findIndex((w, i) => i > 0 && !w.startsWith('-'));
+  if (first < 1) return false;
+  if (words.slice(1, first).some((w) => /^(-e|-p|--eval|--print)(=|$)/.test(w))) return false;
+  const script = words.findIndex((w, i) => i >= first && /(^|\/)tb$/.test(w));
+  if (script < 0) return false;
+  if (words.slice(first, script).some((w) => w.startsWith('-') || /\.[cm]?[jt]s$/.test(w))) return false;
+  // tb's command is its first word that isn't a flag, and `tb land` takes
+  // only flags (--dry-run, --despite-red).
+  return words.slice(script + 1).find((w) => !w.startsWith('-')) === 'land';
+}
+
 // The latest a shell's waiting processes said they'd wait until, plus the grace.
 function waitDeadline(processes: ShellProcess[]): number | undefined {
   let out: number | undefined;
   for (const p of processes) {
-    const wait = waitsOnUserMs(p.command);
+    const wait = waitsOnUserMs(p.command) ?? (isLanding(p.command) ? LAND_WAIT_MS : undefined);
     if (wait !== undefined) out = Math.max(out ?? 0, p.startedAt + wait + WAIT_GRACE_MS);
   }
   return out;

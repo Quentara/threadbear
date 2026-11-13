@@ -1720,7 +1720,14 @@ one doesn't count. It's left alone until its own `--timeout` (20 minutes
 when not given) plus 5 minutes has passed since that process started
 (ps's etime), and judged as usual after that, as it should have exited
 by itself by then. The first wait the check sees sets that deadline for
-the job, so a loop that keeps starting new handoffs can't put it off. Codex's background terminals leave no files,
+the job, so a loop that keeps starting new handoffs can't put it off. A
+shell with a `tb land` process under it (`node …/tb land`, not a shell
+that only names it) is left alone the same way, for three hours from when
+that process started: it sits silent with no CPU while it waits its turn
+for the landing lock, or while its check runs on another machine, and
+stopping one sends it to the back of the line and throws away the group
+check it was running (13 Nov: a dozen threads were told theirs looked
+stuck, and nothing landed for 35 minutes). Codex's background terminals leave no files,
 so Codex threads aren't looked at.
 
 The thread gets one message from the runner (origin `runner`) listing

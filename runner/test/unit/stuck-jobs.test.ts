@@ -11,6 +11,8 @@ import {
   parseLsof,
   parsePs,
   waitsOnUserMs,
+  isLanding,
+  LAND_WAIT_MS,
   WAIT_GRACE_MS,
   type BackgroundShell,
   type Probe,
@@ -281,4 +283,98 @@ test('a loop that keeps starting handoffs is judged once the first one would hav
     await look();
   }
   assert.equal(nudges(h, thread.id).length, 1);
+});
+
+// On 13 Nov, with 20 landings queued, this check told a dozen threads their
+// waiting `tb land` looked stuck; agents stopped and re-ran them, which threw
+// away three group checks in half an hour and nothing landed for 35 minutes.
+test('a tb land waiting its turn, or on its check on another machine, is left alone for three hours', async () => {
+  const { h, probe, jobs, thread, s } = setUp();
+  const landing = { id: 'b3', type: 'local_bash', kind: 'shell' as const, description: 'Land it' };
+  s.out({ kind: 'tasks', tasks: [landing] });
+  s.result('completed');
+  const started = h.clock.now();
+  probe.files.set('b3', { startedAt: started, lastOutputAt: started });
+  // As ps shows one: the agent's shell, tb, and the lockf it waits in. The
+  // output is piped to tail, so nothing is written until it ends.
+  const shell = (cpuSeconds: number): BackgroundShell => ({
+    taskId: 'b3',
+    cpuSeconds,
+    commands: ['zsh', 'tail', 'node', 'lockf'],
+    processes: [
+      { command: "/bin/zsh -c source /x/shell-snapshots/snapshot-zsh.sh && eval 'tb land 2>&1 | tail -15'", startedAt: started },
+      { command: 'node /Users/m/Library/Application Support/Threadbear/runner/releases/20261113T003928Z-99ce1163/bin/tb land', startedAt: started },
+      { command: '/usr/bin/lockf -k /x/.git/threadbear-land.lock /x/node -e process.stdin.resume()', startedAt: started },
+    ],
+  });
+  probe.shellsBySession.set(session(h), [shell(0.1)]);
+  // Quiet and idle for two and a half hours.
+  for (let i = 0; i < 30; i++) {
+    h.clock.advance(5 * MIN);
+    await jobs.sweep();
+  }
+  assert.deepEqual(nudges(h, thread.id), []);
+  // Past three hours and the grace, something is wrong with it.
+  h.clock.advance(started + LAND_WAIT_MS + WAIT_GRACE_MS - h.clock.now());
+  await jobs.sweep();
+  probe.shellsBySession.set(session(h), [shell(0.2)]);
+  h.clock.advance(5 * MIN);
+  await jobs.sweep();
+  assert.equal(nudges(h, thread.id).length, 1);
+});
+
+test('a wait loop left behind after a landing has gone still counts', async () => {
+  const { h, probe, jobs, thread, s } = setUp();
+  const loop = { id: 'b4', type: 'local_bash', kind: 'shell' as const, description: 'Wait for the landing' };
+  s.out({ kind: 'tasks', tasks: [loop] });
+  s.result('completed');
+  const started = h.clock.now();
+  probe.files.set('b4', { startedAt: started, lastOutputAt: started });
+  const shell = (cpuSeconds: number): BackgroundShell => ({
+    taskId: 'b4',
+    cpuSeconds,
+    commands: ['zsh', 'sleep'],
+    processes: [
+      { command: "/bin/zsh -c eval 'tb land > /tmp/land.log 2>&1; until grep -q EXIT /tmp/land.log; do sleep 20; done'", startedAt: started },
+      { command: 'sleep 20', startedAt: h.clock.now() },
+    ],
+  });
+  probe.shellsBySession.set(session(h), [shell(0.1)]);
+  h.clock.advance(35 * MIN);
+  await jobs.sweep();
+  probe.shellsBySession.set(session(h), [shell(0.3)]);
+  h.clock.advance(5 * MIN);
+  await jobs.sweep();
+  assert.equal(nudges(h, thread.id).length, 1);
+});
+
+test('which command lines are a landing', () => {
+  // As ps showed them on 13 Nov, the installed tb's path with its space included.
+  for (const line of [
+    'node /Users/m5-mike/dev/me/threadbear/runner/bin/tb land',
+    'node /Users/m5-mike/Library/Application Support/Threadbear/runner/releases/20261113T003928Z-99ce1163/bin/tb land',
+    'node ./runner/bin/tb land',
+    'node runner/bin/tb land',
+    '/Users/m/.nvm/versions/node/v26.12.1/bin/node /x/bin/tb land --dry-run',
+    'node /x/bin/tb --despite-red land',
+    'node --no-warnings /x/bin/tb land',
+    'node tb land',
+  ]) assert.equal(isLanding(line), true, line);
+  for (const line of [
+    // Another tb command, or none.
+    'node /x/bin/tb status',
+    'node /x/bin/tb send abcd1234 land',
+    'node /x/bin/tb',
+    // Only a shell's text, a pipe's other end, or the lock it waits in.
+    "/bin/zsh -c eval 'tb land 2>&1 | tail -15'",
+    'tail -15',
+    '/usr/bin/lockf -k /x/.git/threadbear-land.lock /x/node -e process.stdin.resume()',
+    'taskpolicy -b /x/bin/tb land',
+    // Inline node code, or another script, that only mentions it.
+    'node -e /* /x/bin/tb land */ setInterval(()=>{},1000)',
+    'node -e x /x/bin/tb land',
+    'node /x/other.mjs /y/bin/tb land',
+    'node /x/bin/tbx land',
+    'sleep 3600',
+  ]) assert.equal(isLanding(line), false, line);
 });
