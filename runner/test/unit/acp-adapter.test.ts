@@ -707,6 +707,7 @@ test('Stop during the setup before a prompt: the prompt is never sent', async ()
   await done;
   assert.equal(r.log().filter((l) => l.prompt).length, before);
   assert.equal(results(r.outputs).at(-1)!.outcome, 'interrupted');
+  assert.deepEqual(results(r.outputs).at(-1)!.unreceived, ['stopme']);
 });
 
 test('Stop with a message waiting gives one result, when the turn is over', async () => {
@@ -722,6 +723,7 @@ test('Stop with a message waiting gives one result, when the turn is over', asyn
   await done;
   const [only] = results(r.outputs);
   assert.deepEqual(only.answered, ['a', 'b']);
+  assert.deepEqual(only.unreceived, ['b']);
   assert.equal(only.answers, 'a');
 });
 

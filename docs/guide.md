@@ -516,7 +516,7 @@ read the thread from, and clicking the chip once it's sent opens that
 thread. An id that isn't one of your threads pastes as plain text.
 Stop (⌘.) ends a turn that's running.
 If you stop before the agent starts reading your message, Threadbear saves
-it and its pictures and says so in the thread.
+it and its pictures and leaves a note under that turn's Worked for line.
 They go with your next message, including after you switch models or restart
 Threadbear. Stop on its own doesn't retry them. Clearing the conversation
 discards them. Moving the thread to another runner keeps the original messages

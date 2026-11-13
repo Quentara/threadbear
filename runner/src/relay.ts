@@ -313,7 +313,7 @@ export function relayEvents(threadId: string, rows: RelayRow[], row: RelayThread
     } else if (r.role === 'note') {
       // That runner's thread moved to another login, or is waiting for
       // room: the app keeps these on show (is_login_note in
-      // desktop/core/src/reducer/row.rs). The only notes that come over.
+      // desktop/core/src/reducer/row.rs). Saved-message notices come over too.
       out.push(env(base + 1, r, { type: 'system.note', text: r.text, login: true }));
     } else if (r.role !== 'tool') {
       // A kind of row from a newer backend than this runner knows: left

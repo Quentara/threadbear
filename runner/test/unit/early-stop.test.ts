@@ -83,7 +83,7 @@ test('saved messages survive a restart and picture numbers stay attached to thei
   assert.match(sent.text, /earlier \[Picture 1\][\s\S]*latest \[Picture 2\]/);
   assert.equal(sent.images.length, 2);
   const parts = placePictures(sent.text, sent.images);
-  assert.deepEqual(parts.map(p => 'image' in p ? p.image.path : p.text.includes('earlier') ? 'earlier' : 'latest'), ['earlier', sent.images[0].path, 'latest', sent.images[1].path]);
+  assert.deepEqual(parts.map(p => 'image' in p ? p.image.path : p.text.includes('earlier [Picture 1]') ? 'earlier' : 'latest'), ['earlier', sent.images[0].path, 'latest', sent.images[1].path]);
 });
 
 test('messages steered into a turn before it started are saved individually', () => {
@@ -336,4 +336,97 @@ test('a slash command stopped while the old CLI is closing is never recovered as
   h.runner.send(thread.id, 'latest request');
   await tick();
   assert.equal(h.adapter.last.sent.at(-1)!.text, 'latest request');
+});
+
+test('a message cancelled during a skill turn is saved without replaying the skill', () => {
+  const h = makeHarness();
+  const { thread, turnId } = h.runner.create({ text: '/ship', accountId: 'claude-3' });
+  const s = h.adapter.last;
+  s.out({ kind: 'messageState', id: turnId, state: 'started' });
+  s.text('skill', 'Starting the skill.');
+  h.runner.send(thread.id, 'also bump the version');
+  const id = s.sent.at(-1)!.id!;
+  s.out({ kind: 'messageState', id, state: 'cancelled' });
+  stop(h, thread.id);
+  h.runner.send(thread.id, 'latest');
+  assert.match(s.sent.at(-1)!.text, /also bump the version[\s\S]*latest/);
+  assert.ok(!s.sent.at(-1)!.text.includes('/ship'));
+});
+
+test('adapter-reported unreceived inputs override CLI readiness without replaying accepted work', () => {
+  const h = makeHarness();
+  const { thread } = h.runner.create({ text: 'accepted work', accountId: 'claude-3' });
+  const s = h.adapter.last;
+  s.out({ kind: 'cliVersion', version: '1.0' });
+  s.text('work', 'Working.');
+  h.runner.send(thread.id, 'held unread request');
+  const id = s.sent.at(-1)!.id!;
+  h.runner.interrupt(thread.id);
+  s.result('interrupted', 0, undefined, { unreceived: [id], answered: [id], usage: { inputTokens: 50 } });
+  h.runner.send(thread.id, 'latest');
+  assert.match(s.sent.at(-1)!.text, /held unread request[\s\S]*latest/);
+  assert.ok(!s.sent.at(-1)!.text.includes('accepted work'));
+});
+
+test('a missing media folder cannot block recovery of the words', () => {
+  const h = makeHarness();
+  const { thread } = h.runner.create({ text: 'earlier [Picture 1]', images: [image()], accountId: 'claude-3' });
+  stop(h, thread.id);
+  fs.rmSync(h.store.mediaDir(thread.id), { recursive: true });
+  h.runner.send(thread.id, 'latest');
+  assert.match(h.adapter.last.sent.at(-1)!.text, /earlier \[Picture 1 unavailable\][\s\S]*latest/);
+});
+
+test('an adapter dropping the carrying input does not settle its saved content on another input\'s usage', () => {
+  const h = makeHarness();
+  const { thread } = h.runner.create({ text: 'earlier request', accountId: 'claude-3' });
+  stop(h, thread.id);
+  h.runner.send(thread.id, 'scheduled work', [], { origin: 'schedule' });
+  const s = h.adapter.last;
+  s.text('work', 'The scheduled work is running.');
+  h.runner.send(thread.id, 'carrying input');
+  const id = s.sent.at(-1)!.id!;
+  h.runner.interrupt(thread.id);
+  s.result('interrupted', 0, undefined, { unreceived: [id], answered: [id], usage: { inputTokens: 50 } });
+  h.runner.send(thread.id, 'latest');
+  assert.match(s.sent.at(-1)!.text, /earlier request[\s\S]*carrying input[\s\S]*latest/);
+});
+
+test('a failed edit does not save the wording it interrupted to replace', async () => {
+  const h = makeHarness();
+  h.adapter.rewind = async () => { throw new Error('rewind failed'); };
+  const { thread } = h.runner.create({ text: 'old wording', accountId: 'claude-3' });
+  h.adapter.last.init();
+  const edit = h.runner.editMessage(thread.id, 1, 'new wording');
+  const failed = assert.rejects(edit, /rewind failed/);
+  await tick();
+  h.adapter.last.result('interrupted', 0, undefined, { usage: zero });
+  await failed;
+  h.runner.send(thread.id, 'latest');
+  await tick();
+  assert.equal(h.adapter.last.sent.at(-1)!.text, 'latest');
+});
+
+test('a session-not-found retry keeps recovery on a steered carrier and leaves slash commands bare', async () => {
+  for (const command of [false, true]) {
+    const h = makeHarness();
+    const { thread } = h.runner.create({ text: 'earlier [Picture 1]', images: [image()], accountId: 'claude-3' });
+    h.adapter.last.init();
+    stop(h, thread.id);
+    h.clock.advance(30 * 60_000);
+    await tick();
+    if (command) h.runner.send(thread.id, '/compact');
+    else {
+      h.runner.send(thread.id, 'scheduled work', [], { origin: 'schedule' });
+      h.runner.send(thread.id, 'steered carrier');
+    }
+    const missing = h.adapter.last;
+    missing.sink.exited(new SessionNotFoundError());
+    const sent = h.adapter.last.sent;
+    if (command) assert.equal(sent[0].text, '/compact');
+    else {
+      assert.match(sent[1].text, /earlier \[Picture 1\][\s\S]*steered carrier/);
+      assert.equal(sent[1].images.length, 1);
+    }
+  }
 });

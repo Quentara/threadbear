@@ -93,7 +93,7 @@ test('through the backend: the other Mac gets the note, the phone and the websit
   const moved = 'Moved to mike@example.org: mike@example.net hit its 5-hour limit, back at 11:30 am.';
   assert.deepEqual(views.here.notes, [moved]);
   assert.deepEqual(views.relay.notes, [moved]);
-  assert.deepEqual(views.phone.notes, []);
+  assert.deepEqual(views.phone.notes, [moved], 'the phone route now reads phone:messages with notes, like the app');
   const stored = (await b.ctx.db.query('messages').collect()) as unknown as { role: string; text: string }[];
   assert.deepEqual(stored.filter((m) => m.role === 'note').map((m) => m.text), [moved], 'the row is in the backend');
   // phone:messages with tool rows on, as an iPhone app built before API 79

@@ -31,7 +31,7 @@ export const SCENARIOS: Scenario[] = [
   },
   {
     name: 'a message saved after Stop before the model started',
-    shows: ['Please fix the spot in this picture.', 'Your message and pictures are saved for your next message.', 'Continuing on another model.', 'I can fix the spot.'],
+    shows: ['Please fix the spot in this picture.', 'Your stopped message and pictures are saved for your next message.', 'Continuing on another model.', 'I can fix the spot.'],
     play: (p) => {
       p.say('Ready.');
       p.endTurn({ needs: 'nothing' });

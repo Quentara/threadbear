@@ -313,6 +313,7 @@ export type Turn = {
   inputs?: Map<string, number>;
   deliveryKnown?: boolean;
   startedMessages?: Set<string>;
+  cancelledMessages?: Set<string>;
   foreignOutput?: boolean;
   // The most access the CLI has had in this turn (accessOf): a Codex turn
   // keeps the mode it started with when the thread is lowered mid-turn.
@@ -2078,7 +2079,7 @@ export class Runner {
           (turn.startedMessages ??= new Set()).add(o.id);
           turn.foreignOutput = false;
           if (turn.recoveryInput === o.id) this.settleInterruptedMessages(st);
-        }
+        } else if (o.state === 'cancelled') (turn.cancelledMessages ??= new Set()).add(o.id);
         break;
       }
       case 'event': {
@@ -2388,12 +2389,13 @@ export class Runner {
         // result's explicit receipts still mean the CLI took that input.
         if (!r.own && turn.deliveryKnown) {
           for (const id of r.answered ?? (r.answers ? [r.answers] : [])) {
+            if (r.unreceived?.includes(id)) continue;
             (turn.startedMessages ??= new Set()).add(id);
             if (turn.recoveryInput === id) this.settleInterruptedMessages(st);
           }
         }
         this.saveInterruptedMessages(st, r);
-        if (!r.own && !turn.deliveryKnown && ((!turn.interruptRequested && r.outcome === 'completed') || turn.modelOutput || (r.usage && Object.values(r.usage).some(n => typeof n === 'number' && n > 0)))) this.settleInterruptedMessages(st);
+        if (!r.own && !turn.deliveryKnown && !r.unreceived?.includes(turn.recoveryInput ?? '') && ((!turn.interruptRequested && r.outcome === 'completed') || turn.modelOutput || (r.usage && Object.values(r.usage).some(n => typeof n === 'number' && n > 0)))) this.settleInterruptedMessages(st);
         // Which of this turn's messages the CLI's turn answered. The CLI
         // lists them in sending order, so everything up to the last one
         // named went with it. A CLI without lifecycle frames can only say
@@ -2406,8 +2408,9 @@ export class Runner {
           // The CLI has nothing left to run, so a message sent during the
           // turn went nowhere (an error ended its queue). Say so rather than
           // wait for an answer that won't come.
+          const unsaved = turn.messages.some(id => !turn.startedMessages?.has(id) && !rec.interruptedMessages?.includes(turn.inputs?.get(id) ?? -1));
           turn.messages = [];
-          if (!turn.interruptRequested) this.emit(st, { type: 'system.note', text: 'A message sent during this turn was dropped by the CLI. Send it again.' }, turn.turnId);
+          if (!turn.interruptRequested || unsaved) this.emit(st, { type: 'system.note', text: 'A message sent during this turn was dropped by the CLI. Send it again.' }, turn.turnId);
         }
         // Still something to answer: a turn the CLI ran by itself while
         // this thread's message waited in its queue, or a message sent
@@ -2856,14 +2859,15 @@ export class Runner {
             turn.startedMessages = undefined;
             turn.foreignOutput = false;
             const input = this.withInterruptedMessages(st, { turnId: turn.turnId, text: first.text, images: first.images, origin: first.origin }, this.forAgent(first));
-            let text = input.text;
+            const command = this.commandPlan(st, first.text);
+            let text = command ? first.text : input.text;
             // What it was told of presses went with the session that's gone:
             // a new one hears all it was told, the old one going on only this
             // turn's (Codex's second look).
             const pressed = this.toldPressNews(rec, inUse ? 'turn' : 'all');
-            if (pressed) text = `${pressed}\n\n${text}`;
+            if (pressed && !command) text = `${pressed}\n\n${text}`;
             const earlier = rec.lastTurnCompletedSeq > 0;
-            if (!inUse && (rt.carried || earlier)) {
+            if (!command && !inUse && (rt.carried || earlier)) {
               rec.handoff = rt.carried ?? { fromCwd: rec.cwd, fromAccountId: rec.accountId, lost: true };
               text = this.handoffNote(st, account) + text;
               delete rec.handoff;
@@ -2875,7 +2879,10 @@ export class Runner {
             // order, matched to their ids when the counts agree.
             if (msgs.length === turn.messages.length) {
               msgs.slice(1).forEach((m, i) => {
-                if (m.type === 'user.message') rt.session!.send({ id: turn.messages[i + 1], text: this.forAgent(m), images: m.images });
+                if (m.type === 'user.message') {
+                  const input = this.withInterruptedMessages(st, { turnId: turn.messages[i + 1], text: m.text, images: m.images, origin: m.origin }, this.forAgent(m));
+                  rt.session!.send(input);
+                }
               });
             }
             return;
@@ -3442,21 +3449,23 @@ export class Runner {
   saveInterruptedMessages(st: ThreadState, result?: TurnResult): void {
     const { rec, rt } = st;
     const turn = rt.turn;
-    if (!turn?.interruptRequested || turn.command || turn.local) return;
-    const usage = result?.usage;
+    if (!turn?.interruptRequested || turn.local || rt.editing) return;
+    const unreceived = new Set(result?.unreceived);
+    const usage = result?.own ? undefined : result?.usage;
     const zero = usage?.inputTokens === 0 && usage.outputTokens === 0 &&
       !Object.values(usage).some(n => typeof n === 'number' && n > 0);
-    if (!turn.deliveryKnown && (turn.modelOutput || (usage && !zero) || (!zero && rt.started && turn.dispatched))) return;
+    if (!unreceived.size && !turn.deliveryKnown && (turn.modelOutput || (usage && !zero) || (!zero && rt.started && turn.dispatched))) return;
     const ids = new Set(rec.interruptedMessages);
     const before = ids.size;
     for (const [id, seq] of turn.inputs ?? []) {
-      if (turn.startedMessages?.has(id)) continue;
+      if (unreceived.size && !unreceived.has(id)) continue;
+      if (!unreceived.has(id) && (turn.startedMessages?.has(id) || (turn.deliveryKnown && !turn.cancelledMessages?.has(id) && (turn.modelOutput || (usage && !zero))))) continue;
       const e = this.store.log(rec.id).read(seq, seq)[0];
       if (e?.type === 'user.message' && fromMike(e.text, e) && !this.commandPlan(st, e.text) && !cutOut(rec, seq)) ids.add(seq);
     }
     if (ids.size === before) return;
     rec.interruptedMessages = [...ids];
-    this.emit(st, { type: 'system.note', savedMessage: true, text: 'Stopped before a reply started. Your message and pictures are saved for your next message.' }, turn.turnId);
+    this.emit(st, { type: 'system.note', savedMessage: true, text: 'Your stopped message and pictures are saved for your next message.' }, turn.turnId);
     this.markDirty(st);
   }
 
@@ -3472,16 +3481,17 @@ export class Runner {
 
   withInterruptedMessages(st: ThreadState, msg: QueuedSend, text: string): UserInput {
     const { rec, rt } = st;
-    if (!rec.interruptedMessages?.length || !fromMike(msg.text, msg) || (rt.turn?.recoveryInput && rt.turn.recoveryInput !== msg.turnId)) return { id: msg.turnId, text, images: msg.images };
+    if (!rec.interruptedMessages?.length || !fromMike(msg.text, msg) || this.commandPlan(st, msg.text) || (rt.turn?.recoveryInput && rt.turn.recoveryInput !== msg.turnId)) return { id: msg.turnId, text, images: msg.images };
     const saved = [...new Set(rec.interruptedMessages)].filter(seq => Number.isSafeInteger(seq) && seq > 0 && seq <= rec.lastSeq).sort((a, b) => a - b).flatMap(seq => this.store.log(rec.id).read(seq, seq)).filter(e => e.type === 'user.message' && fromMike(e.text, e) && !this.commandPlan(st, e.text) && !cutOut(rec, e.seq));
     const images: ImageRef[] = [];
     const parts: string[] = [];
-    const media = fs.realpathSync(this.store.mediaDir(rec.id));
+    let media: string | undefined;
+    try { media = fs.realpathSync(this.store.mediaDir(rec.id)); } catch { /* Pictures may have been cleaned up. */ }
     const append = (words: string, refs: ImageRef[]) => {
       const numbers = refs.map(ref => {
         try {
           const file = fs.realpathSync(ref.path);
-          if (path.dirname(file) !== media || !fs.statSync(file).isFile()) return undefined;
+          if (!media || path.dirname(file) !== media || !fs.statSync(file).isFile()) return undefined;
           images.push({ ...ref, path: file });
           return images.length;
         } catch { return undefined; }
@@ -3499,6 +3509,7 @@ export class Runner {
       delete rec.interruptedMessages;
       return { id: msg.turnId, text, images: msg.images };
     }
+    parts.push('[Latest message. Follow any corrections or cancellation here over the earlier requests.]');
     append(text, msg.images);
     if (rt.turn) {
       rt.turn.recoveredMessages = saved.map(e => e.seq);
