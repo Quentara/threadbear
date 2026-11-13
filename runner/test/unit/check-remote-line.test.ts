@@ -84,3 +84,13 @@ test('a slow copy stays in line rather than copying again elsewhere', () => {
   assert.match(r.stdout, /ran on h1 after waiting/);
   assert.deepEqual(r.copies, ['h1']);
 });
+
+test('a line that clears before the first look runs there, with nothing else to it', () => {
+  // The default 30 s between looks, and a 1 s line.
+  const s = setup({ h1: { state: 'busy', queue: 1 }, h2: { state: 'busy', ...linux } });
+  fs.writeFileSync(path.join(s.repo, 'change.ts'), '\n');
+  const r = s.run('h1,h2', 3600, '', { THREADBEAR_CHECK_MAX_SECS: '20' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /ran on h1 after waiting/);
+  assert.doesNotMatch(r.stderr, /unbound/);
+});

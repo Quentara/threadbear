@@ -551,14 +551,16 @@ free_elsewhere() {
 # never taken from anything running. The rename is the claim, and the host
 # is asked where the copy is to learn who won, so a reply lost on the way
 # back (a dropped ssh) is never taken for a lost race (Codex's review): the
-# next look finds runs/<id>.withdrawn and leaves then. ASK_SECS is for the
-# tests.
+# next look finds runs/<id>.withdrawn and leaves then. The copy's own name is
+# asked about first: a rename landing between the two tests then reads as
+# waiting (looked at again) rather than started (Codex's second review).
+# ASK_SECS is for the tests.
 ASK_SECS="${THREADBEAR_CHECK_ASK_SECS:-15}"
 where_is_copy() {
-  timed "$ASK_SECS" "${SSH[@]}" "$HOST" "if [ -d '$remote_run.withdrawn' ]; then echo withdrawn; elif [ -d '$remote_run' ]; then echo waiting; else echo started; fi" 2>/dev/null </dev/null
+  timed "$ASK_SECS" "${SSH[@]}" "$HOST" "if [ -d '$remote_run' ]; then echo waiting; elif [ -d '$remote_run.withdrawn' ]; then echo withdrawn; else echo started; fi" 2>/dev/null </dev/null
 }
 leave_line() {
-  local waiter="$1" next=$((SECONDS + POLL_SECS)) where claimed=0
+  local waiter="$1" next=$((SECONDS + POLL_SECS)) where="" claimed=0
   while kill -0 "$waiter" 2>/dev/null; do
     if [ "$SECONDS" -lt "$next" ]; then sleep 1; continue; fi
     next=$((SECONDS + POLL_SECS))
@@ -568,8 +570,8 @@ leave_line() {
     if [ "$where" = withdrawn ]; then break; fi
     # Not answering: the waiter's own watch deals with that.
     [ "$where" = waiting ] || continue
-    # Once claimed, only the host's answer says what happened.
-    [ "$claimed" = 0 ] && free_elsewhere || continue
+    # Still there after a claim: it never reached the host, so claim again.
+    free_elsewhere || continue
     claimed=1
     timed "$ASK_SECS" "${SSH[@]}" "$HOST" "mv '$remote_run' '$remote_run.withdrawn'" >/dev/null 2>&1 </dev/null
     where="$(where_is_copy)"
