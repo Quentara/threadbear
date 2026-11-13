@@ -10,8 +10,9 @@
 // are read once and kept on the runner, a thread's row is one document, and
 // a command's state is one get by id.
 import { ConvexError, v } from 'convex/values';
+import type { OrderedQuery } from 'convex/server';
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from './_generated/server';
-import type { Id } from './_generated/dataModel';
+import type { DataModel, Doc, Id } from './_generated/dataModel';
 import { checkRunnerId, forbidden, pageLimit, runnerAuth, sha256, withoutCredentials } from './lib';
 import { docBytes, isThreadId } from './runnerAccess';
 import { messageButton } from './schema';
@@ -63,15 +64,42 @@ function toRow(m: Row): Row {
   };
 }
 
+// How many login notes a page for a runner that didn't ask for them looks
+// past. They come a few at a time, when a login runs out.
+const NOTES_SKIPPED = 500;
+
+/**
+ * The first `want` rows of `q`, and whether there are more. A login's note
+ * (role "note", API 78) only for a runner that asks with `notes`: one from
+ * before draws any row it doesn't know as a tool call, and a row after the
+ * last turn took that turn's card and its failure away there (Codex's
+ * review, 13 Nov).
+ */
+async function pageOf(q: OrderedQuery<DataModel['messages']>, want: number, notes: boolean | undefined): Promise<{ rows: Doc<'messages'>[]; hasMore: boolean }> {
+  if (notes) {
+    const rows = await q.take(want + 1);
+    return { rows: rows.slice(0, want), hasMore: rows.length > want };
+  }
+  const rows: Doc<'messages'>[] = [];
+  let read = 0;
+  for await (const m of q) {
+    if (++read > want + 1 + NOTES_SKIPPED) return { rows, hasMore: true };
+    if (m.role === 'note') continue;
+    if (rows.length >= want) return { rows, hasMore: true };
+    rows.push(m);
+  }
+  return { rows, hasMore: false };
+}
+
 /** The newest rows of a thread, oldest first: the live tail. */
 export const remoteTail = query({
-  args: { key: v.string(), threadId: v.string(), limit: v.optional(v.number()) },
+  args: { key: v.string(), threadId: v.string(), limit: v.optional(v.number()), notes: v.optional(v.boolean()) },
   returns: v.object({ messages: v.array(relayRow), hasMore: v.boolean() }),
-  handler: async (ctx, { key, threadId, limit }) => {
+  handler: async (ctx, { key, threadId, limit, notes }) => {
     await runnerAuth(ctx, key, 'remoteTail');
     const want = pageLimit(limit, TAIL_MAX, TAIL_MAX);
-    const rows = await ctx.db.query('messages').withIndex('by_thread_seq', (q) => q.eq('threadId', threadId)).order('desc').take(want + 1);
-    return { messages: rows.slice(0, want).reverse().map(toRow), hasMore: rows.length > want };
+    const { rows, hasMore } = await pageOf(ctx.db.query('messages').withIndex('by_thread_seq', (q) => q.eq('threadId', threadId)).order('desc'), want, notes);
+    return { messages: rows.reverse().map(toRow), hasMore };
   },
 });
 
@@ -80,21 +108,24 @@ export const remoteTail = query({
  * after `afterSeq` (filling what a tail skipped), or the newest. Oldest first.
  */
 export const remoteMessages = query({
-  args: { key: v.string(), threadId: v.string(), beforeSeq: v.optional(v.number()), afterSeq: v.optional(v.number()), limit: v.optional(v.number()) },
+  args: { key: v.string(), threadId: v.string(), beforeSeq: v.optional(v.number()), afterSeq: v.optional(v.number()), limit: v.optional(v.number()), notes: v.optional(v.boolean()) },
   returns: v.object({ messages: v.array(relayRow), hasMore: v.boolean() }),
-  handler: async (ctx, { key, threadId, beforeSeq, afterSeq, limit }) => {
+  handler: async (ctx, { key, threadId, beforeSeq, afterSeq, limit, notes }) => {
     await runnerAuth(ctx, key, 'remoteMessages');
     const want = pageLimit(limit, PAGE_DEFAULT, PAGE_MAX);
     if (afterSeq !== undefined) {
-      const rows = await ctx.db.query('messages').withIndex('by_thread_seq', (q) => q.eq('threadId', threadId).gt('seq', afterSeq)).order('asc').take(want + 1);
-      return { messages: rows.slice(0, want).map(toRow), hasMore: rows.length > want };
+      const { rows, hasMore } = await pageOf(ctx.db.query('messages').withIndex('by_thread_seq', (q) => q.eq('threadId', threadId).gt('seq', afterSeq)).order('asc'), want, notes);
+      return { messages: rows.map(toRow), hasMore };
     }
-    const rows = await ctx.db
-      .query('messages')
-      .withIndex('by_thread_seq', (q) => (beforeSeq === undefined ? q.eq('threadId', threadId) : q.eq('threadId', threadId).lt('seq', beforeSeq)))
-      .order('desc')
-      .take(want + 1);
-    return { messages: rows.slice(0, want).reverse().map(toRow), hasMore: rows.length > want };
+    const { rows, hasMore } = await pageOf(
+      ctx.db
+        .query('messages')
+        .withIndex('by_thread_seq', (q) => (beforeSeq === undefined ? q.eq('threadId', threadId) : q.eq('threadId', threadId).lt('seq', beforeSeq)))
+        .order('desc'),
+      want,
+      notes,
+    );
+    return { messages: rows.reverse().map(toRow), hasMore };
   },
 });
 

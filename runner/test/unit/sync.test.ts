@@ -428,7 +428,7 @@ test('the uploader never follows a redirect with the bytes, nor posts them in th
 
 // ------------------------------------------------------------ step 2 and 3
 
-import { BUTTONS_API_VERSION, MESSAGE_CHARS, PLAN_API_VERSION, PLAN_CHARS, toMessageDoc, toolLine, inputSummary, WokeRows, WOKE_BY_API_VERSION, type Command, type MessageDoc } from '../../src/sync.ts';
+import { BUTTONS_API_VERSION, LOGIN_NOTES_API_VERSION, MESSAGE_CHARS, PLAN_API_VERSION, PLAN_CHARS, toMessageDoc, toolLine, inputSummary, WokeRows, WOKE_BY_API_VERSION, type Command, type MessageDoc } from '../../src/sync.ts';
 import { REMOTE_ALLOW_REFUSED, remoteCardShowsAll } from '../../src/tools.ts';
 
 type Fake = { h: ReturnType<typeof makeHarness>; sync: ConvexSync; calls: Call[]; push: (value: unknown) => void; applied: string[]; landed: Call[] };
@@ -1385,6 +1385,27 @@ test('a message row says which turn it is from, once the backend takes it', asyn
     assert.equal('turn' in row, sent, `backend ${backend}`);
     await sync.stop();
   }
+});
+
+// A backend from before API 78 refuses a note row, and the batch with it. The
+// note waits rather than being dropped: the rows after it go up and take the
+// thread's head past it, so nothing else would send it again (Codex's review
+// of the login notes, 13 Nov).
+test("a login's note waits for a backend that takes it, and goes up then", async () => {
+  let backend = LOGIN_NOTES_API_VERSION - 1;
+  const { sync, calls } = setup({ answer: (fn) => (fn === 'sync:heartbeat' ? { apiVersion: backend } : null) });
+  sync.start();
+  await tick();
+  const at = '2026-11-13T02:00:00.000Z';
+  const note: MessageDoc = { threadId: 't', seq: 10, role: 'note', text: 'Moved to mike@example.org: mike@example.net hit its 5-hour limit.', at };
+  const inner = sync as never as { appendMessages(m: MessageDoc[]): Promise<void>; sawBackend(r: unknown): void };
+  await inner.appendMessages([note, { threadId: 't', seq: 11, role: 'assistant', text: 'Carrying on.', at }]);
+  assert.deepEqual(messagesSent(calls).map((m) => m.seq), [11], 'the reply went, the note waited');
+  backend = LOGIN_NOTES_API_VERSION;
+  inner.sawBackend({ apiVersion: backend });
+  await sync.flushNow();
+  assert.deepEqual(messagesSent(calls).filter((m) => m.role === 'note').map((m) => m.seq), [10]);
+  await sync.stop();
 });
 
 // The phone marks the wait before a turn the agent started itself with what

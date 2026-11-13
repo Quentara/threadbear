@@ -88,6 +88,11 @@ const MAX_PICTURES = 6;
 // one drops them and sends the words alone. sync.ts RELAY_PICTURES_API_VERSION,
 // not imported so this module doesn't load the whole sync.
 const PICTURES_API = 63;
+// From this one a thread's rows can include a login's notes (role "note"),
+// for a runner that asks: one from before would draw a note as a tool call
+// and take the last turn's card away, so the backend leaves them out
+// unless asked (Codex's review, 13 Nov).
+const LOGIN_NOTES_API = 78;
 // Reply buttons and slash commands on a thread there (convex/relay.ts press,
 // slashCommands, rows' buttons): an older backend refuses the commands.
 const BUTTONS_API = 68;
@@ -694,6 +699,12 @@ export class Relay {
     return out;
   }
 
+  // Asks for the login notes among a thread's rows, of a backend that has
+  // them (an older one refuses an argument it doesn't know).
+  private withNotes(): { notes?: true } {
+    return (this.src().apiVersion ?? 0) >= LOGIN_NOTES_API ? { notes: true } : {};
+  }
+
   private events(w: Watch): RelayEvent[] {
     const settled = w.stoppedAt === undefined || this.deps.clock.now() - w.stoppedAt >= SETTLE_MS;
     return relayEvents(w.threadId, [...w.rows.values()], w.row, [...w.cards.values()], w.olderMore, this.runnerName(w.runnerId), settled, w.bodies);
@@ -733,7 +744,7 @@ export class Relay {
       (async () => {
         let after = newest;
         for (;;) {
-          const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE })) as Page;
+          const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE, ...this.withNotes() })) as Page;
           for (const m of page.messages) w.rows.set(m.seq, m);
           trimHeld(w);
           const last = page.messages[page.messages.length - 1]?.seq;
@@ -762,7 +773,7 @@ export class Relay {
       if (!w.unsub.length && this.deps.clock.now() - (w.readAt ?? 0) > 2000) await this.refresh(w);
       return;
     }
-    const [row, page] = await Promise.all([this.read('relay:remoteThread', { threadId: w.threadId }), this.read('relay:remoteMessages', { threadId: w.threadId, limit: PAGE })]);
+    const [row, page] = await Promise.all([this.read('relay:remoteThread', { threadId: w.threadId }), this.read('relay:remoteMessages', { threadId: w.threadId, limit: PAGE, ...this.withNotes() })]);
     const p = page as Page;
     for (const m of p.messages) w.rows.set(m.seq, m);
     w.olderMore = p.hasMore;
@@ -784,7 +795,7 @@ export class Relay {
       let have = [...w.rows.keys()].filter((s) => s < realBefore).length;
       while (have < Math.ceil(limit / 2) && w.olderMore && w.rows.size < MAX_SCROLLED) {
         const oldest = Math.min(...w.rows.keys());
-        const older = (await this.read('relay:remoteMessages', { threadId: w.threadId, beforeSeq: oldest, limit: PAGE })) as Page;
+        const older = (await this.read('relay:remoteMessages', { threadId: w.threadId, beforeSeq: oldest, limit: PAGE, ...this.withNotes() })) as Page;
         for (const m of older.messages) w.rows.set(m.seq, m);
         w.olderMore = older.hasMore;
         if (!older.messages.length) break;
@@ -813,7 +824,7 @@ export class Relay {
     if (w.unsub.length || !src?.subscribe) return;
     const failed = (e: Error) => this.deps.log.warn('relay watch failed', { threadId: w.threadId, error: String(e) });
     w.unsub.push(
-      src.subscribe('relay:remoteTail', { key: src.key, threadId: w.threadId, limit: TAIL }, (v) => void this.onTail(w, v as Page), failed),
+      src.subscribe('relay:remoteTail', { key: src.key, threadId: w.threadId, limit: TAIL, ...this.withNotes() }, (v) => void this.onTail(w, v as Page), failed),
       src.subscribe('relay:remoteThread', { key: src.key, threadId: w.threadId }, (v) => {
         this.reads++;
         this.bytes += JSON.stringify(v ?? null).length;
@@ -879,7 +890,7 @@ export class Relay {
     const stale = sorted.filter((r) => r.plan && !r.planDecision && r.seq < oldest && r.seq === lastPlan);
     for (const r of stale) {
       try {
-        const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: r.seq - 1, limit: 1 })) as Page;
+        const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: r.seq - 1, limit: 1, ...this.withNotes() })) as Page;
         const m = page.messages[0];
         if (m?.seq === r.seq) w.rows.set(m.seq, m);
       } catch {
@@ -894,7 +905,7 @@ export class Relay {
     try {
       while (w.hole) {
         const { after } = w.hole;
-        const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE })) as Page;
+        const page = (await this.read('relay:remoteMessages', { threadId: w.threadId, afterSeq: after, limit: PAGE, ...this.withNotes() })) as Page;
         for (const m of page.messages) w.rows.set(m.seq, m);
         trimHeld(w);
         const last = page.messages[page.messages.length - 1]?.seq;

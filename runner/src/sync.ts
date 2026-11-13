@@ -143,6 +143,7 @@ export const BACKEND_API_VERSION = 78;
 // From this one a message row can be a login's note (role "note"): a thread
 // that moved to another login or is waiting for room says so on another Mac.
 export const LOGIN_NOTES_API_VERSION = 78;
+const HELD_NOTES = 200;
 // From this one sync:sharedThreads lists a runner's rows shared by link, which
 // it checks against its own threads on every start and every
 // SHARE_RECONCILE_MS (reconcileShares).
@@ -1355,6 +1356,9 @@ export class ConvexSync {
   private missing = new Map<string, number>();
   private missingTimer?: TimerHandle;
   private messages: MessageDoc[] = [];
+  // Login notes a backend from before API 78 (or one not heard from yet)
+  // couldn't take, newest HELD_NOTES, sent once it can.
+  private heldNotes: MessageDoc[] = [];
   private woke = new WokeRows();
   // "<threadId> <buttonId>" -> the row that links it, as last sent, so a press
   // sends that row again with the new state (onButton). Newest kept.
@@ -1687,6 +1691,10 @@ export class ConvexSync {
       this.deps.log.warn('the convex backend is older than this runner', { backend: v, expected: BACKEND_API_VERSION, url: this.deps.config.url });
     }
     if (v >= INDEX_STARTED_BY_API_VERSION) this.index?.refresh();
+    if (v >= LOGIN_NOTES_API_VERSION && this.heldNotes.length) {
+      this.messages.push(...this.heldNotes.splice(0));
+      if (this.running) this.scheduleFlush();
+    }
     // Only a runner key's were dropped; the owner's always stayed.
     if (v >= ARCHIVED_INDEX_API_VERSION && this.deps.key?.startsWith('tbr_')) this.index?.resendArchived();
     // Shared threads held back their share from an older backend (or
@@ -3570,7 +3578,17 @@ export class ConvexSync {
     let messages = v !== undefined && v < 2 ? all.filter((m) => m.role !== 'tool') : all;
     // Nor a login's note before API 78: the validator refuses the role, and
     // the whole batch with it.
-    if (v === undefined || v < LOGIN_NOTES_API_VERSION) messages = messages.filter((m) => m.role !== 'note');
+    // Kept for when it does (sawBackend): the rows after it go up meanwhile
+    // and take the thread's head past it, so nothing else would send it
+    // again (Codex's review, 13 Nov).
+    if (v === undefined || v < LOGIN_NOTES_API_VERSION) {
+      const notes = messages.filter((m) => m.role === 'note');
+      if (notes.length) {
+        this.heldNotes.push(...notes);
+        if (this.heldNotes.length > HELD_NOTES) this.heldNotes.splice(0, this.heldNotes.length - HELD_NOTES);
+        messages = messages.filter((m) => m.role !== 'note');
+      }
+    }
     // Before API 14 the validator has no `summary`; the bullets go as text.
     if (v === undefined || v < ASKS_API_VERSION) messages = messages.map((m) => (m.summary ? (({ summary, ...rest }) => rest)(m) : m));
     if (v === undefined || v < TURNS_API_VERSION) messages = messages.map((m) => (m.turn ? (({ turn, ...rest }) => rest)(m) : m));

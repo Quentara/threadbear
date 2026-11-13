@@ -157,13 +157,13 @@ export const view = query({
     if (beforeSeq !== undefined && !Number.isFinite(beforeSeq)) throw new ConvexError({ kind: 'invalid', message: 'beforeSeq must be a number' });
     const rows = ctx.db.query('messages').withIndex('by_thread_seq', (q) => (beforeSeq === undefined ? q.eq('threadId', t.threadId) : q.eq('threadId', t.threadId).lt('seq', beforeSeq)));
     for await (const m of rows.order('desc')) {
+      // A login's note (API 78) names the owner's logins: never on a page
+      // anyone with the link can read, and not counted as one of its rows.
+      if (m.role === 'note') continue;
       if (out.length >= want || (bytes += docBytes(m)) > PAGE_BYTES) {
         hasMore = true;
         break;
       }
-      // A login's note (API 78) names the owner's logins: never on a page
-      // anyone with the link can read.
-      if (m.role === 'note') continue;
       out.push({
         seq: m.seq,
         role: m.role,

@@ -50,6 +50,8 @@ const PAGE_MAX = 2000;
 // messages. Most rows are one-line tool rows, so a page stops at this many
 // read whatever it found, and says there's more.
 const TOOL_ROWS_SKIPPED = 4000;
+// And at most this many login notes (role "note"), which no page shows.
+const NOTE_ROWS_SKIPPED = 500;
 const PAGE_BYTES = 8 * 1024 * 1024;
 
 function strip<T extends { _id: unknown; _creationTime: unknown }>(doc: T): Omit<T, '_id' | '_creationTime'> {
@@ -239,6 +241,9 @@ export const search = query({
         .withSearchIndex('search_text', (q) => q.search('text', words))
         .take(SEARCH_MESSAGES);
       for (const m of said) {
+        // Not a login's note (API 78): the phone doesn't show those, so a
+        // thread found by one would have nothing in it to match.
+        if (m.role === 'note') continue;
         if (seen.has(m.threadId) || out.length >= SEARCH_LIMIT) continue;
         seen.add(m.threadId);
         const t = await ctx.db
@@ -393,15 +398,25 @@ export const messages = query({
     let read = 0;
     let bytes = 0;
     let hasMore = false;
+    let notes = 0;
     for await (const m of q) {
+      // A login's note (API 78) is for the other runners: it names logins,
+      // and no phone app draws one yet. Looked past without counting as
+      // one of the page's rows: counted, a page asked for under a few
+      // notes came back empty saying there was more, with no row to page
+      // from (Codex's review, 13 Nov).
+      if (m.role === 'note') {
+        if (++notes > NOTE_ROWS_SKIPPED || (bytes += docBytes(m)) > PAGE_BYTES) {
+          hasMore = true;
+          break;
+        }
+        continue;
+      }
       // And bytes: a page of big rows stops short, saying there's more, rather than going past what a query may read.
       if (++read > most || (bytes += docBytes(m)) > PAGE_BYTES) {
         hasMore = true;
         break;
       }
-      // A login's note (API 78) is for the other runners: it names logins,
-      // and no phone app draws one yet.
-      if (m.role === 'note') continue;
       if (m.role === 'tool' && !tools) continue;
       if (out.length >= want) {
         hasMore = true;

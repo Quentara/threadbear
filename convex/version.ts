@@ -360,8 +360,9 @@
 // 78: a message row can be a login's note (role "note"): a runner's
 //    system.note that the thread's login ran out and it moved to another,
 //    is waiting for room, or was told not to wait. relay:remoteTail and
-//    relay:remoteMessages give them to the other runners, so a thread on
-//    another machine says on the Mac that it changed login; phone:thread,
-//    phone:messages and share's page leave them out. A runner sends one
-//    only from 78.
+//    relay:remoteMessages give them to a runner that asks (`notes: true`,
+//    which a runner sends only from 78), so a thread on another machine
+//    says on the Mac that it changed login; phone:thread, phone:messages,
+//    phone:search and share's page leave them out. A runner sends one only
+//    from 78, and keeps any it couldn't send till then.
 export const API_VERSION = 78;

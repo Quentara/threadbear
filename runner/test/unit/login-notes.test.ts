@@ -100,6 +100,28 @@ test('through the backend: the other Mac gets the note; the phone, the website a
   const page = (await call(b.ctx, phone.messages, { token: 'phone-token', threadId, tools: true })) as { messages: { role: string; text: string }[] };
   assert.ok(page.messages.length > 0);
   assert.equal(page.messages.some((m) => m.role === 'note' || m.text.includes('mike@example')), false);
+  // Asked for one row with the note on top: the row under it, not an empty
+  // page saying there's more (from Codex's review).
+  const one = (await call(b.ctx, phone.messages, { token: 'phone-token', threadId, tools: true, limit: 1 })) as { messages: { role: string }[]; hasMore: boolean };
+  assert.equal(one.messages.length, 1);
+  assert.notEqual(one.messages[0]!.role, 'note');
+  assert.equal(one.hasMore, true);
+  // A runner from before API 78 doesn't ask for notes and isn't given
+  // them: its relay would draw one as a tool call and take the last turn's
+  // card away. One that asks gets them.
+  const relay = load('relay');
+  for (const fn of ['remoteMessages', 'remoteTail'] as const) {
+    const plain = (await call(b.ctx, relay[fn], { key: 'owner-key', threadId })) as { messages: { role: string }[]; hasMore: boolean };
+    assert.ok(plain.messages.length > 0, fn);
+    assert.equal(plain.messages.some((m) => m.role === 'note'), false, `${fn} without notes`);
+    assert.equal(plain.hasMore, false, fn);
+    const asked = (await call(b.ctx, relay[fn], { key: 'owner-key', threadId, notes: true })) as { messages: { role: string }[] };
+    assert.equal(asked.messages.filter((m) => m.role === 'note').length, 1, `${fn} with notes`);
+    assert.equal(asked.messages.length, plain.messages.length + 1, fn);
+  }
+  const after = (await call(b.ctx, relay.remoteMessages, { key: 'owner-key', threadId, afterSeq: 0, limit: 1 })) as { messages: { role: string }[]; hasMore: boolean };
+  assert.equal(after.messages.length, 1);
+  assert.equal(after.hasMore, true);
   // A page shared by link.
   const row = (await b.ctx.db.query('threads').collect()).find((t: any) => t.threadId === threadId) as any;
   await b.ctx.db.patch(row._id, { share: { access: 'link', slug: 'link1' } });
