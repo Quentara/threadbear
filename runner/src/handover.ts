@@ -380,48 +380,34 @@ export class Peers {
         }),
       );
       if (!old) return asked.filter((r) => r !== undefined);
-      // A release from before drain.openCards: its logs, one thread at a time
-      // so only one page waits on the connection, the whole log a page at a
-      // time from the end: a sub-agent's card can outlive the turn that asked
-      // it, with any amount of work after it (Codex's review, 13 Nov). Each
-      // thread first gets a fair share of the time left, so one that has
-      // stopped answering can't take the rest's (THREADBEAR-1Z), then any not
-      // read in its share carries on, from the page it was waiting for, with
-      // whatever time is over.
-      type LogRead = { threadId: string; log: PersistedEvent[]; before?: number; waiting?: Promise<{ events: PersistedEvent[] }> };
-      const readLog = async (r: LogRead, by: number): Promise<PersistedEvent[]> => {
-        for (;;) {
-          const left = by - Date.now();
-          // Out of time asks nothing more, but a page already here still counts.
-          if (left <= 0 && !r.waiting) throw new Error('out of time');
-          r.waiting ??= peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId: r.threadId, limit: size, ...(r.before !== undefined ? { beforeSeq: r.before } : {}) });
-          const page = await withTimeout(r.waiting, Math.max(0, left));
-          r.waiting = undefined;
-          r.log.unshift(...page.events);
-          const first = page.events[0]?.seq;
-          // Not a short page: an edit's cut can make one short mid-log.
-          if (first === undefined || first <= 1) return r.log;
-          r.before = first;
-        }
-      };
+      // A release from before drain.openCards (the first handover after it
+      // came in): its logs as before it, one thread at a time so only one
+      // page is ever out on the connection, the whole log a page at a time
+      // from the end: a sub-agent's card can outlive the turn that asked it,
+      // with any amount of work after it (Codex's review, 13 Nov). Left as it
+      // was: giving each thread a share of the time instead leaves the pages
+      // of the ones that ran out still coming, which together can reach the
+      // 32 MiB above (the other lab's review).
       const read: Read[] = [];
-      const late: LogRead[] = [];
-      for (const [i, threadId] of ids.entries()) {
-        const r: LogRead = { threadId, log: [] };
+      for (const threadId of ids) {
+        const log: PersistedEvent[] = [];
         try {
-          read.push({ peer, threadId, events: openCardEvents(await readLog(r, Date.now() + (until - Date.now()) / (ids.length - i))) });
-        } catch {
-          late.push(r);
-        }
-      }
-      for (const r of late) {
-        try {
-          read.push({ peer, threadId: r.threadId, events: openCardEvents(await readLog(r, until)) });
+          let before: number | undefined;
+          for (;;) {
+            const left = until - Date.now();
+            if (left <= 0) throw new Error('out of time');
+            const page = await withTimeout(peer.client.call<{ events: PersistedEvent[] }>('threads.events', { threadId, limit: size, ...(before !== undefined ? { beforeSeq: before } : {}) }), left);
+            log.unshift(...page.events);
+            const first = page.events[0]?.seq;
+            // Not a short page: an edit's cut can make one short mid-log.
+            if (first === undefined || first <= 1) break;
+            before = first;
+          }
         } catch (e) {
-          // Nothing more to wait for, but a page still coming is not a failure.
-          r.waiting?.catch(() => {});
-          this.deps.log.warn("could not read a draining runner's open cards", { threadId: r.threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
+          this.deps.log.warn("could not read a draining runner's open cards", { threadId, pid: peer.info.pid, error: String((e as Error)?.message ?? e) });
+          continue;
         }
+        read.push({ peer, threadId, events: openCardEvents(log) });
       }
       return read;
     };
