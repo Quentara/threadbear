@@ -103,13 +103,15 @@ test('unit-test guard permits its update clone, filters release PATHs, and keeps
 });
 
 test('unit-test preload works without a passwd entry or an existing HOME', () => {
+  const incoming = path.join(tmpDir(), 'nonexistent');
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
     import assert from 'node:assert/strict';
     import os from 'node:os';
     os.userInfo = () => { throw new Error('uid has no passwd entry'); };
     await import(${JSON.stringify(preload)});
-    assert.ok(os.homedir().includes('tb-unit-home-'));
-  `], { encoding: 'utf8', env: { ...process.env, HOME: path.join(tmpDir(), 'nonexistent') } });
+    assert.notEqual(os.homedir(), ${JSON.stringify(incoming)});
+    assert.equal(os.homedir(), process.env.HOME);
+  `], { encoding: 'utf8', env: { ...process.env, HOME: incoming } });
   assert.equal(result.status, 0, result.stderr);
 });
 

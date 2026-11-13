@@ -738,7 +738,10 @@ test("Threadbear's own patches don't make every edit ask, from a project folder 
   // ancestor .claude folders too, which must never be this user's own.
   const main = path.join(root, 'repo');
   fs.mkdirSync(main);
-  for (const dir of ['.threadbear', '.claude']) fs.cpSync(path.join(REPO, dir), path.join(main, dir), { recursive: true });
+  // A developer's ignored settings.local.json or Claude worktrees are
+  // private and must not become part of this committed fixture.
+  const tracked = execFileSync('git', ['-C', REPO, '-c', 'core.fsmonitor=false', 'ls-files', '-z', '--', '.threadbear', '.claude'], { encoding: 'utf8' });
+  for (const file of tracked.split('\0').filter(Boolean)) put(path.join(main, file), fs.readFileSync(path.join(REPO, file), 'utf8'));
   for (const file of ['worktree-setup.sh', 'check.sh', 'scripts/swift-freeze.sh']) put(path.join(main, file), fs.readFileSync(path.join(REPO, file), 'utf8'));
   const git = (...args: string[]) => execFileSync('git', ['-C', main, '-c', 'user.email=t@t', '-c', 'user.name=t', ...args], { stdio: 'pipe' });
   git('init', '-q', '-b', 'main');
