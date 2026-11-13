@@ -39,6 +39,7 @@ pub mod shortcuts;
 pub mod new_thread;
 pub mod open_anything;
 pub mod open_policy;
+pub mod browserbear;
 pub mod panel_requests;
 pub mod private_file;
 pub mod pools;

@@ -2,6 +2,7 @@
 import { After, Before, setDefaultTimeout, setWorldConstructor, Status, World, type IWorldOptions } from '@cucumber/cucumber';
 import fs from 'node:fs';
 import path from 'node:path';
+import { StandInBrowserBear } from './browserbear.ts';
 import { sleep, type Driver, type Dump, type Row, type Thread } from './driver.ts';
 import { GpuiDriver } from './gpui.ts';
 import { longThreadFolder } from './long-thread.ts';
@@ -33,6 +34,8 @@ export class ThreadbearWorld extends World {
   shareResult?: string;
   /** The thread whose page flew to its heading (archive-flight.steps.ts). */
   flownFrom?: string;
+  /** A stand-in BrowserBear, for @browserbear scenarios (support/browserbear.ts). */
+  bear?: StandInBrowserBear;
 
   constructor(options: IWorldOptions) {
     super(options);
@@ -128,6 +131,12 @@ Before(async function (this: ThreadbearWorld, { pickle }) {
   // Parts of a project: Photo sync as a part of Threadbear.
   if (pickle.tags.some((t) => t.name === '@project-parts')) process.env.TB_MOCK_PARTS = '1';
   else delete process.env.TB_MOCK_PARTS;
+  // A stand-in BrowserBear, its folder handed to the app. Without the tag the
+  // app has none: a scripted app never reaches the real one.
+  if (pickle.tags.some((t) => t.name === '@browserbear')) {
+    this.bear = await StandInBrowserBear.start();
+    process.env.BROWSERBEAR_HOME = this.bear.home;
+  } else delete process.env.BROWSERBEAR_HOME;
   // The web runtime's folder for this scenario (support/web-runtime.ts).
   if ((await webRuntimeSetup(pickle.tags.map((t) => t.name))) === 'skipped') return 'skipped';
   await this.app.start();
@@ -143,6 +152,7 @@ After(async function (this: ThreadbearWorld, { result, pickle }) {
     if (fs.existsSync(file)) this.attach(fs.readFileSync(file), 'image/png');
   }
   await this.app.stop();
+  await this.bear?.stop();
   // Only now: Windows won't remove the folder the Terminal's shell is in.
   removeTempFolders();
   webRuntimeCleanup();

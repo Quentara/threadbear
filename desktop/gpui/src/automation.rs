@@ -955,6 +955,9 @@ fn shell_step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &m
                 let Some(thread) = t.open_thread().cloned() else { return Err("no thread selected".to_string()) };
                 if let Some(id) = cmd["id"].as_str() {
                     let mut ids: Vec<String> = vec![shell::HIGHLIGHTS.to_string(), shell::FILES.to_string()];
+                    if t.browser_rail(&thread.id, cx).is_some() {
+                        ids.push(shell::BROWSER.to_string());
+                    }
                     ids.extend(thread.panels.iter().flatten().filter_map(|p| p["id"].as_str().map(String::from)));
                     if thread.patches.as_ref().is_some_and(|p| !p.is_empty()) {
                         ids.push(shell::PATCHES.to_string());

@@ -35,8 +35,9 @@ you go.
 - [x] Web panels (the Convex dashboard and the like) show a placeholder with
   Open in browser (`panel.web`, `panel.convex`, `panel.bar`; pages through the
   web runtime on a Mac since 11 Nov, with Open in browser until it's installed)
-- [ ] No Browser pane, so BrowserBear's handoffs don't show in the app
-  (`browser.*`, `rich.browserbear`, `rail.right`)
+- [x] No Browser pane, so BrowserBear's handoffs don't show in the app
+  (`browser.*`, `rich.browserbear`, `rail.right`; since 13 Nov, with the
+  sign-in link's handoff and show_panel for it)
 - [x] A reply's links all go to the system browser: no "in a panel", Chrome
   profiles or Copy Link on right-click, no hover peek, ⌘-click isn't read
   (`rich.webmenu`, `rich.filemenu`, `rich.linkpeek`, `rich.cmdclick`).

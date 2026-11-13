@@ -93,12 +93,37 @@ pub(crate) fn open_web(url: &str, cx: &mut App) -> bool {
     }
 }
 
+/// A web page from a thread, a pin or a panel, in the browser, unless an
+/// agent already has it open through BrowserBear: then that tab comes to
+/// Mike instead of a second one opening (agent_browser.rs, `handoff`; the
+/// Swift app's `openWebPage`). Anything but a web address is refused as
+/// `open_web` refuses it.
+pub(crate) fn open_web_page(url: &str, cx: &mut App) {
+    let LinkKind::Web(web) = policy::link_kind(url) else {
+        open_web(url, cx);
+        return;
+    };
+    if !crate::agent_browser::may_hand_off(&web) {
+        system_open(&web, cx);
+        return;
+    }
+    cx.spawn(async move |cx| {
+        let asked = web.clone();
+        // Up to 4 s on BrowserBear's socket, off the main thread.
+        let handed = cx.background_executor().spawn(async move { crate::agent_browser::handoff(&asked) }).await;
+        if !handed {
+            cx.update(|cx| system_open(&web, cx));
+        }
+    })
+    .detach();
+}
+
 /// Any link from a thread, a page, a patch or a pin: a web page in the
-/// browser, a file through `open_file` (a relative one from `cwd`), anything
+/// browser (or an agent's tab already on it), a file through `open_file` (a relative one from `cwd`), anything
 /// else only once Mike says yes to it.
 pub(crate) fn open_link(url: &str, origin: Origin, cwd: &str, cx: &mut App) {
     match policy::link_kind(url) {
-        LinkKind::Web(web) => system_open(&web, cx),
+        LinkKind::Web(web) => open_web_page(&web, cx),
         LinkKind::File(path) => match policy::absolute(&path, cwd, &crate::files::home_dir()) {
             Some(path) => open_file(&path, origin, cx),
             None => refuse(format!("Threadbear couldn't tell where {} is.", threadbear_core::highlights::last_component(&path)), cx),

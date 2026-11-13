@@ -688,6 +688,11 @@ impl Client {
         let url_owned = url.to_string();
         let hello = tokio::spawn(async move {
             let mut params = json!({ "client": CLIENT_NAME, "version": env!("CARGO_PKG_VERSION") });
+            // The Browser pane and BrowserBear's handoff (docs/protocol.md,
+            // "Showing panels"): BrowserBear is a Mac thing.
+            if cfg!(target_os = "macos") {
+                params["browserPanel"] = json!(true);
+            }
             if let Some(build) = HELLO_BUILD.get() {
                 params["build"] = build.clone();
             }

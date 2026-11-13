@@ -197,6 +197,9 @@ pub struct Threadbear {
     subagent_events: Option<Subscription>,
     /// An agent's show_panel requests shown so far (`panelRequestGate`).
     pub(crate) panel_gate: threadbear_core::panel_requests::Gate,
+    /// The open thread's pages handed to Mike, last looked at: the Browser
+    /// pane opens by itself when it changes (agent_browser.rs).
+    pub(crate) browser_handoff_seen: Option<String>,
     /// Pin requests whose highlights have been fetched once for them, so a
     /// pin unpinned since opens Highlights rather than fetching for good.
     pub(crate) pins_fetched: HashSet<String>,
@@ -321,6 +324,20 @@ impl Threadbear {
         let status = client.status();
         let weak_app = cx.entity().downgrade();
         let side_client = client.clone();
+        // BrowserBear's pages, before the pane that lists them.
+        let browser = crate::agent_browser::install(cx);
+        let watched = cx.entity().downgrade();
+        browser.update(cx, |b, _| {
+            b.watch_pane(move |cx| {
+                let app = watched.upgrade()?;
+                let app = app.read(cx);
+                (app.projects.open.is_none() && app.dock.read(cx).controller.is_showing(crate::agent_browser::BROWSER)).then(|| app.pane_thread().map(|t| t.id))?
+            })
+        });
+        let browser_watch = cx.observe(&browser, |this, _, cx| {
+            this.browser_changed(cx);
+            cx.notify();
+        });
         let side = cx.new(|cx| SidePane::new(weak_app, side_client, window, cx));
         crate::viewer::viewer_handle_global(side.downgrade(), cx);
         crate::open_gate::install(cx.entity().downgrade(), cx);
@@ -507,6 +524,7 @@ impl Threadbear {
             waiting_link: None,
             dock_badge: None,
             panel_gate: Default::default(),
+            browser_handoff_seen: None,
             subagent: None,
             subagent_pane: None,
             subagent_events: None,
@@ -541,7 +559,7 @@ impl Threadbear {
             tour: crate::tour::TourState::new(),
             setup: Default::default(),
             _events: events,
-            _subs: vec![appearance, searching, frame, menus, looking, quitting, side_changed, main_context],
+            _subs: vec![appearance, searching, frame, menus, looking, quitting, side_changed, main_context, browser_watch],
         };
         // Records nothing unless it's switched on in Settings (activity.rs).
         let showing = crate::activity::showing(this.dock.read(cx).layout());

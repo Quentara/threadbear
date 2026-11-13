@@ -4887,7 +4887,8 @@ the authenticated `threads.showPanel` RPC. The primary checks the Mac app's
 connection before forwarding to a draining runner. An unavailable app leaves
 no request. An accepted request can be pending without changing the selected
 thread, and its `shown` field says whether the app already acknowledged it.
-The Mac app advertises `browserPanel: true` in `hello`; a Browser request
+The Mac app advertises `browserPanel: true` in `hello`, as does the GPUI app
+on a Mac (which counts while its `gpuiApp` experiment is on); a Browser request
 returns unavailable for older apps that cannot promise this handoff path.
 
 BrowserBear uses this only for `handoff` of a page in the agents' browser, which
@@ -4899,7 +4900,8 @@ message, so a later return to the thread still shows the handoff.
 
 ### The Browser panel
 
-The Mac app's Browser panel uses BrowserBear's existing private Unix socket
+The Mac apps' Browser panel (Swift's `AgentBrowserPanel.swift`, GPUI's
+`desktop/gpui/src/agent_browser.rs`) uses BrowserBear's existing private Unix socket
 (`~/Library/Application Support/BrowserBear/browserbear.sock`). It lists the
 pages a thread is using, each with a still and a Show window button. It doesn't
 stream pages or send input to them (since 8 Nov 2026): the page is used in its

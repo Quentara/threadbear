@@ -24,6 +24,7 @@ pub(crate) const MAIN: &str = "threadbear.thread";
 pub(crate) const HIGHLIGHTS: &str = "threadbear.highlights";
 pub(crate) const FILES: &str = "threadbear.files";
 pub(crate) const PATCHES: &str = "threadbear.patches";
+pub(crate) const BROWSER: &str = crate::agent_browser::BROWSER;
 pub(crate) const USAGE: &str = "threadbear.usage";
 pub(crate) const TERMINAL: &str = "threadbear.terminal";
 /// The activity bar's other panels (activity_panels.rs), open until Mike
@@ -207,7 +208,7 @@ impl DockContent for Panels {
 
     fn available(&self, panel: &str, cx: &App) -> bool {
         let Some(app) = self.app.upgrade() else { return true };
-        app.read(cx).panel_available(panel)
+        app.read(cx).panel_available(panel, cx)
     }
 
     /// Pin on a thread's patch panel, Unpin on a pinned one (pinned_panels.rs).
@@ -259,6 +260,7 @@ fn panel_symbol(panel: &str) -> Option<&'static str> {
         TERMINAL => "terminal",
         HIGHLIGHTS => "pin",
         FILES => "folder",
+        BROWSER => "globe",
         PATCHES => "square.dashed",
         // A thread in a panel of its own, as the main panel's.
         _ if crate::thread_panels::pinned_thread(panel).is_some() => "text.alignleft",
@@ -445,6 +447,7 @@ impl Threadbear {
             TERMINAL => "Terminal".into(),
             HIGHLIGHTS => "Highlights".into(),
             FILES => "Files".into(),
+            BROWSER => "Browser".into(),
             PATCHES => "Patches".into(),
             _ => self.pane_thread().and_then(|t| t.panels.iter().flatten().find(|p| p["id"].as_str() == Some(panel)).and_then(|p| p["title"].as_str()).map(String::from)).unwrap_or_else(|| panel.to_string()),
         }
@@ -480,7 +483,7 @@ impl Threadbear {
 
     /// `available` in `RootView.content`: Highlights, Files and a thread's own
     /// panels for a thread that has them; the rest always.
-    pub(crate) fn panel_available(&self, panel: &str) -> bool {
+    pub(crate) fn panel_available(&self, panel: &str, cx: &App) -> bool {
         // Folded away with ⌘/: the main panel takes its room, and it comes
         // back at the same width (thread_panels.rs).
         if panel == THREADS {
@@ -505,6 +508,8 @@ impl Threadbear {
         let Some(thread) = self.pane_thread() else { return !project_page };
         match panel {
             HIGHLIGHTS | FILES => !project_page,
+            // While BrowserBear is on this Mac, as the rail's button.
+            BROWSER => !project_page && self.browser_rail(&thread.id, cx).is_some(),
             PATCHES => thread.patches.as_ref().is_some_and(|p| !p.is_empty()),
             other => thread.panels.iter().flatten().any(|p| p["id"].as_str() == Some(other)),
         }
@@ -1533,7 +1538,7 @@ impl Threadbear {
     /// Whether a panel is one of the side pane's sections: Highlights, Files,
     /// Patches or one of the thread's patch panels (highlights.rs).
     fn is_side_section(&self, panel: &str) -> bool {
-        matches!(panel, HIGHLIGHTS | FILES | PATCHES) || self.pane_thread().is_some_and(|t| t.panels.iter().flatten().any(|p| p["id"].as_str() == Some(panel)))
+        matches!(panel, HIGHLIGHTS | FILES | PATCHES | BROWSER) || self.pane_thread().is_some_and(|t| t.panels.iter().flatten().any(|p| p["id"].as_str() == Some(panel)))
     }
 
     /// One section of the side pane, drawn by a view of its own so two side

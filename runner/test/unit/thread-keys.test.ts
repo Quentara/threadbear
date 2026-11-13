@@ -487,8 +487,13 @@ test('the GPUI app counts as the app being open', async () => {
     const app = await RunnerClient.connect(url, token);
     await app.call('hello', { client: 'threadbear-desktop' });
     assert.equal(server.appConnected(), true);
-    assert.equal(server.appConnected(true), false, 'only the Swift app has a browser panel');
+    assert.equal(server.appConnected(true), false, 'an older GPUI app has no Browser pane');
     app.close();
+    // One that says it has the Browser pane counts for BrowserBear's handoff.
+    const browsing = await RunnerClient.connect(url, token);
+    await browsing.call('hello', { client: 'threadbear-desktop', browserPanel: true });
+    assert.equal(server.appConnected(true), true);
+    browsing.close();
   } finally {
     await server.close();
   }

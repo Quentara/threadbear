@@ -279,6 +279,7 @@ impl Threadbear {
         let highlights_shown = showing(shell::HIGHLIGHTS);
         let files_shown = showing(shell::FILES);
         let patches_shown = showing(shell::PATCHES);
+        let browser_shown = showing(shell::BROWSER);
         // The accent dot while the last turn's asks aren't all ticked.
         let open_ask = thread.asks.iter().flatten().any(|a| !a.ticked.unwrap_or(false)) && thread.asks_seq.is_some();
         let panels: Vec<(threadbear_core::highlights::Panel, bool)> = thread.panels().into_iter().map(|p| {
@@ -303,6 +304,14 @@ impl Threadbear {
             b.badge = panel.badge.map(|n| n.max(0) as usize);
             let id = panel.id.clone();
             column.push(rail_button(b, move |this, _, cx| this.click_rail(&id, cx), cx));
+        }
+        // BrowserBear's pages for this thread, while it's on this Mac: their
+        // count, and the accent dot while one's handed to Mike.
+        if let Some((pages, yours)) = self.browser_rail(&thread.id, cx).filter(|_| !project_page) {
+            let mut b = RailButton::new("rail-browser", "globe", "This thread's browser", browser_shown);
+            b.badge = Some(pages);
+            b.dot = yours;
+            column.push(rail_button(b, |this, _, cx| this.click_rail(shell::BROWSER, cx), cx));
         }
         if !project_page {
             column.push(rail_button(RailButton::new("rail-files", "folder", "Files", files_shown), |this, _, cx| this.click_rail(shell::FILES, cx), cx));
@@ -354,6 +363,9 @@ impl Threadbear {
                 if let (Some(id), Some(title)) = (p["id"].as_str(), p["title"].as_str()) {
                     right.push(json!({ "title": title, "badge": p["badge"], "active": showing(id) }));
                 }
+            }
+            if let Some((pages, yours)) = self.browser_rail(&thread.id, cx).filter(|_| !project_page) {
+                right.push(json!({ "title": "Browser", "badge": pages, "dot": yours, "active": showing(shell::BROWSER) }));
             }
             if !project_page {
                 right.push(json!({ "title": "Files", "active": showing(shell::FILES) }));

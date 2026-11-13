@@ -250,10 +250,10 @@ pub(crate) fn home_dir() -> String {
     std::env::var("HOME").or_else(|_| std::env::var("USERPROFILE")).unwrap_or_default()
 }
 
-/// A web page in the browser (the panel page is later work). Only http and
-/// https: anything else is refused by the open gate, said so.
+/// A web page in the browser, or an agent's BrowserBear tab already on it.
+/// Only http and https: anything else is refused by the open gate, said so.
 pub(crate) fn open_web(url: &str, cx: &mut App) {
-    crate::open_gate::open_web(url, cx);
+    crate::open_gate::open_web_page(url, cx);
 }
 
 /// A file on this runner in its own app, through the open gate: a document

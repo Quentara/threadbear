@@ -498,8 +498,9 @@ forms, open windows or download
 On the Mac itself, a web link you click in the app first goes to
 BrowserBear's socket (`~/Library/Application Support/BrowserBear/browserbear.sock`),
 if you have BrowserBear, to ask whether an agent's Chrome tab is already
-on that page (`app/Sources/Threadbear/BrowserBear.swift`). Only the link
-goes there.
+on that page (`app/Sources/Threadbear/BrowserBear.swift`,
+`desktop/gpui/src/agent_browser.rs`). Only the link goes there, and only a
+web address.
 
 When Google Chrome is your default browser and is running, a web link's
 right-click menu reads Chrome's `Local State`
@@ -512,7 +513,12 @@ only ever for a web address (`app/Sources/Threadbear/Transcript/ChromeProfiles.s
 
 The Browser panel also uses that private socket to list the pages agents
 associate with threads, ask for a small still of each and bring a page's real
-window to the front (`app/Sources/Threadbear/Views/AgentBrowserPanel.swift`).
+window to the front (`app/Sources/Threadbear/Views/AgentBrowserPanel.swift`,
+`desktop/gpui/src/agent_browser.rs`), looking at `agent/tabs.json` and the
+socket every 0.75 seconds while the app runs, and asking for a still every 3
+seconds only while the panel is on show. A debug build run by a script never
+reaches it unless `BROWSERBEAR_HOME` points somewhere (the specs use a
+stand-in).
 Threadbear does not read Chrome's cookie database or copy credentials, and
 stills stay on this Mac, in memory, not sent to Convex. BrowserBear stores
 thread/tab/profile associations in `panel-tabs.json` in its own folder (0600).

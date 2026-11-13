@@ -29,6 +29,8 @@ use crate::tips::Tip as _;
 pub(crate) const HIGHLIGHTS: &str = "threadbear.highlights";
 pub(crate) const PATCHES: &str = "threadbear.patches";
 pub(crate) const FILES: &str = "threadbear.files";
+/// The Browser pane (agent_browser.rs).
+pub(crate) const BROWSER: &str = crate::agent_browser::BROWSER;
 
 /// The pane's width (WindowDock's default for the right side). The shell agent's
 /// dock panel will size it itself.
@@ -273,6 +275,8 @@ pub(crate) struct SidePane {
     pub(crate) drawn: HashMap<String, String>,
     /// Words selected in a thread, explained (explain_pane.rs).
     pub(crate) explain: crate::explain_pane::ExplainState,
+    /// The Browser pane's address bar (agent_browser.rs).
+    pub(crate) browser: crate::agent_browser::BrowserPaneState,
     _subs: Vec<Subscription>,
 }
 
@@ -308,6 +312,7 @@ impl SidePane {
             widths: HashMap::new(),
             drawn: HashMap::new(),
             explain: Default::default(),
+            browser: Default::default(),
             _subs: vec![],
         };
         pane.chosen = pane.places.iter().filter_map(|(id, p)| Some((id.clone(), p.section.clone()?))).collect();
@@ -315,6 +320,10 @@ impl SidePane {
         // summary's seq and highlight stamp for "fetch again".
         if let Some(app) = pane.app.upgrade() {
             pane._subs.push(cx.observe_in(&app, window, |this, app, _window, cx| this.app_changed(&app, cx)));
+        }
+        // The Browser pane's pages and stills, as BrowserBear changes them.
+        if let Some(browser) = crate::agent_browser::model(cx) {
+            pane._subs.push(cx.observe(&browser, |_, _, cx| cx.notify()));
         }
         pane.load_projects(cx);
         pane.load_schedules(cx);
@@ -494,7 +503,7 @@ impl SidePane {
     /// there, else Highlights (`paneSection`). Previews open over it.
     pub(crate) fn section_for(&self, thread: &ThreadSummary) -> String {
         let remembered = self.chosen.get(&thread.id).cloned().unwrap_or_else(|| HIGHLIGHTS.to_owned());
-        let exists = remembered == HIGHLIGHTS || remembered == FILES || (remembered == PATCHES && thread.patches.as_ref().is_some_and(|p| !p.is_empty())) || thread.panels().iter().any(|p| p.id == remembered);
+        let exists = remembered == HIGHLIGHTS || remembered == FILES || remembered == BROWSER || (remembered == PATCHES && thread.patches.as_ref().is_some_and(|p| !p.is_empty())) || thread.panels().iter().any(|p| p.id == remembered);
         if exists {
             remembered
         } else {
@@ -507,6 +516,7 @@ impl SidePane {
     pub(crate) fn section_ids(thread: &ThreadSummary) -> Vec<String> {
         let mut ids = vec![HIGHLIGHTS.to_owned()];
         ids.extend(thread.panels().into_iter().map(|p| p.id));
+        ids.push(BROWSER.to_owned());
         ids.push(FILES.to_owned());
         if thread.patches.as_ref().is_some_and(|p| !p.is_empty()) {
             ids.push(PATCHES.to_owned());
@@ -566,7 +576,7 @@ impl SidePane {
     pub(crate) fn section_shown(&mut self, id: &str, thread_id: &str, cx: &mut Context<Self>) {
         if id == FILES {
             self.load_folder_for_files(thread_id, cx);
-        } else if id != HIGHLIGHTS && id != PATCHES {
+        } else if id != HIGHLIGHTS && id != PATCHES && id != BROWSER {
             self.refresh_panel(thread_id, id, cx);
         }
     }
@@ -1585,6 +1595,7 @@ impl SidePane {
             HIGHLIGHTS => "Highlights".to_owned(),
             PATCHES => "Patches".to_owned(),
             FILES => "Files".to_owned(),
+            BROWSER => "Browser".to_owned(),
             id => thread.panels().into_iter().find(|p| p.id == id).map_or_else(|| id.to_owned(), |p| p.title),
         }
     }
@@ -1700,6 +1711,7 @@ impl SidePane {
                 HIGHLIGHTS => (self.render_highlights(&thread, window, cx), "highlights".to_owned()),
                 PATCHES => (self.render_patches(&thread, cx), "patches".to_owned()),
                 FILES => (self.render_files_panel(&thread, window, cx), "files".to_owned()),
+                BROWSER => (self.render_browser_panel(&thread, window, cx), "browser".to_owned()),
                 id => (self.render_panel(&thread, id, window, cx), format!("panel {id}")),
             }
         };
@@ -1761,6 +1773,9 @@ impl SidePane {
         let mut items = vec![json!({ "id": HIGHLIGHTS, "title": "Highlights", "kind": "highlights", "active": section == HIGHLIGHTS })];
         for panel in thread.panels() {
             items.push(json!({ "id": panel.id, "title": panel.title, "kind": panel.kind, "url": panel.url, "note": panel.note, "active": section == panel.id }));
+        }
+        if crate::agent_browser::model(cx).is_some_and(|b| b.read(cx).available()) {
+            items.push(json!({ "id": BROWSER, "title": "Browser", "kind": "browser", "active": section == BROWSER }));
         }
         items.push(json!({ "id": FILES, "title": "Files", "kind": "files", "active": section == FILES }));
         if thread.patches.as_ref().is_some_and(|p| !p.is_empty()) {
@@ -1826,6 +1841,7 @@ impl SidePane {
             HIGHLIGHTS => self.fill_highlights_dump(&mut pane, thread, cx),
             PATCHES => self.fill_patches_dump(&mut pane, thread),
             FILES => {}
+            BROWSER => self.fill_browser_dump(&mut pane, thread, cx),
             id => {
                 self.fill_panel_dump(&mut pane, thread, id);
                 // A page panel's page, drawn by web_panels.rs.
