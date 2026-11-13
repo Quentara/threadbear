@@ -286,6 +286,22 @@ built parsers and gates with no launch of the app, which is the trap.)
   `@gpui-pending` before); core's tab and shortcut tests; dark pictures of a
   scripted app on the mock's Threadbear project, on each tab, with Go's
   items greyed at the ends.
+### 2026-11-13 A click with another app in front presses what it lands on (`foundation.firstclick`)
+
+- Nothing to port: GPUI's window says yes to AppKit's `acceptsFirstMouse`
+  (gpui-fast-macos's window.rs), so the click that brings the app forward
+  goes on to the control, as the Swift app's FirstClick.swift arranges view
+  by view. The open question was the web panels, where the click lands on
+  Chromium's own view rather than GPUI's; it takes it too.
+- `features/tools/first-click.ts` checks it with real clicks, as only those
+  go through AppKit: Finder in front with no window over the app's, then a
+  click on a thread in the list, on the activity bar's Scheduled button, and
+  on a link in a web panel's page.
+- Verification: `first-click.ts` on Tinker Desk's desktop (perf lock held),
+  twice: the thread opened, the schedules showed and the page followed its
+  link, each on the first click, with the app coming in front each time.
+  Not tried: PDF and video previews (their own views say yes,
+  media_views.m) and the Terminal.
 
 ### 2026-11-13 The first-run tour, the pages' intros and Finish setting up (`tour.firstrun`, `tour.intros`, `tour.setup`, `menu.help`)
 
