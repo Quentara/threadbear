@@ -712,3 +712,32 @@ test('a "fix" that itself breaks the check is left out in the end, and the rest 
   assert.ok(!fs.existsSync(path.join(main, 'fix.txt')));
   assert.deepEqual(codes.slice(0, 2), [1, 1]);
 });
+
+test("an ordinary landing doesn't get past the red hold by riding with a fix that moved its file into a held folder", async () => {
+  const { root, main } = makeRepo();
+  commit(main, { 'shared.txt': 'one\ntwo\nthree\n' }, 'Shared');
+  const [a, n, f] = branches(main, ['a', 'n', 'f']);
+  commit(n.path, { 'shared.txt': 'one\nTWO by n\nthree\n' }, 'Edit shared');
+  sh(f.path, 'mkdir -p guard && git mv shared.txt guard/shared.txt && git commit -qm "Move shared into guard"');
+  const hold = async (_r: string, files: string[]) => (files.some((x) => x.startsWith('guard/')) ? 'Held: guard is red on main.' : undefined);
+  const check = slowCheck(root);
+  const first = land({ ...a, check }, capture().opts);
+  await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+  const cn = capture();
+  const cf = capture();
+  const rest = [land({ ...n, check }, { ...cn.opts, hold }), land({ ...f, check }, { ...cf.opts, hold, despiteRed: true })];
+  try {
+    await until(() => [cn, cf].every((x) => x.out.some((l) => l.startsWith('Waiting for another landing'))), 'both waiting');
+  } finally {
+    write(root, { release: '' });
+  }
+  assert.equal(await first, 0);
+  const [nCode, fCode] = await Promise.all(rest);
+  assert.equal(fCode, 0, cf.out.concat(cf.err).join('\n'));
+  if (nCode === 0) {
+    // Landed, then only as an edit outside the held folder.
+    assert.match(sh(main, 'git show --name-only --format= "main^{/Edit shared}"'), /^shared\.txt$/);
+  } else {
+    assert.match(cn.err.join('\n'), /Held: guard is red on main\./);
+  }
+});

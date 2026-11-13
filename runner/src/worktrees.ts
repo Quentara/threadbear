@@ -921,21 +921,28 @@ async function holdFor(cwd: string, from: string, to: string, hold: NonNullable<
   return hold(cwd, changed.stdout.split('\0').filter(Boolean));
 }
 
-// Why a group's files can't land now: what each member changes (its own
-// commits, as it asked), except a fix's, the repair for what's red.
+// Why a group's files can't land now: what each member's commits change
+// as they're stacked (replayed, so a fix that moved a file ahead of it is
+// followed to where the change really lands), and this one's on top,
+// except a fix's: that's the repair for what's red.
 async function groupHeld(
   t: LandTarget,
   main: string,
-  own: string,
-  group: { entry: QueueEntry }[],
+  group: { entry: QueueEntry; tip: string }[],
+  top: string,
   opts: LandOptions,
 ): Promise<string | undefined> {
   if (!opts.hold) return undefined;
-  const ranges: [string, string][] = group.filter((g) => !g.entry.fix).map((g) => [g.entry.base, g.entry.commit]);
-  if (!opts.despiteRed) ranges.push([main, own]);
+  const ranges: [string, string][] = [];
+  let prev = main;
+  for (const g of group) {
+    if (!g.entry.fix) ranges.push([prev, g.tip]);
+    prev = g.tip;
+  }
+  if (!opts.despiteRed) ranges.push([prev, top]);
   const files = new Set<string>();
   for (const [from, to] of ranges) {
-    const changed = await git(t.path, ['diff', '--name-only', '-z', `${from}...${to}`]);
+    const changed = await git(t.path, ['diff', '--name-only', '-z', `${from}..${to}`]);
     if (!changed.ok) return `Couldn't read what ${to} changes in ${t.path}, so nothing landed. Run tb land again.`;
     for (const f of changed.stdout.split('\0').filter(Boolean)) files.add(f);
   }
@@ -1078,14 +1085,17 @@ async function landLocked(
     }
     if (!opts.dryRun && !ready.hasMerge) {
       let stacked = await stackWaiting(t, common, main, limit, check ?? null, opts.checkFrom ?? '', withFixes);
+      let top = stacked.group.length ? await replay(t.path, main, own, stacked.tip) : undefined;
       // Held on GitHub for what the others change (not a fix's, which is
       // the repair): then only the fixes go with it, and the others go by
-      // themselves later, each hearing why.
-      if (opts.hold && stacked.group.length && (await groupHeld(t, main, own, stacked.group, opts))) {
+      // themselves later, each hearing why. Still held with only the fixes
+      // (this one's own change, moved by one): it goes alone.
+      if (opts.hold && top && (await groupHeld(t, main, stacked.group, top, opts))) {
         stacked = await stackWaiting(t, common, main, limit, check ?? null, opts.checkFrom ?? '', withFixes, false);
+        top = stacked.group.length ? await replay(t.path, main, own, stacked.tip) : undefined;
+        if (top && (await groupHeld(t, main, stacked.group, top, opts))) top = undefined;
       }
       if (stacked.group.length) {
-        const top = await replay(t.path, main, own, stacked.tip);
         if (top && top !== stacked.tip) {
           try {
             fs.writeFileSync(detachedMarker(gitDir), JSON.stringify({ branch: t.branch, own, top }));
@@ -1243,7 +1253,7 @@ async function landLocked(
     // Asked again now the check is done: a run that was going when it
     // started may have failed since. Others in the group wait their turn.
     if (opts.hold && !opts.dryRun) {
-      const held = group.length ? await groupHeld(t, main, own, group, opts) : opts.despiteRed ? undefined : await holdFor(t.path, main, checked, opts.hold);
+      const held = group.length ? await groupHeld(t, main, group, checked, opts) : opts.despiteRed ? undefined : await holdFor(t.path, main, checked, opts.hold);
       if (held) {
         if (!(await back())) err(stuck);
         return fail(held);
