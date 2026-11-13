@@ -711,6 +711,14 @@ while :; do
     guard_pid="$BASE_REL/check-$id.pid"
     inner="\$HOME/.local/bin/desk $(printf '%q' "perl -e 'setpgrp(0, 0); exec @ARGV' /bin/bash $(printf '%q' "$remote_run/scripts/check-remote.sh") --on-host $id --pidfile $guard_pid$quoted")"
   fi
+  # Under hangup-guard.sh, so the check stops there when this does, or when
+  # `watched` gives up on the host, rather than running on with the host's
+  # lock (13 Nov, remote.sh's run that went on recording on Tinker Desk). Its
+  # stdin is the ssh's, which lockf and flock pass on: see alive_stdin. Inside
+  # the lock, so a Desk Runner check has stopped before the next one can
+  # start (Codex's review). One that loses its ssh while waiting for the lock
+  # stops as soon as it gets it.
+  guarded="$(guarded_cmd "$guard_pid" /bin/bash -c "$inner")"
   lock="$remote_base/lock"
   # A free host is taken without waiting (75 if another check got there
   # first); otherwise this waits for its turn.
@@ -718,11 +726,11 @@ while :; do
   [ "$FREE" = 1 ] && [ "$tries" -lt 3 ] && now=1
   if [ "$HOST_OS" = Linux ]; then
     # A server that runs its own runner and threads: the check goes in under them.
-    run="nice -n 10 /bin/bash -c $(printf '%q' "$inner")"
+    run="nice -n 10 $guarded"
     if [ "$now" = 1 ]; then remote_cmd="flock -n -E 75 $lock $run"
     else remote_cmd="flock -n $lock true 2>/dev/null || echo 'Waiting for another check on $HOST to finish...'; flock $lock $run"; fi
   else
-    run="/bin/bash -c $(printf '%q' "$inner")"
+    run="$guarded"
     if [ "$now" = 1 ]; then remote_cmd="/usr/bin/lockf -t 0 -k $lock $run"
     else remote_cmd="/usr/bin/lockf -t 0 $lock true 2>/dev/null || echo 'Waiting for another check on $HOST to finish...'; /usr/bin/lockf -k $lock $run"; fi
   fi
@@ -730,12 +738,7 @@ while :; do
   # A failed step's log path is on the host: its logs come back here, and the
   # path in the output is changed to match.
   local_logs="$(mktemp -d "${TMPDIR:-/tmp}/threadbear-check-remote.XXXXXX")"
-  # Under hangup-guard.sh, so the check stops there when this does, or when
-  # `watched` gives up on the host, rather than running on with the host's
-  # lock (13 Nov, remote.sh's run that went on recording on Tinker Desk). Its
-  # stdin is the guard's: see alive_stdin.
-  guarded="$(guarded_cmd "$guard_pid" /bin/bash -c "$remote_cmd")"
-  check_ssh() { "${SSH[@]}" "$HOST" "$guarded" <&7; }
+  check_ssh() { "${SSH[@]}" "$HOST" "$remote_cmd" <&7; }
   # In the background with a wait, so a TERM, HUP or INT to this script is
   # taken at once (on_signal) rather than once the check ends: bash holds a
   # trap until a pipeline it's waiting on has finished (Codex's review).

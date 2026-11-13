@@ -51,13 +51,16 @@ target="$base/target-$key"
 # the same file. perl for macOS, which has no flock command.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/remote-guard-lib.sh"
 ssh_pid=""
-# The turn is kept for 6 s after: the guard there takes up to 5 to stop a
-# command that ignores TERM, and the next run mustn't copy over its folder
-# while it's still going (Codex's review).
+# The turn is kept until the host says the run has gone (30 s at most): the
+# guard there takes up to 5 s to stop a command that ignores TERM, and the
+# next run mustn't copy over its folder while it's still going (Codex's
+# review). [r] so the pgrep's own shell, whose command line has the pattern
+# in it, doesn't count. A host that can't be reached says nothing either way.
 on_signal() {
   if [ -n "$ssh_pid" ]; then
     kill "$ssh_pid" 2>/dev/null
-    sleep 6
+    ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
+      "i=0; while pgrep -f '[r]un-$tag' >/dev/null && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i + 1)); done" </dev/null >/dev/null 2>&1 || true
   fi
   exit "$1"
 }
