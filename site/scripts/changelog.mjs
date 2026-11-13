@@ -20,8 +20,11 @@
 //         "media"?: { "type": "clip", "src": "x.mp4", "poster": "x.webp", "width", "height", "alt" }
 //                 | { "type": "image", "src": "x.webp", "width", "height", "alt" } }
 //     ],
-//     "added": ["..."], "changed": ["..."], "fixed": ["..."]
+//     "added": ["...", { "text": "...", "credit": "Wayne Sutton" }], "changed": [...], "fixed": [...]
 //   }
+// A line is its text, or { text, credit } when it came from someone else: their PR, fork, issue
+// or report (Mike, 13 Nov: "attribute any fixes or whatever to people if it came from other
+// people"). Highlights take a credit the same way.
 // Media names are relative to /media/changelog/<release>/.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -47,7 +50,8 @@ export function readReleases(dir) {
     if (r.release !== file.slice(0, 10)) throw new Error(`${where}: "release" should be ${file.slice(0, 10)}`);
     for (const k of KINDS) {
       r[k] ??= [];
-      if (!Array.isArray(r[k]) || r[k].some((l) => typeof l !== "string" || !l.trim())) throw new Error(`${where}: "${k}" should be a list of lines`);
+      const ok = (l) => (typeof l === "string" ? l.trim() : l && typeof l.text === "string" && l.text.trim() && typeof l.credit === "string" && l.credit.trim());
+      if (!Array.isArray(r[k]) || !r[k].every(ok)) throw new Error(`${where}: "${k}" should be a list of lines, each its text or { text, credit }`);
     }
     r.highlights ??= [];
     r.highlights.forEach((h, i) => {
@@ -104,8 +108,14 @@ function media(release, m) {
   throw new Error(`Unknown media type ${m.type}`);
 }
 
+/** "Thanks to <name>" after a card's or a line's text, when it came from someone else. */
+const creditTag = (who) => (who ? ` <span class="cl-credit">Thanks to ${pageText(who)}</span>` : "");
+
+/** A plain line: its text, and who it came from when it says. */
+const lineHtml = (l) => (typeof l === "string" ? pageText(l) : `${pageText(l.text)}${creditTag(l.credit)}`);
+
 function highlight(release, h) {
-  const credit = h.credit ? ` <span class="cl-credit">Thanks to ${pageText(h.credit)}</span>` : "";
+  const credit = creditTag(h.credit);
   return `          <article class="cl-feature">
             <p class="cl-kind ${h.kind}">${LABELS[h.kind]}</p>
             <h3>${pageText(h.title)}</h3>
@@ -127,7 +137,7 @@ export function changelogPage({ releases, githubUrl }) {
     const lists = KINDS.filter((k) => r[k].length).map((k) => `            <div>
               <p class="cl-kind ${k}">${r.highlights.length ? (k === "added" ? "Also new" : `Also ${k}`) : LABELS[k]}</p>
               <ul>
-${r[k].map((l) => `                <li>${pageText(l)}</li>`).join("\n")}
+${r[k].map((l) => `                <li>${lineHtml(l)}</li>`).join("\n")}
               </ul>
             </div>`);
     return `        <section class="cl-release" id="${r.release}" aria-labelledby="h-${r.release}">
