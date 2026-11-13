@@ -44,7 +44,8 @@
 #                  --home and --label; its port defaults to 0, a free one.
 #   --node PATH    Node 24 binary to pin in the plist
 #                  (default: $THREADBEAR_NODE, else the node on PATH, else
-#                  nvm's newest Node 24 or newer, or Homebrew's)
+#                  nvm's newest Node 24 or newer, or Homebrew's; a
+#                  Homebrew Cellar path is pinned as its opt/ link)
 #   --runner-app DIR  where Threadbear Runner.app goes (default:
 #                  $THREADBEAR_RUNNER_APP_DIR, else ~/Applications/Threadbear
 #                  Runner.app, or <home>/runner/Threadbear Runner.app for a
@@ -107,6 +108,17 @@ done
 if [ -z "$NODE" ]; then
   . "$RUNNER_DIR/scripts/find-node.sh"
   NODE="$(threadbear_find_node 2>/dev/null)" || NODE=""
+fi
+
+# A Homebrew Node under Cellar/<formula>/<version> is deleted by the next
+# `brew upgrade`, and a runner pinned to it can't start Node again: no
+# restart, no deploy, no release build. Node gives its own path with links
+# resolved, so a runner started on /opt/homebrew/bin/node hands its threads
+# (and so this script, through THREADBEAR_NODE) the Cellar one. Pin the
+# formula's opt/ link instead, which Homebrew moves to each new version
+# (teodorboev's fork, 9 Nov 2026).
+if [[ "$NODE" =~ ^(.*)/Cellar/([^/]+)/[^/]+/bin/node$ ]] && [ -x "${BASH_REMATCH[1]}/opt/${BASH_REMATCH[2]}/bin/node" ]; then
+  NODE="${BASH_REMATCH[1]}/opt/${BASH_REMATCH[2]}/bin/node"
 fi
 
 case "$DATA_HOME" in /*) ;; *) DATA_HOME="$PWD/$DATA_HOME" ;; esac

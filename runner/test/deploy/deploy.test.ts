@@ -16,7 +16,14 @@ import { pathToFileURL } from 'node:url';
 
 const RUNNER = path.join(import.meta.dirname, '..', '..');
 const FAKE_LAUNCHCTL = path.join(import.meta.dirname, 'fake-launchctl.mjs');
-const NODE = process.execPath;
+// install-runner.sh pins a Homebrew Cellar Node as its opt/ link, so on a
+// Mac whose Node is Homebrew's the plist names that one.
+function stableNode(p: string): string {
+  const m = /^(.*)\/Cellar\/([^/]+)\/[^/]+\/bin\/node$/.exec(p);
+  const opt = m ? path.join(m[1]!, 'opt', m[2]!, 'bin', 'node') : undefined;
+  return opt && fs.existsSync(opt) ? opt : p;
+}
+const NODE = stableNode(process.execPath);
 const LABEL = 'com.mikerosoft.threadbear.runner.devtest';
 const TARGET = `gui/${process.getuid!()}/${LABEL}`;
 const ID_RE = /^\d{8}T\d{6}Z-[0-9a-f]{7,}(-dirty)?$/;
@@ -1038,6 +1045,33 @@ test('no deploy to a LaunchAgent that runs a checkout, or to none', () => {
     assert.match(r.stderr, /--label com\.mikerosoft\.threadbear\.runner\.devtest, which builds/);
   } finally {
     fs.rmSync(path.join(agents, `${label}.plist`));
+  }
+});
+
+// Homebrew deletes Cellar/<formula>/<version> on the next `brew upgrade`, and
+// a runner pinned to it can't start Node again: no restart, no deploy. Its
+// opt/<formula> link moves to each new version (teodorboev's fork, 9 Nov).
+test('install-runner.sh pins a Homebrew Cellar Node as its opt/ link, which outlives brew upgrade', () => {
+  const brew = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-brew-'));
+  try {
+    const cellarBin = path.join(brew, 'Cellar', 'node', '26.1.0', 'bin');
+    fs.mkdirSync(cellarBin, { recursive: true });
+    fs.symlinkSync(process.execPath, path.join(cellarBin, 'node'));
+    fs.mkdirSync(path.join(brew, 'opt'));
+    fs.symlinkSync(path.join('..', 'Cellar', 'node', '26.1.0'), path.join(brew, 'opt', 'node'));
+    const optBin = path.join(brew, 'opt', 'node', 'bin');
+    const r = sh('install-runner.sh', ['--home', home, '--label', LABEL, '--port', '0', '--path', '/usr/bin:/bin', '--print'], { THREADBEAR_NODE: path.join(cellarBin, 'node') });
+    assert.equal(r.status, 0, out(r));
+    assert.ok(r.stdout.includes(`<string>${path.join(optBin, 'node')}</string>`), out(r));
+    assert.ok(r.stdout.includes(`<string>${optBin}:`), out(r));
+    assert.ok(!r.stdout.includes('Cellar'), out(r));
+    // Without an opt/ link (not Homebrew's layout after all), as given.
+    fs.rmSync(path.join(brew, 'opt'), { recursive: true });
+    const plain = sh('install-runner.sh', ['--home', home, '--label', LABEL, '--port', '0', '--path', '/usr/bin:/bin', '--print'], { THREADBEAR_NODE: path.join(cellarBin, 'node') });
+    assert.equal(plain.status, 0, out(plain));
+    assert.ok(plain.stdout.includes(`<string>${path.join(cellarBin, 'node')}</string>`), out(plain));
+  } finally {
+    fs.rmSync(brew, { recursive: true, force: true });
   }
 });
 
