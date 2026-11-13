@@ -59,7 +59,7 @@ test('unit-test guard fails even when a real-account read error is caught', () =
     const result = child(`
       import fs, { statSync } from 'node:fs';
       import os from 'node:os';
-      const file = os.userInfo().homedir + '/.codex/config.toml';
+      const file = os.userInfo().homedir + '/.codex/threadbear-unit-guard-probe';
       try { ${operation}; } catch {}
     `);
     assert.equal(result.status, 1, operation + ': ' + result.stderr);
@@ -73,7 +73,7 @@ test('unit-test guard follows a fixture symlink back to a real account', () => {
     import os from 'node:os';
     const alias = process.env.HOME + '/alias';
     fs.symlinkSync(os.userInfo().homedir, alias);
-    try { fs.existsSync(alias + '/.claude.json'); } catch {}
+    try { fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe'); } catch {}
   `);
   assert.equal(result.status, 1, result.stderr);
   assert.match(result.stderr, /Unit tests accessed real account folders/);
