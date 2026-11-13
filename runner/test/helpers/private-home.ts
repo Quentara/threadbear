@@ -29,8 +29,10 @@ process.env.HOME = testHome;
 process.env.USERPROFILE = testHome;
 // On check hosts TMPDIR is under the real home. Trust scans walk a
 // fixture's ancestors up to HOME, so its temp files must be below HOME too.
+// Private whatever the umask: a 002 umask (the cloud box) made it 775, and
+// private-dir.mjs then refused every folder under it as shared.
 const temp = path.join(testHome, 'tmp');
-fs.mkdirSync(temp);
+fs.mkdirSync(temp, { mode: 0o700 });
 for (const key of ['TMPDIR', 'TMP', 'TEMP']) process.env[key] = temp;
 for (const [name, suffix] of Object.entries({ XDG_CONFIG_HOME: '.config', XDG_DATA_HOME: '.local/share', XDG_CACHE_HOME: '.cache', XDG_STATE_HOME: '.local/state', CODEX_HOME: '.codex' })) {
   process.env[name] = path.join(testHome, suffix);
