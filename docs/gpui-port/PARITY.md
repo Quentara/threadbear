@@ -303,6 +303,16 @@ built parsers and gates with no launch of the app, which is the trap.)
   window in place on every frame. The one visible change was that run's
   first-run tour card fading in again, as its throwaway data folder had
   never finished the tour.
+- Codex (gpt-6.1-sol) tried to break it twice. What held up is fixed:
+  drafts and settings stay the old app's until the new one takes over,
+  the go waits for anything a restart by itself would have waited for
+  (a shell, a menu, a picture still coming in) that started while the new
+  copy loaded, the old window stops taking clicks as it says go, a new copy
+  that dies after ready or before done gets the old way's restart, and the
+  places carried in the go replace any the new copy was still paging to.
+  Left as it is: a setting changed in the old window during the second or
+  two of loading is in the new app's file but not on screen until it's
+  next opened. The restart ran again after each round, the same way.
 
 ### 2026-11-13 A project's page in tabs, with Go's Show Previous and Next Tab (`projects.tabs`)
 
