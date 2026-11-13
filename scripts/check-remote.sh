@@ -516,6 +516,10 @@ choose() {
       if [ "$rc" != 255 ] && kb="$(watched "$h" "${SSH[@]}" "$h" "cd ~ && $free_cmd" 2>/dev/null)"; then
         if low_on_room "$kb"; then pass_over "$h"
         else cant_run "$h" "it answered, but couldn't make or lock ~/$BASE_REL there (exit $rc)"; fi
+      elif [ "$rc" != 255 ]; then
+        # Not ssh's own 255: it logged in and its commands failed (a home it
+        # can't open, say). Answered all the same (Codex, 14 Nov).
+        cant_run "$h" "it answered, but its commands there failed (exit $rc)"
       else
         echo "Couldn't reach $h over ssh." >&2
       fi
@@ -898,6 +902,11 @@ while :; do
       echo "Lost the connection to $HOST during the check; trying the others." >&2
       SKIP+=" $HOST"
       timed 10 "${SSH[@]}" -O exit "$HOST" >/dev/null 2>&1
+      # A new connection still gets in: the check's channel broke, not the
+      # host, which is no reason to run it here (Codex, 14 Nov).
+      if timed 20 "${PING[@]}" "$HOST" true </dev/null >/dev/null 2>&1; then
+        CANT_COPY+="${CANT_COPY:+; }$HOST: the check's connection broke, though it still answers"
+      fi
     else
       dropped "$HOST"
     fi

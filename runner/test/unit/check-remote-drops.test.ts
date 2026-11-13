@@ -92,14 +92,20 @@ test('a run past the overall limit is stopped, and not as unreachable', () => {
   assert.match(r.stderr, /This check has been going for 0 minutes, waiting in line included, so it was stopped\./);
 });
 
-test('a connection lost during the check goes to the next host, and with none to this Mac (255)', () => {
+test('a connection lost during the check goes to the next host, and with none to this Mac only if the host is gone (255)', () => {
   const s = setup({ h1: { state: 'free', drop: true }, h2: { state: 'free' } });
   const r = s.run('h1,h2', 3600);
   assert.equal(r.status, 0, r.stdout + r.stderr);
   assert.match(r.stderr, /Lost the connection to h1 during the check; trying the others\./);
   assert.match(r.stdout, /ran on h2 now/);
+  // The host gone with it: unreachable, so this Mac's.
+  const gone = setup({ h1: { state: 'free', drop: true, dropDead: true } }).run('h1', 3600);
+  assert.equal(gone.status, 255, gone.stdout + gone.stderr);
+  // Still answering a new connection: the check's channel broke, not the
+  // host, so it fails rather than run here (Codex, 14 Nov).
   const alone = setup({ h1: { state: 'free', drop: true } }).run('h1', 3600);
-  assert.equal(alone.status, 255, alone.stdout + alone.stderr);
+  assert.equal(alone.status, 1, alone.stdout + alone.stderr);
+  assert.match(alone.stderr, /h1: the check's connection broke, though it still answers/);
 });
 
 test('--on-host stops a run past its own limit, so a host this Mac gave up on frees its lock', () => {

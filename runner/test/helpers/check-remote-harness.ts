@@ -55,7 +55,7 @@ run_copy() {
   # "stubborn": the same, but the hung check ignores SIGTERM.
   if [ -f "$d/stubborn" ]; then : >"$d/dead"; trap '' TERM; sleep 300; exit 0; fi
   # A host's "drop" file: the connection goes during the check (ssh's 255).
-  [ ! -f "$d/drop" ] || exit 255
+  [ ! -f "$d/drop" ] || { [ ! -f "$d/drop-dead" ] || : >"$d/dead"; exit 255; }
   script="$(printf '%s' "$cmd" | grep -oE "$d/home/[^ \\\\']*/scripts/check-remote.sh" | head -1)"
   if [ -n "$script" ] && [ -f "$script" ] && [ -f "$(dirname "$script")/../.check-changed" ]; then
     # A host's "slow" file: the check takes that many seconds, its copy moved
@@ -156,7 +156,7 @@ export const GiB = 1024 * 1024;
 
 // df: what the host's df prints (plenty free, if not given). dfAfter: what it
 // prints once a copy or a run has failed there. os: Linux, if not a Mac.
-type Host = { state: string; lose?: number; looksFree?: boolean; base?: string; df?: string; dfAfter?: string; os?: string; hang?: boolean; hangCopy?: boolean; drop?: boolean; stubborn?: boolean; queue?: number; loseAck?: boolean; freeAfter?: number; slow?: number };
+type Host = { state: string; lose?: number; looksFree?: boolean; base?: string; df?: string; dfAfter?: string; os?: string; hang?: boolean; hangCopy?: boolean; drop?: boolean; dropDead?: boolean; stubborn?: boolean; queue?: number; loseAck?: boolean; freeAfter?: number; slow?: number };
 export function setup(hosts: Record<string, Host>, opts: { home?: string } = {}) {
   const tmp = tmpDir('check-remote-');
   const home = opts.home ?? shortHome();
@@ -180,6 +180,7 @@ export function setup(hosts: Record<string, Host>, opts: { home?: string } = {})
     if (s.hang) fs.writeFileSync(path.join(fake, h, 'hang'), '');
     if (s.stubborn) fs.writeFileSync(path.join(fake, h, 'stubborn'), '');
     if (s.drop) fs.writeFileSync(path.join(fake, h, 'drop'), '');
+    if (s.dropDead) fs.writeFileSync(path.join(fake, h, 'drop-dead'), '');
     if (s.queue !== undefined) fs.writeFileSync(path.join(fake, h, 'queue'), String(s.queue));
     if (s.freeAfter !== undefined) fs.writeFileSync(path.join(fake, h, 'free-after'), String(s.freeAfter));
     if (s.loseAck) fs.writeFileSync(path.join(fake, h, 'lose-ack'), '');
