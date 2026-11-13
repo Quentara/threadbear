@@ -3633,7 +3633,12 @@ export class ConvexSync {
         this.arrivedFrom.delete(id);
         continue;
       }
-      docs.push(...this.messagesAfter(t, from));
+      // A log that can't be read whole now is tried again with the next
+      // flush: what part of it came back mustn't retire the head (Codex's
+      // review).
+      const got = this.messagesAfter(t, from, true);
+      if (!got) continue;
+      docs.push(...got);
       ids.push(id);
     }
     return { docs, ids };

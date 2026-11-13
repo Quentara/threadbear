@@ -942,3 +942,37 @@ test("a kept thread's handover gap that fails to go up once it comes across goes
   assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
   await third.stop();
 });
+
+// And from its third: a log read that failed (too many open files, say)
+// gave back nothing, which went up fine, and that retired the head too.
+test("a kept thread's handover gap whose log can't be read when it comes across goes once it can", async () => {
+  const s = setup();
+  const t = s.h.runner.create({ text: 'busy', cwd: s.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await firstStart(s);
+  s.h.runner.send(t.id, 'written during the handover');
+  await settle();
+  await s.h.runner.letGo(s.h.runner.threads.get(t.id)!);
+  s.elsewhere.add(t.id);
+  const again = s.make();
+  again.start();
+  await settle();
+  s.h.clock.advance(SETTLE_MS);
+  await settle();
+  await again.flushNow();
+  s.elsewhere.delete(t.id);
+  s.h.runner.adopt(t.id);
+  const events = s.h.runner.events.bind(s.h.runner);
+  s.h.runner.events = () => {
+    throw new Error('EMFILE');
+  };
+  s.h.clock.advance(2000);
+  await settle();
+  await again.flushNow();
+  s.h.runner.events = events;
+  s.h.clock.advance(2000);
+  await settle();
+  await again.flushNow();
+  const sent = s.named('sync:appendMessages').flatMap((c) => c.args.messages as { threadId: string; text: string }[]).filter((m) => m.threadId === t.id).map((m) => m.text);
+  assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
+  await again.stop();
+});
