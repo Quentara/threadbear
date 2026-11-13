@@ -1234,8 +1234,10 @@ past this, as it could with anything on your Mac.
 ## Open Anything
 <!-- slug: open-anything -->
 
-In the new desktop app (the `gpuiApp` experiment), ⌘K from anywhere in the
-main window puts a box over it, with the rest dimmed. Type part of a name and
+In the new desktop app (the `gpuiApp` experiment), with the Open Anything
+experiment on (Settings > General > Experiments; [Experiments](experiments.md)),
+⌘K or ⌘P from anywhere in the main window puts a box over it, with the rest
+dimmed. Type part of a name and
 it finds threads, panels, projects and the app's own pages, in that order of
 groups: Panels, Threads, Projects and App. Letters in order are enough
 ("ytcm" finds yt-channel-manager).
@@ -1294,7 +1296,7 @@ key:
 - Back: `back`, ⌘[
 - Forward: `forward`, ⌘]
 - Next Inbox Thread: `nextInboxThread`, ⌥⌘↓
-- Open Anything (the new desktop app only): `openAnything`, ⌘K
+- Open Anything (the new desktop app only, while its experiment is on): `openAnything`, ⌘K, and `openAnythingAlso`, ⌘P
 - Show Inbox: `showInbox`, ⌘1
 - Show Scheduled: `showScheduled`, ⌘2
 - Show Projects: `showProjects`, ⌘3

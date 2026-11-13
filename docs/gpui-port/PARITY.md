@@ -387,7 +387,10 @@ and `@panel.image`; `cargo test` for `pinned_panels` (core) and
   (what ↵ opens before any arrow) is the first entry whose name is what's
   typed, else the first whose name starts with it (a Settings section by its
   own name), else the first: "usage" picks Usage over a thread that only
-  mentions the word (13 Nov).
+  mentions the word (13 Nov). ⌘P opens it too (`openAnythingAlso`, no
+  menu item of its own), and it's the `openAnything` experiment (13 Nov):
+  off, both keys, the Go menu item and their lines in Settings > Keyboard
+  go (`@open-anything-off`; the mock's hello has it on otherwise).
 - Files: `desktop/core/src/open_anything.rs`, `desktop/gpui/src/open_anything.rs`,
   `features/open-anything.feature`.
 - Verification: `cargo test -p threadbear-core --lib -- open_anything shortcuts keyboard`, 32 of 32; the `@nav.openanything`, `@settings.keyboard` and `@nav.shortcuts` specs against the GPUI app on the cloud box, 17 of 17; shots of the box empty and typed on Tinker Desk beside the mockups.

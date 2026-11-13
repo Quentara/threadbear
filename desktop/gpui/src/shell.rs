@@ -279,6 +279,7 @@ actions!(
         GoForward,
         NextInboxThread,
         OpenAnything,
+        OpenAnythingAlso,
         ShowInbox,
         ShowScheduled,
         ShowProjects,
@@ -363,6 +364,8 @@ commands!(
     (Forward, GoForward, Some(ShortcutCommand::Forward)),
     (NextInboxThread, NextInboxThread, Some(ShortcutCommand::NextInboxThread)),
     (OpenAnything, OpenAnything, Some(ShortcutCommand::OpenAnything)),
+    // ⌘P: the same box from a second key, with no menu item of its own.
+    (OpenAnythingAlso, OpenAnythingAlso, Some(ShortcutCommand::OpenAnythingAlso)),
     (ShowInbox, ShowInbox, Some(ShortcutCommand::ShowInbox)),
     (ShowScheduled, ShowScheduled, Some(ShortcutCommand::ShowScheduled)),
     (ShowProjects, ShowProjects, Some(ShortcutCommand::ShowProjects)),
@@ -702,7 +705,13 @@ impl Threadbear {
             Command::Back => self.go_back(window, cx),
             Command::Forward => self.go_forward(window, cx),
             Command::NextInboxThread => self.next_inbox_thread(window, cx),
-            Command::OpenAnything => self.toggle_open_anything(window, cx),
+            // Only while the experiment's on: its keys and menu item go
+            // with it, but a stale binding mustn't open it either.
+            Command::OpenAnything | Command::OpenAnythingAlso => {
+                if self.open_anything_on() {
+                    self.toggle_open_anything(window, cx);
+                }
+            }
             // Each brings the Threads panel back if ⌘/ folded it away.
             Command::ShowInbox | Command::ShowScheduled | Command::ShowProjects | Command::ShowLibrarian | Command::ShowHibernating | Command::ShowArchived => {
                 self.unfold_threads(cx);
@@ -1059,8 +1068,12 @@ impl Threadbear {
         for (chord, command) in standard_keys() {
             desired.insert(chord.to_owned(), command);
         }
+        // An experiment's keys only while it's on (`ShortcutCommand::experiment`).
+        let on = self.open_anything_on();
+        self.bound_open_anything = on;
         for command in Command::ALL {
-            if let Some(key) = command.shortcut().and_then(|c| self.shortcuts.key(c)) {
+            let shortcut = command.shortcut().filter(|c| c.experiment().is_none() || on);
+            if let Some(key) = shortcut.and_then(|c| self.shortcuts.key(c)) {
                 desired.insert(key.chord(macos), *command);
             }
         }
@@ -1218,9 +1231,10 @@ impl Threadbear {
                     item("Forward", Command::Forward).enabled(self.can_go_forward()),
                     Separator,
                     item("Next Inbox Thread", Command::NextInboxThread),
-                    Separator,
-                    item("Open Anything…", Command::OpenAnything),
-                ],
+                ]
+                .into_iter()
+                .chain(self.open_anything_on().then(|| [Separator, item("Open Anything…", Command::OpenAnything)]).into_iter().flatten())
+                .collect(),
             ),
             TopMenu::new(
                 "Thread",

@@ -398,6 +398,13 @@ let connectors = {
   ],
 };
 addDemoProjects();
+// The experiments the mock's hello says are on: Open Anything (⌘K) unless
+// TB_MOCK_OPEN_ANYTHING_OFF, for the spec that it's gone while off, and
+// Decisions on the Projects page with TB_MOCK_DECISIONS.
+function mockExperiments() {
+  return [...(process.env.TB_MOCK_OPEN_ANYTHING_OFF ? [] : ['openAnything']), ...(process.env.TB_MOCK_DECISIONS ? ['projectDecisions'] : [])];
+}
+
 // Decisions on the Projects page (the projectDecisions experiment): three of
 // Threadbear's threads waiting on a card of asks, with what they're for. Only
 // when asked, as it changes those threads' rows and the Projects page.
@@ -553,7 +560,7 @@ async function dispatch(client, method, p) {
       }
       return {
         runnerVersion, protocol: 1, accounts: publicAccounts(),
-        defaults: oldRunner ? { ...defaults, poolId: undefined } : defaults, ...(oldRunner ? {} : { clis, updates, pools, experiments: process.env.TB_MOCK_DECISIONS ? ['projectDecisions'] : [] }),
+        defaults: oldRunner ? { ...defaults, poolId: undefined } : defaults, ...(oldRunner ? {} : { clis, updates, pools, experiments: mockExperiments() }),
       };
     // Moving a thread to another runner (docs/protocol.md): a guess from
     // "that runner", and a move that only marks the row, for the app's
