@@ -3003,6 +3003,10 @@ export class Runner {
         // of Plan first, whose turn keeps planning till it ends.
         if (sayNextTurn() && (params.permissionMode !== 'full' || wasMode === 'plan')) {
           nextTurn.push(params.permissionMode === 'ask' ? 'Ask before edits' : params.permissionMode === 'auto' ? 'Auto' : params.permissionMode === 'plan' ? 'Plan first' : 'Full access');
+        } else if (sayNextTurn()) {
+          // Its sandbox is the turn's, though: a command that fails in it
+          // without asking still fails till the next turn (Codex's review).
+          this.emit(st, { type: 'system.note', text: "Full access allows what this turn asks from now on. Its sandbox opens from the next turn, so a command that fails in it now may need sending again." }, rt.turn?.turnId);
         }
       }
       // The cards showing that Full wouldn't have asked: allowed now, and
