@@ -8,8 +8,16 @@ import os from 'node:os';
 import path from 'node:path';
 import assert from 'node:assert/strict';
 import { test, type TestContext } from 'node:test';
+import { spawnSync } from 'node:child_process';
 
 const root = path.resolve(import.meta.dirname, '../../..');
+
+// Headless Linux runs the app under Xvfb and dbus-run-session (gpui.ts); a
+// box without them (the Pixel following main, 14 Nov) can't start even the
+// stand-in, so these skip there as on Windows.
+const onPath = (bin: string) => spawnSync('sh', ['-c', `command -v ${bin}`]).status === 0;
+const skip = process.platform === 'win32'
+  || (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY && !(onPath('Xvfb') && onPath('dbus-run-session')));
 
 // What the real app does, as far as the driver can see: writes its port and
 // token to THREADBEAR_AUTOMATION, logs beside it, and keeps panics in
@@ -75,7 +83,7 @@ async function driver(t: TestContext, mode: string): Promise<{ app: Driver; home
   return { app, home, kept };
 }
 
-test('a dropped reply says the app is still running, with its panic, log and output, kept past teardown', { skip: process.platform === 'win32' }, async (t) => {
+test('a dropped reply says the app is still running, with its panic, log and output, kept past teardown', { skip }, async (t) => {
   const { app, home } = await driver(t, 'drop');
   const error = await app.do({ cmd: 'terminal', select: 'x' }).then(() => assert.fail('it answered'), (e: Error) => e.message);
   assert.match(error, /^terminal: the app dropped `terminal` without answering/, 'the original error comes first');
@@ -98,7 +106,7 @@ test('a dropped reply says the app is still running, with its panic, log and out
   assert.doesNotMatch(fs.readFileSync(path.join(dir, 'output.txt'), 'utf8'), /private words/);
 });
 
-test("an older app's \"the app stopped\" gets the same evidence", { skip: process.platform === 'win32' }, async (t) => {
+test("an older app's \"the app stopped\" gets the same evidence", { skip }, async (t) => {
   const { app } = await driver(t, 'old');
   const error = await app.do({ cmd: 'dump' }).then(() => assert.fail('it answered'), (e: Error) => e.message);
   assert.match(error, /^dump: the app stopped\n/);
@@ -106,7 +114,7 @@ test("an older app's \"the app stopped\" gets the same evidence", { skip: proces
   assert.equal(app.keptEvidence.length, 1);
 });
 
-test('an app that exits mid-command fails it at once, with the exit and the panic, not at the timeout', { skip: process.platform === 'win32' }, async (t) => {
+test('an app that exits mid-command fails it at once, with the exit and the panic, not at the timeout', { skip }, async (t) => {
   const { app } = await driver(t, 'exit');
   const started = Date.now();
   const error = await app.do({ cmd: 'open', id: 'demo' }, 20).then(() => assert.fail('it answered'), (e: Error) => e.message);
@@ -118,7 +126,7 @@ test('an app that exits mid-command fails it at once, with the exit and the pani
   assert.equal(app.keptEvidence.length, 1);
 });
 
-test('pruning old evidence leaves alone anything else in its folder', { skip: process.platform === 'win32' }, async (t) => {
+test('pruning old evidence leaves alone anything else in its folder', { skip }, async (t) => {
   const { app, kept } = await driver(t, 'drop');
   fs.mkdirSync(kept, { recursive: true });
   for (let i = 0; i < 25; i++) fs.writeFileSync(path.join(kept, `000-report-${i}`), '');
@@ -129,7 +137,7 @@ test('pruning old evidence leaves alone anything else in its folder', { skip: pr
   assert.equal(left.filter((n) => !n.startsWith('000-report-')).length, 20);
 });
 
-test("an ordinary refusal stays short and keeps nothing: specs poll for those", { skip: process.platform === 'win32' }, async (t) => {
+test("an ordinary refusal stays short and keeps nothing: specs poll for those", { skip }, async (t) => {
   const { app, kept } = await driver(t, 'refuse');
   const error = await app.do({ cmd: 'label-point', label: 'Nope' }, 5).then(() => assert.fail('it answered'), (e: Error) => e.message);
   assert.equal(error, 'label-point: no button called Nope');
