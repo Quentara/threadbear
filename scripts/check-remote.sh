@@ -480,10 +480,10 @@ pass_over() {
 # host's reason said): only hosts nobody can reach send it here (255). On
 # 13 Nov a landing that asked only for the cloud box, with Swift in its
 # group, ran the runner's suites and the app's release build on Mike's M5.
-CANT=""
+CANT="" CANT_COPY=""
 cant_run() { CANT+="${CANT:+; }$1: $2"; }
 choose() {
-  HOST="" HOST_OS="" remote_base="" FREE=0 LOW="$LOW_COPY" CANT=""
+  HOST="" HOST_OS="" remote_base="" FREE=0 LOW="$LOW_COPY" CANT="$CANT_COPY"
   local first="" first_os="" first_base="" h out rc b os state kb
   for h in "${HOSTS[@]}"; do
     # An ssh host, never something ssh would take for an option.
@@ -510,8 +510,12 @@ choose() {
       # It answered, but a disk too full for the probe's mkdir fails it too,
       # and calling that unreachable would run the check on this Mac (Codex's
       # review). 255 is ssh itself: nobody there to ask.
-      if [ "$rc" != 255 ] && kb="$(watched "$h" "${SSH[@]}" "$h" "cd ~ && $free_cmd" 2>/dev/null)" && low_on_room "$kb"; then
-        pass_over "$h"
+      # One that answers the disk question has answered: whatever stopped
+      # the probe (a folder it can't make or lock), it's no reason to run the
+      # check here (Codex's review, 14 Nov).
+      if [ "$rc" != 255 ] && kb="$(watched "$h" "${SSH[@]}" "$h" "cd ~ && $free_cmd" 2>/dev/null)"; then
+        if low_on_room "$kb"; then pass_over "$h"
+        else cant_run "$h" "it answered, but couldn't make or lock ~/$BASE_REL there (exit $rc)"; fi
       else
         echo "Couldn't reach $h over ssh." >&2
       fi
@@ -522,8 +526,8 @@ choose() {
     # the host's word, so it's only ever data: an absolute path of plain
     # characters ending in the folder asked for, else the host is passed
     # over (Daybreak, 7 Nov: it went into a sed program here).
-    if ! plain_path "$b"; then echo "Unexpected folder on $h (not a plain absolute path); passing it over." >&2; continue; fi
-    case "$b" in */$BASE_REL) ;; *) echo "Unexpected folder on $h: '$b'" >&2; continue ;; esac
+    if ! plain_path "$b"; then echo "Unexpected folder on $h (not a plain absolute path); passing it over." >&2; cant_run "$h" "its check folder isn't a plain absolute path"; continue; fi
+    case "$b" in */$BASE_REL) ;; *) echo "Unexpected folder on $h: '$b'" >&2; cant_run "$h" "its check folder isn't ~/$BASE_REL"; continue ;; esac
     case "$os" in
       Darwin) ;;
       Linux) [ "$linux_ok" = 1 ] || { cant_run "$h" "it's Linux, and this check needs a Mac ($MAC_WHY)"; continue; } ;;
@@ -739,6 +743,7 @@ while :; do
     if [ -n "$LOW" ]; then
       # Not 255: a disk to clear isn't a reason to run it all on this Mac.
       echo "No check host has room for this check: $LOW, and it wants $MIN_FREE_GIB GiB. Free some space there and run it again." >&2
+      [ -z "$CANT" ] || echo "The others can't run it: $CANT." >&2
       exit "$BUSY_EXIT"
     fi
     if [ -n "$CANT" ]; then
@@ -802,6 +807,11 @@ while :; do
         LOW_COPY+="${LOW_COPY:+, }$HOST has $FREE_GIB GiB free"
       else
         echo "Couldn't copy this checkout to $HOST; trying the others." >&2
+        # Still answering: the copy failed there, not the link (a link that
+        # went is what sends a check to this Mac; Codex's review, 14 Nov).
+        if timed 20 "${PING[@]}" "$HOST" true </dev/null >/dev/null 2>&1; then
+          CANT_COPY+="${CANT_COPY:+; }$HOST: it answers, but the copy to it failed"
+        fi
       fi
       SKIP+=" $HOST"
       continue
