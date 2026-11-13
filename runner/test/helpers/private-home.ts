@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
 
 const realHome = os.userInfo().homedir;
-const resolve = fs.realpathSync;
+const resolve = fs.realpathSync.native;
 const canonicalHome = resolve(realHome);
 const codeRoot = resolve(path.join(import.meta.dirname, '../../..'));
 const testHome = resolve(fs.mkdtempSync(path.join(os.tmpdir(), 'tb-unit-home-')));
@@ -29,23 +29,39 @@ for (const name of Object.keys(process.env)) {
 }
 
 const roots = [realHome, canonicalHome].flatMap((home) => ['.claude', '.claude.json', '.codex', '.cursor', '.opencode', '.config/opencode', '.local/share/opencode', 'Library/Application Support/Token Stats', 'Library/Application Support/Threadbear'].map((p) => path.join(home, p)));
-const violations = new Set<string>();
+const violations = new Map<string, string>();
+const canonical = new Map<string, string>();
+let clearQueued = false;
 function forbidden(file: string): boolean {
   return roots.some((root) => file === root || file.startsWith(root + path.sep));
 }
 function reject(file: string): never {
-  violations.add(file);
-  throw new Error(`Unit test reached a real account folder: ${file}`);
+  const error = new Error(`Unit test reached a real account folder: ${file}`);
+  if (!violations.has(file)) violations.set(file, error.stack ?? error.message);
+  throw error;
 }
 function canonicalPath(named: string): string {
   // The kernel refuses paths this long. Do not walk thousands of missing
   // ancestors in malformed-path tests just to discover the same failure.
   if (Buffer.byteLength(named) > 4096) return named;
+  // Reuse ancestors during one synchronous scan. Clear on filesystem
+  // changes and before another turn can observe a subprocess's changes.
+  if (!clearQueued) {
+    clearQueued = true;
+    queueMicrotask(() => { canonical.clear(); clearQueued = false; });
+  }
   let ancestor = named;
+  const missing: string[] = [];
   while (true) {
-    try { return path.join(resolve(ancestor), path.relative(ancestor, named)); } catch (error) {
+    try {
+      const real = canonical.get(ancestor) ?? resolve(ancestor);
+      canonical.set(ancestor, real);
+      for (const p of missing) canonical.set(p, path.join(real, path.relative(ancestor, p)));
+      return path.join(real, path.relative(ancestor, named));
+    } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENAMETOOLONG') return named;
     }
+    missing.push(ancestor);
     const parent = path.dirname(ancestor);
     if (parent === ancestor) return named;
     ancestor = parent;
@@ -75,7 +91,9 @@ for (const target of [fs, fs.promises]) {
       const descriptor = Object.getOwnPropertyDescriptor(target, key);
       if (typeof descriptor?.value !== 'function') continue;
       const original = descriptor.value;
+      const mutates = /^(?:open|write|append|mk|rm|unlink|chmod|chown|utimes|truncate|createWrite|copy|cp|rename|link|symlink)/.test(name);
       const guarded = function (this: unknown, file: unknown, ...args: unknown[]) {
+        if (mutates) canonical.clear();
         try {
           check(file);
           if (['copyFile', 'cp', 'rename', 'link', 'symlink'].includes(name)) check(args[0]);
@@ -83,7 +101,16 @@ for (const target of [fs, fs.promises]) {
           if (target === fs.promises) return Promise.reject(error);
           throw error;
         }
-        return Reflect.apply(original, this, [file, ...args]);
+        if (mutates && typeof args.at(-1) === 'function') {
+          const callback = args.at(-1) as (...values: unknown[]) => unknown;
+          args[args.length - 1] = (...values: unknown[]) => { canonical.clear(); return callback(...values); };
+        }
+        const result = Reflect.apply(original, this, [file, ...args]);
+        if (mutates) {
+          canonical.clear();
+          if (target === fs.promises) return (result as Promise<unknown>).finally(() => canonical.clear());
+        }
+        return result;
       };
       // fs.realpathSync.native is used to canonicalise paths too.
       if (typeof original.native === 'function') Object.assign(guarded, { native: (file: unknown, ...args: unknown[]) => { check(file); return original.native(file, ...args); } });
@@ -95,6 +122,6 @@ syncBuiltinESMExports();
 process.on('exit', () => {
   fs.rmSync(testHome, { recursive: true, force: true });
   if (!violations.size) return;
-  console.error('Unit tests accessed real account folders:\n' + [...violations].join('\n'));
+  console.error('Unit tests accessed real account folders:\n' + [...violations.values()].join('\n'));
   process.exitCode = 1;
 });
