@@ -153,7 +153,6 @@ pub(crate) fn recall_scroll_memories(saved: &serde_json::Value) {
 
 /// A scripted stand-in for a new launch (`updates` with `fresh`): no thread
 /// remembered yet.
-#[cfg(feature = "automation")]
 pub(crate) fn forget_scroll_memories() {
     if let Ok(mut map) = SCROLL_MEMORY.lock() {
         map.clear();
