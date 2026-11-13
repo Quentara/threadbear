@@ -418,11 +418,17 @@ rebase cannot validate the new combination, even when files don't overlap.
 
 Main on this Mac moves by `tb land`; GitHub's moves by pushes and merged
 PRs. To bring them together, run `scripts/sync-main.sh` (from any
-checkout). It takes the landing lock for the whole of it, so no landing
-can move main meanwhile, then:
+checkout).
+
+- only this Mac's has moved (the usual case): pushes main straight away,
+  without waiting for the landing lock. A push moves only GitHub's main,
+  as a fast-forward or not at all, so it can't race a landing; with
+  landings queued, the wait for the lock was over 30 minutes (13 Nov).
+
+Otherwise it takes the landing lock for the rest, so no landing can move
+main meanwhile, then:
 
 - only GitHub's has moved: fast-forwards main to it;
-- only this Mac's has: pushes main;
 - both have: rebases this Mac's commits onto GitHub's (merges GitHub's
   in instead when this Mac's have a merge, which a rebase would flatten) in a borrowed
   worktree, runs `./check.sh --quick` on that (a combination nobody has

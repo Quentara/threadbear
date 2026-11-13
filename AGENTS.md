@@ -362,9 +362,9 @@ if `tb` isn't found (an older runner, or outside a thread), use
   GPUI landings, 10 to 12 Nov). Fix that red first; `tb land
   --despite-red` is for the landing that's the fix
   (docs/thread-worktrees.md, "Red on GitHub"). To bring GitHub's main
-  into this Mac's, or push it, run `scripts/sync-main.sh`: it holds
-  the landing lock throughout and checks a rebased combination before
-  main moves (docs/thread-worktrees.md, "Syncing main with GitHub"). You can carry on
+  into this Mac's, or push it, run `scripts/sync-main.sh`: a main only
+  ahead of GitHub's is pushed at once, and otherwise it holds the landing
+  lock and checks a rebased combination before main moves (docs/thread-worktrees.md, "Syncing main with GitHub"). You can carry on
   after landing; the next `tb land` lands only what's new. Changing a
   `package.json`? Replace the link first: `rm runner/node_modules` (no
   trailing slash, so only the link goes), then `npm ci` there. When the
