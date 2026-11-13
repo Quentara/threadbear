@@ -268,20 +268,32 @@ fn sweep(frame: u64, menu_at: Option<Point<Pixels>>, popover: bool, window: &mut
     let Some(panels) = panels(cx) else { return };
     let modal = window.has_active_dialog(cx) || window.has_active_sheet(cx) || popover;
     let height = f32::from(window.viewport_size().height);
+    // The kit's menus wherever they are, including ones the app doesn't
+    // place itself (a panel tab's right-click menu is the dock's): without
+    // them that menu opened behind the page (Mike, 13 Nov).
+    let kit_menus = crate::media_view::open_menus(window, cx);
     let mut covered_any = false;
+    let mut kit_covered = false;
     for kept in &panels.read(cx).pages {
         let (stamp, b) = kept.drawn.get();
         // A menu opens down and to the right of where it was asked for, about
         // this wide: one reaching the page's column covers it.
         let menu_over = menu_at.is_some_and(|at| at.x + px(300.) > b.origin.x && at.x < b.origin.x + b.size.width);
-        let covered = modal || menu_over;
+        // One not drawn yet could be anywhere, so it covers the page until
+        // its first frame says where it is.
+        let kit_over = kit_menus.iter().any(|m| m.size.width <= px(0.) || (m.origin.x < b.origin.x + b.size.width && m.origin.x + m.size.width > b.origin.x));
+        let covered = modal || menu_over || kit_over;
         covered_any |= covered && stamp == frame;
+        kit_covered |= kit_over && stamp == frame;
         if stamp == frame && !covered && f32::from(b.size.width) >= 1. && f32::from(b.size.height) >= 1. {
             kept.page.set_bounds(f32::from(b.origin.x), f32::from(b.origin.y), f32::from(b.size.width), f32::from(b.size.height), height);
             kept.page.set_hidden(false);
         } else {
             kept.page.set_hidden(true);
         }
+    }
+    if kit_covered {
+        crate::media_view::look_again_soon(window, cx);
     }
     if panels.read(cx).covered != covered_any {
         panels.update(cx, |p, _| p.covered = covered_any);

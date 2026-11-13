@@ -180,6 +180,8 @@ thread_local! {
     /// Every menu the kit has made that's still about (`init`), to see if
     /// one's open over a view.
     static MENUS: RefCell<Vec<WeakEntity<PopupMenu>>> = const { RefCell::new(Vec::new()) };
+    /// Windows with a look again booked (`open_menus`).
+    static RECHECK: RefCell<std::collections::HashSet<WindowId>> = RefCell::new(std::collections::HashSet::new());
     /// Where the views' calls back into Rust go (`tb_media_said_link`,
     /// `tb_media_said_changed`), for the app to act on (`init`).
     static SAID: RefCell<Option<futures::channel::mpsc::UnboundedSender<Said>>> = const { RefCell::new(None) };
@@ -433,7 +435,11 @@ pub(crate) fn sweeper(window: &Window, cover: Cover) -> AnyElement {
 
 fn sweep(id: WindowId, frame: u64, cover: &Cover, window: &mut Window, cx: &mut App) {
     use gpui_kit::component::WindowExt as _;
-    let modal = cover.everything || window.has_active_dialog(cx) || window.has_active_sheet(cx) || menu_open(window, cx);
+    let kit_menu = menu_open(window, cx);
+    let modal = cover.everything || window.has_active_dialog(cx) || window.has_active_sheet(cx) || kit_menu;
+    if kit_menu && SLOTS.with(|s| s.borrow().iter().any(|slot| slot.window == id && slot.media.is_ok())) {
+        look_again_soon(window, cx);
+    }
     let gone = SLOTS.with(|s| {
         let mut slots = s.borrow_mut();
         let (keep, gone): (Vec<Slot>, Vec<Slot>) = std::mem::take(&mut *slots).into_iter().partition(|slot| slot.window != id || slot.drawn.get().0 == frame);
@@ -459,16 +465,43 @@ fn sweep(id: WindowId, frame: u64, cover: &Cover, window: &mut Window, cx: &mut 
     }
 }
 
-/// Whether one of the kit's menus is open in this window: an open menu has
-/// the keyboard, and closes when it loses it. Where it is isn't always the
+/// Whether one of the kit's menus is showing in this window (`open_menus`;
+/// it used to go by the keyboard, which a hovered submenu never has). Where
+/// it is isn't always the
 /// app's to know (a panel bar's right-click menu is the dock's, Codex's
 /// review, 12 Nov), and a native view would sit over it and take its clicks.
 fn menu_open(window: &Window, cx: &App) -> bool {
+    !open_menus(window, cx).is_empty()
+}
+
+/// Where the kit's menus showing in this window are, submenus included (a
+/// zero-sized one hasn't been drawn yet: `PopupMenu::showing`). Not by focus:
+/// a hovered submenu never has it, and a menu that lost it can still be up
+/// (Codex's review, 13 Nov). web_panels.rs hides a page under one, as a
+/// panel tab's right-click menu went behind a web page (Mike, 13 Nov).
+pub(crate) fn open_menus(window: &Window, cx: &App) -> Vec<Bounds<Pixels>> {
     MENUS.with(|m| {
         let mut menus = m.borrow_mut();
         menus.retain(|menu| menu.upgrade().is_some());
-        menus.iter().filter_map(WeakEntity::upgrade).any(|menu| menu.focus_handle(cx).contains_focused(window, cx))
+        menus.iter().filter_map(WeakEntity::upgrade).filter_map(|menu| menu.read(cx).showing(window, cx)).flatten().collect()
     })
+}
+
+/// While a menu hides a native view, the window's drawn again a moment
+/// later: `showing` reads the last frame, so a menu whose host stopped
+/// drawing it would otherwise keep the view hidden until something else
+/// redraws. Only then, so an open menu over nothing native costs nothing.
+pub(crate) fn look_again_soon(window: &Window, cx: &mut App) {
+    let handle = window.window_handle();
+    if !RECHECK.with(|r| r.borrow_mut().insert(handle.window_id())) {
+        return;
+    }
+    cx.spawn(async move |cx| {
+        cx.background_executor().timer(std::time::Duration::from_millis(250)).await;
+        RECHECK.with(|r| r.borrow_mut().remove(&handle.window_id()));
+        let _ = handle.update(cx, |_, window, _| window.refresh());
+    })
+    .detach();
 }
 
 /// A stage clip going: its mute and volume are where the next one starts.

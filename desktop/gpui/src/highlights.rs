@@ -1593,6 +1593,9 @@ impl SidePane {
         self.keep_folder_current(cx);
         let Some(thread) = self.thread(cx) else {
             self.drawn.insert(section.to_owned(), "none".into());
+            // Its menu was the thread's, gone with it (⌘N): kept, it would
+            // come back over the thread later as if just opened.
+            self.menu = None;
             return v_flex().size_full().bg(bg).child(crate::files::pane_note("Pick a thread to see its Highlights.", p)).into_any_element();
         };
         // A section the thread no longer has (a panel its patch took away).
