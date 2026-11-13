@@ -157,3 +157,11 @@ When('that waiting move is cancelled', async function (this: ThreadbearWorld) {
   const d = await this.app.dump();
   await this.app.do({ cmd: 'mock', method: 'moveCancelAfterRestart', params: { threadId: d.selection?.id } });
 });
+
+When('its move to this Mac is claimed before the local thread arrives', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'moveIndexRestart', params: { threadId: d.selection?.id } });
+  // Keep the source row until claimed, unlike the moveAway example.
+  await this.app.do({ cmd: 'mock', method: 'moveArrive', params: { threadId: d.selection?.id, claimedFirst: true } });
+  await sleep(500);
+});

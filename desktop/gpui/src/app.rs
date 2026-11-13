@@ -805,10 +805,11 @@ impl Threadbear {
                     if let Ok(mut t) = serde_json::from_value::<ThreadSummary>(params["thread"].clone()) {
                         // Another runner's thread from this Mac's runner (the
                         // relay) stays marked as that runner's.
-                        let arriving = self.threads.get(&t.id).is_some_and(|old| {
-                            old.moving.as_ref().is_some_and(|m| self.remote.all_runners.iter().any(|r| r.is_self && m["to"].as_str() == Some(r.id.as_str())))
-                                || (old.runner_id.is_none() && self.remote.made.contains(&t.id))
-                        });
+                        // Relay summaries carry runnerId. A local update for
+                        // a row still labelled remote may be a move arriving;
+                        // its moving flag can already have been cleared at
+                        // claimed, so verify the local list regardless of it.
+                        let arriving = t.runner_id.is_none() && self.threads.get(&t.id).is_some_and(|old| old.is_remote() || self.remote.made.contains(&t.id));
                         t.runner_id = self.threads.get(&t.id).and_then(|old| old.runner_id.clone());
                         if arriving {
                             // Relay and local updates share a notification. Verify

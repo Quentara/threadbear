@@ -1633,6 +1633,7 @@ async function dispatch(client, method, p) {
     }
     case 'mock.moveIndexRestart': {
       const t = need(p.threadId);
+      t.movingDestination = null;
       t.summary.moving = { moveId: 'demo-move', to: SELF_RUNNER.id, toName: 'This Mac', state: 'ready' };
       broadcastSummary(t.summary.id);
       for (const c of clients) if (c.authed && c.as === null) send(c, 'remoteThreads.updated', { runners: [], threads: [], ready: false });
@@ -1646,6 +1647,13 @@ async function dispatch(client, method, p) {
     }
     case 'mock.moveArrive': {
       const t = need(p.threadId);
+      if (p.claimedFirst) {
+        // The real destination clears its move overlay at claimed before
+        // adopting locally, while the source still has its ordinary row.
+        delete t.awaitingDestination;
+        delete t.summary.moving;
+        broadcastSummary(t.summary.id);
+      }
       t.runnerId = t.movingDestination;
       delete t.awaitingDestination;
       delete t.movingDestination;

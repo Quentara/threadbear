@@ -56,6 +56,46 @@ function setup(
   return { h, sync, calls, upserts, docs };
 }
 
+test('the remote index stays unready before the first heartbeat and row answer', async () => {
+  let finish!: (value: unknown) => void;
+  const heartbeat = new Promise((resolve) => { finish = resolve; });
+  let remote!: (value: unknown) => void;
+  let remoteFailed!: (error: Error) => void;
+  const { sync } = setup({
+    answer: (fn) => fn === 'sync:heartbeat' ? heartbeat : null,
+    extra: { home: tmpDir('remote-index-startup'), subscriber: {
+      subscribe: (fn, _args, onUpdate, onError) => {
+        if (fn === 'sync:otherRunnersThreads') { remote = onUpdate; remoteFailed = onError; }
+        return () => {};
+      },
+      close: () => {},
+    } },
+  });
+  assert.equal(sync.remoteThreads().ready, true, 'sync off has no rows to wait for');
+  sync.start();
+  assert.equal(sync.remoteHeard(), false);
+  assert.equal(sync.remoteThreads().ready, false, 'not an authoritative empty list before heartbeat');
+  finish({ apiVersion: 12 });
+  await tick();
+  assert.equal(sync.remoteThreads().ready, false, 'heartbeat starts the index, but its rows have not answered');
+  remoteFailed(new Error('network still starting'));
+  assert.equal(sync.remoteThreads().ready, false, 'a failed first read is not an authoritative empty index');
+  remote({ runners: [], threads: [] });
+  assert.equal(sync.remoteThreads().ready, true);
+  await sync.stop();
+  assert.equal(sync.remoteThreads().ready, true);
+});
+
+test('a backend older than the sidebar index has no remote rows to wait for', async () => {
+  const { sync } = setup();
+  sync.start();
+  assert.equal(sync.remoteHeard(), false);
+  await tick();
+  assert.equal(sync.remoteHeard(), true);
+  assert.equal(sync.remoteThreads().ready, true);
+  await sync.stop();
+});
+
 test('start writes every thread once, prunes the rest, and says hello', async () => {
   const { h, sync, calls, docs } = setup();
   const a = h.runner.create({ text: 'one', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;

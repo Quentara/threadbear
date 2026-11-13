@@ -4048,7 +4048,10 @@ export class ConvexSync {
 
   /** Whether remoteThreads has heard from the backend (ThreadIndex.heard); true with sync off, as there's nothing to wait for. */
   remoteHeard(): boolean {
-    return this.index?.heard() ?? true;
+    if (!this.running) return true;
+    if (!this.backendHeard) return false;
+    if ((this.backendApiVersion ?? 0) < THREAD_INDEX_API_VERSION) return true;
+    return this.index?.heard() ?? false;
   }
 
   /** Runners online now that say they aren't following GitHub's main properly. */
@@ -4058,7 +4061,8 @@ export class ConvexSync {
 
   /** remoteThreads.list: other runners' threads, empty with sync off. */
   remoteThreads(): RemoteThreads {
-    return this.index?.list() ?? { runners: [], threads: [] };
+    const list = this.index?.list() ?? { runners: [], threads: [] };
+    return { ...list, ready: this.remoteHeard() };
   }
 
   // ------------------------------------------------------------ schedules

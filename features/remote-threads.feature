@@ -55,6 +55,14 @@ Feature: Other runners' threads
     And the row "Tidy the media drive" isn't on another runner
 
   @sidebar.move @remote-threads
+  Scenario: A move back to this Mac arrives after its source has cleared the move label
+    When I open the thread "Tidy the media drive"
+    And its move to this Mac is claimed before the local thread arrives
+    Then the row "Tidy the media drive" isn't on another runner
+    When a reply arrives on the destination
+    Then the transcript shows a reply starting "The destination is serving this thread"
+
+  @sidebar.move @remote-threads
   Scenario: Restarting the index during a waiting move keeps the source until it really moves
     When I open the thread "Tidy the media drive"
     And the index restarts while its move to this Mac is waiting

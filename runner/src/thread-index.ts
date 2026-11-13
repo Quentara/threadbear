@@ -242,7 +242,7 @@ export class ThreadIndex {
 
   /** Whether the list has had an answer (or a refusal) to give, for a caller that can wait a moment for one. */
   heard(): boolean {
-    return this.answered || !this.running || !this.deps.subscribe;
+    return this.answered || !this.deps.subscribe;
   }
 
   /** What was last heard, without starting the watch or looking for token files (relay.ts asks on every request). */
@@ -339,13 +339,14 @@ export class ThreadIndex {
   // once, and this runner's app lists only its own threads. Writing this
   // runner's own rows carries on.
   private watchFailed(e: Error): void {
-    // Nothing more coming to wait for: the tools use what was last heard.
-    this.answered = true;
     const refused = forbiddenText(e);
     if (!refused) {
       this.deps.log.warn('the other runners’ threads subscription failed', { error: String(e) });
       return;
     }
+    // A refusal is authoritative: there are no accessible remote rows.
+    // A transient error before the first answer is still an unready list.
+    this.answered = true;
     if (!this.refused) this.deps.log.info('not watching the other runners’ threads: this runner has a runner key, and only the main Mac’s key reads them', { error: refused });
     this.refused = true;
     this.unwatch();
