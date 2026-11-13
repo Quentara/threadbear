@@ -1099,9 +1099,11 @@ weekly limit resets soonest, so a week's leftover gets spent before it's
 lost rather than draining the login with the most room. A login is used
 until it's all but out (under 1% left), so none of a week goes to waste. When
 the one it's on runs out, before a turn or partway through one, it moves to
-another login in the pool with room, and carries on from where it was. When
+another login in the pool with room, and carries on from where it was. A
+quiet line in the conversation says so each time: the login it moved to,
+the one that ran out, and when that one is back. When
 none has room, the thread waits and carries on by itself once a limit
-resets. With only one login, that means it waits for that login's limit to
+resets, and the line says when that is. With only one login, that means it waits for that login's limit to
 reset. A thread pinned to one login does the same on that login. Either
 way, the box at the top of the message field says what happened and offers
 Switch to another login now; set its Carry on by itself to No and the

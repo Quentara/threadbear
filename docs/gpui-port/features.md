@@ -172,7 +172,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `transcript.plan` | Plan card | Go ahead, Send back, expand, becomes a checklist | Drawn card. | build | M | `Cells` (`PlanCardCell`) |
 | `transcript.plansteps` | Plan steps row | Agent's step list | Drawn. | build | S | `RowRenderer` (`planSteps`) |
 | `transcript.turnfooter` | Turn footer | End-of-turn line from outcome, duration, cost and usage | Drawn. | build | S | `RowRenderer`, `Event` |
-| `transcript.note` | Note row | Quiet system line, folds into groups | Drawn. | build | S | `RowRenderer` |
+| `transcript.note` | Note row | Quiet system line, folds into groups. GPUI only: a login's move or wait ("Moved to ...", "Carrying on at ...") stays on show, in place of the limit's error | Drawn. | build | S | `RowRenderer` |
 | `transcript.woke` | Woke-up note | Sleeping bear gets up on first view | Bear geometry with `Animation` keyframes. | build | M | `InkLayers` (`WokenBearView`) |
 | `transcript.error` | Error row | Failure text by kind | Drawn. | build | S | `RowRenderer` |
 | `transcript.workedfor` | Worked-for group | One line, opens to its items indented, live while working | Drawn group that inserts rows into the list. | build | M | `Cells` (`GroupRowCell`), `WorkGroups` |
