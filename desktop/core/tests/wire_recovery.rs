@@ -96,12 +96,14 @@ fn invalid_identities_and_duplicate_rows_do_not_authorize_cleanup() {
 }
 
 #[test]
-fn remote_empty_partial_and_invalid_indexes_cannot_remove_missing_threads() {
+fn remote_unconfirmed_empty_partial_and_invalid_indexes_cannot_remove_missing_threads() {
     let good = json!({"runnerId":"cloud","threadId":"12345678-1234-1234-1234-123456789abc"});
     for value in [json!({}), json!({"threads":false}), json!({"threads":[]}), json!({"threads":[false]}), json!({"threads":[good.clone(),false]}), json!({"threads":[good.clone(),good.clone()]})] {
         assert!(!decode_remote_threads(&value).can_remove_missing());
     }
     assert!(decode_remote_threads(&json!({"threads":[good]})).can_remove_missing());
+    assert!(decode_remote_threads(&json!({"threads":[], "ready":true})).can_remove_missing(), "a confirmed empty remote index removes its last deleted thread");
+    assert!(!decode_remote_threads(&json!({"threads":[], "ready":false})).can_remove_missing());
 }
 
 #[test]
@@ -157,6 +159,18 @@ fn patch_trust_disclosures_and_nonmain_login_folders_fail_closed() {
             assert!(serde_json::from_value::<PatchInfo>(patch).is_err());
         }
     }
+    for field in ["source", "file", "hash", "untrusted"] {
+        let mut patch = json!({"id":"p","source":"project","untrusted":"Read first","file":"patch.ts","hash":"hash"});
+        patch[field] = json!(false);
+        assert!(serde_json::from_value::<PatchInfo>(patch).is_err());
+    }
+    let valid = json!({"id":"p","source":"claude","untrusted":"Read first","file":"patch.ts","hash":"hash"});
+    assert!(serde_json::from_value::<PatchInfo>(valid.clone()).unwrap().can_trust());
+    for field in ["source", "file", "hash"] {
+        let mut patch = valid.clone();
+        patch.as_object_mut().unwrap().remove(field);
+        assert!(!serde_json::from_value::<PatchInfo>(patch).unwrap().can_trust());
+    }
     for (id, provider) in [("claude-1","claude"),("codex-1","codex")] {
         let logins = RunnerLogins::from_hello(&json!({"accounts":[{"id":id,"provider":provider,"configDir":false}]}));
         let a = &logins.accounts[0];
@@ -165,6 +179,10 @@ fn patch_trust_disclosures_and_nonmain_login_folders_fail_closed() {
         let script = sign_in::script(&account,"/opt/cli");
         assert!(!script.contains("/opt/cli"));
     }
+    let malformed = RunnerLogins::from_hello(&json!({"accounts":[{"id":"codex-1","provider":{},"configDir":"/codex"}]}));
+    assert!(malformed.accounts.is_empty(), "a bad provider cannot change which CLI signs in");
+    let mismatch = sign_in::SignInAccount { id:"codex-1".into(), provider:"claude".into(), title:String::new(), config_dir:"/codex".into() };
+    assert!(sign_in::account_for("codex",false,Some(mismatch)).is_none());
 }
 
 #[test]

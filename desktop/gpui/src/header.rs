@@ -530,7 +530,7 @@ impl Threadbear {
             // (composer.rs, `LimitBox`), not across the top: Mike's call on
             // 10 Nov, as the bar read as an error and offered only the switch.
             let (account, remote) = (self.sign_in_account(thread, cx), self.remote_sign_in_runner(thread, cx));
-            if account.is_some() || remote.is_some() {
+            if self.sign_in_needed(thread, cx) {
                 column = column.child(self.render_signin_banner(thread, account, remote, cx));
             }
             // The refusal offer sits just above the box (RefusalOffer in
@@ -954,7 +954,7 @@ impl Threadbear {
 
     /// Whether the open thread's last turn failed with its login refused
     /// (`signInNeeded`: errorKind auth, signed out or its session ran out).
-    fn sign_in_needed(&self, thread: &ThreadSummary, cx: &App) -> bool {
+    pub(crate) fn sign_in_needed(&self, thread: &ThreadSummary, cx: &App) -> bool {
         thread.status == "error" && self.latest_completion(cx).is_some_and(|c| c.outcome == TurnOutcome::Failed && c.error_kind == Some(TurnErrorKind::Auth))
     }
 
@@ -985,8 +985,12 @@ impl Threadbear {
         let name = threadbear_core::logins::provider_title(provider);
         let (text, tip) = match (&account, &remote) {
             (Some(a), _) => (format!("{name} needs you to sign in again."), format!("The login {} was refused: signed out, or its session ran out", a.title)),
-            (None, Some(runner)) => (format!("{name} on {runner} needs you to sign in again."), format!("Sign in on {runner} itself: {} in its Terminal", self.logins.login_command(provider))),
-            (None, None) => (String::new(), String::new()),
+            (None, Some(runner)) => {
+                let command = self.logins.login_command(provider);
+                let tip = if command.is_empty() { format!("Sign in on {runner} itself") } else { format!("Sign in on {runner} itself: {command} in its Terminal") };
+                (format!("{name} on {runner} needs you to sign in again."), tip)
+            }
+            (None, None) => (format!("{name} needs you to sign in again."), "Sign in using that login's CLI, then send your last message again".into()),
         };
         h_flex()
             .flex_none()

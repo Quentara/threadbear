@@ -17,6 +17,7 @@ pub fn account_for(provider: &str, remote: bool, known: Option<SignInAccount>) -
         return None;
     }
     if let Some(known) = known {
+        if !provider.is_empty() && known.provider != provider { return None; }
         return known.can_sign_in().then_some(known);
     }
     match provider {

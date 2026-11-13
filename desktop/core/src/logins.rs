@@ -29,7 +29,9 @@ pub struct ModelChoice {
 pub struct Account {
     #[serde(default, deserialize_with = "crate::wire::id")]
     pub id: String,
-    #[serde(default, deserialize_with = "crate::wire::field")]
+    // The provider selects the CLI and credential folder. A wrong type must
+    // not turn a Codex account into Claude through provider_id's old fallback.
+    #[serde(default)]
     pub provider: String,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub title: String,

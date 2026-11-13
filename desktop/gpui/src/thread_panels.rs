@@ -274,7 +274,7 @@ impl Threadbear {
         };
         let mut column = v_flex().size_full();
         let (account, remote) = (self.sign_in_account(&thread, cx), self.remote_sign_in_runner(&thread, cx));
-        if account.is_some() || remote.is_some() {
+        if self.sign_in_needed(&thread, cx) {
             column = column.child(self.render_signin_banner(&thread, account, remote, cx));
         }
         if let Some(bar) = self.pending_reviews_bar(&thread, cx) {

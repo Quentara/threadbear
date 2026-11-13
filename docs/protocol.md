@@ -6,10 +6,14 @@ Both sides must ignore unknown fields and unknown event types so either can be
 upgraded first. Times are ISO 8601 strings in UTC. Ids are strings.
 
 Readers keep valid fields and list entries when another field or entry has
-the wrong type. An unreadable identity drops that row. Decode diagnostics name
+the wrong type. An unreadable identity drops that row. Routing and authorization
+fields also fail closed when recovery would change the account being used or
+hide what a Trust action permits. Decode diagnostics name
 only the type or position, never values or user text. A failed, empty or partly
-unreadable thread list is not evidence that previously listed threads were
+unreadable local thread list is not evidence that previously listed threads were
 deleted: clients keep those rows and must not run missing-thread cleanup.
+Other runners' indexes carry `ready`: a fully readable remote list with
+`ready: true` may be empty after the last remote thread or runner was removed.
 
 ## Auth
 

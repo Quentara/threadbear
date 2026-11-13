@@ -369,7 +369,7 @@ impl SidePane {
                     .gap(px(8.))
                     .items_center()
                     .child(div().text_size(px(style::size::DETAIL)).text_color(needs_you).child(words::waiting_text(patch)))
-                    .child(button)
+                    .when(patch.can_trust(), |row| row.child(button))
                     .when(trusting, |s| s.child(Spinner::new().with_size(px(11.)).color(p.secondary))),
             );
             for grant in patch.grants.iter().flatten() {
@@ -432,7 +432,7 @@ impl SidePane {
     /// button stays busy until the thread's update says it's trusted, or a
     /// few seconds later in case that never comes.
     pub(crate) fn trust_patches(&mut self, patches: Vec<PatchInfo>, thread_id: String, cx: &mut Context<Self>) {
-        let files: Vec<(String, String)> = patches.iter().filter_map(|p| p.file.clone().zip(p.hash.clone())).filter(|(f, h)| !self.panels.trusting.contains(&trust_key(f, h))).collect();
+        let files: Vec<(String, String)> = patches.iter().filter(|p| p.can_trust()).filter_map(|p| p.file.clone().zip(p.hash.clone())).filter(|(f, h)| !self.panels.trusting.contains(&trust_key(f, h))).collect();
         if files.is_empty() {
             return;
         }
@@ -501,7 +501,7 @@ impl SidePane {
     pub(crate) fn render_action_chips(&mut self, thread: &ThreadSummary, room: f32, project_icons: &HashMap<String, crate::sidebar::ProjectIcon>, window: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let actions = thread.actions();
         let patches = thread.patches();
-        let waiting: Vec<PatchInfo> = patches.iter().filter(|p| p.untrusted.is_some()).cloned().collect();
+        let waiting: Vec<PatchInfo> = patches.iter().filter(|p| p.can_trust()).cloned().collect();
         if actions.is_empty() && waiting.is_empty() {
             return None;
         }
@@ -656,7 +656,7 @@ impl SidePane {
 
     /// Whether the chip row has any chips, so the host can leave it out.
     pub(crate) fn has_action_chips(thread: &ThreadSummary) -> bool {
-        thread.actions.as_ref().is_some_and(|a| !a.is_empty()) || thread.patches().iter().any(|p| p.untrusted.is_some())
+        thread.actions.as_ref().is_some_and(|a| !a.is_empty()) || thread.patches().iter().any(PatchInfo::can_trust)
     }
 
     #[cfg(feature = "automation")]
@@ -736,7 +736,7 @@ fn abbreviate_home(path: &str) -> String {
 #[cfg(feature = "automation")]
 pub(crate) fn trust_command(side: &Entity<SidePane>, thread: &ThreadSummary, cmd: &Value, cx: &mut App) -> Result<Value, String> {
     let id = cmd["id"].as_str();
-    let waiting: Vec<PatchInfo> = thread.patches().into_iter().filter(|p| p.untrusted.is_some() && id.is_none_or(|i| p.id == i)).collect();
+    let waiting: Vec<PatchInfo> = thread.patches().into_iter().filter(|p| p.can_trust() && id.is_none_or(|i| p.id == i)).collect();
     if waiting.is_empty() {
         return Err("nothing waiting to be trusted".into());
     }

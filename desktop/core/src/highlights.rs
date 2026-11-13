@@ -1104,9 +1104,9 @@ pub struct Action {
 pub struct PatchInfo {
     #[serde(default, deserialize_with = "crate::wire::id")]
     pub id: String,
-    #[serde(default, deserialize_with = "crate::wire::field")]
+    #[serde(default)]
     pub source: String,
-    #[serde(default, deserialize_with = "crate::wire::field")]
+    #[serde(default)]
     pub file: Option<String>,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub error: Option<String>,
@@ -1126,9 +1126,9 @@ pub struct PatchInfo {
     pub icon: Option<String>,
     #[serde(default, deserialize_with = "crate::wire::field")]
     pub icon_file: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::field")]
+    #[serde(default)]
     pub untrusted: Option<String>,
-    #[serde(default, deserialize_with = "crate::wire::field")]
+    #[serde(default)]
     pub hash: Option<String>,
     // The Trust prompt must show the complete set of helpers and grants.
     // An unreadable disclosure fails the patch row closed.
@@ -1136,6 +1136,16 @@ pub struct PatchInfo {
     pub helpers: Option<Vec<String>>,
     #[serde(default)]
     pub grants: Option<Vec<String>>,
+}
+
+impl PatchInfo {
+    /// A Trust button needs complete, understood disclosures and an actual
+    /// target. Unknown sources remain readable without offering to run code.
+    pub fn can_trust(&self) -> bool {
+        self.untrusted.is_some() && matches!(self.source.as_str(), "builtin" | "home" | "project" | "claude")
+            && self.file.as_deref().is_some_and(|s| !s.is_empty())
+            && self.hash.as_deref().is_some_and(|s| !s.is_empty())
+    }
 }
 
 /// A hook (`HookInfo`); only its patch and title are shown ("gives").
