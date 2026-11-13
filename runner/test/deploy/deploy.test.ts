@@ -1065,6 +1065,15 @@ test('install-runner.sh pins a Homebrew Cellar Node as its opt/ link, which outl
     assert.ok(r.stdout.includes(`<string>${path.join(optBin, 'node')}</string>`), out(r));
     assert.ok(r.stdout.includes(`<string>${optBin}:`), out(r));
     assert.ok(!r.stdout.includes('Cellar'), out(r));
+    // An opt/ link to another version isn't this Node, so it stays as given.
+    const newer = path.join(brew, 'Cellar', 'node', '27.0.0', 'bin');
+    fs.mkdirSync(newer, { recursive: true });
+    fs.symlinkSync(process.execPath, path.join(newer, 'node'));
+    fs.rmSync(path.join(brew, 'opt', 'node'));
+    fs.symlinkSync(path.join('..', 'Cellar', 'node', '27.0.0'), path.join(brew, 'opt', 'node'));
+    const other = sh('install-runner.sh', ['--home', home, '--label', LABEL, '--port', '0', '--path', '/usr/bin:/bin', '--print'], { THREADBEAR_NODE: path.join(cellarBin, 'node') });
+    assert.equal(other.status, 0, out(other));
+    assert.ok(other.stdout.includes(`<string>${path.join(cellarBin, 'node')}</string>`), out(other));
     // Without an opt/ link (not Homebrew's layout after all), as given.
     fs.rmSync(path.join(brew, 'opt'), { recursive: true });
     const plain = sh('install-runner.sh', ['--home', home, '--label', LABEL, '--port', '0', '--path', '/usr/bin:/bin', '--print'], { THREADBEAR_NODE: path.join(cellarBin, 'node') });

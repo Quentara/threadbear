@@ -116,9 +116,14 @@ fi
 # resolved, so a runner started on /opt/homebrew/bin/node hands its threads
 # (and so this script, through THREADBEAR_NODE) the Cellar one. Pin the
 # formula's opt/ link instead, which Homebrew moves to each new version
-# (teodorboev's fork, 9 Nov 2026).
-if [[ "$NODE" =~ ^(.*)/Cellar/([^/]+)/[^/]+/bin/node$ ]] && [ -x "${BASH_REMATCH[1]}/opt/${BASH_REMATCH[2]}/bin/node" ]; then
-  NODE="${BASH_REMATCH[1]}/opt/${BASH_REMATCH[2]}/bin/node"
+# (teodorboev's fork, 9 Nov 2026). Only when opt/ leads to this same Node:
+# one pointing at another version (or a folder that's merely named Cellar)
+# would swap in a Node nobody chose, even over --node (Codex's review).
+if [[ "$NODE" =~ ^(.*)/Cellar/([^/]+)/[^/]+/bin/node$ ]]; then
+  opt_node="${BASH_REMATCH[1]}/opt/${BASH_REMATCH[2]}/bin/node"
+  if [ -x "$opt_node" ] && [ "$(cd "$(dirname "$opt_node")" 2>/dev/null && pwd -P)" = "$(cd "$(dirname "$NODE")" 2>/dev/null && pwd -P)" ]; then
+    NODE="$opt_node"
+  fi
 fi
 
 case "$DATA_HOME" in /*) ;; *) DATA_HOME="$PWD/$DATA_HOME" ;; esac
