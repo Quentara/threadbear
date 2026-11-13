@@ -108,11 +108,22 @@ fi
 # runner.json's checkHost. Read before the THREADBEAR_* names go below.
 RUNNER_JSON="${THREADBEAR_HOME:-$HOME/Library/Application Support/Threadbear}/runner.json"
 if [ "$LOCAL" = 0 ] && [ "$E2E" = 0 ]; then
-  if [ -n "${THREADBEAR_CHECK_HOST+set}" ]; then
+  configured_hosts() {
+    [ -x "$NODE" ] && [ -f "$RUNNER_JSON" ] && "$NODE" -e '
+      try { const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const h = Array.isArray(j.checkHosts) ? j.checkHosts : j.checkHost; const l = (Array.isArray(h) ? h : [h]).filter((x) => typeof x === "string" && /^[A-Za-z0-9][A-Za-z0-9._@-]*$/.test(x)); if (l.length) console.log(l.join(",")) } catch {}' "$RUNNER_JSON"
+  }
+  # A grouped landing's check (tb land sets THREADBEAR_CHECK_PREFER from what
+  # each landing in it asked for) goes to the configured hosts, those asked
+  # for tried first (scripts/check-remote.sh): never just the holder's own
+  # THREADBEAR_CHECK_HOST, which could leave out every Mac the group needs, or
+  # with an empty one run everyone's check on this Mac (Codex's review).
+  if [ -n "${THREADBEAR_CHECK_PREFER:-}" ]; then
+    CHECK_HOST="$(configured_hosts)"
+    [ -n "$CHECK_HOST" ] || CHECK_HOST="$THREADBEAR_CHECK_PREFER"
+  elif [ -n "${THREADBEAR_CHECK_HOST+set}" ]; then
     CHECK_HOST="$THREADBEAR_CHECK_HOST"
   else
-    CHECK_HOST="$( [ -x "$NODE" ] && [ -f "$RUNNER_JSON" ] && "$NODE" -e '
-      try { const j = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const h = Array.isArray(j.checkHosts) ? j.checkHosts : j.checkHost; const l = (Array.isArray(h) ? h : [h]).filter((x) => typeof x === "string" && /^[A-Za-z0-9][A-Za-z0-9._@-]*$/.test(x)); if (l.length) console.log(l.join(",")) } catch {}' "$RUNNER_JSON")"
+    CHECK_HOST="$(configured_hosts)"
   fi
   if [ -n "$CHECK_HOST" ]; then
     "$ROOT/scripts/check-remote.sh" "$CHECK_HOST" ${ARGS[@]+"${ARGS[@]}"}
