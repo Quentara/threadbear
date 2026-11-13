@@ -422,15 +422,14 @@ for (const backend of [false, true]) for (const createdAway of [false, true]) te
   oldSched.stop();
   let folder: string | undefined = cwd;
   let away = true;
-  let checks = 0;
+  const checkedFolders: string[] = [];
   const sched = new Scheduler({
     runner: h.runner, home, clock: h.clock, log: nullLogger, self: M5,
     elsewhere: (id) => away && id === thread.id,
     folderElsewhere: (id) => id === thread.id ? folder : undefined,
     sendElsewhere: async (id, text) => old.runner.send(id, text),
     runCheck: async (p) => {
-      checks++;
-      assert.equal(p.cwd, cwd, 'approval and execution must use the thread folder');
+      checkedFolders.push(p.cwd);
       return { ok: true, output: p.cwd };
     },
   });
@@ -445,7 +444,7 @@ for (const backend of [false, true]) for (const createdAway of [false, true]) te
     assert.equal(sched.find(sc.id).runs, 1);
     assert.ok(old.adapter.last.sent.at(-1)!.text.includes(cwd));
     assert.doesNotMatch(old.adapter.last.sent.at(-1)!.text, /wasn't run/);
-    assert.equal(checks, 1);
+    assert.deepEqual(checkedFolders, [cwd], 'execution uses the approved folder');
     old.adapter.last.result('completed');
     await tick();
 
@@ -457,12 +456,12 @@ for (const backend of [false, true]) for (const createdAway of [false, true]) te
     h.clock.advance(MIN);
     await tick(12);
     assert.equal(sched.find(sc.id).runs, 1, 'the unresolved run stays due');
-    assert.equal(checks, 1);
+    assert.deepEqual(checkedFolders, [cwd]);
     folder = cwd;
     h.clock.advance(MIN);
     await tick(12);
     assert.equal(sched.find(sc.id).runs, 2, 'the due check resumes when the folder is known');
-    assert.equal(checks, 2);
+    assert.deepEqual(checkedFolders, [cwd, cwd]);
     old.adapter.last.result('completed');
     await tick();
 
@@ -471,7 +470,7 @@ for (const backend of [false, true]) for (const createdAway of [false, true]) te
     fs.mkdirSync(folder);
     h.clock.advance(MIN);
     await tick(12);
-    assert.equal(checks, 2, 'never execute an unapproved check after a move');
+    assert.deepEqual(checkedFolders, [cwd, cwd], 'never execute an unapproved check after a move');
     assert.match(old.adapter.last.sent.at(-1)!.text, /wasn't run/);
     old.adapter.last.result('completed');
     await tick();
@@ -479,7 +478,7 @@ for (const backend of [false, true]) for (const createdAway of [false, true]) te
     away = false;
     h.clock.advance(MIN);
     await tick(12);
-    assert.equal(checks, 2);
+    assert.deepEqual(checkedFolders, [cwd, cwd]);
     assert.equal(sched.find(sc.id).lastRun?.outcome, 'failed', 'a deleted thread fails rather than waiting for handover forever');
   } finally { sched.stop(); }
 });
