@@ -1440,6 +1440,12 @@ export class ConvexSync {
   // .env files still being read), tried again with the next heartbeat: the
   // pending list doesn't change by itself, so nothing else brings it round.
   private untaken = new Map<string, Command>();
+  // Each thread's command being applied, so the next one for that thread
+  // waits for it: every update of the pending list starts its own run of
+  // takeCommands, and a text sent after a photo reached the agent first
+  // while the photo downloaded (13 Nov 2026, the implicit state machines
+  // scan). Other threads' commands don't wait.
+  private applying = new Map<string, Promise<unknown>>();
   // A command applied here whose finishCommand failed, tried again with
   // each heartbeat: otherwise it stays "taken", which nothing reaps for 14
   // days, and the phone shows "Sending…" with no Cancel all that time.
@@ -4163,44 +4169,63 @@ export class ConvexSync {
     for (const c of commands) {
       if (!this.running || this.inFlight.has(c.commandId)) continue;
       this.inFlight.add(c.commandId);
+      let taken: unknown;
       try {
-        let taken: unknown;
-        try {
-          taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });
-          this.untaken.delete(c.commandId);
-        } catch (e) {
-          // Still pending: the next heartbeat tries it again.
-          if (!refusedForGood(e)) this.untaken.set(c.commandId, c);
-          this.deps.log.debug('phone command not taken', { commandId: c.commandId, error: String(e) });
-          continue;
-        }
-        if (taken !== true) continue;
-        let resultThreadId: string | undefined;
-        let result: unknown;
-        let note: string | undefined;
-        let ok = true;
-        try {
-          ({ threadId: resultThreadId, result } = (await this.apply(c)) ?? {});
-          this.applied++;
-        } catch (e) {
-          ok = false;
-          note = String((e as Error)?.message ?? e);
-          this.failed++;
-          this.commandError = note;
-          // The phone can still show a thread for a moment after it's
-          // deleted: its command failing then is a race, not a problem.
-          if ((e as { code?: unknown })?.code === ErrorCode.threadNotFound) this.deps.log.info('phone command for a thread that has gone', { kind: c.kind, threadId: c.threadId });
-          else this.deps.log.warn('phone command failed', { kind: c.kind, threadId: c.threadId, error: note });
-        }
-        // The row first, so the phone opens a thread it already has; one
-        // that can't be written now goes with the next flush, and the
-        // command is finished either way.
-        if (resultThreadId) await this.writeRowNow(resultThreadId).catch((e) => this.deps.log.debug('could not write the row of a command thread yet', { threadId: resultThreadId, error: String(e) }));
-        await this.finishCommand(c.commandId, { key: this.deps.key, commandId: c.commandId, ok, ...(note ? { note } : {}), ...(resultThreadId ? { resultThreadId } : {}), ...(result !== undefined ? { result: JSON.stringify(result) } : {}) });
-      } finally {
-        this.inFlight.delete(c.commandId);
+        taken = await this.post('mutation', 'sync:takeCommand', { key: this.deps.key, commandId: c.commandId });
+        this.untaken.delete(c.commandId);
+      } catch (e) {
+        // Still pending: the next heartbeat tries it again.
+        if (!refusedForGood(e)) this.untaken.set(c.commandId, c);
+        this.deps.log.debug('phone command not taken', { commandId: c.commandId, error: String(e) });
       }
+      if (taken !== true) {
+        this.inFlight.delete(c.commandId);
+        continue;
+      }
+      // Not waited for here: one thread's command waiting on the one before
+      // it (inOrder) mustn't hold up another thread's.
+      void this.inOrder(c.threadId ?? '', () => this.runTaken(c)).finally(() => this.inFlight.delete(c.commandId));
     }
+  }
+
+  private async runTaken(c: Command): Promise<void> {
+    let resultThreadId: string | undefined;
+    let result: unknown;
+    let note: string | undefined;
+    let ok = true;
+    try {
+      ({ threadId: resultThreadId, result } = (await this.apply(c)) ?? {});
+      this.applied++;
+    } catch (e) {
+      ok = false;
+      note = String((e as Error)?.message ?? e);
+      this.failed++;
+      this.commandError = note;
+      // The phone can still show a thread for a moment after it's
+      // deleted: its command failing then is a race, not a problem.
+      if ((e as { code?: unknown })?.code === ErrorCode.threadNotFound) this.deps.log.info('phone command for a thread that has gone', { kind: c.kind, threadId: c.threadId });
+      else this.deps.log.warn('phone command failed', { kind: c.kind, threadId: c.threadId, error: note });
+    }
+    // The row first, so the phone opens a thread it already has; one
+    // that can't be written now goes with the next flush, and the
+    // command is finished either way.
+    if (resultThreadId) await this.writeRowNow(resultThreadId).catch((e) => this.deps.log.debug('could not write the row of a command thread yet', { threadId: resultThreadId, error: String(e) }));
+    await this.finishCommand(c.commandId, { key: this.deps.key, commandId: c.commandId, ok, ...(note ? { note } : {}), ...(resultThreadId ? { resultThreadId } : {}), ...(result !== undefined ? { result: JSON.stringify(result) } : {}) });
+  }
+
+  // A thread's commands run one after another, in the order they were
+  // taken; ones for no thread (a new thread, a schedule) likewise among
+  // themselves.
+  private inOrder(id: string, work: () => Promise<void>): Promise<void> {
+    const before = this.applying.get(id);
+    const run = (before ? before.catch(() => undefined) : Promise.resolve()).then(work);
+    this.applying.set(id, run);
+    void run
+      .catch(() => undefined)
+      .finally(() => {
+        if (this.applying.get(id) === run) this.applying.delete(id);
+      });
+    return run;
   }
 
   private async finishCommand(commandId: string, args: Record<string, unknown>): Promise<void> {
@@ -4229,7 +4254,7 @@ export class ConvexSync {
       void this.finishCommand(commandId, args).finally(() => this.inFlight.delete(commandId));
     }
     if (this.untaken.size && this.deps.commands) {
-      const again = [...this.untaken.values()];
+      const again = [...this.untaken.values()].sort((a, b) => a.createdAt - b.createdAt);
       this.untaken.clear();
       void this.takeCommands(again);
     }

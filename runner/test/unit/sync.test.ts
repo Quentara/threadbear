@@ -439,7 +439,7 @@ type Fake = { h: ReturnType<typeof makeHarness>; sync: ConvexSync; calls: Call[]
 // What the fake deployment's photos were fetched from, across setupFull calls in a test.
 const downloads: string[] = [];
 
-function setupFull(opts: { heads?: { threadId: string; lastSeq: number }[]; taken?: Set<string>; failApply?: boolean | 'async'; log?: Logger; apiVersion?: number; hold?: (fn: string, args: Record<string, unknown>) => Promise<void> | undefined; answer?: (fn: string, args: Record<string, unknown>) => unknown } = {}): Fake {
+function setupFull(opts: { heads?: { threadId: string; lastSeq: number }[]; taken?: Set<string>; failApply?: boolean | 'async'; log?: Logger; apiVersion?: number; hold?: (fn: string, args: Record<string, unknown>) => Promise<void> | undefined; holdDownload?: (url: string) => Promise<void> | undefined; answer?: (fn: string, args: Record<string, unknown>) => unknown } = {}): Fake {
   const h = makeHarness();
   const calls: Call[] = [];
   // In the order they finish, with hold() keeping some back.
@@ -480,6 +480,7 @@ function setupFull(opts: { heads?: { threadId: string; lastSeq: number }[]; take
     home: h.cfg.home,
     download: async (url) => {
       downloads.push(url);
+      await opts.holdDownload?.(url);
       return url.includes('notimage') ? new Uint8Array([1, 2, 3, 4]) : new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
     },
     runner: {
@@ -1021,16 +1022,19 @@ test('commands: each pending one is taken once, applied through the runner as fr
   await tick(10);
   push(cmds); // the same list again, as a live query re-run would send
   await tick(10);
-  assert.deepEqual(applied, [`send ${t.id} from my phone phone`, `update {"threadId":"${t.id}","archived":true,"verdict":"worked"}`, 'create a new one phone', `share ${t.id} link new`]);
+  // In order for the thread; the new thread's doesn't wait for them.
+  assert.deepEqual(applied.filter((a) => a.includes(t.id)), [`send ${t.id} from my phone phone`, `update {"threadId":"${t.id}","archived":true,"verdict":"worked"}`, `share ${t.id} link new`]);
+  assert.deepEqual(applied.filter((a) => !a.includes(t.id)), ['create a new one phone']);
   const finished = calls.filter((c) => c.fn === 'sync:finishCommand').map((c) => c.args);
   assert.equal(finished.length, 4);
   assert.ok(finished.every((f) => f.ok === true && f.key === 'k'));
-  assert.ok(typeof finished[2]!.resultThreadId === 'string');
-  assert.equal(h.runner.get(finished[2]!.resultThreadId as string).title, 'a new one');
+  const created = finished.find((f) => f.commandId === 'c3')!;
+  assert.ok(typeof created.resultThreadId === 'string');
+  assert.equal(h.runner.get(created.resultThreadId as string).title, 'a new one');
   // Its row is in Convex before the phone hears the id, or the phone opens
   // the thread to "This thread's gone".
   const finishAt = calls.findIndex((c) => c.fn === 'sync:finishCommand' && c.args.commandId === 'c3');
-  const rowAt = calls.findIndex((c) => c.fn === 'sync:upsertThreads' && (c.args.threads as { threadId: string }[]).some((r) => r.threadId === finished[2]!.resultThreadId));
+  const rowAt = calls.findIndex((c) => c.fn === 'sync:upsertThreads' && (c.args.threads as { threadId: string }[]).some((r) => r.threadId === created.resultThreadId));
   assert.ok(rowAt >= 0 && rowAt < finishAt, 'the new row is written before the command finishes');
   // A share's row too (with its link, on a backend that takes one): the
   // Mac that asked through the relay reads the link from it once it's done.
@@ -3769,5 +3773,36 @@ test('commands: a finish or a take that failed goes again with the next heartbea
   await tick(10);
   assert.deepEqual(applied.filter((a) => a.startsWith('send')).at(-1), `send ${t.id} second phone`);
   assert.equal(finished('c2'), 1);
+  await sync.stop();
+});
+
+// Each update of the pending list started its own run of the commands, so
+// a text sent after a photo reached the agent first while the photo was
+// still downloading. A thread's commands now go in order; another
+// thread's don't wait (13 Nov 2026, the implicit state machines scan).
+test("commands: a thread's next message waits for its photo, another thread's doesn't", async () => {
+  let release: (() => void) | undefined;
+  const { h, sync, push, applied } = setupFull({
+    apiVersion: BACKEND_API_VERSION,
+    holdDownload: () => new Promise<void>((r) => (release = r)),
+  });
+  sync.start();
+  await sync.flushNow();
+  const a = h.runner.create({ text: 'hello', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  const b = h.runner.create({ text: 'other', cwd: h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await tick();
+  push([{ commandId: 'photo', kind: 'send', threadId: a.id, args: { text: 'look', images: [{ storageId: 's1', url: 'https://x/photo' }] }, createdAt: 1 }]);
+  await tick(10);
+  assert.ok(release, 'the photo is downloading');
+  // The list changes (the photo's taken): its update brings the rest.
+  push([
+    { commandId: 'text', kind: 'send', threadId: a.id, args: { text: 'what do you think?' }, createdAt: 2 },
+    { commandId: 'elsewhere', kind: 'send', threadId: b.id, args: { text: 'meanwhile' }, createdAt: 3 },
+  ]);
+  await tick(10);
+  assert.deepEqual(applied.filter((x) => x.startsWith('send')).map((x) => x.split(' ')[2]), ['meanwhile'], "the other thread's goes now, this one's waits");
+  release!();
+  await tick(20);
+  assert.deepEqual(applied.filter((x) => x.startsWith(`send ${a.id}`)).map((x) => x.split(' ')[2]), ['look', 'what']);
   await sync.stop();
 });
