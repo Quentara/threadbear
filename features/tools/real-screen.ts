@@ -105,11 +105,12 @@ const stacker = path.join(work, 'windows-above');
  */
 export function windowsAbove(pid: number, x: number, y: number): string[] | null {
   if (!fs.existsSync(stacker)) {
-    fs.writeFileSync(`${stacker}.swift`, `import CoreGraphics
-import Foundation
+    fs.writeFileSync(`${stacker}.swift`, `import AppKit
+import CoreGraphics
 let a = CommandLine.arguments
 let pid = Int32(a[1])!, x = Double(a[2])!, y = Double(a[3])!
 let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as! [[String: Any]]
+let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").map(\\.processIdentifier))
 var above: [String] = []
 for w in list {
   if (w[kCGWindowOwnerPID as String] as? Int32) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
@@ -118,7 +119,8 @@ for w in list {
     exit(0)
   }
   guard let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowAlpha as String] as? Double ?? 1) > 0 else { continue }
-  if (w[kCGWindowName as String] as? String) == "Notification Center" { continue }
+  // Notification Centre's whole-screen sentinel, only when it's really its.
+  if (w[kCGWindowName as String] as? String) == "Notification Center", let owner = w[kCGWindowOwnerPID as String] as? Int32, notificationPIDs.contains(owner) { continue }
   if x >= b["X"]! && x < b["X"]! + b["Width"]! && y >= b["Y"]! && y < b["Y"]! + b["Height"]! {
     above.append("\\(w[kCGWindowNumber as String] as? Int ?? -1) \\(w[kCGWindowOwnerName as String] as? String ?? "?")")
   }

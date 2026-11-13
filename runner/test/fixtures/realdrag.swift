@@ -89,4 +89,16 @@ r = run(from, from)
 check(r.code == 0 && r.sent == [.move(from), .down(from), .up(from)], "a click")
 r = run(from, from, stack: { _, n in n >= 1 ? [popup] + mine : mine }, front: alert)
 check(r.code == 3 && !r.sent.contains(.escape) && ups(r).count == 1, "something over a click before it lets go")
+// The jump back went to the press point, which was covered by the time it
+// looked again, and nothing else is clear: it lets go where the pointer is,
+// never back at the drop it jumped away from.
+looks = 0
+r = run(stack: { p, n in
+    guard n >= 11 else { return mine }
+    if p == from { looks += 1; return looks > 1 ? [popup] + mine : mine }
+    return [popup] + mine }, front: alert)
+check(r.code == 3 && ups(r) == [from] && steps(r).last == from, "lets go where the pointer is")
+// The guard said the app at the drop, then a window came up there before letting go.
+r = run(stack: { p, n in n >= 40 && p == to ? [popup] + mine : mine })
+check(r.code == 3 && ups(r) == [from], "the drop's window list is looked at after the guard")
 print("realdrag checks passed")

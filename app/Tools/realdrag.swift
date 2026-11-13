@@ -68,15 +68,17 @@ func drag(from: CGPoint, to: CGPoint, hold: Double, press: Double, pids: Pids?, 
         return CGPoint(x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t)
     }
     var at = 0
+    // Where the pointer really is, for letting go when nowhere else is clear.
+    var pointer = from
     func cancel(_ why: String) -> Int32 {
         say("\(why); drag cancelled")
         if let pids, look.front() == pids.press { post(.escape); wait(0.2) }
         for j in 0...at where clear(path[j]) {
-            if j != at { post(.dragged(path[j])); wait(0.05) }
+            if path[j] != pointer { post(.dragged(path[j])); pointer = path[j]; wait(0.05) }
             // Looked at again just before letting go there.
             if clear(path[j]) { post(.up(path[j])); wait(0.3); return 3 }
         }
-        post(.up(path[at])); wait(0.3)
+        post(.up(pointer)); wait(0.3)
         return 3
     }
     // The same point twice is a click, as quick as a hand's: anything longer
@@ -93,12 +95,13 @@ func drag(from: CGPoint, to: CGPoint, hold: Double, press: Double, pids: Pids?, 
     for i in 1...steps {
         let p = path[i]
         guard clear(p) else { return cancel("something came up at (\(Int(p.x)), \(Int(p.y)))") }
-        post(.dragged(p)); at = i
+        post(.dragged(p)); at = i; pointer = p
         wait(0.016)
     }
     wait(hold)
     shoot()
-    if let pids, look.owner(to) != pids.drop { return cancel("the drop isn't the app's any more") }
+    // The guard program, then the window list again: something can come up while it runs.
+    if let pids, look.owner(to) != pids.drop || !clear(to) { return cancel("the drop isn't the app's any more") }
     post(.up(to)); wait(0.6)
     return 0
 }
@@ -127,16 +130,20 @@ let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "co
 var displayIDs = [CGDirectDisplayID](repeating: 0, count: 32)
 var displayCount: UInt32 = 0
 let displays = CGGetActiveDisplayList(32, &displayIDs, &displayCount) == .success ? displayIDs.prefix(Int(displayCount)).map { CGDisplayBounds($0) } : []
+// Notification Centre keeps a see-through window over the whole screen that
+// only its banners take clicks in: skipped, but only when it's really
+// Notification Centre's, not any window with that title.
+let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").map(\.processIdentifier))
 /// The same windows window-at looks through: on screen, not see-through, not
 /// Notification Centre's whole-screen sentinel.
 func stack(_ p: CGPoint) -> [Over] {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
     return list.compactMap { w in
         guard let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-              (w[kCGWindowName as String] as? String) != "Notification Center",
+              let pid = w[kCGWindowOwnerPID as String] as? Int32,
+              !((w[kCGWindowName as String] as? String) == "Notification Center" && notificationPIDs.contains(pid)),
               let x = b["X"], let y = b["Y"], let wd = b["Width"], let h = b["Height"],
-              CGRect(x: x, y: y, width: wd, height: h).contains(p),
-              let pid = w[kCGWindowOwnerPID as String] as? Int32 else { return nil }
+              CGRect(x: x, y: y, width: wd, height: h).contains(p) else { return nil }
         let overlay = dockPID != nil && pid == dockPID && w[kCGWindowLayer as String] as? Int == 20
             && w[kCGWindowName as String] as? String == "Dock" && displays.contains(CGRect(x: x, y: y, width: wd, height: h))
         return Over(number: w[kCGWindowNumber as String] as? Int ?? -1, pid: pid, overlay: overlay)

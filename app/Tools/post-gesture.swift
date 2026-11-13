@@ -37,14 +37,18 @@ let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "co
 var displayIDs = [CGDirectDisplayID](repeating: 0, count: 32)
 var displayCount: UInt32 = 0
 let displays = CGGetActiveDisplayList(32, &displayIDs, &displayCount) == .success ? displayIDs.prefix(Int(displayCount)).map { CGDisplayBounds($0) } : []
+// Notification Centre keeps a see-through window over the whole screen that
+// only its banners take clicks in: skipped, but only when it's really
+// Notification Centre's, not any window with that title.
+let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").map(\.processIdentifier))
 func covering() -> [(number: Int, pid: Int32, overlay: Bool)] {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
     return list.compactMap { w in
         guard let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
-              (w[kCGWindowName as String] as? String) != "Notification Center",
+              let pid = w[kCGWindowOwnerPID as String] as? Int32,
+              !((w[kCGWindowName as String] as? String) == "Notification Center" && notificationPIDs.contains(pid)),
               let x = b["X"], let y = b["Y"], let wd = b["Width"], let h = b["Height"],
-              CGRect(x: x, y: y, width: wd, height: h).contains(p),
-              let pid = w[kCGWindowOwnerPID as String] as? Int32 else { return nil }
+              CGRect(x: x, y: y, width: wd, height: h).contains(p) else { return nil }
         let overlay = dockPID != nil && pid == dockPID && w[kCGWindowLayer as String] as? Int == 20
             && w[kCGWindowName as String] as? String == "Dock" && displays.contains(CGRect(x: x, y: y, width: wd, height: h))
         return (w[kCGWindowNumber as String] as? Int ?? -1, pid, overlay)
