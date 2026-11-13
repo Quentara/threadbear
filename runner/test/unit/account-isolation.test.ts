@@ -79,6 +79,7 @@ test('unit-test guard permits its update clone, filters release PATHs, and keeps
   const clone = path.join(data, 'runner/update/src');
   const helpers = path.join(clone, 'runner/test/helpers');
   fs.mkdirSync(helpers, { recursive: true });
+  fs.mkdirSync(path.join(home, '.codex'));
   for (const file of ['private-home.ts', 'clean-env.ts']) fs.copyFileSync(path.join(import.meta.dirname, '../helpers', file), path.join(helpers, file));
   fs.writeFileSync(path.join(clone, 'fixture.txt'), 'source');
   fs.symlinkSync(path.join(home, '.codex'), path.join(clone, 'login-link'));
