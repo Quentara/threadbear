@@ -694,6 +694,8 @@ impl Composer {
         if text.is_empty() && images.is_empty() {
             return;
         }
+        // The runner it's shown on, as a send says it (thread.rs, Daybreak 113).
+        let Some(runner_id) = self.app.upgrade().and_then(|app| app.read(cx).threads.get(&thread_id).map(|t| t.runner_id.clone())) else { return };
         if let Some(edit) = self.editing.as_mut() {
             edit.sending = true;
         }
@@ -704,7 +706,7 @@ impl Composer {
         cx.spawn(async move |this, cx| {
             let mut stop_background = false;
             loop {
-                let mut params = json!({ "threadId": thread_id, "seq": seq, "text": text, "stopBackground": stop_background });
+                let mut params = json!({ "threadId": thread_id, "seq": seq, "text": text, "stopBackground": stop_background, "runnerId": runner_id });
                 if !images_json.is_empty() {
                     params["images"] = json!(images_json);
                 }

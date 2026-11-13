@@ -8,6 +8,7 @@ import { MAX_CARDS, MAX_HELD, Relay, SCALE, mergeTail, relayEvents, type RelayRo
 import { FakeClock } from '../../src/clock.ts';
 import { nullLogger } from '../../src/log.ts';
 import type { RemoteThreads } from '../../src/thread-index.ts';
+import { patiently } from '../helpers/patience.ts';
 
 const T = 'thread-on-bruce';
 const at = (s: number) => new Date(Date.parse('2026-11-05T10:00:00Z') + s * 1000).toISOString();
@@ -1040,4 +1041,22 @@ test('a watch from before the backend had login notes asks for them once it does
   const note = events.find((e) => e.type === 'system.note');
   assert.equal(note?.text, moved.text);
   assert.equal(note?.login, true);
+});
+
+// Daybreak 113: the RPC server checks a send's runnerId against this, so it
+// must be the runner `call` really sends to.
+test('ownerOf names the runner a request goes to, following a move', async () => {
+  const h = harness();
+  assert.equal(h.relay.ownerOf(T), 'bruce');
+  assert.equal(h.relay.ownerOf('not-listed'), undefined);
+  await h.relay.call(T, 'threads.events', { threadId: T });
+  h.remote.runners.push({ id: 'cloud', name: 'cloud', online: true, lastSeenAt: at(0) });
+  h.remote.threads[0] = { ...h.remote.threads[0]!, runnerId: 'cloud' };
+  assert.equal(h.relay.ownerOf(T), 'cloud');
+  // And the open watch sends there too, not to the runner it was opened for.
+  void h.relay.call(T, 'threads.interrupt', { threadId: T }).catch(() => {});
+  await patiently(() => h.calls.some((c) => c.fn === 'relay:queueCommand'));
+  assert.equal(h.calls.find((c) => c.fn === 'relay:queueCommand')?.args.runnerId, 'cloud');
+  h.remote.threads.length = 0;
+  assert.equal(h.relay.ownerOf(T), undefined);
 });

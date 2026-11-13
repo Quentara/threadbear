@@ -41,8 +41,18 @@ extension AppModel {
         var next = threads
         var listed: Set<String> = []
         for summary in remoteIndex.summaries {
-            // Never in place of one of this Mac's own.
-            if let existing = next[summary.id], !existing.isRemote { continue }
+            let waiting = madeRemote.contains(summary.id)
+            if let existing = next[summary.id] {
+                // Never in place of one of this Mac's own, unless it's
+                // moving to the runner that lists it.
+                if !existing.isRemote && !waiting { continue }
+                // While it waits on its move only the runner it's going to
+                // and the one it's leaving speak for it: an old Mac's
+                // lingering row can't take it, and the one it's leaving
+                // putting its row back keeps it that runner's, still locked
+                // with its move (Daybreak 113).
+                if waiting && summary.runnerId != existing.runnerId && summary.runnerId != existing.moving?.to { continue }
+            }
             listed.insert(summary.id)
             madeRemote.remove(summary.id)
             next[summary.id] = keepingAskedMove(summary, over: next[summary.id])

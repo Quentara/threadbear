@@ -809,3 +809,50 @@ test("the agent tools resolve a whole thread id without listing every thread", a
   const missing = await read.handler({ threadId: '00000000-0000-0000-0000-000000000000' } as never, {} as never);
   assert.equal(missing.isError, true);
 });
+
+// Daybreak 113: the app showed a thread moving here as this Mac's while its
+// old runner (a secondary) still owned it, and the message went there
+// through the relay. With the runner it shows the thread on, a send or an
+// edit that would reach any other is refused and goes nowhere.
+test('a send naming the runner it is shown on never reaches another', async () => {
+  const relayed: { id: string; method: string; text?: unknown }[] = [];
+  let owner = 'runner_secondary';
+  const relay = {
+    owns: (id: string) => id === 'moving',
+    ownerOf: (id: string) => (id === 'moving' ? owner : undefined),
+    call: async (id: string, method: string, p: Record<string, unknown>) => { relayed.push({ id, method, text: p.text }); return { turnId: '', queued: true }; },
+    create: async () => ({}),
+    listFolder: async () => ({}),
+    logins: async () => ({}),
+  };
+  const { h, server, url } = await serve({ relay });
+  const c = await RunnerClient.connect(url, TOKEN);
+  try {
+    const refused = async (params: Record<string, unknown>, method = 'threads.send') => {
+      const e = await c.call(method, params).then(() => undefined, (err: { code?: number }) => err);
+      assert.ok(e, `${method} ${JSON.stringify(params)} went through`);
+      return e.code;
+    };
+    // Shown as this Mac's, still the secondary's: refused, nothing relayed.
+    assert.equal(await refused({ threadId: 'moving', text: 'SENSITIVE', runnerId: null, images: [{ path: '/tmp/x.png' }] }), -32031);
+    assert.equal(await refused({ threadId: 'moving', seq: 3, text: 'SENSITIVE', runnerId: null }, 'threads.edit'), -32031);
+    // Shown on a third runner (a destination that never listed it): refused too.
+    assert.equal(await refused({ threadId: 'moving', text: 'SENSITIVE', runnerId: 'runner_cloud' }), -32031);
+    assert.equal(await refused({ threadId: 'moving', text: 'x', runnerId: '' }), -32602);
+    assert.equal(await refused({ threadId: 'moving', text: 'x', runnerId: 7 }), -32602);
+    assert.deepEqual(relayed, []);
+    // Shown where it is: goes, as before.
+    await c.call('threads.send', { threadId: 'moving', text: 'hello', runnerId: 'runner_secondary' });
+    assert.deepEqual(relayed.map((r) => r.text), ['hello']);
+    // Once it's moved on, the old name is refused.
+    owner = 'runner_cloud';
+    assert.equal(await refused({ threadId: 'moving', text: 'late', runnerId: 'runner_secondary' }), -32031);
+    // This Mac's own thread: shown as another runner's, refused; as this Mac's, sent.
+    const { thread } = h.runner.create({ text: 'Local', accountId: 'claude-3' });
+    assert.equal(await refused({ threadId: thread.id, text: 'x', runnerId: 'runner_secondary' }), -32031);
+    await c.call('threads.send', { threadId: thread.id, text: 'mine', runnerId: null });
+    // An older app says nothing, and its send is routed as before.
+    await c.call('threads.send', { threadId: 'moving', text: 'old app' });
+    assert.deepEqual(relayed.map((r) => r.text), ['hello', 'old app']);
+  } finally { c.close(); await server.close(); }
+});

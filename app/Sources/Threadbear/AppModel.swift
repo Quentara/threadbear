@@ -213,7 +213,9 @@ final class AppModel {
             // into one of this Mac's: its calls go to this Mac's runner
             // ("Thread not found") and its own runner's events are dropped.
             // Setting threads in its own didSet doesn't run didSet again.
-            for (id, thread) in threads where thread.runnerId == nil {
+            // Except one this Mac's own list says has arrived here from a move
+            // (`arrivedHere`, confirmArrival).
+            for (id, thread) in threads where thread.runnerId == nil && !arrivedHere.contains(id) {
                 if let runnerId = oldValue[id]?.runnerId { threads[id]?.runnerId = runnerId }
             }
             // Nor does the sidebar's table say if another runner's thread is
@@ -480,8 +482,13 @@ final class AppModel {
     /// The last `remoteThreads` list.
     @ObservationIgnored var remoteIndex = RemoteThreads()
     /// Threads made on another runner through Convex that the sidebar table
-    /// doesn't list yet: kept until it does.
+    /// doesn't list yet, and threads whose old runner let them go during a
+    /// move that where they're going hasn't listed yet (movedAway): kept
+    /// until it does.
     @ObservationIgnored var madeRemote: Set<String> = []
+    /// Threads being stored as this Mac's because its own list has them,
+    /// having moved here: `threads`' didSet lets their old runner go.
+    @ObservationIgnored var arrivedHere: Set<String> = []
     /// The thread a transcript link is being followed in, while a click on
     /// it is handled (TranscriptTextView.forItsThread): a thread open in a
     /// panel isn't the selected one, and another Mac's paths mustn't be

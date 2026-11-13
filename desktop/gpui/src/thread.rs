@@ -977,7 +977,9 @@ impl ThreadPane {
         self.show_outbox(cx);
         self.scroller.update(cx, |s, cx| s.scroll_to_end(cx));
 
-        let mut params = json!({ "threadId": thread_id, "text": text });
+        // The runner it's shown on (null for this Mac's), so this Mac's
+        // runner refuses it rather than passing it to any other (Daybreak 113).
+        let mut params = json!({ "threadId": thread_id, "text": text, "runnerId": self.summary.runner_id });
         if !images.is_empty() {
             params["images"] = json!(images.iter().map(crate::composer::image_ref_json).collect::<Vec<_>>());
         }

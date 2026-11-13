@@ -1532,7 +1532,7 @@ impl Threadbear {
             .text_color(fg)
             .when(look.emphasised, |s| s.font_semibold())
             // Fades over to a new name, as the agent names a new thread (open_motion.rs).
-            .child(crate::open_motion::title(&format!("row-{}-{section}", t.id), title.into(), cx.reduce_motion()));
+            .child(crate::open_motion::title(&t.id, &format!("row-{section}"), title.into(), cx.reduce_motion()));
 
         let second_line = h_flex()
             .items_baseline()

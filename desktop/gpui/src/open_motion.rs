@@ -133,9 +133,62 @@ thread_local! {
     /// Until when something here is on the move, for the specs to wait out
     /// (`Threadbear::moving`). The window draws on one thread.
     static MOVING_UNTIL: Cell<Option<Instant>> = const { Cell::new(None) };
-    /// Titles changing, by where they're shown: the one before, the one
-    /// now, and when it changed (as row_motion.rs's counts).
-    static TITLES: RefCell<HashMap<String, (SharedString, SharedString, Instant)>> = RefCell::new(HashMap::new());
+    /// Titles changing, by thread and where they're shown (as
+    /// row_motion.rs's counts).
+    static TITLES: RefCell<Titles> = RefCell::new(Titles::default());
+}
+
+/// At most this many titles are remembered at once. The app lets go of a
+/// thread's as the thread goes (`forget_titles`), so this is only a
+/// backstop: another runner's rows come from a machine we trust less, and
+/// one churning fresh thread ids through the sidebar grew the map without
+/// end (Daybreak 117, 13 Nov 2026). Past it, a new title is drawn plain.
+const TITLES_KEPT: usize = 4096;
+
+/// One title's last two texts and when it changed.
+struct Title {
+    before: SharedString,
+    now: SharedString,
+    changed: Instant,
+}
+
+/// The titles drawn so far, by (thread id, where it's shown).
+#[derive(Default)]
+struct Titles {
+    map: HashMap<(String, String), Title>,
+}
+
+impl Titles {
+    /// Notes `text` as the title shown at (`thread`, `place`): the one it
+    /// fades from and when it changed, or None to draw it plain (first
+    /// seen, or no room left).
+    fn note(&mut self, thread: &str, place: &str, text: &SharedString, now: Instant, total: Duration) -> Option<(SharedString, Instant)> {
+        let key = (thread.to_owned(), place.to_owned());
+        let Some(entry) = self.map.get_mut(&key) else {
+            if self.map.len() < TITLES_KEPT {
+                self.map.insert(key, Title { before: text.clone(), now: text.clone(), changed: now.checked_sub(total).unwrap_or(now) });
+            }
+            return None;
+        };
+        if entry.now != *text {
+            entry.before = std::mem::replace(&mut entry.now, text.clone());
+            entry.changed = now;
+        } else if entry.before != entry.now && now.duration_since(entry.changed) >= total {
+            // Faded over: the old text isn't needed any more.
+            entry.before = entry.now.clone();
+        }
+        Some((entry.before.clone(), entry.changed))
+    }
+
+    fn retain(&mut self, keep: impl Fn(&str) -> bool) {
+        self.map.retain(|(thread, _), _| keep(thread));
+    }
+}
+
+/// Lets go of the titles of threads that have gone (deleted, or another
+/// runner's rows that left its index), so none outlives its thread.
+pub(crate) fn forget_titles(keep: impl Fn(&str) -> bool) {
+    TITLES.with(|titles| titles.borrow_mut().retain(keep));
 }
 
 /// Something's moving for a frame or so more.
@@ -308,22 +361,22 @@ impl Element for Shift {
 }
 
 /// A title that fades over to its new text when it changes (the agent
-/// naming a thread, a rename): `key` says where it's shown. Plain text the
-/// rest of the time.
-pub(crate) fn title(key: &str, text: SharedString, reduce: bool) -> AnyElement {
-    let now = Instant::now();
-    let total = TITLE_OUT + TITLE_IN;
-    let (before, changed) = TITLES.with(|titles| {
-        let mut titles = titles.borrow_mut();
-        let entry = titles.entry(key.to_owned()).or_insert_with(|| (text.clone(), text.clone(), now.checked_sub(total).unwrap_or(now)));
-        if entry.1 != text {
-            *entry = (entry.1.clone(), text.clone(), now);
-        }
-        (entry.0.clone(), entry.2)
-    });
-    if reduce || before == text || changed.elapsed() >= total {
+/// naming a thread, a rename): `thread` is whose it is and `place` where
+/// it's shown. Plain text the rest of the time, and always with Reduce
+/// Motion, which remembers nothing.
+pub(crate) fn title(thread: &str, place: &str, text: SharedString, reduce: bool) -> AnyElement {
+    if reduce {
         return text.into_any_element();
     }
+    let now = Instant::now();
+    let total = TITLE_OUT + TITLE_IN;
+    let Some((before, changed)) = TITLES.with(|titles| titles.borrow_mut().note(thread, place, &text, now, total)) else {
+        return text.into_any_element();
+    };
+    if before == text || changed.elapsed() >= total {
+        return text.into_any_element();
+    }
+    let key = format!("{thread}-{place}");
     note_moving();
     let id = format!("title-{key}-{changed:?}");
     div()
@@ -348,9 +401,10 @@ pub(crate) fn transcript_frame(inner: Div, at: Option<(f32, f32)>) -> Div {
 #[cfg(test)]
 mod tests {
     // By name: a glob would bring in GPUI's own `test` attribute in place of Rust's.
-    use super::{box_drop_at, page_at, title_opacities, transcript_at, BoxDrop, Opening, BOX_DROP, CLICK_IN, CLICK_RISE, PAGE_IN, PAGE_RISE, START_OPACITY, STEP_IN, STEP_SHIFT, TITLE_IN, TITLE_OUT};
+    use super::{box_drop_at, page_at, title_opacities, transcript_at, BoxDrop, Opening, Titles, BOX_DROP, CLICK_IN, CLICK_RISE, PAGE_IN, PAGE_RISE, START_OPACITY, STEP_IN, STEP_SHIFT, TITLES_KEPT, TITLE_IN, TITLE_OUT};
+    use gpui_kit::SharedString;
     use std::cell::Cell;
-    use std::time::Duration;
+    use std::time::{Duration, Instant};
 
     const MS: fn(u64) -> Duration = Duration::from_millis;
 
@@ -425,5 +479,52 @@ mod tests {
         assert_eq!(Opening::Step(-1).name(), "up");
         assert_eq!(Opening::FromNewPage { box_top: 0. }.name(), "newPage");
         assert_eq!(Opening::Still.name(), "still");
+    }
+
+    #[test]
+    fn a_title_fades_from_its_old_name_then_lets_the_old_one_go() {
+        let total = TITLE_OUT + TITLE_IN;
+        let mut titles = Titles::default();
+        let t0 = Instant::now();
+        let (old, new): (SharedString, SharedString) = ("New thread".into(), "Fix the bug".into());
+        assert!(titles.note("t", "header", &old, t0, total).is_none(), "first seen: drawn plain");
+        assert_eq!(titles.note("t", "header", &old, t0, total).unwrap().0, old);
+        let (before, changed) = titles.note("t", "header", &new, t0 + MS(5), total).unwrap();
+        assert_eq!((before, changed), (old, t0 + MS(5)));
+        let (before, _) = titles.note("t", "header", &new, t0 + MS(5) + total, total).unwrap();
+        assert_eq!(before, new, "once it's faded over, only the new text is kept");
+    }
+
+    /// Daybreak 117: another runner churning fresh thread ids through the
+    /// sidebar grew the map without end. Threads that went are let go, and
+    /// the map never passes its cap whatever comes.
+    #[test]
+    fn titles_of_threads_that_went_are_let_go_and_the_map_stays_bounded() {
+        let total = TITLE_OUT + TITLE_IN;
+        let now = Instant::now();
+        let mut titles = Titles::default();
+        let text: SharedString = "x".repeat(300).into();
+        for round in 0..20 {
+            let ids: Vec<String> = (0..1000).map(|i| format!("{round}-{i}")).collect();
+            for id in &ids {
+                titles.note(id, "row-inbox", &text, now, total);
+                titles.note(id, "header", &text, now, total);
+            }
+            // The rows leave the index: the app keeps only threads it still has.
+            titles.retain(|_| false);
+            assert!(titles.map.is_empty(), "round {round}: nothing outlives its thread");
+        }
+        // Never told they went: the cap still holds, and a stable key is one entry.
+        for i in 0..(TITLES_KEPT * 3) {
+            titles.note(&format!("fresh-{i}"), "row-inbox", &text, now, total);
+        }
+        assert_eq!(titles.map.len(), TITLES_KEPT);
+        assert!(titles.note("past-the-cap", "row-inbox", &text, now, total).is_none(), "past the cap a title is just drawn plain");
+        assert_eq!(titles.map.len(), TITLES_KEPT);
+        titles.retain(|id| id == "fresh-1");
+        for _ in 0..10_000 {
+            titles.note("fresh-1", "row-inbox", &text, now, total);
+        }
+        assert_eq!(titles.map.len(), 1);
     }
 }

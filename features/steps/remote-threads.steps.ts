@@ -148,6 +148,12 @@ When('a reply arrives on the destination', async function (this: ThreadbearWorld
   await this.app.do({ cmd: 'mock', method: 'stream', params: { threadId: d.selection?.id, text: 'The destination is serving this thread', hz: 60 } });
 });
 
+When('its old runner lists the thread again', async function (this: ThreadbearWorld) {
+  const d = await this.app.dump();
+  await this.app.do({ cmd: 'mock', method: 'moveSourceBack', params: { threadId: d.selection?.id } });
+  await sleep(500);
+});
+
 When('the index restarts while its move to this Mac is waiting', async function (this: ThreadbearWorld) {
   const d = await this.app.dump();
   await this.app.do({ cmd: 'mock', method: 'moveIndexRestart', params: { threadId: d.selection?.id } });

@@ -7,18 +7,28 @@
 use crate::inbox::{iso_time, parse_ms, ThreadSummary};
 use serde_json::Value;
 
-/// The old runner deleted its copy during a move. Keep the row as the
-/// destination's until that runner's index catches up (`movedAway`).
-pub fn moved_away(thread: &ThreadSummary, self_id: Option<&str>) -> Option<ThreadSummary> {
+/// The old runner let go of a thread during a move (its row left the index,
+/// or this Mac's runner deleted it): the row to keep in its place (`movedAway`).
+/// It stays as it was, the old runner's and locked with its move, until the
+/// destination lists it: this Mac's own `threads.list` for a move here, the
+/// destination's index row for a move to another. A row that has only gone
+/// from its old runner says nothing about where the thread is, and a
+/// secondary runner can take its own row out and put it back at will
+/// (Daybreak 113, 13 Nov 2026): taken as arrived, the thread looked like
+/// this Mac's, its box unlocked, while every message still went to the old
+/// runner. None when it isn't a move, and the row should go.
+pub fn moved_away(thread: &ThreadSummary) -> Option<ThreadSummary> {
     let moving = thread.moving.as_ref()?;
     if matches!(moving["state"].as_str(), Some("failed" | "cancelled")) {
         return None;
     }
-    let to = moving["to"].as_str().filter(|id| !id.is_empty())?;
-    let mut kept = thread.clone();
-    kept.runner_id = (Some(to) != self_id).then(|| to.to_owned());
-    kept.moving = None;
-    Some(kept)
+    moving["to"].as_str().filter(|id| !id.is_empty())?;
+    Some(thread.clone())
+}
+
+/// Where a move in flight is going, as its row says.
+pub fn moving_to(thread: &ThreadSummary) -> Option<&str> {
+    thread.moving.as_ref()?["to"].as_str().filter(|id| !id.is_empty())
 }
 
 /// A runner the backend knows of (`RemoteRunner`).
@@ -290,17 +300,20 @@ mod tests {
     }
 
     #[test]
-    fn a_move_keeps_the_thread_as_its_destinations_until_the_index_arrives() {
-        let mut thread = ThreadSummary { id: "t".into(), moving: Some(json!({ "to": "bruce", "state": "copying" })), ..Default::default() };
-        let kept = moved_away(&thread, Some("m5")).unwrap();
-        assert_eq!(kept.id, "t");
-        assert_eq!(kept.runner_id.as_deref(), Some("bruce"));
-        assert!(kept.moving.is_none());
-        assert!(moved_away(&thread, Some("bruce")).unwrap().runner_id.is_none());
+    fn a_move_keeps_the_thread_as_its_old_runners_until_the_destination_lists_it() {
+        let mut thread = ThreadSummary { id: "t".into(), runner_id: Some("bruce".into()), moving: Some(json!({ "to": "m5", "toName": "m5", "state": "copying" })), ..Default::default() };
+        let kept = moved_away(&thread).unwrap();
+        // Daybreak 113: never this Mac's (or the destination's) on the old
+        // runner's word alone, and still locked with its move.
+        assert_eq!(kept.runner_id.as_deref(), Some("bruce"), "still the old runner's");
+        assert!(kept.moving_line().is_some(), "its box stays locked");
+        assert_eq!(moving_to(&kept), Some("m5"));
+        let local = ThreadSummary { id: "u".into(), moving: Some(json!({ "to": "bruce", "state": "claimed" })), ..Default::default() };
+        assert!(moved_away(&local).unwrap().runner_id.is_none(), "one moving off this Mac stays this Mac's");
         thread.moving.as_mut().unwrap()["state"] = json!("failed");
-        assert!(moved_away(&thread, Some("m5")).is_none());
+        assert!(moved_away(&thread).is_none());
         thread.moving = None;
-        assert!(moved_away(&thread, Some("m5")).is_none(), "an ordinary delete still deletes");
+        assert!(moved_away(&thread).is_none(), "an ordinary delete still deletes");
     }
 
     #[test]

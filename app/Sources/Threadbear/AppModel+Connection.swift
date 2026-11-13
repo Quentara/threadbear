@@ -65,8 +65,17 @@ extension AppModel {
                 var fresh: [String: ThreadSummary] = [:]
                 for thread in list { fresh[thread.id] = thread }
                 // Other runners' threads aren't this runner's to list.
-                for (id, thread) in threads where thread.isRemote && fresh[id] == nil { fresh[id] = thread }
+                // Nor are threads still on their way here or there (movedAway):
+                // only this list or the destination's row says they've arrived.
+                for (id, thread) in threads where (thread.isRemote || madeRemote.contains(id)) && fresh[id] == nil { fresh[id] = thread }
+                // One this list has that was on its way here has arrived:
+                // this Mac's from now on (`arrivedHere` stops didSet keeping
+                // the old runner's id on it).
+                let arrived = Set(list.map(\.id)).intersection(madeRemote)
+                madeRemote.subtract(arrived)
+                arrivedHere = arrived
                 threads = fresh
+                arrivedHere = []
                 // A thread deleted while the app wasn't connected never
                 // reached forget(), so its Terminal shell would run on.
                 Terminals.shared.stopAll(except: list.map(\.id))
@@ -137,8 +146,9 @@ extension AppModel {
                 if case .reviewUpdated(let review) = event.payload { receiveReview(review, threadId: threadId) }
                 if case .buttonUpdated(let button) = event.payload { ReplyButtons.shared.receive(button, threadId: threadId) }
             case .threadDeleted(let threadId):
-                // A thread that moved away stays, as the other runner's.
-                if !movedAway(threadId) { forget(threadId) }
+                // A thread moving away stays as it is until where it's going
+                // lists it, which that runner's row may already have done.
+                if movedAway(threadId) { applyRemoteIndex() } else { forget(threadId) }
             case .accountsUpdated(let list):
                 // The runner learned something (its model lists, a
                 // default it saw a turn run on, new usage): replaces
@@ -245,6 +255,15 @@ extension AppModel {
 
     private func apply(_ incoming: ThreadSummary) {
         let previous = threads[incoming.id]
+        var incoming = incoming
+        if madeRemote.contains(incoming.id) {
+            // Waiting on its move (movedAway): no summary says where it is
+            // (a relayed one and this Mac's own look the same here), so it
+            // stays locked with its move, and a move here is only taken as
+            // arrived from this Mac's own list (Daybreak 113).
+            if incoming.moving == nil { incoming.moving = previous?.moving }
+            if previous?.isRemote == true, let to = previous?.moving?.to, to == runners.first(where: \.isSelf)?.id { confirmArrival(incoming.id) }
+        }
         let thread = keepingAskedMove(incoming, over: previous)
         threads[thread.id] = thread
         threadCountMayHaveChanged()

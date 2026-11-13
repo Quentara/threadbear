@@ -1651,6 +1651,14 @@ async function dispatch(client, method, p) {
       }
       return { ok: true };
     }
+    // The old runner puts its row back without the move finishing, as a
+    // secondary runner can (Daybreak 113): the thread is still its own.
+    case 'mock.moveSourceBack': {
+      const t = need(p.threadId);
+      delete t.awaitingDestination;
+      for (const c of clients) if (c.authed && c.as === null) send(c, 'remoteThreads.updated', remoteThreads(c));
+      return { ok: true };
+    }
     case 'mock.moveIndexRestart': {
       const t = need(p.threadId);
       t.movingDestination = null;

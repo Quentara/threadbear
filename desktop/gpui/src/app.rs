@@ -902,6 +902,7 @@ impl Threadbear {
                     let id = params["threadId"].as_str().unwrap_or("");
                     crate::terminal::thread_deleted(id, cx);
                     if !self.moved_away(id, cx) {
+                        crate::open_motion::forget_titles(|t| t != id);
                         self.kept.forget(id, cx);
                         // Its panel of its own goes with it (`forget`).
                         self.close_thread_panel(id, cx);

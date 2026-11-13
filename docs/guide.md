@@ -1091,8 +1091,9 @@ from your phone meanwhile goes with it. It goes straight away, to the
 folder and login that machine guesses. If it can't go, or something won't
 come (background jobs, changes in a checkout other threads share), a small
 window shows the folder and login with why; change either and it checks
-again, then press **Move**. The row says "Moving to" with a spinner until
-it's gone, then the thread is listed under the other machine, in the same
+again, then press **Move**. The row says "Moving to" with a spinner, and the
+message box stays locked, until the other machine has it (a moment after it
+leaves the first), then the thread is listed under the other machine, in the same
 place and still open, and its next message carries on in the same Claude
 session there. If anything goes wrong before it lands, it stays where it
 was and the row says why for a minute, in its tooltip. Its schedules come

@@ -525,6 +525,12 @@ export class Relay {
     return Boolean(this.deps.source() && this.find(threadId));
   }
 
+  /** The runner a request about the thread goes to, as `call` picks it
+   * (`watch` follows the index). */
+  ownerOf(threadId: string): string | undefined {
+    return this.deps.source() ? this.find(threadId)?.runnerId : undefined;
+  }
+
   private src(): RelaySource {
     const s = this.deps.source();
     if (!s) throw new RpcError(ErrorCode.other, "This Mac's runner can't reach other runners through Convex now (sync is off, or Convex hasn't updated yet).");
@@ -714,6 +720,11 @@ export class Relay {
     if (!w) {
       w = { threadId, runnerId: t.runnerId, rows: new Map(), bodies: new Map(), olderMore: true, loaded: false, row: null, cards: new Map(), decided: new Map(), given: new Set(), unsub: [], usedAt: this.deps.clock.now() };
       this.watches.set(threadId, w);
+    } else if (w.runnerId !== t.runnerId) {
+      // Moved to another runner while watched: its commands go to the one
+      // the index lists now, the one ownerOf names (the backend refuses the
+      // old one's anyway). The events are the thread's, wherever it runs.
+      w.runnerId = t.runnerId;
     }
     w.usedAt = this.deps.clock.now();
     this.sweepSoon();
@@ -1237,8 +1248,13 @@ export class Relay {
       case 'threads.send': {
         const text = typeof p.text === 'string' ? p.text : '';
         const started = this.deps.clock.now();
-        const r = await this.withPictures(w.runnerId, p.images, started, (images) =>
-          this.command(w.runnerId, threadId, 'send', { text, ...(Array.isArray(p.answers) && p.answers.length ? { answers: p.answers } : {}), ...(images.length ? { images } : {}) }, images.length ? { settleBy: started + REPLY_BUDGET_MS } : {}),
+        // The runner it was checked against (rpc.ts mustReachShown), held
+        // through the uploads: the watch may follow a move meanwhile, and
+        // the words go to that runner or nowhere (the backend refuses one
+        // that no longer has the thread).
+        const to = w.runnerId;
+        const r = await this.withPictures(to, p.images, started, (images) =>
+          this.command(to, threadId, 'send', { text, ...(Array.isArray(p.answers) && p.answers.length ? { answers: p.answers } : {}), ...(images.length ? { images } : {}) }, images.length ? { settleBy: started + REPLY_BUDGET_MS } : {}),
         );
         // Not taken in TAKE_MS: it waits in the backend for that runner.
         return { turnId: '', ...(r.state === 'pending' ? { queued: true } : {}) };

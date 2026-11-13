@@ -23,6 +23,9 @@ Feature: Other runners' threads
   Scenario: An old index row cannot undo a move to another Mac
     When I open the thread "Morning brief"
     And its runner lets the thread go to bruce while the old Mac still lists it
+    Then the box is locked, saying "Moving to bruce…"
+    And the row "Morning brief" isn't on another runner
+    When the destination lists the moved thread
     Then the row "Morning brief" is on the runner "On bruce"
     And the composer is on the runner "bruce"
 
@@ -30,27 +33,33 @@ Feature: Other runners' threads
   Scenario: A moved open thread resumes when its destination lists it
     When I open the thread "Morning brief"
     And its runner lets the thread go to bruce
-    Then the row "Morning brief" is on the runner "On bruce"
+    Then the box is locked, saying "Moving to bruce…"
     When the destination lists the moved thread
-    And a reply arrives on the destination
+    Then the row "Morning brief" is on the runner "On bruce"
+    And the box isn't locked
+    When a reply arrives on the destination
     Then the transcript shows a reply starting "The destination is serving this thread"
 
   @sidebar.move @remote-threads
   Scenario: A thread moved between two other Macs keeps its destination
     When I open the thread "Tidy the media drive"
     And its runner lets the thread go to "cloud"
-    Then the row "Tidy the media drive" is on the runner "On cloud"
+    Then the box is locked, saying "Moving to cloud…"
+    And the row "Tidy the media drive" is on the runner "On bruce"
     When the destination lists the moved thread
-    And a reply arrives on the destination
+    Then the row "Tidy the media drive" is on the runner "On cloud"
+    When a reply arrives on the destination
     Then the transcript shows a reply starting "The destination is serving this thread"
 
   @sidebar.move @remote-threads
   Scenario: A thread moved back to this Mac resumes here
     When I open the thread "Tidy the media drive"
     And its runner lets the thread go to "This Mac"
-    Then the row "Tidy the media drive" isn't on another runner
+    Then the box is locked, saying "Moving to This Mac…"
+    And the row "Tidy the media drive" is on the runner "On bruce"
     When the destination lists the moved thread
-    And a reply arrives on the destination
+    Then the row "Tidy the media drive" isn't on another runner
+    When a reply arrives on the destination
     Then the transcript shows a reply starting "The destination is serving this thread"
     And the row "Tidy the media drive" isn't on another runner
 
@@ -71,6 +80,20 @@ Feature: Other runners' threads
     And a reply arrives on the destination
     Then the transcript shows a reply starting "The destination is serving this thread"
     And the row "Tidy the media drive" is on the runner "On bruce"
+
+  # Daybreak 113: a secondary runner taking its row out and putting it back
+  # while a move here waits made the thread look like this Mac's, its box
+  # unlocked, while every message still went to that runner.
+  @sidebar.move @remote-threads
+  Scenario: A thread on its way here stays its old runner's, locked, until this Mac has it
+    When I open the thread "Tidy the media drive"
+    And its runner lets the thread go to "This Mac"
+    Then the box is locked, saying "Moving to This Mac…"
+    And the row "Tidy the media drive" is on the runner "On bruce"
+    When its old runner lists the thread again
+    Then the box is locked, saying "Moving to This Mac…"
+    And the row "Tidy the media drive" is on the runner "On bruce"
+    And the composer is on the runner "bruce"
 
   # Its picture is a path on bruce: asked of the runner, which keeps another
   # Mac's files there for now, so the tile says it couldn't get it, and never
@@ -132,8 +155,8 @@ Feature: Other runners' threads
   Scenario: A moved thread stays in the sidebar before its destination lists it
     When I open the thread "Morning brief"
     And its runner lets the thread go to bruce
-    Then the row "Morning brief" is on the runner "On bruce"
-    And the composer is on the runner "bruce"
+    Then the box is locked, saying "Moving to bruce…"
+    And the row "Morning brief" isn't on another runner
 
   @sidebar.move @remote-threads
   Scenario: Move to offers the other machines from the row
