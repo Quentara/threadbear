@@ -209,15 +209,37 @@ pub(crate) mod tests {
 
 #[cfg(test)]
 mod drag_source {
-    /// The drag's HTML goes only through the one-pass reader: no regex comes
-    /// back into the main-thread drag path (Daybreak 120).
-    #[test]
-    fn the_composer_drag_reads_html_only_through_the_one_pass_reader() {
-        let source = include_str!("../../gpui/native/composer_media.m");
+    const SOURCE: &str = include_str!("../../gpui/native/composer_media.m");
+
+    /// What the drag path must and mustn't say. Line endings are made `\n`
+    /// first: Git for Windows checks the file out with `\r\n` (autocrlf), and
+    /// the budget check spans two lines, so Windows CI failed on it alone.
+    fn check_drag_source(source: &str) {
+        let source = source.replace("\r\n", "\n");
         assert!(!source.contains("NSRegularExpression"), "composer_media.m uses a regex again");
         assert!(source.contains("if (!html) return false;\n  if (html.length > *budget) { *budget = 0; return false; }"), "one HTML budget for a drag's items, which an item with no HTML doesn't spend");
         assert!(source.contains("if (++seen > TB_DRAG_ITEMS) break;"));
         assert!(!source.contains("imageURL(item)"), "every caller passes the budget");
         assert!(source.contains("tb_drag_html_shows_image(markup.bytes"));
+    }
+
+    /// The drag's HTML goes only through the one-pass reader: no regex comes
+    /// back into the main-thread drag path (Daybreak 120).
+    #[test]
+    fn the_composer_drag_reads_html_only_through_the_one_pass_reader() {
+        check_drag_source(SOURCE);
+    }
+
+    /// The same checks hold on a Windows checkout of the file.
+    #[test]
+    fn the_drag_source_checks_hold_with_windows_line_endings() {
+        check_drag_source(&SOURCE.replace("\r\n", "\n").replace('\n', "\r\n"));
+    }
+
+    /// The checks still catch a regex coming back, whatever the line endings.
+    #[test]
+    #[should_panic(expected = "uses a regex again")]
+    fn the_drag_source_checks_still_catch_a_regex() {
+        check_drag_source(&format!("{}\r\nNSRegularExpression *re;\r\n", SOURCE.replace('\n', "\r\n")));
     }
 }
