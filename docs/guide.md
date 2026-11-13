@@ -1779,6 +1779,8 @@ one another and can be checked together against the latest landed work.
 The landing's progress message says when it is already being checked with
 its group, with a rough estimate of the time left in that check or a note
 that it is taking longer than usual.
+If the group has landed and the command is still waiting for the landing
+lock, the message says it has already landed.
 
 If a check of several landings fails, the command that ran it shows the end
 of its output straight away, then checks smaller groups to find the cause.

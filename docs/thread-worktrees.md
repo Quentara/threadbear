@@ -231,6 +231,9 @@ their own.
   as being checked. Older holders' records still work, using their branch
   names. For a landing in the running group, a check that runs past the
   usual time says "longer than usual" instead of guessing how much longer.
+  If its group has already landed but another landing gets the lock first,
+  it says it has landed and is waiting for the lock to finish up, without
+  an estimate for another check.
   It says it again every three minutes.
 
 So a landing waits for at most the check that's running and the next one,

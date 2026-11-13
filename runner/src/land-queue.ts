@@ -170,6 +170,11 @@ const minutes = (s: number): string => (s < 60 ? 'under a minute' : s < 90 ? '1 
 // Entries stay in the queue during their group check. Those have only the
 // rest of this check to go; the others wait for this check and one more.
 export function waitingLine(common: string, timesFile: string, me: QueueEntry | undefined, now = Date.now()): string {
+  // The holder writes the result on disk. The waiting tb still has its
+  // original entry and may not get the lock until another check finishes.
+  if (me && (readEntry(common, me.id)?.result || me.result)) {
+    return ': already landed with its group; waiting for the landing lock to finish up.';
+  }
   const running = readRunning(common);
   // A new tb can join on the same branch after its old one was killed.
   // The old entry's commit may be in the check, but the new one's isn't.

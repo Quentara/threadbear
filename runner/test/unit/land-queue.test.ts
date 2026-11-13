@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { land, landTargetFromGit, type LandTarget } from '../../src/worktrees.ts';
-import { joinQueue, queueDir, readRunning, setRunning, waiting, waitingLine } from '../../src/land-queue.ts';
+import { joinQueue, leaveQueue, queueDir, readRunning, setRunning, waiting, waitingLine, writeEntry } from '../../src/land-queue.ts';
 import { capture, commit, makeBranch, makeRepo, sh, until, write } from '../helpers/worktrees-harness.ts';
 
 // A check that writes down which of the files it saw, and holds the first
@@ -68,6 +68,38 @@ test('everyone waiting lands in one check, each branch moved to what landed', as
   for (const [i, n] of ['b', 'c', 'd'].entries()) assert.match(all[i], new RegExp(`Add ${n}`));
   assert.ok(all.some((o) => /the check for thread\/a0000000 has been running/.test(o)), all.join('\n---\n'));
   assert.deepEqual(waiting(path.join(main, '.git')), [], 'nobody left in the line');
+});
+
+test('a real group check records every entry id and identifies each member as being checked', async () => {
+  const { root, main } = makeRepo();
+  const [a, b, c] = branches(main, ['a', 'b', 'c']);
+  const common = path.join(main, '.git');
+  const check = `${slowCheck(root)}; if test -f b.txt; then touch '${root}/group-checking'; ` +
+    `while ! test -f '${root}/group-release'; do sleep 0.05; done; fi`;
+  const first = land({ ...a, check }, capture().opts);
+  const caps = [capture(), capture()];
+  const rest: Promise<number>[] = [];
+  let codes: number[] = [];
+  try {
+    await until(() => fs.existsSync(path.join(root, 'checking')), "a's check");
+    rest.push(...[b, c].map((t, i) => land({ ...t, check }, caps[i].opts)));
+    await until(() => caps.every((cap) => cap.out.some((line) => line.startsWith('Waiting for another landing'))), 'both queued');
+    write(root, { release: '' });
+    await until(() => fs.existsSync(path.join(root, 'group-checking')), 'the real group check');
+    const running = readRunning(common);
+    const entries = waiting(common).filter((entry) => [b.branch, c.branch].includes(entry.branch));
+    assert.deepEqual(running?.branches.slice().sort(), [b.branch, c.branch].sort());
+    assert.equal(running?.pid, process.pid);
+    assert.equal(entries.length, 2);
+    assert.deepEqual(running?.entries?.slice().sort(), entries.map((entry) => entry.id).sort());
+    for (const entry of entries) {
+      assert.match(waitingLine(common, path.join(common, 'no-times'), entry), /this landing is being checked with 1 other landing/);
+    }
+  } finally {
+    write(root, { release: '', 'group-release': '' });
+    codes = await Promise.all([first, ...rest]);
+  }
+  assert.deepEqual(codes, [0, 0, 0], caps.map((cap) => cap.err.join('\n')).join('\n'));
 });
 
 test('a group check that fails is narrowed down, and only the one that broke it is refused', async () => {
@@ -136,6 +168,25 @@ test('the waiting line says where it is in the line and roughly how long', () =>
   assert.equal(line, ': the check for thread/x and 1 more has been running 2 min; 1 more waiting ahead of this one, all checked together with it next, so roughly 10 min to go (a check takes about 6 min here).');
   setRunning(common, undefined);
   assert.equal(waitingLine(common, times, { ...ahead, at: ahead.at - 1 }, now), '...');
+});
+
+test('the waiting line reads a completed result from disk before describing another check', () => {
+  const { main } = makeRepo();
+  const common = path.join(main, '.git');
+  const times = path.join(common, 'threadbear-land-times.log');
+  fs.writeFileSync(times, JSON.stringify({ ok: true, seconds: 360 }) + '\n');
+  const now = Date.now();
+  const me = joinQueue(common, { branch: 'thread/me', path: '/me', base: 'b', commit: 'c' });
+  const completed = { ...me, result: { landed: 'landed-tip', commits: 'Add me', together: ['thread/holder'] } };
+  writeEntry(common, completed);
+  assert.equal(me.result, undefined, 'the caller still has its original queue entry');
+  const expected = ': already landed with its group; waiting for the landing lock to finish up.';
+  setRunning(common, { startedAt: now - 180_000, branches: ['thread/unrelated'], pid: process.pid, entries: ['another-entry'] });
+  assert.equal(waitingLine(common, times, me, now), expected);
+  setRunning(common, undefined);
+  assert.equal(waitingLine(common, times, me, now), expected);
+  leaveQueue(common, me.id);
+  assert.equal(waitingLine(common, times, completed, now), expected, 'an already-read result also works');
 });
 
 test('the waiting line recognises a landing already in the running group', () => {
