@@ -500,7 +500,11 @@ function formatSync(y: NonNullable<RunnerStatus['sync']>, now: number): string {
   const use = u
     ? u.warning
       ? `\n${u.warning}`
-      : `\nConvex use, estimated from this runner: about ${mbText(u.io)} of I/O a month and ${mbText(u.storage)} of stored tool output (Free has 1 GB and 0.5 GB).`
+      : now - Date.parse(u.since) < 86_400_000
+        // Its first day counts as a whole one (convex-use.ts), so a monthly
+        // figure from a few minutes reads far too low: say what's been sent.
+        ? `\nConvex use, from this runner: ${mbText(u.sent)} sent since ${new Date(u.since).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}; a monthly estimate comes after its first day.`
+        : `\nConvex use, estimated from this runner: about ${mbText(u.io)} of I/O a month and ${mbText(u.storage)} of stored tool output (Free has 1 GB and 0.5 GB).`
     : '';
   return `Convex mirror: on${where} as ${y.name ?? y.runnerId ?? 'this runner'}${last}${pending}${behind}${held}${rotating}${local}${push}${full}${use}`;
 }
