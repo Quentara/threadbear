@@ -782,6 +782,15 @@ pub enum Link {
     Url(String),
 }
 
+/// GNU tools put this machine's hostname in OSC 8 file URLs. Strip only an
+/// exact local host; every other authority still goes to the gate to refuse.
+pub fn local_file_url(link: &str, hostname: &str) -> Option<String> {
+    if hostname.is_empty() || !link.get(..7)?.eq_ignore_ascii_case("file://") { return None; }
+    let rest = &link[7..];
+    let (host, _) = rest.split_once('/')?;
+    (!host.is_empty() && host.eq_ignore_ascii_case(hostname)).then(|| format!("file://{}", &rest[host.len()..]))
+}
+
 /// The printed address/path under a terminal cell. OSC 8 links use their
 /// explicit URI instead; this is for ordinary build output and shell text.
 pub fn link_word(chars: &[char], at: usize) -> Option<String> {
@@ -1260,5 +1269,14 @@ mod tests {
         assert_eq!(word("https://example.com foo", 19), None);
         assert_eq!(word("[x]", 0), None);
         assert_eq!(word("()", 1), None);
+    }
+
+    #[test]
+    fn a_file_hyperlink_can_name_only_this_exact_machine() {
+        assert_eq!(local_file_url("file://MY-MAC.local/tmp/a%20b.command", "my-mac.local").as_deref(), Some("file:///tmp/a%20b.command"));
+        for uri in ["file://my-mac.local.evil/tmp/a", "file://my-mac/tmp/a", "file://user@my-mac.local/tmp/a", "file://my-mac.local:1/tmp/a", "file://other/tmp/a", "https://my-mac.local/a"] {
+            assert_eq!(local_file_url(uri, "my-mac.local"), None, "{uri}");
+        }
+        assert_eq!(local_file_url("file:///tmp/a", ""), None);
     }
 }

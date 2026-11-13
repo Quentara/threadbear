@@ -115,7 +115,9 @@ File references are where to look.
   The GPUI app does the same (`desktop/gpui/src/terminal.rs`), starting it
   as `/usr/bin/env -u THREADBEAR_THREAD_ID ... $SHELL -l` so it never
   inherits a thread's id, with a reader thread per shell; a program in it
-  can put text on the clipboard (OSC 52) but not read it.
+  can put text on the clipboard (OSC 52) but not read it. Clicking a Terminal
+  file link reads the OS hostname to recognize a link to this same machine;
+  it does not look it up on the network. Links go through the usual open gate.
 - **Files:** the data folder `~/Library/Application Support/Threadbear`
   (threads, settings, `secrets/`, runner releases, the pinned release key
   `upstream-signers`, the Mac app's `app-drafts.json` and the GPUI app's

@@ -1164,15 +1164,17 @@ impl Session {
     /// never make a click stall the app.
     fn link_at(&self, col: usize, row: usize) -> Option<String> {
         use alacritty_terminal::term::cell::Flags;
-        let point = self.grid_point(col, row);
         let term = self.term.lock();
         let grid = term.grid();
+        let cols = term.columns();
+        if col >= cols || row >= term.screen_lines() { return None; }
+        // Output can clear scrollback between two locks. Map the click and
+        // inspect its cells under this one lock, so it stays the same row.
+        let point = GridPoint::new(GridLine(row as i32 - grid.display_offset() as i32), Column(col));
         let cell = &grid[point];
         if let Some(link) = cell.hyperlink() {
             return (link.uri().len() <= 4096).then(|| link.uri().to_owned());
         }
-        let cols = term.columns();
-        if cols == 0 { return None; }
         let mut first = point.line;
         while first > grid.topmost_line() && ((point.line.0 - first.0 + 2) as usize) * cols <= 4096 && grid[GridLine(first.0 - 1)][Column(cols - 1)].flags.contains(Flags::WRAPLINE) {
             first = GridLine(first.0 - 1);
@@ -1200,6 +1202,9 @@ impl Session {
 
     fn open_link_at(&self, col: usize, row: usize, cx: &mut App) -> bool {
         let Some(link) = self.link_at(col, row) else { return false };
+        let link = if link.get(..7).is_some_and(|s| s.eq_ignore_ascii_case("file://")) {
+            rules::local_file_url(&link, &system_hostname()).unwrap_or(link)
+        } else { link };
         let home = crate::files::home_dir();
         let target = rules::link_target(&link, &self.target.cwd, &home, |p| threadbear_core::open_policy::local_metadata(std::path::Path::new(p)).is_ok());
         match target {
@@ -1347,6 +1352,27 @@ impl Session {
         format!("{} {} in {}", self.target.key, if self.exited { "exited" } else { "running" }, self.target.cwd)
     }
 }
+
+/// The OS's hostname, never DNS or an environment variable a shell controls.
+#[cfg(unix)]
+fn system_hostname() -> String {
+    let mut name = [0u8; 256];
+    if unsafe { libc::gethostname(name.as_mut_ptr().cast(), name.len()) } != 0 { return String::new(); }
+    std::ffi::CStr::from_bytes_until_nul(&name).ok().and_then(|s| s.to_str().ok()).unwrap_or("").to_owned()
+}
+
+#[cfg(windows)]
+fn system_hostname() -> String {
+    #[link(name = "kernel32")]
+    extern "system" { fn GetComputerNameExW(kind: i32, buffer: *mut u16, size: *mut u32) -> i32; }
+    let mut name = [0u16; 256];
+    let mut size = name.len() as u32;
+    if unsafe { GetComputerNameExW(1, name.as_mut_ptr(), &mut size) } == 0 { return String::new(); }
+    String::from_utf16_lossy(&name[..(size as usize).min(name.len())])
+}
+
+#[cfg(not(any(unix, windows)))]
+fn system_hostname() -> String { String::new() }
 
 impl Focusable for Session {
     fn focus_handle(&self, _cx: &App) -> FocusHandle {
