@@ -126,6 +126,9 @@ SVGs are embedded in debug builds too (`rust-embed/debug-embed` in
 `cargo test -p threadbear-gpui --test assets` checks the whole icon catalog
 comes from embedded bytes, even when the registry is present.
 
+The printed build log receives both output streams as the build runs,
+whether here or on another Mac. Failed builds keep the full log.
+
 ## Seeing it on a server
 
 `scripts/shot.sh OUT_DIR [--home DIR] [--click X,Y | --type TEXT | --key KEY]...`

@@ -102,6 +102,78 @@ function run(env: NodeJS.ProcessEnv, ...args: string[]) {
   return { status: r.status, out: r.stdout.trim(), err: r.stderr.trim() };
 }
 
+test('remote builds expose the full live log and still find the built binaries', () => {
+  const tmp = tmpDir('gpui-remote-log-');
+  const checkout = path.join(tmp, 'checkout');
+  const scripts = path.join(checkout, 'desktop', 'scripts');
+  const bin = path.join(tmp, 'bin');
+  const home = path.join(tmp, 'home');
+  const temp = path.join(tmp, 'tmp');
+  for (const dir of [scripts, bin, home, temp]) fs.mkdirSync(dir, { recursive: true });
+  fs.copyFileSync(path.join(path.dirname(DEV_APP), 'dev-app.ts'), path.join(scripts, 'dev-app.ts'));
+  fs.writeFileSync(path.join(checkout, 'package.json'), '{"type":"module"}');
+  const config = path.join(home, 'Library', 'Application Support', 'Threadbear');
+  fs.mkdirSync(config, { recursive: true });
+  fs.writeFileSync(path.join(config, 'runner.json'), JSON.stringify({ updateBuildHosts: ['build-mac'] }));
+  fs.writeFileSync(path.join(bin, 'ssh'), '#!/bin/sh\nprintf "Darwin\\n"\n', { mode: 0o755 });
+  // Execute the actual remote build command, with a tiny stand-in for cargo.
+  fs.writeFileSync(path.join(scripts, 'remote.sh'), '#!/bin/sh\ncd "$TEST_CHECKOUT" || exit 1\nshift 2\nexec "$@"\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'cargo'), `#!${process.execPath}
+const fs = require('node:fs'), assert = require('node:assert/strict');
+fs.writeSync(1, 'first stdout\\n');
+fs.writeSync(2, 'first stderr\\n');
+const live = fs.readFileSync(process.env.TEST_BUILD_LOG, 'utf8');
+assert.match(live, /first stdout/);
+assert.match(live, /first stderr/);
+fs.writeFileSync(process.env.TEST_OBSERVED, live);
+// More than spawnSync's default pipe buffer, and more than the old tail kept.
+fs.writeSync(1, 'x'.repeat(1_100_000) + '\\n');
+for (let i = 0; i < 100; i++) fs.writeSync(1, 'building ' + i + '\\n');
+for (let i = 0; i < 70; i++) fs.writeSync(2, 'warning: unused synthetic ' + i + '\\n');
+if (process.env.TEST_BUILD_CODE !== '0') fs.writeSync(2, 'error: forced remote compiler failure\\n');
+process.exit(Number(process.env.TEST_BUILD_CODE));
+`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'scp'), `#!${process.execPath}
+require('node:fs').writeFileSync(process.env.TEST_COPY, JSON.stringify(process.argv.slice(2)));
+console.error('forced copy failure');
+process.exit(21);
+`, { mode: 0o755 });
+  for (const code of ['7', '0']) {
+    const id = `remote-${code}`;
+    const log = path.join(fs.realpathSync(temp), 'threadbear-gpui-dev-app', 'build-logs', `${id}.log`);
+    const observed = path.join(tmp, `observed-${code}`);
+    const copied = path.join(tmp, `copied-${code}`);
+    // A prior build's child can outlive its owner and still hold its log.
+    fs.mkdirSync(path.dirname(log), { recursive: true });
+    const oldLog = fs.openSync(log, 'w');
+    fs.writeSync(oldLog, 'old build\n');
+    const env = { ...process.env, HOME: home, TMPDIR: temp, PATH: `${bin}${path.delimiter}${process.env.PATH}`, TB_GPUI_BIN: '', TEST_CHECKOUT: checkout, TEST_BUILD_LOG: log, TEST_OBSERVED: observed, TEST_BUILD_CODE: code, TEST_COPY: copied, CARGO_TARGET_DIR: '/remote build' };
+    let r;
+    try {
+      r = spawnSync(process.execPath, [path.join(scripts, 'dev-app.ts'), 'start', '--mock', '--id', id], { env, encoding: 'utf8', timeout: 15_000 });
+      fs.writeSync(oldLog, 'late old build\n');
+    } finally {
+      fs.closeSync(oldLog);
+    }
+    assert.ok(fs.existsSync(observed), `the compiler saw both streams in the log before exiting: ${r.stderr}`);
+    const text = fs.readFileSync(log, 'utf8');
+    assert.match(text, /first stdout/);
+    assert.match(text, /first stderr/);
+    assert.ok(!text.includes('late old build'), 'a leftover writer cannot corrupt the new log');
+    assert.ok(text.includes('x'.repeat(1_100_000)), 'untruncated output');
+    assert.match(text, /building 99/);
+    assert.equal(r.status, 1);
+    if (code === '7') {
+      assert.match(r.stderr, /error: forced remote compiler failure/);
+      assert.match(r.stderr, /the build failed; the whole log:/);
+      assert.ok(!fs.existsSync(copied), 'a failed build never copies a binary');
+    } else {
+      assert.match(r.stderr, /couldn't bring the build back.*forced copy failure/);
+      assert.ok(JSON.parse(fs.readFileSync(copied, 'utf8')).includes('build-mac:/remote build/debug/threadbear-gpui'), 'BUILT_IN still reaches scp');
+    }
+  }
+});
+
 test('start, do, dump, stop, and the idle quit, with a stand-in app on the mock', { skip: NO_MOCK }, async () => {
   const tmp = tmpDir('gpui-dev-app-');
   const app = path.join(tmp, 'fake-app');

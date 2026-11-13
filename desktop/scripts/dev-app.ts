@@ -215,12 +215,21 @@ function build(opts: { noBuild: boolean; here: boolean; logName: string }): stri
   fs.mkdirSync(logs, { recursive: true });
   const log = path.join(logs, `${opts.logName}.log`);
   const host = opts.here ? undefined : hostsIn('updateBuildHosts').find((h) => spawnSync('ssh', ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=8', h, 'uname', '-s'], { encoding: 'utf8' }).stdout?.trim() === 'Darwin');
+  // An interrupted build may still hold the old file open.
+  fs.rmSync(log, { force: true });
   let ok: boolean;
   if (host) {
+    const fd = fs.openSync(log, 'w');
     console.error(`Building on ${host} (an updateBuildHosts Mac), so the M5 stays free; the binaries come back here. Log: ${log}`);
-    const r = spawnSync(path.join(CHECKOUT, 'desktop/scripts/remote.sh'), [host, '--', 'bash', '-c', 'set -o pipefail; cd desktop && nice cargo build -p threadbear-gpui --features automation 2>&1 | tail -60 && echo "BUILT_IN=$CARGO_TARGET_DIR"'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
-    fs.writeFileSync(log, `${r.stdout ?? ''}${r.stderr ?? ''}`);
-    const builtIn = /^BUILT_IN=(\/.+)$/m.exec(r.stdout ?? '')?.[1];
+    let r;
+    try {
+      // Write both streams straight to the advertised file, as the local
+      // build does, so even a long compile can be followed while it runs.
+      r = spawnSync(path.join(CHECKOUT, 'desktop/scripts/remote.sh'), [host, '--', 'bash', '-c', 'cd desktop && nice cargo build -p threadbear-gpui --features automation && echo "BUILT_IN=$CARGO_TARGET_DIR"'], { stdio: ['ignore', fd, fd] });
+    } finally {
+      fs.closeSync(fd);
+    }
+    const builtIn = /^BUILT_IN=(\/.+)$/m.exec(fs.readFileSync(log, 'utf8'))?.[1];
     ok = r.status === 0 && !!builtIn;
     if (ok) {
       for (const bin of [exe, 'threadbear-web-helper']) {
@@ -255,7 +264,7 @@ function build(opts: { noBuild: boolean; here: boolean; logName: string }): stri
   }
   if (!ok) {
     const text = fs.readFileSync(log, 'utf8');
-    const errors = text.split('\n').filter((l) => /^(error|warning: unused)|^\s+-->|^\s*\|/.test(l)).slice(0, 60);
+    const errors = text.split('\n').filter((l) => /^(error|warning: unused)|^\s+-->|^\s*\|/.test(l)).slice(-60);
     console.error((errors.length ? errors : text.split('\n').slice(-30)).join('\n'));
     die(`the build failed; the whole log: ${log}`);
   }
