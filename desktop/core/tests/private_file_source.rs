@@ -36,11 +36,14 @@ const ALLOWED: &[&str] = &[
 /// - an existing user file saved in place by the text editor, keeping its mode.
 /// - a local page scanned for Run them, to read only (read(true),
 ///   O_NONBLOCK and O_NOFOLLOW, nothing written).
+/// - BrowserBear's tabs.json opened to read only, non-blocking so a pipe
+///   put there can't hold the read (`agent_browser.rs`, `read_tabs`).
 const ALLOWED_LINES: &[(&str, &str, usize)] = &[
     ("core/src/local_preview.rs", "let mut options = std::fs::OpenOptions::new();", 1),
     ("gpui/src/web_runtime.rs", "std::fs::write(path, &png).map_err(|e| format!(\"couldn't save the picture: {e}\"))?;", 1),
     ("core/src/open_policy.rs", "let mut options = std::fs::OpenOptions::new();", 1),
     ("core/src/open_policy.rs", "{ std::fs::OpenOptions::new().write(true).open(path) }", 1),
+    ("gpui/src/agent_browser.rs", "let mut open = std::fs::OpenOptions::new();", 1),
 ];
 
 fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
