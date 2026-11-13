@@ -14,7 +14,7 @@ use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::spinner::Spinner;
-use gpui_kit::component::switch::Switch;
+use crate::mac_switch::MacSwitch;
 use gpui_kit::component::{h_flex, v_flex, Disableable as _, Sizable as _, StyledExt as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -301,9 +301,8 @@ impl Threadbear {
         let mut tip = rules::filing_reasons(entry, |id| titles.iter().find(|(pid, _)| pid == id).map(|(_, t)| t.clone()));
         tip.push(rules::entry_help(entry));
         let tip = tip.join("\n");
-        // The thread, then the projects it touched. Tidying a project's
-        // notes has no thread, just the project. A project's page isn't in
-        // this app yet, so its name is plain words.
+        // The thread, then links to the projects it touched. Tidying a
+        // project's notes has no thread, just the project.
         let mut place = h_flex().min_w_0().items_center().gap(px(4.)).text_size(px(style::size::SIDEBAR_PREVIEW)).line_height(px(16.)).text_color(p.secondary);
         // The thread stays whole before the projects are cut short
         // (`layoutPriority(1)` in the Swift row), up to most of the line.
@@ -311,11 +310,16 @@ impl Threadbear {
             let link = self.thread_link(format!("librarian-entry-{}", entry.id), &entry.thread_id, &entry.thread_title, p, cx);
             place = place.child(div().flex_none().max_w(relative(0.8)).child(link));
         }
-        for (n, (_, title)) in titles.iter().enumerate() {
+        for (n, (project_id, title)) in titles.iter().enumerate() {
             if n > 0 || !entry.thread_id.is_empty() {
                 place = place.child(div().flex_none().text_color(p.faint).child("·"));
             }
-            place = place.child(div().min_w_0().truncate().child(title.clone()));
+            let project_id = project_id.clone();
+            place = place.child(
+                tipped!(div().min_w_0().truncate().cursor_pointer().hover(|s| s.underline()), ElementId::Name(format!("librarian-project-{}-{n}", entry.id).into()), "Open the project")
+                    .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.open_project_page(&project_id, cx)))
+                    .child(title.clone()),
+            );
         }
         tipped!(v_flex().gap(px(3.)).pt(px(7.)).pb(px(7.)).pl(px(LEADING)).pr(px(TRAILING)), ElementId::Name(format!("librarian-entry-row-{}", entry.id).into()), tip, gpui_kit::Role::ListItem)
             .child(
@@ -367,11 +371,13 @@ impl Threadbear {
         let label = |text: &'static str| div().w(px(110.)).flex_none().text_size(px(style::size::LABEL)).line_height(px(16.)).text_color(secondary).child(text);
         let switch_tip = if paused { "Paused: what's queued waits. Turn it on to carry on" } else { "Turn it off to pause; what's queued waits" };
         let switch = div().id("librarian-switch").test_support().role(Role::GenericContainer).aria_label(switch_tip.to_owned()).tip(switch_tip).child(
-            Switch::new("librarian-look")
-                .checked(!paused)
+            MacSwitch::new("librarian-look", !paused)
+                .outside_form()
                 .disabled(pausing)
-                .small()
-                .on_click(cx.listener(move |this, on: &bool, _, cx| this.set_librarian_paused(!*on, cx))),
+                .on_change({
+                    let me = cx.entity().downgrade();
+                    move |on, _, cx| { me.update(cx, |this, cx| this.set_librarian_paused(!on, cx)).ok(); }
+                }),
         );
         let mut grid = v_flex().gap(px(12.)).child(h_flex().items_center().gap(px(16.)).child(label("Look at threads")).child(switch));
         if let Some(picker) = self.render_small_jobs_pool(cx) {

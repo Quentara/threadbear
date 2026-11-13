@@ -159,6 +159,7 @@ impl Threadbear {
             .into_any_element()
         };
         let worktree = thread.worktree.as_ref().and_then(|w| w["branch"].as_str()).map(String::from);
+        let worktree_tip = thread.worktree.as_ref().and_then(|w| w["mainCheckout"].as_str()).map(|path| format!("Works on its own branch in a worktree. tb land, or the Land chip, puts it on main in {}.", abbreviate(path))).unwrap_or_else(|| "Works on its own branch in a worktree.".to_owned());
         let schedule = thread.schedule.clone();
         h_flex()
             .min_w_0()
@@ -176,7 +177,7 @@ impl Threadbear {
             .when(thread.on_old_runner == Some(true), |s| {
                 s.child(tipped!(div().id("old-runner").flex_none().text_color(faint), "This turn started before the runner updated, so it runs on the previous version. The thread moves to the new one when the turn ends.", gpui_kit::Role::GenericContainer).child("·  Finishing on the previous version"))
             })
-            .when_some(worktree, |s, branch| s.child(div().flex_none().text_color(faint).child(format!("·  {branch}"))))
+            .when_some(worktree, |s, branch| s.child(tipped!(div().id("worktree-branch").flex_none().text_color(faint), worktree_tip).child(format!("·  {branch}"))))
             // A click opens the schedule in the editor, while it's still
             // there (`ScheduleChip`); the tip says when it runs.
             .when_some(schedule, |s, origin| {

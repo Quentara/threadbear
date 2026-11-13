@@ -1494,7 +1494,8 @@ impl Threadbear {
         // What a swipe left does to it, if anything (row_swipe.rs).
         let swipe_action = crate::row_swipe::SwipeAction::of(mode);
         let title = if t.title.is_empty() { "Untitled".to_string() } else { t.title.clone() };
-        let tip = format!("{title}\n{}", abbreviate_home(&t.cwd));
+        let place = t.runner_id.as_deref().map(|id| format!("{}, in ", self.runner_place_of(id))).unwrap_or_default();
+        let tip = format!("{title}\n{place}{}", abbreviate_home(&t.cwd));
         let (bg_hover, bg_sel, fg, secondary) = (p.hover, p.selected, p.fg, p.secondary);
 
         let hover_id = id.clone();
@@ -1847,6 +1848,8 @@ fn render_tile(t: &ThreadSummary, look: &RowLook, behind: Hsla, project_icon: Op
     } else if look.unread {
         Some(
             div()
+                .id(SharedString::from(format!("needs-you-{}", t.id)))
+                .tip("Needs you")
                 .absolute()
                 .left(px(-(LEADING + 7.) / 2. - 1.))
                 .top_0()

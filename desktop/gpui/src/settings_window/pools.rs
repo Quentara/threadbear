@@ -85,7 +85,7 @@ impl SettingsWindow {
 
         if let Some(pool) = current {
             // Its name, icon and logins.
-            let mut rows = vec![row_with(div().child("Name").into_any_element(), div().w(px(220.)).child(Input::new(&name).small()).into_any_element(), cx)];
+            let mut rows = vec![row_with(div().child("Name").into_any_element(), crate::highlights::tipped(div().id("pool-name-holder").w(px(220.)), "Rename this pool. It saves when you press Return or click away.").child(Input::new(&name).small()).into_any_element(), cx)];
             rows.push(row_with(div().child("Icon").into_any_element(), self.icon_picker(&pool, &accounts, cx), cx));
             for (account, included) in pools::login_list(&pool, &accounts) {
                 rows.push(self.login_row(&pool, account, included, &accounts, cx));

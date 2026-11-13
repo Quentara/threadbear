@@ -16,7 +16,7 @@ use crate::app::Threadbear;
 use crate::{call, icons, now_ms, shell, style};
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::scroll::ScrollableElement as _;
-use gpui_kit::component::switch::Switch;
+use crate::mac_switch::MacSwitch;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -723,10 +723,12 @@ fn settings_card(model_weeks: &[String], on: bool, p: &Palette, cx: &mut Context
         .child(icon("gearshape", 16., p.secondary))
         .child(div().text_size(px(13.)).line_height(px(16.)).font_weight(FontWeight::SEMIBOLD).text_color(p.fg).child("Settings"));
     let switch = crate::highlights::tipped(div().id("usage-model-weeks-holder").flex_none(), rules::MODEL_WEEKS_TIP).child(
-        Switch::new("usage-model-weeks").checked(on).small().on_click(cx.listener(|this, on: &bool, _, cx| this.set_show_model_weeks(*on, cx))),
+        MacSwitch::new("usage-model-weeks", on).outside_form().on_change({
+            let me = cx.entity().downgrade();
+            move |on, _, cx| { me.update(cx, |this, cx| this.set_show_model_weeks(on, cx)).ok(); }
+        }),
     );
-    // As tall as macOS's small switch (20), which sets the row's height in
-    // the Swift card; this app's small switch is 16.
+    // Keep the Swift card's row height around the shared Mac switch.
     let row = h_flex()
         .items_center()
         .min_h(px(20.))
@@ -1154,6 +1156,13 @@ fn paint_honey(bounds: Bounds<Pixels>, level: f64, colour: Hsla, window: &mut Wi
 /// panel's.
 #[cfg(feature = "automation")]
 pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, cx: &mut App) -> Result<Value, String> {
+    if cmd["scrollToSettings"].as_bool() == Some(true) {
+        app.update(cx, |t, cx| {
+            t.usage.scroll.scroll_to_bottom();
+            cx.notify();
+        });
+        return Ok(json!("ok"));
+    }
     if let Some(show) = cmd["show"].as_bool() {
         app.update(cx, |t, cx| {
             if t.dock.read(cx).controller.is_showing(shell::USAGE) != show {

@@ -869,7 +869,10 @@ impl Render for ScheduleEditor {
                 // A path on that Mac: nothing here can check or choose it.
                 let away = state.runner_name.clone().unwrap_or_else(|| "another Mac".into());
                 let tip = format!("A folder on {away}. Left empty, {away}'s default folder.");
-                let folder = div().id("schedule-away-folder").tip(tip.clone()).child(Input::new(&self.away_folder).small());
+                let about = format!("A path on {away}, checked there when it runs. Its threads use {away}'s default account and model.");
+                let folder = h_flex().gap(px(6.)).items_center()
+                    .child(div().id("schedule-away-folder").tip(tip.clone()).child(Input::new(&self.away_folder).small()))
+                    .child(crate::home_page::info_tip("schedule-away-folder-about", about, cx));
                 rows.push(form_row("Folder", folder, cx).into_any_element());
             } else {
                 let mut choices: Vec<Choice> = recent

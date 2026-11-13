@@ -553,7 +553,7 @@ impl SettingsWindow {
             sections.push(section(
                 "settings-code-review",
                 "Code review",
-                "When a thread changes code and is done, Threadbear has your other provider (Codex for a Claude thread, Claude for a Codex one) try to break the change in a review thread of its own.",
+                "When a thread changes code and is done, Threadbear has your other provider (Codex for a Claude thread, Claude for a Codex one) try to break the change in a review thread of its own. Your thread waits for what it finds, fixes what holds up, and tells you in its reply. With only one provider, a fresh session of the same one reviews instead.",
                 "explain what a review found, or turn reviews on or off for you.",
                 vec![row("Review code changes before a thread is done", switch, cx)],
                 cx,
@@ -597,7 +597,7 @@ impl SettingsWindow {
             sections.push(section(
                 "settings-updates",
                 "Updates from Mike",
-                "When Mike has a release your copy doesn't have, Threadbear starts a thread that merges it in and runs the checks, then asks you before it lands. Never more than one at a time.",
+                "When Mike has a release your copy doesn't have, Threadbear starts a thread that merges it in and runs the checks, then asks you before it lands. Never more than one at a time. A release Mike marks important doesn't wait.",
                 "bring in Mike's latest release now, or change how often this happens.",
                 vec![row("Bring them in", menu, cx)],
                 cx,
@@ -622,7 +622,7 @@ impl SettingsWindow {
             sections.push(section(
                 "settings-experiments",
                 "Experiments",
-                "New features still being tried out. Each starts off; turn one on to try it, and off again whenever you like. Once one has proved itself it becomes a standard part of Threadbear and its switch goes.",
+                "New features still being tried out. Each starts off; turn one on to try it, and off again whenever you like. Once one has proved itself it becomes a standard part of Threadbear and its switch goes. The ⓘ beside each says what it does.",
                 "explain an experiment, or turn one on or off for you.",
                 rows,
                 cx,
