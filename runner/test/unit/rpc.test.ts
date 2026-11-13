@@ -841,7 +841,7 @@ test('a send naming the runner it is shown on never reaches another', async () =
     assert.equal(await refused({ threadId: 'moving', text: 'SENSITIVE', runnerId: 'runner_cloud' }), -32031);
     assert.equal(await refused({ threadId: 'moving', text: 'x', runnerId: '' }), -32602);
     assert.equal(await refused({ threadId: 'moving', text: 'x', runnerId: 7 }), -32602);
-    assert.deepEqual(relayed, []);
+    assert.equal(relayed.length, 0, "nothing relayed");
     // Shown where it is: goes, as before.
     await c.call('threads.send', { threadId: 'moving', text: 'hello', runnerId: 'runner_secondary' });
     assert.deepEqual(relayed.map((r) => r.text), ['hello']);

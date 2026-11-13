@@ -60,7 +60,8 @@ extension AppModel {
         let gone = next.values.filter { $0.isRemote && !listed.contains($0.id) && !madeRemote.contains($0.id) }.map(\.id)
         if next != threads { threads = next }
         // A thread that moved off another runner stays, as its new one's.
-        for id in gone where !movedAway(id) { forget(id) }
+        let leaving = gone.filter { !movedAway($0) }
+        if !leaving.isEmpty { forgetUnlessHere(leaving) }
         threadCountMayHaveChanged()
     }
 

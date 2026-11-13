@@ -134,6 +134,29 @@ extension AppModel {
         return true
     }
 
+    /// Other runners' threads gone from the index with no move showing: a
+    /// move here can drop its label (claimed) before its old row goes, so
+    /// one this Mac's runner now lists has arrived and stays, as this
+    /// Mac's; the rest were deleted there and go.
+    func forgetUnlessHere(_ ids: [String]) {
+        guard let client else { ids.forEach(forget); return }
+        Task { [self] in
+            let list = (try? await client.listThreads(include: [.inbox, .snoozed, .archived])) ?? []
+            for id in ids {
+                guard threads[id]?.isRemote == true else { continue }
+                if let here = list.first(where: { $0.id == id }) {
+                    madeRemote.remove(id)
+                    if let session = sessions.removeValue(forKey: id) { session.unsubscribe() }
+                    arrivedHere = [id]
+                    threads[id] = here
+                    arrivedHere = []
+                } else if !remoteIndex.summaries.contains(where: { $0.id == id }) {
+                    forget(id)
+                }
+            }
+        }
+    }
+
     /// A thread on its way here from another runner: once this Mac's runner
     /// lists it, it's this Mac's (the list is the only word on that; a
     /// summary of it could be the old runner's, relayed).
