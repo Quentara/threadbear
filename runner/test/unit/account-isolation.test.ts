@@ -90,8 +90,10 @@ test('unit-test guard permits its update clone, filters release PATHs, and keeps
     const user = os.userInfo();
     os.userInfo = () => ({ ...user, homedir: ${JSON.stringify(home)} });
     await import(${JSON.stringify(path.join(helpers, 'clean-env.ts'))});
+    process.chdir(${JSON.stringify(path.join(clone, 'runner'))});
     assert.equal(fs.readFileSync(${JSON.stringify(path.join(clone, 'fixture.txt'))}, 'utf8'), 'source');
     assert.equal(process.env.PATH, '/usr/bin');
+    assert.doesNotThrow(() => fs.symlinkSync('../../../../app/Fixtures', process.env.HOME + '/relative-link'));
     assert.throws(() => fs.existsSync(${JSON.stringify(path.join(data, 'secrets/probe'))}), /real account folder/);
     assert.throws(() => fs.existsSync(${JSON.stringify(path.join(clone, 'login-link/probe'))}), /real account folder/);
   `], { encoding: 'utf8', env: { ...process.env, PATH: path.join(data, 'runner/releases/fixture/bin') + ':/usr/bin' } });
@@ -100,17 +102,33 @@ test('unit-test guard permits its update clone, filters release PATHs, and keeps
   assert.doesNotMatch(result.stderr, /AssertionError/);
 });
 
-test('unit-test guard follows a fixture symlink back to a real account', () => {
-  const result = child(`
-    import fs from 'node:fs';
+test('unit-test preload works without a passwd entry or an existing HOME', () => {
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', `
+    import assert from 'node:assert/strict';
     import os from 'node:os';
-    const alias = process.env.HOME + '/alias';
-    fs.symlinkSync(process.env.HOME, alias);
-    fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe');
-    fs.unlinkSync(alias);
-    fs.symlinkSync(os.userInfo().homedir, alias);
-    try { fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe'); } catch {}
-  `);
-  assert.equal(result.status, 1, result.stderr);
-  assert.match(result.stderr, /Unit tests accessed real account folders/);
+    os.userInfo = () => { throw new Error('uid has no passwd entry'); };
+    await import(${JSON.stringify(preload)});
+    assert.ok(os.homedir().includes('tb-unit-home-'));
+  `], { encoding: 'utf8', env: { ...process.env, HOME: path.join(tmpDir(), 'nonexistent') } });
+  assert.equal(result.status, 0, result.stderr);
+});
+
+test('unit-test guard follows a fixture symlink back to a real account', () => {
+  for (const replace of [
+    `fs.unlinkSync(alias); fs.symlinkSync(os.userInfo().homedir, alias);`,
+    `execFileSync('/bin/ln', ['-sfn', os.userInfo().homedir, alias]);`,
+  ]) {
+    const result = child(`
+      import fs from 'node:fs';
+      import os from 'node:os';
+      import { execFileSync } from 'node:child_process';
+      const alias = process.env.HOME + '/alias';
+      fs.symlinkSync(process.env.HOME, alias);
+      fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe');
+      ${replace}
+      try { fs.existsSync(alias + '/.claude/threadbear-unit-guard-probe'); } catch {}
+    `);
+    assert.equal(result.status, 1, result.stderr);
+    assert.match(result.stderr, /Unit tests accessed real account folders/);
+  }
 });

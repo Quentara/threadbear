@@ -6,10 +6,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
+import childProcess from 'node:child_process';
 
-const realHome = os.userInfo().homedir;
+// A container's uid may have no passwd entry, or name a home that doesn't
+// exist. Preserve both the OS home and the caller's HOME when available.
+const homes = new Set([process.env.HOME, process.env.USERPROFILE].filter((p): p is string => Boolean(p)));
+try { homes.add(os.userInfo().homedir); } catch { /* HOME is enough in a uid-only container. */ }
 const resolve = fs.realpathSync.native;
-const canonicalHome = resolve(realHome);
+for (const home of [...homes]) {
+  try { homes.add(resolve(home)); } catch { /* Still guard its lexical path. */ }
+}
 const codeRoot = resolve(path.join(import.meta.dirname, '../../..'));
 const testHome = resolve(fs.mkdtempSync(path.join(os.tmpdir(), 'tb-unit-home-')));
 process.env.HOME = testHome;
@@ -28,7 +34,7 @@ for (const name of Object.keys(process.env)) {
   if (/^THREAD(?:BEAR|BARE)_(?:HOME|DATA_DIR|RUNNER_HOME|CLAUDE_MAIN_DIR|CLAUDE_MAIN_JSON|ACCOUNTS_DIR|CODEX_MAIN_DIR|TOKEN_STATS_LIMITS|THREAD_KEY|THREAD_ID|URL|LOG)$/.test(name) || /^OPENCODE_CONFIG(?:_DIR|_CONTENT)?$/.test(name)) delete process.env[name];
 }
 
-const roots = [realHome, canonicalHome].flatMap((home) => ['.claude', '.claude.json', '.codex', '.cursor', '.opencode', '.config/opencode', '.local/share/opencode', 'Library/Application Support/Token Stats', 'Library/Application Support/Threadbear'].map((p) => path.join(home, p)));
+const roots = [...homes].flatMap((home) => ['.claude', '.claude.json', '.codex', '.cursor', '.opencode', '.config/opencode', '.local/share/opencode', 'Library/Application Support/Token Stats', 'Library/Application Support/Threadbear'].map((p) => path.join(home, p)));
 const violations = new Map<string, string>();
 const canonical = new Map<string, string>();
 let clearQueued = false;
@@ -95,7 +101,10 @@ for (const target of [fs, fs.promises]) {
       const guarded = function (this: unknown, file: unknown, ...args: unknown[]) {
         if (mutates) canonical.clear();
         try {
-          check(file);
+          // A relative symlink target is relative to the new link, not
+          // cwd, and creating it reads no target. Guard the destination;
+          // later reads through the link still check its resolved target.
+          if (name !== 'symlink') check(file);
           if (['copyFile', 'cp', 'rename', 'link', 'symlink'].includes(name)) check(args[0]);
         } catch (error) {
           if (target === fs.promises) return Promise.reject(error);
@@ -117,6 +126,15 @@ for (const target of [fs, fs.promises]) {
       Object.defineProperty(target, key, { ...descriptor, value: guarded });
     }
   }
+}
+// Synchronous git/ln calls can replace a link without yielding to the
+// microtask that clears the cache, so invalidate around them as well.
+for (const key of ['spawnSync', 'execSync', 'execFileSync'] as const) {
+  const original = childProcess[key];
+  Object.defineProperty(childProcess, key, { configurable: true, writable: true, value: (...args: unknown[]) => {
+    canonical.clear();
+    try { return Reflect.apply(original, childProcess, args); } finally { canonical.clear(); }
+  } });
 }
 syncBuiltinESMExports();
 process.on('exit', () => {
