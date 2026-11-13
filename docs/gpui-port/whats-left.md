@@ -126,8 +126,8 @@ you go.
 - [ ] The offer to continue a refused turn sits at the top, not just above the
   composer (`banner.refusal`)
 - [x] The milestone capsule shows at 100 threads and each thousand, once,
-  when you are there to see it (`toast.milestone`). Its bear and entrance
-  are with the bears and motion review.
+  when you are there to see it (`toast.milestone`). Mike chose a static paw
+  with no entrance motion or wave.
 - [ ] Highlights: no Notion board (`highlights.board`)
 - [ ] An image panel has no Open Simulator button; `.app`, `.icns` and PDF
   icons fall back to a symbol (`panel.image`, `patches.icons`,
