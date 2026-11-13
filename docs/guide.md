@@ -1777,7 +1777,8 @@ the change is ready and its checks pass, the agent lands it on your `main`
 branch. When several threads are ready together, their landings wait for
 one another and can be checked together against the latest landed work.
 The landing's progress message says when it is already being checked with
-its group, with a rough estimate of the time left in that check.
+its group, with a rough estimate of the time left in that check or a note
+that it is taking longer than usual.
 
 The same goes for settings. The Settings window (⌘,) shows what's set and has
 controls for only a few common things, and the ⓘ beside each section says
