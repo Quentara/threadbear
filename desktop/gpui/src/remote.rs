@@ -155,6 +155,7 @@ impl Threadbear {
     /// `applyRemoteIndex`: puts the table's rows in `threads` and lets go of
     /// rows that have gone from it (deleted there).
     pub(crate) fn apply_remote_index(&mut self, cx: &mut Context<Self>) {
+        if !self.remote.heard { return; }
         let mut listed = HashSet::new();
         let mut reload = HashSet::new();
         for summary in self.remote.index.threads.clone() {
