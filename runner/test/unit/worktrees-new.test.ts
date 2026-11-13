@@ -314,3 +314,48 @@ test('threads.create takes worktree: false over RPC, and refuses a worktree that
     await server.close();
   }
 });
+
+// A setup that waits for `go` in a folder of the test's, so the test can act
+// while it runs. From the implicit state machines scan (13 Nov 2026): the
+// first turn's start went on after the worktree was made and set up without
+// asking whether the thread was still there, or the turn still the same one.
+function gatedSetup() {
+  const gate = fs.realpathSync(tmpDir('tb-wt-gate-'));
+  const patch = PATCH(`{ setup: "touch ${gate}/started; while [ ! -f ${gate}/go ]; do sleep 0.05; done; touch .setup-ran" }`);
+  return { gate, patch, started: () => fs.existsSync(path.join(gate, 'started')), go: () => fs.writeFileSync(path.join(gate, 'go'), '') };
+}
+
+test('a thread deleted while its worktree is being set up starts no CLI, and its worktree goes once the setup ends', async () => {
+  const g = gatedSetup();
+  const { root, main } = makeRepo(g.patch);
+  const h = harness();
+  const { thread } = h.runner.create({ text: 'Go', accountId: 'claude-3', cwd: main });
+  const wt = path.join(root, 'proj-threads', thread.id.slice(0, 8));
+  await until(g.started, 'the setup to start');
+  h.runner.delete(thread.id);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(fs.existsSync(wt), 'not removed from under the setup');
+  g.go();
+  await until(() => !fs.existsSync(wt), 'the worktree to go');
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(h.adapter.sessions.length, 0, 'no CLI for a deleted thread');
+});
+
+test('Stop during the worktree setup, then a new message: the CLI waits for the setup and starts in the worktree', async () => {
+  const g = gatedSetup();
+  const { root, main } = makeRepo(g.patch);
+  const h = harness();
+  const { thread } = h.runner.create({ text: 'Go', accountId: 'claude-3', cwd: main });
+  const wt = path.join(root, 'proj-threads', thread.id.slice(0, 8));
+  await until(g.started, 'the setup to start');
+  h.runner.interrupt(thread.id, { byMike: true });
+  h.runner.send(thread.id, 'Go again');
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(h.adapter.sessions.length, 0, 'not before the setup ends');
+  g.go();
+  await until(() => h.adapter.sessions.length === 1, 'the CLI to start');
+  assert.equal(h.adapter.last.opts.cwd, wt);
+  assert.ok(fs.existsSync(path.join(wt, '.setup-ran')));
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(h.adapter.sessions.length, 1, 'one CLI');
+});

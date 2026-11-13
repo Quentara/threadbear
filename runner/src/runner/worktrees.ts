@@ -34,6 +34,20 @@ export const worktreesPart = {
   // where it was asked to.
   async prepareWorktree(this: Runner, st: ThreadState, turnId: string): Promise<void> {
     const { rec, rt } = st;
+    try {
+      await this.prepareWorktreeNow(st, turnId);
+    } finally {
+      // Deleted meanwhile: delete() left the worktree to this (it would
+      // have removed it from under the setup, or never known of it), so
+      // it goes now rather than be left with no thread.
+      if (rt.deleted && rec.worktree && !rec.worktree.removedAt) {
+        await this.cleanUpWorktree(st, true).catch((e: unknown) => this.log.error('worktree cleanup failed', { threadId: rec.id, error: String(e) }));
+      }
+    }
+  },
+
+  async prepareWorktreeNow(this: Runner, st: ThreadState, turnId: string): Promise<void> {
+    const { rec, rt } = st;
     delete rec.worktreePending;
     this.markDirty(st);
     // A session already ran in the folder (a turn that failed later, say):
@@ -49,7 +63,10 @@ export const worktreesPart = {
     if (!patch || rt.deleted) return;
     const asked = rec.cwd;
     const made = await makeWorktree({ cwd: asked, threadId: rec.id, patch });
-    if (rt.deleted) return;
+    if (rt.deleted) {
+      if (made.ok) rec.worktree = made.worktree;
+      return;
+    }
     if (!made.ok) {
       this.log.warn('could not make a worktree', { threadId: rec.id, reason: made.reason });
       this.emit(st, { type: 'system.note', text: `Couldn't make a worktree for this thread: ${made.reason}. It starts in ${asked} instead.` }, turnId);
@@ -64,6 +81,13 @@ export const worktreesPart = {
     this.markDirty(st);
     this.log.info('made a worktree', { threadId: rec.id, path: made.worktree.path, branch: made.worktree.branch });
     this.emit(st, { type: 'system.note', text: `Working in a worktree of its own at ${made.worktree.path}, on the branch ${made.worktree.branch}. tb land puts it on main.` }, turnId);
+    // Archived while it was being made: the archive didn't know of it, so
+    // its cleanup is owed (archiveWhenGone runs it once this is done), and
+    // there's no point setting it up.
+    if (rec.archivedAt) {
+      rec.worktree.cleanupOwed = true;
+      return;
+    }
     await this.setUpWorktree(st, made, patch, turnId);
   },
 

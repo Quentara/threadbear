@@ -423,6 +423,12 @@ type Runtime = {
   // The archived thread's worktree cleanup while it runs: a handover waits
   // for it before saving the record, or its result is lost (THREADBEAR-16).
   cleaning?: Promise<void>;
+  // A new thread's worktree being made and set up (prepareWorktree): a
+  // turn started meanwhile (Stop, then a new message) waits for it, or its
+  // CLI would start in the main checkout or before the setup is done; an
+  // archive's or a delete's cleanup waits too, rather than remove the
+  // folder from under the setup.
+  preparing?: Promise<void>;
   // Background work that ended and whose result the CLI hasn't started a
   // turn to read yet. Shown as `finished` in the summary's background list
   // while wakeTimer runs; cleared when that turn starts or the grace ends.
@@ -1765,7 +1771,9 @@ export class Runner {
     // depends on whether it removed the folder (leaveRemovedWorktree), and
     // a CLI started there meanwhile would have the folder taken from under it.
     while (rt.cleaning) await rt.cleaning;
-    if (rt.turn?.turnId !== msg.turnId) return; // interrupted while waiting
+    // Deleted (which leaves rt.turn as it was) or interrupted meanwhile.
+    const gone = () => rt.deleted || rt.turn?.turnId !== msg.turnId;
+    if (gone()) return; // interrupted while waiting
     const local = this.runLocalCommand(st, msg);
     if (local === true || (local !== false && (await local))) return;
     // A slash command reaches the CLI as typed: anything put in front of it
@@ -1784,9 +1792,21 @@ export class Runner {
       // whatever a message told it has gone (Codex review).
       if (rec.instructionsTold !== undefined) rec.instructionsTold = INSTRUCTIONS_REWOUND;
     }
+    while (rt.preparing) await rt.preparing;
+    if (gone()) return;
     if (!rt.session && rec.worktreePending) {
-      await this.prepareWorktree(st, msg.turnId);
-      if (rt.turn?.turnId !== msg.turnId) return; // interrupted during setup
+      const preparing = this.prepareWorktree(st, msg.turnId);
+      const held: Promise<void> = preparing
+        .catch(() => undefined)
+        .finally(() => {
+          if (rt.preparing !== held) return;
+          rt.preparing = undefined;
+          // An archive that came meanwhile goes ahead now.
+          this.archiveWhenGone(st);
+        });
+      rt.preparing = held;
+      await preparing;
+      if (gone()) return; // interrupted or deleted during setup
     }
     if (!rt.session) {
       const left = this.leaveRemovedWorktree(st, msg.turnId) ?? this.tellTornDown(st, msg.turnId);
@@ -3185,7 +3205,8 @@ export class Runner {
     // Its worktree goes once the CLI has let go of the folder, and after an
     // archive's cleanup still running, rather than beside it (that one may
     // already have removed it).
-    if (rec.worktree && !rec.worktree.removedAt) {
+    // One still being made and set up is cleaned up by prepareWorktree.
+    if (rec.worktree && !rec.worktree.removedAt && !rt.preparing) {
       const cleaning = rt.cleaning;
       void Promise.resolve(ended ?? rt.closing)
         .catch(() => undefined)
@@ -3262,7 +3283,7 @@ export class Runner {
   // still running holds it the same way (runAction comes back here).
   archiveWhenGone(st: ThreadState): void {
     const { rec, rt } = st;
-    if (!rt.archivePending || rt.session || rt.closing || rt.deleted || rt.hooksRunning || rt.runningActions?.size) return;
+    if (!rt.archivePending || rt.session || rt.closing || rt.deleted || rt.hooksRunning || rt.runningActions?.size || rt.preparing) return;
     rt.archivePending = false;
     if (rec.archivedAt) {
       this.archiveNative(st);
