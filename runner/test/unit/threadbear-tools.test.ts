@@ -740,6 +740,52 @@ test('one reply: a reopened turn that worked before its card is asked for its re
   assert.equal(h.runner.get(thread.id).needs, 'nothing');
 });
 
+// From Codex's second review. A reply written as two blocks is two final
+// texts, and both go under the corrected card, not just the closing question.
+test('one reply: a reply in two blocks is written whole under the corrected card', async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  const send = async (itemId: string, input: Record<string, unknown>) => {
+    toolCall(s, itemId, END_TURN, input);
+    const r = await call('end_turn', input);
+    s.out({ kind: 'event', event: { type: 'tool.result', itemId, ok: !r.error, text: r.text, truncated: false, images: [] } });
+    return r;
+  };
+  await send('e1', { headline: 'Two ways to do it', needs: 'nothing' });
+  s.text('m1', 'There are two ways: the quick one and the thorough one, and here is each in full.');
+  s.text('m2', 'Which should we use?');
+  s.out({ kind: 'endTurnNudge', reopen: true });
+  await send('e2', { headline: 'Pick one', needs: 'you', asks: [{ question: 'Which way?', options: [{ label: 'Quick' }, { label: 'Thorough' }] }] });
+  const copy = h.events(thread.id).find((e) => e.type === 'assistant.text' && e.itemId === 'e2.reply');
+  assert.equal(copy?.type === 'assistant.text' && copy.text, 'There are two ways: the quick one and the thorough one, and here is each in full.\n\nWhich should we use?');
+});
+
+// ...and a message Mike sends between the nudge and the card gets its own
+// answer and card: the reply from before it isn't written again as if it
+// answered him.
+test('one reply: a message sent after the nudge takes over from the card it asked for', async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  const send = async (itemId: string, input: Record<string, unknown>) => {
+    toolCall(s, itemId, END_TURN, input);
+    const r = await call('end_turn', input);
+    s.out({ kind: 'event', event: { type: 'tool.result', itemId, ok: !r.error, text: r.text, truncated: false, images: [] } });
+    return r;
+  };
+  await send('e1', { headline: 'Ready', needs: 'nothing' });
+  s.text('m1', "It's ready. Say go and I'll merge main into prod.");
+  s.out({ kind: 'endTurnNudge', reopen: true });
+  h.runner.send(thread.id, 'Actually, hold off until Monday.');
+  assert.equal(h.runner.cardReopened(thread.id), false);
+  s.text('m2', "Holding off: I'll leave it on main until Monday.");
+  const r = await send('e2', { headline: 'Held until Monday', needs: 'nothing' });
+  assert.equal(r.error, false, r.text);
+  assert.ok(!h.events(thread.id).some((e) => e.type === 'assistant.text' && e.itemId === 'e2.reply'), 'the old reply is not written again');
+  assert.ok(h.events(thread.id).some((e) => e.type === 'assistant.text' && e.itemId === 'm2'), 'his answer shows');
+});
+
 // Without that nudge a second end_turn is still a repeat, and one that came
 // before any end_turn changes nothing.
 test('one reply: only a turn that had its end_turn is reopened for a card', async () => {

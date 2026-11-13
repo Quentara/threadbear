@@ -363,10 +363,11 @@ export type Turn = {
   // ...or back for a card its reply asked for, after an end_turn it took:
   // the next end_turn is that card, not a repeat (needs.ts, REPLY_ASKS).
   cardReopened?: boolean;
-  // The reply a one-reply turn wrote after its end_turn (the text marked
-  // final), and, once a reopened turn's card is taken, that reply waiting to
-  // be written again under it (onOutput).
-  finalText?: string;
+  // The reply a one-reply turn wrote after its last end_turn (the texts
+  // marked final, by item: a reply can come as several blocks), and, once a
+  // reopened turn's card is taken, that reply waiting to be written again
+  // under it (onOutput).
+  finalTexts?: Map<string, string>;
   restateReply?: string;
   // Whether the agent has read a background task's notification that came
   // into the turn (needs.ts, WakeRead).
@@ -1685,6 +1686,10 @@ export class Runner {
     // He wrote again, so the turn owes him another reply.
     turn.ended = false;
     turn.owedReply = undefined;
+    // ...and a card it was sent back for (needs.ts, REPLY_ASKS) gives way to
+    // this message's own: the reply written before it isn't its answer, so
+    // it isn't written again under that card (from Codex's review).
+    turn.cardReopened = false;
     // ...and an archive it asked for before reading this is off: "wait, one
     // more thing" shouldn't send the thread away. It can ask again.
     if (turn.endTurn?.archive) turn.endTurn = { ...turn.endTurn, archive: false };
@@ -2047,7 +2052,7 @@ export class Runner {
             }
             const text = split?.needs ? split.reply : tool?.asks?.length ? replyWithoutRepeat(ev.text, tool) : ev.text;
             ev = { type: 'assistant.text', itemId: ev.itemId, text, final: true, ...(ev.narration ? { narration: true as const } : {}) };
-            if (text.trim()) rt.turn.finalText = text;
+            if (text.trim()) (rt.turn.finalTexts ??= new Map()).set(ev.itemId, text);
           }
         } else if (ev.type === 'assistant.text' && rt.turn?.ended && !ev.itemId.includes('/') && rt.turn.narrationItem && !rt.turn.summarized && ev.text.trim()) {
           rt.inProgress.delete(ev.itemId);
@@ -2102,8 +2107,12 @@ export class Runner {
               // from after its last card, and fold a final message before
               // it away as one a wake replaced, so the reply is written
               // again under this card (below, once the result is out).
-              rt.turn.restateReply = rt.turn.cardReopened && endTurnMessageStands(ev) ? rt.turn.finalText : undefined;
+              // All of its blocks, or the Mac kept only the closing
+              // question of a reply written as two (from Codex's review).
+              rt.turn.restateReply = rt.turn.cardReopened && endTurnMessageStands(ev) && rt.turn.finalTexts?.size ? [...rt.turn.finalTexts.values()].join('\n\n') : undefined;
               rt.turn.cardReopened = false;
+              // A reply asked for now is a new one.
+              if (endTurnWantsReply(ev)) rt.turn.finalTexts = undefined;
               // Every taken one, Codex's older "Noted." too: one that isn't
               // one-reply means text after it isn't the reply (from Codex's
               // review). A "Done." after one took a full reply's place on
