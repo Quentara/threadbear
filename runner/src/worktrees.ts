@@ -465,6 +465,12 @@ async function recoverLandedFor(t: LandTarget, common: string, out: (line: strin
   } catch {
     return;
   }
+  // A note left by an older tb land for a commit that landed as it was:
+  // the branch is already there.
+  if (landed === head) {
+    fs.rmSync(file, { force: true });
+    return;
+  }
   if ((await gitOut(t.path, ['rev-parse', '--abbrev-ref', 'HEAD'])) !== t.branch) return;
   if (!(await git(t.path, ['merge-base', '--is-ancestor', landed, `refs/heads/${MAIN}`])).ok) return;
   if ((await git(t.path, ['reset', '-q', '--keep', landed])).ok) {
@@ -490,6 +496,8 @@ async function moveGoneBranch(e: QueueEntry, landed: string): Promise<void> {
     if ((await gitOut(e.path, ['rev-parse', 'HEAD'])) === e.commit &&
         (await gitOut(e.path, ['rev-parse', '--abbrev-ref', 'HEAD'])) === e.branch &&
         (await gitOut(e.path, ['status', '--porcelain', '--untracked-files=all'])) === '') {
+      // The note stays: another worktree on the same commit may still need
+      // it (Codex's review, 13 Nov). Old ones go after a week.
       await git(e.path, ['reset', '-q', '--keep', landed]);
     }
   } finally {
@@ -1078,7 +1086,11 @@ async function landLocked(
         // One whose tb has gone never hears: move its branch here, as it
         // would have, or its next tb land would land a commit made empty
         // on purpose a second time (rebase keeps those).
-        if (!(await ownerWaiting(common, g.entry))) {
+        // Not when it landed as it was (first in the stack, so rebased to
+        // the same commits, as happens within the same second): there's
+        // nothing to move, and a note from a commit to itself made its next
+        // tb land say it moved the branch (red on GitHub's Linux, 13 Nov).
+        if (g.tip !== g.entry.commit && !(await ownerWaiting(common, g.entry))) {
           writeLandedFor(common, g.entry.commit, g.tip);
           await moveGoneBranch(g.entry, g.tip);
         }

@@ -252,7 +252,24 @@ test('the main checkout on a detached HEAD is refused by name', async () => {
 
 // 12 Nov: session restarts killed waiting tb lands, and the group was
 // checked again without each one, so two passing checks landed nothing.
-test('a landing whose tb is killed during the group check still lands, if its branch is where it was', async () => {
+// c is first in the stack, so whether it lands as new commits or as it was
+// came down to the clock: rebased within the same second, the commits are the
+// same ones. Both ways are run, with git's commit date pinned, and moved on
+// a second before the landing for the first. (13 Nov: a note from c's commit
+// to itself made c's next tb land say it moved the branch, about half the
+// runs on GitHub's Linux.)
+for (const sameSecond of [false, true]) test(`a landing whose tb is killed during the group check still lands, if its branch is where it was${sameSecond ? ' (landed as it was)' : ''}`, async () => {
+  const pinned = process.env.GIT_COMMITTER_DATE;
+  process.env.GIT_COMMITTER_DATE = '2026-11-13T00:00:00Z';
+  try {
+    await killedDuringGroupCheck(sameSecond);
+  } finally {
+    if (pinned === undefined) delete process.env.GIT_COMMITTER_DATE;
+    else process.env.GIT_COMMITTER_DATE = pinned;
+  }
+});
+
+async function killedDuringGroupCheck(sameSecond: boolean) {
   const { root, main } = makeRepo();
   const [b, c] = branches(main, ['b', 'c']);
   const common = path.join(main, '.git');
@@ -275,6 +292,8 @@ test('a landing whose tb is killed during the group check still lands, if its br
   const check = `if test -f c.txt; then touch '${root}/drop'; while ! test -f '${root}/released'; do sleep 0.05; done; fi`;
   // The entry asks for the same check as b's, for c's commits as they are.
   fs.writeFileSync(path.join(queueDir(common), `${e.id}.json`), JSON.stringify({ ...e, commit: sh(c.path, 'git rev-parse HEAD'), check }));
+  const asked = sh(c.path, 'git rev-parse HEAD');
+  if (!sameSecond) process.env.GIT_COMMITTER_DATE = '2026-11-13T00:00:01Z';
   const out = capture();
   assert.equal(await land({ ...b, check }, out.opts), 0, out.err.join('\n'));
   await gone;
@@ -285,7 +304,13 @@ test('a landing whose tb is killed during the group check still lands, if its br
   assert.equal(await land({ ...c, check: 'true' }, again.opts), 0);
   assert.deepEqual(again.out, [`Nothing to land: ${c.branch} has no commits that aren't on main.`]);
   assert.equal(sh(main, 'git log --format=%s main | grep -c "Empty on c"'), '1');
-});
+  // Each case really happened: c's commits landed as they were (nothing to
+  // move, so no note), or as new ones.
+  const asIs = sh(main, `git merge-base --is-ancestor ${asked} main && echo yes || echo no`);
+  assert.equal(asIs, sameSecond ? 'yes' : 'no');
+  const notes = path.join(common, 'threadbear-land-done');
+  if (sameSecond) assert.deepEqual(fs.existsSync(notes) ? fs.readdirSync(notes) : [], [], 'no note from a commit to itself');
+}
 
 test('a cherry-pick of several, stopped and then committed by hand, still holds a landing', async () => {
   const { main } = makeRepo();
@@ -305,7 +330,9 @@ test("a branch that landed while its tb was stopped is moved to what landed by i
   sh(c.path, 'git commit -q --allow-empty -m "Empty on c"');
   const asked = sh(c.path, 'git rev-parse HEAD');
   // What a group check landed for it (as a holder that couldn't move its
-  // branch leaves it): its commits on main.
+  // branch leaves it): its commits on main, after another's, so they're
+  // new commits and not, within the same second, the very same ones.
+  sh(main, 'git commit -q --allow-empty -m "Landed before c"');
   sh(main, `git cherry-pick --allow-empty ${asked}~1 ${asked}`);
   const landed = sh(main, 'git rev-parse main');
   const done = path.join(main, '.git', 'threadbear-land-done');
