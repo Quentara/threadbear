@@ -133,7 +133,8 @@ let displays = CGGetActiveDisplayList(32, &displayIDs, &displayCount) == .succes
 // Notification Centre keeps a see-through window over the whole screen that
 // only its banners take clicks in: skipped, but only when it's really
 // Notification Centre's, not any window with that title.
-let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").map(\.processIdentifier))
+let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui")
+    .filter { $0.bundleURL?.path == "/System/Library/CoreServices/NotificationCenter.app" }.map(\.processIdentifier))
 /// The same windows window-at looks through: on screen, not see-through, not
 /// Notification Centre's whole-screen sentinel.
 func stack(_ p: CGPoint) -> [Over] {

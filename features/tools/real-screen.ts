@@ -110,7 +110,8 @@ import CoreGraphics
 let a = CommandLine.arguments
 let pid = Int32(a[1])!, x = Double(a[2])!, y = Double(a[3])!
 let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as! [[String: Any]]
-let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui").map(\\.processIdentifier))
+let notificationPIDs = Set(NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.notificationcenterui")
+  .filter { $0.bundleURL?.path == "/System/Library/CoreServices/NotificationCenter.app" }.map(\\.processIdentifier))
 var above: [String] = []
 for w in list {
   if (w[kCGWindowOwnerPID as String] as? Int32) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
