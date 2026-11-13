@@ -84,7 +84,7 @@ pidfile="$REMOTE/run-$stamp-$$.pid"
 inner="echo \$\$ >$pidfile; [ ! -e $pidfile.gone ] || exit 129; cd ~/$REMOTE/src && bash scripts/parity/run.sh ~/$REMOTE/out > ~/$REMOTE/run.log 2>&1; echo exit \$? >> ~/$REMOTE/run.log"
 # In the background with a wait, so a TERM, HUP or INT to this script stops
 # the ssh, and with it the run, at once (Codex's review).
-"${SSH[@]}" "$HOST" "$(guarded_cmd "$pidfile" .local/bin/desk "perl -e 'setpgrp(0, 0); exec @ARGV' bash -c $(single_quoted "$inner")")" <&7 >/dev/null 2>&1 &
+"${SSH[@]}" "$HOST" "perl $REMOTE/src/scripts/perf-lock.pl --desk $pidfile bash -c $(single_quoted "$inner")" <&7 >/dev/null 2>&1 &
 ssh_pid=$!
 trap 'kill $ssh_pid 2>/dev/null; exit 143' TERM
 trap 'kill $ssh_pid 2>/dev/null; exit 129' HUP

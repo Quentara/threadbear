@@ -41,7 +41,7 @@ my $last_beat = 0;
 sub keep_copy {
     return if time - $last_beat < 30;
     $last_beat = time;
-    for my $name (qw(THREADBEAR_REMOTE_SOURCE THREADBEAR_REMOTE_TARGET)) {
+    for my $name (qw(THREADBEAR_REMOTE_SOURCE THREADBEAR_REMOTE_TARGET THREADBEAR_REMOTE_TOOLS)) {
         my $dir = $ENV{$name} // next;
         next unless -d $dir;
         open(my $marker, '>>', "$dir/.in-use") or next;

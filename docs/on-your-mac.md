@@ -291,7 +291,9 @@ File references are where to look.
   Temporary wrappers under the run's temp folder background Cargo and Swift
   builds and are removed when the run ends. Performance runs register their
   process groups and start times in `~/.cache/threadbear-check/perf-children-*`
-  until cleanup has stopped them. With `remote.sh --perf`, the shared warm
+  until cleanup has stopped them. A cleanup still blocked after 30 seconds
+  records its process-group IDs in `~/.cache/threadbear-check/perf-cleanup.log`
+  and keeps the locks until the work stops. With `remote.sh --perf`, the shared warm
   target is `~/.cache/threadbear-check/gpui/perf-target`, kept out of ordinary
   cache eviction; other builds keep their own target. Source/target `.in-use`
   markers are renewed while a remote run waits and works. With update build hosts set but none

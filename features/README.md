@@ -137,3 +137,12 @@ unlocking. The registry is temporary, under
 `~/.cache/threadbear-check/perf-children-*`; records contain group IDs and start
 times, so a reused PID is left alone. Desk workloads register in that same run,
 even if the Desk client finishes early. Keep child spawns' `process.env` intact.
+
+
+Shared performance builds invalidate Cargo's owner marker before compiling.
+When a different checkout last built the target, the next build touches the
+workspace and built-in art inputs inside the final lock, so an unchanged
+checkout cannot reuse the other checkout's binary. The marker returns only
+after Cargo succeeds. A cleanup that cannot yet observe killed work stopping
+keeps the host locked and writes `~/.cache/threadbear-check/perf-cleanup.log`
+after 30 seconds; it does not let another measurement start over that work.

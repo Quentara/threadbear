@@ -2,7 +2,7 @@
 # Runs a command from this checkout on another machine, so the Rust builds and
 # the spec runs stay off the Mac you're working on (AGENTS.md).
 #
-#   desktop/scripts/remote.sh <ssh host> [--desk] -- <command...>
+#   desktop/scripts/remote.sh <ssh host> [--desk] [--perf] -- <command...>
 #
 # It copies the checkout, committed or not, less its build folders, to a folder
 # of its own under ~/.cache/threadbear-check/gpui there (so two checkouts at once
@@ -21,10 +21,17 @@
 # puts a file back must touch it afterwards: put back, it's older than the build
 # of the edit, and cargo calls that build fresh.
 set -euo pipefail
-host="${1:?usage: remote.sh <ssh host> [--desk] -- <command>}"; shift
+host="${1:?usage: remote.sh <ssh host> [--desk] [--perf] -- <command>}"; shift
 desk=0
-if [ "${1:-}" = "--desk" ]; then desk=1; shift; fi
-[ "${1:-}" != "--" ] || shift
+perf=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --desk) desk=1; shift ;;
+    --perf) perf=1; shift ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
 [ $# -gt 0 ] || { echo "no command given" >&2; exit 2; }
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 base=".cache/threadbear-check/gpui"
@@ -35,7 +42,11 @@ base=".cache/threadbear-check/gpui"
 # folders (Codex's review, 12 Nov). stage-update.sh works out the same key.
 key="$(printf '%s%s' "$root" "${THREADBEAR_REMOTE_KEY:+@$THREADBEAR_REMOTE_KEY}" | shasum | cut -c1-10)"
 src="$base/src-$key"
+tag="$key-$$-$RANDOM$RANDOM"
 target="$base/target-$key"
+# Performance work shares a warm target, under the whole-run host lock. Keep
+# updater/dev targets per checkout: their post-run scp reads those binaries.
+[ "$perf" = 0 ] || target="$base/perf-target"
 
 # The turn is a lock on a file this script holds open (fd 9), so it goes when
 # the script does, however it ends. Not lockf or flock running this script as
@@ -89,14 +100,30 @@ fi
 # its own crates build again, and a run that can't do that doesn't go on.
 # Exit 9 is that touch failing; any other failure here is let go, as before (a
 # marker not written, on a full disk, just means touching them again next time).
+# Cache eviction can remove GB, so it gets a turn too. Bootstrap the small
+# guard files first: the worktree copy may not exist yet, or be queued for
+# eviction. No build or capture starts until the final whole-command turn.
+boot="$base/run-$tag-tools"
+ssh "$host" "mkdir -p $boot"
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh; do
+  ssh "$host" "cat > $boot/$helper" <"$root/scripts/$helper"
+done
+ssh "$host" "cat > $boot/trim-remote-cache.sh" <"$root/desktop/scripts/trim-remote-cache.sh"
+precopy="mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name 'target-$key' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -rf {} + 2>/dev/null; true
+cd \"\$HOME/$base\"
+bash \"\$HOME/$boot/trim-remote-cache.sh\" $key ${target##*/}"
+alive_stdin 7
+remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" THREADBEAR_REMOTE_TOOLS=\"\$HOME/$boot\" perl $boot/perf-lock.pl - bash -c $(single_quoted "$precopy")"
+ssh "$host" "$remote" <&7 &
+ssh_pid=$!
 rc=0
-ssh "$host" "mkdir -p $src $target; [ -e $target/.synced-by-content ] || { if [ -d $src ]; then find $src -type f -exec touch -c {} + || exit 9; fi; touch $target/.synced-by-content 2>/dev/null; }; touch $src $target; find $base -mindepth 1 -maxdepth 1 \\( -name 'src-*' -o -name 'target-*' -o -name src -o -name target \\) -mtime +3 ! -name 'src-$key' ! -name 'target-$key' -exec rm -rf {} + 2>/dev/null; find $base -mindepth 1 -maxdepth 1 -name 'run-*' -mmin +720 -exec rm -f {} + 2>/dev/null; true" || rc=$?
+wait "$ssh_pid" || rc=$?
+ssh_pid=""
 if [ "$rc" = 9 ]; then
   echo "Couldn't mark this checkout's copy on $host to build again, so it may hold a stale build. Not running." >&2
   exit 1
 fi
-# And a host short of disk gets room back sooner, or refuses the run.
-ssh "$host" "cd $base && bash -s -- $key" <"$root/desktop/scripts/trim-remote-cache.sh"
+[ "$rc" = 0 ] || exit "$rc"
 # Named by hand, not read from .gitignore: rsync takes those rules from the
 # receiving side when it decides what to delete, which removed part of a
 # Swift build and a node_modules here on 9 Nov.
@@ -122,6 +149,7 @@ if [ -n "\${1:-}" ]; then
   [ ! -e "\$1.gone" ] || exit 129
 fi
 set -e
+if [ "$desk" = 1 ]; then caffeinate -u -t 2 >/dev/null 2>&1 || true; fi
 cd "\$HOME/$src"
 # rsync changes this folder's time only when it writes into it, and the age limit above reads it.
 touch .
@@ -143,6 +171,12 @@ fi
 # A target folder per checkout. Cargo's names for path crates ignore where the
 # checkout is, so with a shared one each checkout's build replaced the other's.
 export CARGO_TARGET_DIR="\$HOME/$target" CARGO_HTTP_MULTIPLEXING=false CARGO_NET_RETRY=10
+if [ "$perf" = 1 ]; then
+  export THREADBEAR_PERF_BUILD_KEY="$key" THREADBEAR_PERF_BUILD_SOURCE="\$PWD"
+  bash scripts/perf-build.sh --prepare
+else
+  unset THREADBEAR_PERF_BUILD_KEY THREADBEAR_PERF_BUILD_SOURCE
+fi
 # Debug builds keep line numbers (enough for a panic's backtrace) but not the
 # rest of the debug info, which was most of a target: one checkout's reached
 # 15 GB in an hour on the 75 GB cloud box, the threadbear-gpui test binary
@@ -182,18 +216,16 @@ $postlude"
 # it, and it ending is how the host knows this has gone.
 # Named by this run alone: a stopped --desk run's .gone file stays there (the
 # guard's comment says why) until the clear-out above, half a day on.
-tag="$key-$$-$RANDOM$RANDOM"
 script="$base/run-$tag.sh"
 ssh "$host" "cat > $script" <<<"$run"
 alive_stdin 7
 if [ "$desk" = 1 ]; then
-  # Desk Runner needs the screen awake for anything it draws.
   pidfile="$base/run-$tag.pid"
-  remote="caffeinate -u -t 2 >/dev/null 2>&1 || true; $(guarded_cmd "$pidfile" .local/bin/desk "perl -e 'setpgrp(0, 0); exec @ARGV' bash $script $pidfile")"
+  remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl --desk $pidfile bash $script $pidfile"
 else
-  remote="$(guarded_cmd - bash "$script")"
+  remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl - bash $script"
 fi
-ssh "$host" "$remote; rc=\$?; rm -f $script; exit \$rc" <&7 &
+ssh "$host" "$remote; rc=\$?; rm -f $script; rm -rf $boot; exit \$rc" <&7 &
 ssh_pid=$!
 rc=0
 wait "$ssh_pid" || rc=$?

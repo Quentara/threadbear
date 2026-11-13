@@ -4,11 +4,22 @@
 # guard and stops registered groups before returning to the lock holder.
 use strict;
 use warnings;
-use Fcntl qw(:flock);
+use Fcntl qw(:flock :DEFAULT);
 use File::Path qw(remove_tree);
+use File::Basename qw(dirname);
 use FindBin;
 
 my ($mode, $dir) = splice @ARGV, 0, 2;
+my $log = dirname($dir) . '/perf-cleanup.log';
+my $last_note = time;
+sub note_if_stuck {
+    return if time - $last_note < 30;
+    $last_note = time;
+    if (sysopen(my $out, $log, O_WRONLY | O_CREAT | O_APPEND, 0600)) {
+        print {$out} scalar(gmtime) . " UTC: $_[0]\n";
+        close $out;
+    }
+}
 sub started {
     my ($pid) = @_;
     local $ENV{LC_ALL} = 'C';
@@ -27,6 +38,7 @@ sub active_groups {
             return %active if close $ps;
         }
         # A host too busy to answer hasn't proved that the work stopped.
+        note_if_stuck('ps unavailable while stopping registered performance groups; locks retained');
         select(undef, undef, undef, 0.2);
     }
 }
@@ -62,6 +74,11 @@ open(my $state, '<', "$dir/state") or die "perf-children: no registry\n";
 flock($state, LOCK_EX) or die "perf-children: cleanup lock\n";
 open(my $gone, '>', "$dir/gone") or die "perf-children: mark gone\n";
 close $gone;
+# Retire the public name atomically before removing anything. A late child
+# holding the old state fd can never recreate a record after the scan.
+my $retired = "$dir.reaping";
+my $renamed = rename($dir, $retired);
+$dir = $retired if $renamed;
 opendir(my $entries, $dir) or die "perf-children: registry\n";
 my %groups;
 while (my $pid = readdir($entries)) {
@@ -100,7 +117,8 @@ while (%killed) {
         my $now = started($pid);
         delete $killed{$pid} if !$active{$pid} || (length($now) && $now ne $killed{$pid});
     }
+    note_if_stuck('still stopping groups ' . join(',', keys %killed) . '; locks retained') if %killed;
     select(undef, undef, undef, 0.05) if %killed;
 }
-remove_tree($dir);
+remove_tree($dir) if $renamed;
 exit($status & 127 ? 128 + ($status & 127) : $status >> 8);

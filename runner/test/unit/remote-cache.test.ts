@@ -157,7 +157,7 @@ dest="$HOME/\${!##*:}"
 mkdir -p "$dest/runner/scripts" "$dest/scripts"
 cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
 source="\${@: -2:1}"
-for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh; do
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh perf-build.sh; do
   cp "$source/scripts/$helper" "$dest/scripts/"
 done
 touch -t 202601010000 "$dest"
@@ -279,7 +279,7 @@ dest="$HOME/\${!##*:}"
 mkdir -p "$dest/runner/scripts" "$dest/scripts"
 cp ${JSON.stringify(findNode)} "$dest/runner/scripts/"
 source="\${@: -2:1}"
-for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh; do
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh perf-build.sh; do
   cp "$source/scripts/$helper" "$dest/scripts/"
 done
 `, { mode: 0o755 });
@@ -315,4 +315,14 @@ test('a warm shared performance target needs warm-build space rather than cold-b
   fs.writeFileSync(path.join(h.base, 'perf-target/debug/out'), 'warm');
   const r = spawnSync('/bin/bash', [TRIM, 'aaa', 'perf-target'], { cwd: h.base, env: h.env, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stderr);
+});
+
+
+test('perf mode consumes no per-checkout target slot', (t) => {
+  const h = host(t, 400, MANY);
+  fs.mkdirSync(path.join(h.base, 'perf-target'));
+  const r = spawnSync('/bin/bash', [TRIM, 'perfcheckout', 'perf-target'], { cwd: h.base, env: h.env, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  assert.ok(!fs.existsSync(path.join(h.base, 'target-perfcheckout')));
+  assert.equal(h.left().length, 4);
 });

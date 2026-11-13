@@ -99,8 +99,12 @@ exec 8<.
 if command -v flock >/dev/null 2>&1; then flock 8
 else perl -e 'use Fcntl ":flock"; open(my $f, "<&=", 8) or die "trim: no lock: $!\n"; flock($f, LOCK_EX) or die "trim: lock: $!\n"' || exit 1; fi
 if [ "$own" != - ]; then
-  mkdir -p "src-$own" "target-$own" 2>/dev/null
-  touch "src-$own" "target-$own" 2>/dev/null
+  mkdir -p "src-$own" 2>/dev/null
+  touch "src-$own" 2>/dev/null
+  if [ "$active_target" != perf-target ]; then
+    mkdir -p "target-$own" 2>/dev/null
+    touch "target-$own" 2>/dev/null
+  fi
 fi
 
 # Runs' temp files (TMPDIR for every remote.sh run) that nothing has touched for
@@ -125,7 +129,8 @@ evict target
 # Past the cap first, whatever the room: the newest MAX_TARGETS stay (this
 # checkout's always among them), and of the rest, those idle go.
 # This checkout's own counts as one of them whether or not it's built yet.
-limit=$MAX_TARGETS; [ "$own" = - ] || limit=$((MAX_TARGETS - 1))
+limit=$MAX_TARGETS
+[ "$own" = - ] || [ "$active_target" = perf-target ] || limit=$((MAX_TARGETS - 1))
 n=0
 for t in $(ls -dt target-* 2>/dev/null); do
   case "$t" in target-gone-*|"target-$own") continue ;; esac

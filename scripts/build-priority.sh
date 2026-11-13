@@ -2,6 +2,7 @@
 # background; the shell and the benchmark it runs afterwards keep normal
 # priority. PATH wrappers also catch builds launched by Node or another shell.
 threadbear_build_bin="$(mktemp -d "$TMPDIR/threadbear-build-bin.XXXXXX")"
+threadbear_perf_build="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/perf-build.sh"
 trap 'rm -rf "$threadbear_build_bin"' EXIT
 for threadbear_build_tool in cargo swift swiftc xcodebuild; do
   threadbear_build_real="$(command -v "$threadbear_build_tool")" || continue
@@ -12,6 +13,8 @@ for threadbear_build_tool in cargo swift swiftc xcodebuild; do
     swift) threadbear_build_actions='build|test' ;;
     *) threadbear_build_actions='*' ;;
   esac
+  threadbear_build_prefix=''
+  [ "$threadbear_build_tool" != cargo ] || printf -v threadbear_build_prefix '/bin/bash %q ' "$threadbear_perf_build"
   {
     cat <<'WRAPPER'
 #!/bin/bash
@@ -26,13 +29,14 @@ for arg in "$@"; do
   esac
 done
 WRAPPER
+    [ "$threadbear_build_tool" != cargo ] || printf 'export THREADBEAR_PERF_BUILD_ACTION="$action"\n'
     printf 'case "$action" in\n  %s) ' "$threadbear_build_actions"
     if [ "$(uname -s)" = Darwin ]; then
-      printf 'exec /usr/sbin/taskpolicy -b %q "$@" ;;\n' "$threadbear_build_real"
+      printf 'exec /usr/sbin/taskpolicy -b %s%q "$@" ;;\n' "$threadbear_build_prefix" "$threadbear_build_real"
     else
-      printf 'exec nice -n 10 %q "$@" ;;\n' "$threadbear_build_real"
+      printf 'exec nice -n 10 %s%q "$@" ;;\n' "$threadbear_build_prefix" "$threadbear_build_real"
     fi
-    printf 'esac\nexec %q "$@"\n' "$threadbear_build_real"
+    printf 'esac\nexec %s%q "$@"\n' "$threadbear_build_prefix" "$threadbear_build_real"
   } >"$threadbear_build_bin/$threadbear_build_tool"
   chmod +x "$threadbear_build_bin/$threadbear_build_tool"
 done

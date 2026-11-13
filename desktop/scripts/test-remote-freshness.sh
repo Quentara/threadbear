@@ -22,7 +22,7 @@ trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/desktop/scripts" "$work/runner/scripts" "$work/desktop/src" "$work/scripts"
 cp "$repo/desktop/scripts/remote.sh" "$repo/desktop/scripts/trim-remote-cache.sh" "$work/desktop/scripts/"
 cp "$repo/runner/scripts/find-node.sh" "$work/runner/scripts/"
-for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh; do
+for helper in perf-lock.pl perf-children.pl hangup-guard.sh remote-guard-lib.sh build-priority.sh perf-build.sh; do
   cp "$repo/scripts/$helper" "$work/scripts/"
 done
 cat >"$work/desktop/Cargo.toml" <<'EOF'
