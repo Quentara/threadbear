@@ -9,7 +9,7 @@ import { nullLogger } from '../../src/log.ts';
 import { tmpDir } from '../helpers/fakes.ts';
 import { cardDecisive } from '../../src/tools.ts';
 import { ALWAYS_ASK_TOOLS, NEVER_ASK_TOOLS } from '../../src/threadbear-mcp.ts';
-import { END_TURN_FULL_NAME, END_TURN_NUDGE, ONE_REPLY_END_TURN_NUDGE, ONE_REPLY_WRITE_NUDGE, oneReplyAccepted, oneReplyAlreadyWritten, REPLY_ASKS } from '../../src/needs.ts';
+import { END_TURN_FULL_NAME, END_TURN_NUDGE, ONE_REPLY_END_TURN_NUDGE, ONE_REPLY_WRITE_NUDGE, ARCHIVE_ADDED, oneReplyAccepted, oneReplyAlreadyWritten, REPLY_ASKS } from '../../src/needs.ts';
 
 test('"Always allow" keeps only allow rules, scoped to the session', () => {
   const { updates, rules } = alwaysAllow('Bash', [
@@ -357,6 +357,27 @@ test('Stop hook: a reply that closes by asking, under a done card, is sent back 
     assert.deepEqual([quiet.first, quiet.reopens], [{}, 0], JSON.stringify(input));
     quiet.state.close!();
   }
+});
+
+// From Codex's review: a repeat that only adds archive ("Added: ...") is a
+// successful result too, and took the check away with it, so the thread was
+// archived with its question unanswered.
+test('Stop hook: an end_turn repeat that only adds archive leaves the reply check on', async () => {
+  const { state, outputs } = start([], {}, { mcpServersFor: () => ({ threadbear: { type: 'sdk', name: 'threadbear' } }), oneReply: () => true });
+  const stop = state.options.hooks.Stop[0].hooks[0];
+  const endTurn = async (id: string, input: Record<string, unknown>, result: string) => {
+    await state.frame!({ type: 'assistant', session_id: 's', message: { id: `a-${id}`, role: 'assistant', content: [{ type: 'tool_use', id, name: END_TURN_FULL_NAME, input }] } });
+    await state.options.hooks.PostToolUse[0].hooks[0]({ hook_event_name: 'PostToolUse', tool_name: END_TURN_FULL_NAME });
+    await state.frame!({ type: 'user', session_id: 's', message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: id, content: result }] } });
+  };
+  await endTurn('e1', { headline: 'Ready', needs: 'nothing' }, oneReplyAccepted(false));
+  await endTurn('e2', { headline: 'Ready', needs: 'nothing', archive: true }, ARCHIVE_ADDED);
+  await state.frame!({ type: 'assistant', session_id: 's', message: { id: 'b', role: 'assistant', content: [{ type: 'text', text: 'It is ready. Which do you want to start with?' }] } });
+  const r = await stop({ hook_event_name: 'Stop', stop_hook_active: false });
+  assert.equal(r.decision, 'block');
+  assert.ok(r.reason.startsWith(REPLY_ASKS), r.reason);
+  assert.equal(outputs.filter((o: AdapterOutput) => o.kind === 'endTurnNudge' && o.reopen).length, 1);
+  state.close!();
 });
 
 test('Stop hook: no nudge in a session without the threadbear server', async () => {

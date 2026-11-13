@@ -786,9 +786,15 @@ class ClaudeSession implements AgentSession {
               this.pastEndTurn = true;
               this.messageStands = endTurnMessageStands(ev);
               // Only a call that asked for its reply next: after "Stop here"
-              // the words that count were written before it.
-              this.doneCard = endTurnWantsReply(ev) && (needsFromTool(this.endTurnInputs.get(ev.itemId))?.needs ?? 'nothing') === 'nothing';
-              this.replyAfterEnd = '';
+              // the words that count were written before it. A repeat that
+              // only added archive or snooze ("Added: ...") changes neither
+              // the card nor the reply under it (from Codex's review: one
+              // took the check away, and the thread was archived with its
+              // question unanswered).
+              if (endTurnWantsReply(ev)) {
+                this.doneCard = (needsFromTool(this.endTurnInputs.get(ev.itemId))?.needs ?? 'nothing') === 'nothing';
+                this.replyAfterEnd = '';
+              } else if (this.messageStands) this.doneCard = false;
               // Only an accepted call's own card: a refused repeat's result
               // isn't ok, and its questions never showed.
               if (endTurnWantsReply(ev)) this.owedReply = this.endTurnAsks.get(ev.itemId) ?? [];

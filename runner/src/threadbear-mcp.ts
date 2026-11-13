@@ -1533,7 +1533,10 @@ export function buildThreadbearTools(
         // line it would only write again. A call that never landed is taken
         // as having written nothing: its turn can't be read.
         const before = codex ? undefined : await replied();
-        return oneReplyAccepted(needs === 'you', restart, Boolean(before?.landed && before.replied));
+        // A turn sent back for a card (needs.ts, REPLY_ASKS) that has worked
+        // since its reply, after a refusal: the reply it writes now takes the
+        // first one's place, so it's asked for whole (from Codex's review).
+        return oneReplyAccepted(needs === 'you', restart, Boolean(before?.landed && before.replied) || control.cardReopened?.(selfId) === true);
       })),
     );
 

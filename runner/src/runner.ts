@@ -101,7 +101,7 @@ import { parseWhen } from './when.ts';
 import { emptyHighlights, observe as observeHighlights, pinItem, remove as removeHighlight, unpin as unpinHighlight, upsert as upsertHighlight, view as highlightsView, absolute, type ThreadHighlights } from './highlights.ts';
 import { SERVER_NAME, approvalTitle } from './threadbear-mcp.ts';
 import { PANEL_ACK_WAIT_MS, PANEL_PLACES, resolvePanel } from './panel-requests.ts';
-import { archiveFromTool, bylineFromTool, END_TURN_TOOL, endTurnAccepted, endTurnAddedArchive, endTurnAddedSnooze, snoozeFromTool, waitForFromTool, endTurnAsksForMessage, endTurnIsOneReply, endTurnOwesReply, endTurnRefusedRepeat, endTurnRefusedUnread, endTurnTaken, endTurnWantsReply, needsFromText, needsFromTool, replyWithoutRepeat, splitReplySection, summaryFromTool, summaryMarkdown, WakeRead } from './needs.ts';
+import { archiveFromTool, bylineFromTool, END_TURN_TOOL, endTurnAccepted, endTurnAddedArchive, endTurnAddedSnooze, snoozeFromTool, waitForFromTool, endTurnAsksForMessage, endTurnIsOneReply, endTurnMessageStands, endTurnOwesReply, endTurnRefusedRepeat, endTurnRefusedUnread, endTurnTaken, endTurnWantsReply, needsFromText, needsFromTool, replyWithoutRepeat, splitReplySection, summaryFromTool, summaryMarkdown, WakeRead } from './needs.ts';
 import type { Needs } from './needs.ts';
 import { asksForAppRestart } from './app-restarts.ts';
 import type { ConnectorsStatus } from './connectors.ts';
@@ -363,6 +363,11 @@ export type Turn = {
   // ...or back for a card its reply asked for, after an end_turn it took:
   // the next end_turn is that card, not a repeat (needs.ts, REPLY_ASKS).
   cardReopened?: boolean;
+  // The reply a one-reply turn wrote after its end_turn (the text marked
+  // final), and, once a reopened turn's card is taken, that reply waiting to
+  // be written again under it (onOutput).
+  finalText?: string;
+  restateReply?: string;
   // Whether the agent has read a background task's notification that came
   // into the turn (needs.ts, WakeRead).
   wake?: WakeRead;
@@ -2042,6 +2047,7 @@ export class Runner {
             }
             const text = split?.needs ? split.reply : tool?.asks?.length ? replyWithoutRepeat(ev.text, tool) : ev.text;
             ev = { type: 'assistant.text', itemId: ev.itemId, text, final: true, ...(ev.narration ? { narration: true as const } : {}) };
+            if (text.trim()) rt.turn.finalText = text;
           }
         } else if (ev.type === 'assistant.text' && rt.turn?.ended && !ev.itemId.includes('/') && rt.turn.narrationItem && !rt.turn.summarized && ev.text.trim()) {
           rt.inProgress.delete(ev.itemId);
@@ -2091,6 +2097,12 @@ export class Runner {
             if (endTurnRefusedRepeat(ev) || endTurnRefusedUnread(ev) || (!ev.ok && (rt.turn.ended || rt.turn.tookEndTurn))) rt.turn.endTurn = rt.turn.endTurnBefore;
             else if (endTurnTaken(ev)) {
               rt.turn.tookEndTurn = true;
+              // The card a reopened turn was sent back for, told "your
+              // message above is the reply": the apps take a turn's reply
+              // from after its last card, and fold a final message before
+              // it away as one a wake replaced, so the reply is written
+              // again under this card (below, once the result is out).
+              rt.turn.restateReply = rt.turn.cardReopened && endTurnMessageStands(ev) ? rt.turn.finalText : undefined;
               rt.turn.cardReopened = false;
               // Every taken one, Codex's older "Noted." too: one that isn't
               // one-reply means text after it isn't the reply (from Codex's
@@ -2130,6 +2142,11 @@ export class Runner {
           }
         }
         this.emit(st, ev, rt.turn?.turnId);
+        if (ev.type === 'tool.result' && rt.turn?.restateReply !== undefined && ev.itemId === rt.turn.endTurnCall) {
+          const text = rt.turn.restateReply;
+          rt.turn.restateReply = undefined;
+          this.emit(st, { type: 'assistant.text', itemId: `${ev.itemId}.reply`, text, final: true }, rt.turn.turnId);
+        }
         // end_turn's summary, written as the turn's reply straight after
         // the call it came in (docs/protocol.md, "The summary").
         if (ev.type === 'tool.result' && rt.turn && ev.itemId === rt.turn.endTurnCall && endTurnTaken(ev)) {

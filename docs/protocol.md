@@ -3304,9 +3304,17 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   check finds those two and no others. The adapter's `endTurnNudge` output
   carries `reopen: true`, so the `end_turn` that follows is taken rather
   than refused as a repeat, answers "Stop here" (the reply written stands),
-  and its card replaces the first; text written on the way is dropped. An
-  agent that needs no answer just stops. Mike chose this over widening the
-  card to every offer (13 Nov 2026).
+  and its card replaces the first; text written on the way is dropped. The
+  runner then writes the reply again under that card, as an `assistant.text`
+  with `final: true` and the call's id plus `.reply`: the apps take a turn's
+  reply from after its last card and fold a final message before it away
+  (it's how a card replaced after a wake works), so left where it was the
+  reply showed with whatever the agent said before its first `end_turn`. A
+  turn that worked again before its card (a refused first try at it) is
+  asked for a whole new reply instead, which takes the first one's place.
+  A repeat that only adds archive or snooze leaves the check on. An agent
+  that needs no answer just stops. Mike chose this over widening the card
+  to every offer (13 Nov 2026).
 - **A subagent's card.** A background subagent's approval or question is
   between it and Mike, so it isn't tied to a turn. It opens none (a turn
   would hold Mike's messages back, and ending it would clear the parent's

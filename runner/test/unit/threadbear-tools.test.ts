@@ -692,12 +692,52 @@ test('one reply: a turn sent back for a card its reply asked for takes one more 
   assert.match(third.text, /Already ended/);
   s.result('completed');
   await tick();
-  const texts = h.events(thread.id).filter((e) => e.type === 'assistant.text').map((e) => e.type === 'assistant.text' && [e.itemId, e.final]);
-  assert.deepEqual(texts, [['m1', true]], 'the reply stands, alone');
+  // The apps take a turn's reply from after its last card, so the reply is
+  // written again under the new one (from Codex's review: left where it was,
+  // the Mac apps showed it with whatever the agent said before its first
+  // end_turn).
+  const texts = h.events(thread.id).filter((e) => e.type === 'assistant.text').map((e) => e.type === 'assistant.text' && [e.itemId, e.final, e.text]);
+  const reply = "Yes, it's ready.\n\nSay go and I'll merge main into prod.";
+  assert.deepEqual(texts, [['m1', true, reply], ['e2.reply', true, reply]], 'the reply, and nothing the agent wrote on the way');
+  const order = h.events(thread.id).filter((e) => (e.type === 'tool.result' && e.itemId === 'e2') || (e.type === 'assistant.text' && e.itemId === 'e2.reply')).map((e) => e.type);
+  assert.deepEqual(order, ['tool.result', 'assistant.text'], 'under the card it belongs to');
   assert.ok(!h.events(thread.id).some((e) => e.type === 'reasoning'));
   const t = h.runner.get(thread.id);
   assert.equal(t.needs, 'you');
   assert.equal(t.preview, 'Release the examples page?');
+});
+
+// From Codex's review: the card's first try is refused, the agent does the
+// step itself, and by its next try the reply is behind that work. It's asked
+// for a whole reply, which takes the first one's place.
+test('one reply: a reopened turn that worked before its card is asked for its reply whole', async () => {
+  const h = makeHarness();
+  const { thread, s } = start(h);
+  const { call } = tools(h, thread.id, undefined, () => true);
+  const send = async (itemId: string, input: Record<string, unknown>) => {
+    toolCall(s, itemId, END_TURN, input);
+    const r = await call('end_turn', input);
+    s.out({ kind: 'event', event: { type: 'tool.result', itemId, ok: !r.error, text: r.text, truncated: false, images: [] } });
+    return r;
+  };
+  await send('e1', { headline: 'Ready', needs: 'nothing' });
+  s.text('m1', "It's ready, and here is why in full.\n\nSay go and I'll merge main into prod.");
+  s.out({ kind: 'endTurnNudge', reopen: true });
+  const offer = { headline: 'Release?', needs: 'you', asks: [{ question: 'Merge main into prod?', options: [{ label: 'Done' }, { label: 'Can you do it?' }] }] };
+  const refused = await send('e2', offer);
+  assert.match(refused.text, /^Not ended: this card offers to have you do a step yourself/);
+  toolCall(s, 'b1', 'Bash', { command: 'git push origin main:prod' });
+  toolResult(s, 'b1');
+  const third = await send('e3', { headline: 'Released', needs: 'nothing' });
+  assert.equal(third.error, false, third.text);
+  assert.match(third.text, /Now write your reply/);
+  assert.match(third.text, /Give a self-contained answer/);
+  s.text('m2', 'Released: main is on prod, and /examples loads.');
+  s.result('completed');
+  await tick();
+  const finals = h.events(thread.id).filter((e) => e.type === 'assistant.text' && e.final).map((e) => e.type === 'assistant.text' && e.itemId);
+  assert.deepEqual(finals, ['m1', 'm2'], 'no copy of the first reply: the new one is the reply');
+  assert.equal(h.runner.get(thread.id).needs, 'nothing');
 });
 
 // Without that nudge a second end_turn is still a repeat, and one that came
