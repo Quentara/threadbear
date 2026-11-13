@@ -440,7 +440,7 @@ impl SidePane {
                     .gap(px(6.))
                     .items_center()
                     .child(div().text_size(px(style::size::SMALL)).text_color(p.secondary).child(words::HAS_SCRIPTS))
-                    .child(crate::highlights::tipped(div().id("hl-page-scripts-why").flex_none().child(crate::highlights::icon("info.circle", 11., p.faint)), words::EXPLANATION))
+                    .child(crate::highlights::tipped_as(div().id("hl-page-scripts-why").flex_none().child(crate::highlights::icon("info.circle", 11., p.faint)), words::EXPLANATION, gpui_kit::Role::Image))
                     .child(div().flex_1())
                     .child(crate::push_button::PushButton::new("hl-page-run", words::RUN_THEM, words::RUN_THEM_TIP).render(cx, run)),
             )
@@ -734,7 +734,7 @@ impl SidePane {
         let showing = if editing { MarkdownView::Markdown } else { MarkdownView::Preview };
         let tip = showing.tip();
         let side = cx.entity().downgrade();
-        let holder = crate::highlights::tipped(div().id("hl-markdown-view").flex_none(), tip);
+        let holder = crate::highlights::tipped_as(div().id("hl-markdown-view").flex_none(), tip, gpui_kit::Role::GenericContainer);
         let menu = ModeLabel::new("hl-markdown-view-label", showing.title(), p).dropdown_menu(move |menu: PopupMenu, _, _| {
             let mut menu = menu;
             for view in MarkdownView::ALL {

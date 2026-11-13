@@ -986,11 +986,19 @@ pub(crate) fn icon(name: &str, size: f32, color: Hsla) -> Icon {
     icons::try_symbol(name).unwrap_or_else(|| Icon::new(gpui_kit::assets::IconName::SquareDashed)).with_size(px(size)).text_color(color)
 }
 
-/// A control's tooltip and the label scripts find it by, as Swift's `.tip`.
+/// A control's tooltip and the label scripts find it by, as Swift's `.tip`:
+/// a button to VoiceOver. Anything else uses `tipped_as` with its own role.
 pub(crate) fn tipped(el: Stateful<Div>, tip: impl Into<SharedString>) -> gpui_kit::base::ObservedElement<Stateful<Div>> {
+    tipped_as(el, tip, Role::Button)
+}
+
+/// `tipped` for what isn't a button: `Role::Image` for an icon that only
+/// explains, `Role::GenericContainer` for words or a holder round a kit
+/// control (no node of its own, so VoiceOver reads what's inside).
+pub(crate) fn tipped_as(el: Stateful<Div>, tip: impl Into<SharedString>, role: Role) -> gpui_kit::base::ObservedElement<Stateful<Div>> {
     let text: SharedString = tip.into();
     let shown = text.clone();
-    el.test_support().aria_label(text).tip(shown)
+    el.test_support().role(role).aria_label(text).tip(shown)
 }
 
 /// One row in the pane's lists (`PaneRow`): a grey icon, the title with a word
@@ -1160,7 +1168,7 @@ impl PaneRow {
         if let Some(tip) = self.tip {
             wrapper = wrapper.tip(tip.clone());
         }
-        let mut wrapper = wrapper.test_support().aria_label(SharedString::from(self.title));
+        let mut wrapper = wrapper.test_support().role(Role::ListItem).aria_label(SharedString::from(self.title));
         if let Some(click) = self.on_click {
             wrapper = wrapper.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| (click)(this, window, cx)));
         }

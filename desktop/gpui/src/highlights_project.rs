@@ -54,7 +54,7 @@ pub(crate) fn why_button(row: &ProjectRow, p: Palette, cx: &mut Context<SidePane
     let tip = format!("Why it's in {}", row.project.title);
     let open_id = project_id.clone();
     div()
-        .id(SharedString::from(format!("hl-why-{project_id}")))
+        .id(SharedString::from(format!("hl-why-{project_id}"))).role(Role::Button)
         .size(px(14.))
         .flex()
         .items_center()

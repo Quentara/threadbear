@@ -57,6 +57,7 @@ pub mod runners;
 pub mod schedules;
 pub mod selection_copy;
 pub mod sign_in;
+pub mod spelling;
 pub mod sidebar;
 pub mod slash;
 pub mod swift_import;

@@ -5,7 +5,7 @@
 // A web panel's page is web_panels.rs's (`panel.web`): the side pane only
 // draws one if it's asked to anyway, as a placeholder with Open in browser.
 use crate::call;
-use crate::highlights::{icon, palette, tipped, PaneRow, Palette, SidePane, OUTER_INSET};
+use crate::highlights::{icon, palette, tipped, tipped_as, PaneRow, Palette, SidePane, OUTER_INSET};
 use crate::style;
 use gpui_kit::component::{h_flex, spinner::Spinner, v_flex, ActiveTheme as _, Sizable as _, StyledExt as _};
 use gpui_kit::prelude::*;
@@ -582,7 +582,7 @@ impl SidePane {
                 other => crate::patch_icons::glyph(other.symbol().unwrap_or("folder.fill"), 10., Some(p.secondary)),
             };
             let mut tab_el = shelf_tab()
-                .child(tipped(div().id(("action-shelf-badge", index)).flex().flex_none().items_center().justify_center().size(px(18.)).mx(px(2.)), badge_tip).child(badge_face))
+                .child(tipped_as(div().id(("action-shelf-badge", index)).flex().flex_none().items_center().justify_center().size(px(18.)).mx(px(2.)), badge_tip, gpui_kit::Role::Image).child(badge_face))
                 .child(hairline());
             for (group_index, group) in shelf.patches.iter().enumerate() {
                 if group_index > 0 {

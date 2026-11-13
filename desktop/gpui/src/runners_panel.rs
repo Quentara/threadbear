@@ -12,7 +12,7 @@
 // work, 5 Nov).
 use crate::activity_panels::{about_button, dot, icon_button, panel_column, small_heading, system_green, system_orange, text_line};
 use crate::app::Threadbear;
-use crate::highlights::tipped;
+use crate::highlights::{tipped, tipped_as};
 use crate::{call, icons, now_ms, shell, style};
 use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Sizable as _};
@@ -360,7 +360,7 @@ impl Threadbear {
         if movable {
             // As wide as SF's 11 point line.3.horizontal, so the words line
             // up with the Swift card's.
-            card = card.child(tipped(div().id(SharedString::from(format!("runner-handle-{}", r.id))).flex_none().w(px(13.)).h(px(17.)).flex().items_center().justify_center().cursor_grab(), "Drag to change the order").child(icons::symbol("line.3.horizontal").with_size(px(12.)).text_color(tertiary)));
+            card = card.child(tipped_as(div().id(SharedString::from(format!("runner-handle-{}", r.id))).flex_none().w(px(13.)).h(px(17.)).flex().items_center().justify_center().cursor_grab(), "Drag to change the order", gpui_kit::Role::GenericContainer).child(icons::symbol("line.3.horizontal").with_size(px(12.)).text_color(tertiary)));
         }
         card = card
             .child(div().flex_none().w(px(22.)).h(px(17.)).flex().items_center().justify_center().child(icons::symbol(symbol).with_size(px(15.)).text_color(if state == State::Offline { tertiary } else { secondary })))

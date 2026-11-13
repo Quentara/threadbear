@@ -94,7 +94,7 @@ impl Threadbear {
     pub(crate) fn render_milestone_toast(&self, tier: usize, cx: &mut Context<Self>) -> AnyElement {
         self.toast_capsule("milestone-toast", cx)
             .gap(px(7.))
-            .test_support().aria_label("Dismiss milestone")
+            .test_support().role(Role::Button).aria_label("Dismiss milestone")
             .tip("Dismiss milestone")
             .cursor_pointer()
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| {
@@ -103,7 +103,7 @@ impl Threadbear {
                 cx.notify();
             }))
             .child(milestone_mark(cx))
-            .child(div().id("milestone-title").test_support().aria_label(rules::title(tier)).child(rules::title(tier)))
+            .child(div().id("milestone-title").test_support().role(Role::GenericContainer).aria_label(rules::title(tier)).child(rules::title(tier)))
             .child(div().text_color(style::secondary_text(cx)).child(rules::line(tier)))
             .into_any_element()
     }

@@ -421,7 +421,7 @@ impl ThreadPane {
             }
         };
         // Its label is what it's called to a screen reader, and to a script.
-        chip.test_support().aria_label(name).into_any_element()
+        chip.test_support().role(Role::Link).aria_label(name).into_any_element()
     }
 
     /// The thread's hover card, from the app's thread list.
@@ -715,7 +715,7 @@ impl MarkdownPlugin for ThreadChipPills {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(move |_, window, cx| open_thread(&id, window, cx))
             .children(card);
-        Some(InlineElement::new(pill.test_support().aria_label(chip.word)).with_baseline(px(baseline)))
+        Some(InlineElement::new(pill.test_support().role(Role::Link).aria_label(chip.word)).with_baseline(px(baseline)))
     }
 }
 
@@ -771,7 +771,7 @@ impl ThreadPane {
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| this.open_thread_link(&id, window, cx)))
             .children(card);
-        line.child(pill.test_support().aria_label(name)).into_any_element()
+        line.child(pill.test_support().role(Role::Link).aria_label(name)).into_any_element()
     }
 
     /// The thread chips a row draws, each one's words and thread: the

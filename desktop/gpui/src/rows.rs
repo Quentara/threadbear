@@ -430,7 +430,7 @@ impl ThreadPane {
         // words only (`footerTip`).
         let words = div().truncate().child(footer_text(done));
         let words: AnyElement = match TurnTokens::from_usage(done.usage.as_ref()) {
-            Some(tokens) => crate::highlights::tipped(div().id(SharedString::from(format!("footer-{}", done.turn_id))).min_w_0().child(words), tokens.tip(done.cost_usd)).into_any_element(),
+            Some(tokens) => crate::highlights::tipped_as(div().id(SharedString::from(format!("footer-{}", done.turn_id))).min_w_0().child(words), tokens.tip(done.cost_usd), gpui_kit::Role::GenericContainer).into_any_element(),
             None => words.into_any_element(),
         };
         h_flex()

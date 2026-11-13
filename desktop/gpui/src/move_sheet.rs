@@ -460,12 +460,12 @@ impl Render for MoveSheet {
                             .child(div().text_size(px(size::LABEL)).text_color(style::secondary_text(cx)).child(if connected { format!("Asking {name}…") } else { "Waiting for this Mac's runner…".to_owned() }))
                     })
                     .child(div().flex_1())
-                    .child(div().id("move-cancel").test_support().aria_label("Close without moving it".to_owned()).child(Button::new("move-cancel-button").label("Cancel").small().outline().tooltip("Close without moving it").on_click(cx.listener(|this, _, window, cx| this.close(window, cx)))))
+                    .child(div().id("move-cancel").test_support().role(Role::GenericContainer).aria_label("Close without moving it".to_owned()).child(Button::new("move-cancel-button").label("Cancel").small().outline().tooltip("Close without moving it").on_click(cx.listener(|this, _, window, cx| this.close(window, cx)))))
                     .child(
                         div()
                             .id("move-go")
                             .test_support()
-                            .aria_label(if can_move { format!("Move it to {name} once this turn ends") } else { "Fix what's in the way first".to_owned() })
+                            .role(Role::GenericContainer).aria_label(if can_move { format!("Move it to {name} once this turn ends") } else { "Fix what's in the way first".to_owned() })
                             .child(
                                 Button::new("move-go-button")
                                     .label("Move")

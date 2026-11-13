@@ -341,7 +341,7 @@ fn blurred_backdrop(path: &str) -> Option<Arc<Image>> {
 /// `ThreadCount`: how many open threads it has, in the tile's corner.
 fn thread_count_badge(count: usize, id: &str, cx: &App) -> AnyElement {
     let secondary = style::secondary_text(cx);
-    crate::highlights::tipped(
+    crate::highlights::tipped_as(
         h_flex()
             .id(gpui_kit::SharedString::from(format!("project-count-{id}")))
             .gap(px(4.))
@@ -354,7 +354,7 @@ fn thread_count_badge(count: usize, id: &str, cx: &App) -> AnyElement {
             .line_height(px(14.))
             .font_medium()
             .text_color(secondary),
-        rules::open_threads_tip(count),
+        rules::open_threads_tip(count), gpui_kit::Role::GenericContainer,
     )
     .child(icons::symbol("bubble.left.and.bubble.right").with_size(px(11.)).text_color(secondary))
     .child(count.to_string())

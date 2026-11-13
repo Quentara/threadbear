@@ -411,7 +411,7 @@ impl Threadbear {
                             .child(open),
                     )
                     .when_some(rules::status_line(t), |s, line| {
-                        s.child(crate::highlights::tipped(div().id(SharedString::from(format!("decision-line-{}", t.id))).truncate().text_size(px(style::size::DETAIL)).line_height(px(15.)).text_color(secondary), line.clone()).child(line))
+                        s.child(crate::highlights::tipped_as(div().id(SharedString::from(format!("decision-line-{}", t.id))).truncate().text_size(px(style::size::DETAIL)).line_height(px(15.)).text_color(secondary), line.clone(), gpui_kit::Role::GenericContainer).child(line))
                     })
                     .child(div().w_full().pt(px(2.)).child(asks))
                     .into_any_element()

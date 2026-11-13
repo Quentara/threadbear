@@ -18,6 +18,7 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Icon, Sizable as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
+use gpui_kit::base::A11yDisabledExt as _;
 // The zoom-aware px (style.rs), in place of GPUI's.
 use crate::style::px;
 use serde_json::{json, Value};
@@ -106,6 +107,9 @@ pub struct Composer {
     /// What the box is to hold at the next render (an edit sent puts back
     /// what was in it before; that needs the window).
     pending_box: Option<(String, Vec<ImageRef>)>,
+    /// The box's spelling marks and the text they were found in
+    /// (composer_spelling.rs).
+    pub(crate) spell: crate::composer_spelling::SpellState,
     _subs: Vec<Subscription>,
 }
 
@@ -183,14 +187,19 @@ impl Composer {
             // what's in the box.
             InputEvent::Change => {
                 this.palette_text_changed(cx);
+                // Marks, and a correction as a word ends (composer_spelling.rs).
+                this.spelling_after_edit(window, cx);
                 // Kept across a quit (drafts.rs).
                 if let Some(app) = this.app.upgrade() {
                     app.update(cx, |app, cx| app.drafts_changed(cx));
                 }
                 cx.notify();
             }
+            // Leaving the box marks the word it was in, as NSTextView does.
+            InputEvent::Blur => this.refresh_spelling_marks(false, false, cx),
             _ => {}
         });
+        crate::text_services::register_text_box(&input);
         Composer {
             thread_id,
             client,
@@ -222,6 +231,7 @@ impl Composer {
             card_width: Rc::new(Cell::new(style::MAX_CONTENT_WIDTH)),
             controls_fit: Rc::new(Cell::new((0., 0.))),
             box_top: Rc::new(Cell::new(f32::MAX)),
+            spell: Default::default(),
             _subs: vec![sub],
         }
     }
@@ -320,7 +330,7 @@ impl Composer {
             .pb(px(10.))
             .text_size(px(style::size::LABEL))
             .line_height(px(16.))
-            .child(h_flex().items_start().gap(px(8.)).child(div().flex_none().pt(px(1.)).child(mark)).child(crate::highlights::tipped(div().id("limit-text").flex_1().min_w_0(), text.clone()).child(text)));
+            .child(h_flex().items_start().gap(px(8.)).child(div().flex_none().pt(px(1.)).child(mark)).child(crate::highlights::tipped_as(div().id("limit-text").flex_1().min_w_0(), text.clone(), gpui_kit::Role::GenericContainer).child(text)));
         if !advice.targets.is_empty() || advice.stopped {
             // Wraps in a narrow window rather than running past the box's edge.
             let mut row = h_flex().flex_wrap().gap(px(10.)).items_center();
@@ -334,7 +344,7 @@ impl Composer {
                 let (app_c, id) = (self.app.clone(), thread.id.clone());
                 let carry_on = advice.carry_on;
                 row = row.child(
-                    div().id("limit-switch").test_support().aria_label(tip).child(Button::new("limit-switch-button").label("Continue now on").small().secondary().tooltip(tip).on_click(move |_, _, cx| {
+                    div().id("limit-switch").test_support().role(Role::GenericContainer).aria_label(tip).child(Button::new("limit-switch-button").label("Continue now on").small().secondary().tooltip(tip).on_click(move |_, _, cx| {
                         app_c.update(cx, |a, cx| a.continue_now_on(&id, account.clone(), carry_on, cx)).ok();
                     })),
                 );
@@ -374,7 +384,7 @@ impl Composer {
                     }
                     menu
                 });
-                row = row.child(h_flex().gap(px(6.)).items_center().child(div().text_color(secondary).child("Carry on by itself")).child(div().id("limit-carry-on").test_support().aria_label(tip).child(menu)));
+                row = row.child(h_flex().gap(px(6.)).items_center().child(div().text_color(secondary).child("Carry on by itself")).child(div().id("limit-carry-on").test_support().role(Role::GenericContainer).aria_label(tip).child(menu)));
             }
             column = column.child(row);
         }
@@ -886,7 +896,7 @@ impl Composer {
         });
     }
 
-    fn text_and_selection(target: &Entity<TextareaState>, cx: &App) -> (String, Range<usize>) {
+    pub(crate) fn text_and_selection(target: &Entity<TextareaState>, cx: &App) -> (String, Range<usize>) {
         let state = target.read(cx);
         (state.value().to_string(), state.selected_range())
     }
@@ -1285,7 +1295,7 @@ impl Composer {
                 .test_support()
                 // "Picture N", as its chip among the words says, for VoiceOver
                 // and for scripts (`composer-peek` with `strip`).
-                .aria_label(SharedString::from(format!("Picture {}", index + 1)))
+                .role(Role::Button).aria_label(SharedString::from(format!("Picture {}", index + 1)))
                 .group("tile")
                 .relative()
                 .cursor_pointer()
@@ -1315,7 +1325,7 @@ impl Composer {
         let side = px(style::size::SEND_BUTTON);
         let circle = || div().flex().items_center().justify_center().size(side).rounded_full();
         if self.loading_pictures(cx) && (!running || self.has_send_content(cx)) {
-            return circle().id("composer-loading-picture").test_support().aria_label("Loading picture")
+            return circle().id("composer-loading-picture").test_support().role(Role::ProgressIndicator).aria_label("Loading picture")
                 .bg(style::send_faint_fill(cx)).child(Spinner::new().color(style::quiet_text(cx)).with_size(px(14.)))
                 .tip("Loading picture").into_any_element();
         }
@@ -1325,7 +1335,7 @@ impl Composer {
             return circle()
                 .id("composer-starting")
                 .test_support()
-                .aria_label("Starting the thread")
+                .role(Role::ProgressIndicator).aria_label("Starting the thread")
                 .bg(style::send_faint_fill(cx))
                 .child(Spinner::new().color(style::quiet_text(cx)).with_size(px(14.)))
                 .tip("Starting the thread")
@@ -1335,7 +1345,7 @@ impl Composer {
             return circle()
                 .id("composer-stopping")
                 .test_support()
-                .aria_label("Stopping")
+                .role(Role::ProgressIndicator).aria_label("Stopping")
                 .bg(style::send_faint_fill(cx))
                 .child(Spinner::new().color(style::quiet_text(cx)).with_size(px(14.)))
                 .tip("Stopping")
@@ -1346,7 +1356,7 @@ impl Composer {
             return circle()
                 .id("composer-stop")
                 .test_support()
-                .aria_label("Stop")
+                .role(Role::Button).aria_label("Stop")
                 .cursor_pointer()
                 .bg(bg)
                 // A filled square, as the Swift app's `stop.fill` at 9 pt bold:
@@ -1365,12 +1375,14 @@ impl Composer {
         circle()
             .id("composer-send")
             .test_support()
-            .aria_label("Send")
+            .role(Role::Button).aria_label("Send")
             .when(can_send, |s| s.cursor_pointer())
             .bg(bg)
             .child(self.hopping(Icon::from(IconName::ArrowUp).with_size(px(14.)).text_color(fg).into_any_element()))
             .when(can_send, |s| s.on_click(cx.listener(|this, _: &ClickEvent, window, cx| this.send(window, cx))))
             .tip(tip)
+            // Dimmed with nothing to send, as SendButton's `.disabled`.
+            .a11y_disabled(!can_send)
             .into_any_element()
     }
 
@@ -1399,7 +1411,9 @@ impl Composer {
         let thread_drop = this.clone();
         let file_drop = this.clone();
         let drop_target = this;
-        div()
+        let menu_owner = cx.entity().downgrade();
+        let menu_input = self.input.clone();
+        self.spelling_actions(div(), cx)
             .w_full()
             // Greyed and locked while a new thread is being made from it, or
             // while its thread moves to another machine.
@@ -1480,6 +1494,9 @@ impl Composer {
             .child(
                 bare_textarea(Textarea::new(&self.input))
                     .disabled(creating)
+                    // NSTextView's right-click menu: spelling, then Cut, Copy and
+                    // Paste, then Spelling and Grammar to Speech.
+                    .context_menu(move |_, _, cx| crate::composer_spelling::context_menu(&menu_owner, &menu_input, cx))
                     .text_size(px(style::size::COMPOSER))
                     .line_height(px(style::size::BODY_LINE))
                     .token(move |ctx, _window, cx| match token_owner.upgrade() {
@@ -1677,7 +1694,7 @@ pub(crate) fn remove_badge(id: impl Into<ElementId>) -> impl StatefulInteractive
     div()
         .id(id)
         .test_support()
-        .aria_label(REMOVE_LABEL)
+        .role(Role::Button).aria_label(REMOVE_LABEL)
         .size(px(18.))
         .flex()
         .items_center()

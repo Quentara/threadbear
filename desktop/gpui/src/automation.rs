@@ -491,6 +491,21 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             let (x, y) = label_point(window, label, prefix)?;
             Ok(json!(format!("ok {x} {y}")))
         }
+        // What a screen reader is told of the control labelled so (`prefix`
+        // as `label-point`): AccessKit's role and its states, or null.
+        "a11y" => {
+            window.render_frame(cx);
+            let label = text(cmd, "label");
+            let prefix = cmd["prefix"].as_bool() == Some(true);
+            let found = window.elements().into_iter().filter(|e| e.visible() && e.label().is_some_and(|l| if prefix { l.starts_with(label) } else { l == label })).last().ok_or_else(|| format!("nothing labelled {label:?} on screen"))?;
+            let node = json!({
+                "role": found.role().map(|r| format!("{r:?}")),
+                "selected": found.selected(),
+                "checked": found.checked(),
+                "disabled": found.disabled(),
+            });
+            Ok(json!(format!("ok {node}")))
+        }
         "tile-point" => crate::remote_pictures::tile_point_command(app, cmd, window, cx),
         // A picture tile of the transcript, as a click on it (`viewer` says what opened).
         "tile" => {
@@ -736,6 +751,15 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         // A drag of the slash palette's edge or a column's line (slash_resize.rs).
         "palette-drag" => crate::slash_resize::drag_command(cmd, window, cx),
         "composer-chips" => crate::composer_inline::chips_command(app, cx),
+        // The box's spelling marks and its right-click menu (composer_spelling.rs).
+        "composer-spelling" => {
+            let Some(composer) = app.read(cx).composer(cx) else { return Err("no thread open".into()) };
+            Ok(crate::composer_spelling::marks_command(&composer, cx))
+        }
+        "composer-right-click" => {
+            let Some(composer) = app.read(cx).composer(cx) else { return Err("no thread open".into()) };
+            crate::composer_spelling::menu_command(&composer, cmd, window, cx)
+        }
         // How many times it's beeped (Return with nowhere to go on the card).
         "beeps" => Ok(json!(format!("ok {}", crate::composer_answers::beeps()))),
         "composer-peek" => {

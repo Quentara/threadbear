@@ -355,6 +355,55 @@ drag-out and composer-cards: 81 scenarios, all passing but the two then
 fixed or marked (remote-threads again afterwards: 27 of 27). `cargo check
 -p threadbear-gpui --features automation` on Tinker Desk. The scripted app
 in dark mode for the Runs on lines and Other….
+### 2026-11-13 Spelling in the message box, screen readers, Paste and Match Style (`composer.spelling`, `foundation.accessibility`, `menu.edit`)
+
+- The message box checks spelling as the Swift app's NSTextView did, from the
+  Mac's own spell checker (NSSpellChecker through objc2,
+  `gpui/src/text_services.rs`). A misspelled word gets a red wavy line once
+  it's typed (not while the caret's in it), grammar a green one when that's
+  on. The kit's textarea had no way to draw them, so `set_text_marks` is our
+  patch in `desktop/vendor/gpui-base` (the editor mode's decorations, which a
+  plain textarea lacked). The whole box is checked once typing pauses for a
+  quarter of a second; between checks the marks move with the words.
+- As a word ends (a space, a new line, punctuation), the Mac's correction
+  and the user's text replacements go in, each one edit ⌘Z takes back, and
+  smart quotes and dashes when switched on (off, as Swift's composer had
+  them). Correction and replacement start as the Mac's Keyboard settings
+  have them. Dictation and pastes aren't corrected, as AppKit doesn't.
+- The box's right-click menu is NSTextView's: the guesses for a misspelled
+  word, Ignore Spelling, Learn Spelling, Cut, Copy, Paste, then Spelling and
+  Grammar, Substitutions, Transformations and Speech (the Swift app's menu
+  bar never had those four; the re-check of 13 Nov listed them from
+  SwiftUI's optional `TextEditingCommands`, and the 12 Nov note above has
+  it right). Not here: AppKit's Show Spelling and Grammar and Show
+  Substitutions panels, which only an NSTextView can answer, Smart
+  Copy/Paste, Smart Links and Data Detectors, and the correction bubble.
+  AppKit's mark is dotted; GPUI draws a wavy line. Spelling is in the
+  message box only: Settings' fields, the rename field and a card's
+  "Something else" box don't check it yet. Windows and Linux have no spell
+  checker here.
+- Edit > Paste and Match Style (⌥⇧⌘V, Ctrl+Shift+V elsewhere) pastes only
+  the words into the message box.
+- Screen readers: GPUI makes an accessibility node only for an element with
+  a role, so every custom control that had a label (Send, Stop, the sidebar's
+  rows, the rail's buttons, chips, the cards' buttons, the shared `tipped`
+  helpers' 75 uses) and every custom element that takes a click now has one:
+  a button, a list item that's selected while open, a link, a radio button
+  or checkbox with its state, a progress indicator for the spinners, an
+  image, a splitter for the slash palette's edges. Send reports disabled
+  with nothing to send (`A11yDisabledExt`, made public in our gpui-base). A
+  wrapper that only names a kit control for scripts is a `GenericContainer`,
+  so the kit control inside is what VoiceOver reads.
+  `desktop/core/tests/a11y_roles_source.rs` fails on a label or a click
+  without a role. A full VoiceOver pass by ear is still to do.
+- Verification: on Tinker Desk's Mac, `TB_APP=gpui cucumber-js` with
+  `@composer.spelling`, `@foundation.accessibility`, `@menu.edit` and the
+  composer's own tags (`textbox`, `return`, `chipcopy`, `listcontinue`,
+  `send`), 22 of 22; `cargo test -p threadbear-core` (`spelling`,
+  `a11y_roles_source`); a dark shot of a debug build with three misspelled
+  words marked in the box. The spelling scenarios are `@swift-pending` (its
+  script can't read marks or the right-click menu) and pending on Windows
+  and Linux (no spell checker there).
 
 ### 2026-11-13 File drops after typing (`composer.filedrop`, `composer.dropanywhere`)
 

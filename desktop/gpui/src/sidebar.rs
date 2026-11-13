@@ -505,11 +505,16 @@ pub(crate) fn icon(name: &str, size: f32, color: Hsla) -> Icon {
 
 /// A button-like control: its tooltip, and the label scripts find it by, as
 /// the Swift app's `.tip` is both. The macro keeps the two in one place.
+/// A button to VoiceOver, or what the fourth argument says (`Role::ListItem`,
+/// `Role::GenericContainer` for words that only explain).
 macro_rules! tipped {
-    ($el:expr, $id:expr, $tip:expr) => {{
+    ($el:expr, $id:expr, $tip:expr) => {
+        tipped!($el, $id, $tip, gpui_kit::Role::Button)
+    };
+    ($el:expr, $id:expr, $tip:expr, $role:expr) => {{
         let tip_text: SharedString = $tip.into();
         let shown = tip_text.clone();
-        crate::tips::Tip::tip($el.id($id).test_support().aria_label(tip_text), shown)
+        crate::tips::Tip::tip($el.id($id).test_support().role($role).aria_label(tip_text), shown)
     }};
 }
 pub(crate) use tipped;
@@ -1581,7 +1586,7 @@ impl Threadbear {
         let row = h_flex()
             .id(ElementId::Name(format!("row-{id}").into()))
             .test_support()
-            .aria_label(tip.clone())
+            .role(Role::ListItem).aria_selected(selected).aria_label(tip.clone())
             .tip(tip.clone())
             .when(offline, |s| s.opacity(0.5))
             .relative()

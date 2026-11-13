@@ -606,7 +606,7 @@ impl ScheduleEditor {
         div()
             .id(SharedString::from(format!("{id}-holder")))
             .test_support()
-            .aria_label(tip.to_owned())
+            .role(Role::GenericContainer).aria_label(tip.to_owned())
             .flex_none()
             .child(button.dropdown_menu(move |menu: PopupMenu, _window, _cx| {
                 let mut menu = menu;
@@ -948,7 +948,7 @@ impl Render for ScheduleEditor {
             .child(div().flex_1())
             .child(Button::new("schedule-cancel").label("Cancel").small().outline().tooltip("Close without saving (Esc)").on_click(cx.listener(|this, _, window, cx| this.cancel(window, cx))))
             .child(
-                div().id("schedule-save").test_support().aria_label(save_tip.to_owned()).child(
+                div().id("schedule-save").test_support().role(Role::GenericContainer).aria_label(save_tip.to_owned()).child(
                     Button::new("schedule-save-button")
                         .label(save_label)
                         .small()

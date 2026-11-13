@@ -127,7 +127,7 @@ impl Threadbear {
                 div()
                     .id("home-picture")
                     .test_support()
-                    .aria_label(art.label())
+                    .role(Role::Image).aria_label(art.label())
                     .w(px(width))
                     .h(px(height))
                     .on_click(cx.listener(move |this, _: &ClickEvent, _, cx| this.poke_home_picture(art, cx)))
@@ -270,7 +270,7 @@ pub(crate) fn home_status_line(text: &str, busy: bool, cx: &App) -> impl IntoEle
 fn home_stat_tile(index: usize, stat: &HomeStat, cx: &App) -> impl IntoElement {
     let secondary = style::secondary_text(cx);
     let fill = style::primary_opacity(cx, 0.04);
-    crate::highlights::tipped(div().id(("home-stat", index)).flex_grow(1.).flex_basis(px(170.)).min_w(px(170.)), stat.help.clone()).child(
+    crate::highlights::tipped_as(div().id(("home-stat", index)).flex_grow(1.).flex_basis(px(170.)).min_w(px(170.)), stat.help.clone(), gpui_kit::Role::GenericContainer).child(
         v_flex()
             .gap(px(4.))
             .px(px(14.))

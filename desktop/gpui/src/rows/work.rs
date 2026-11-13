@@ -423,7 +423,7 @@ fn tool_body(ix: usize, tool: &ToolItem, remote: bool, cx: &App) -> AnyElement {
                 let origin = if remote { crate::open_gate::Origin::OtherMac } else { crate::open_gate::Origin::ThisMac };
                 note.child(
                     h_flex().child("Output shortened · ").child(
-                        div().id(("show-all", ix)).cursor_pointer().text_color(style::link_text(cx)).tip("The whole output, in a file").on_click(move |_, _, cx| crate::open_gate::open_file(&path, origin, cx)).child("Show all"),
+                        div().id(("show-all", ix)).role(Role::Button).cursor_pointer().text_color(style::link_text(cx)).tip("The whole output, in a file").on_click(move |_, _, cx| crate::open_gate::open_file(&path, origin, cx)).child("Show all"),
                     ),
                 )
             }

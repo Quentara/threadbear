@@ -507,6 +507,20 @@ read the thread from, and clicking the chip once it's sent opens that
 thread. An id that isn't one of your threads pastes as plain text.
 Stop (⌘.) ends a turn that's running.
 
+On a Mac the composer checks your spelling as the Mac's own text boxes do. A
+misspelled word gets a red wavy line once you've finished typing it, and
+with Correct Spelling Automatically on (it starts as your Mac's Keyboard
+settings have it) the Mac's correction and your text replacements go in as
+you start the next word; ⌘Z puts back what you typed. Right-click a marked
+word for the Mac's guesses, Ignore Spelling and Learn Spelling. The same
+menu has Spelling and Grammar (a green line under grammar, off until you
+turn it on), Substitutions (smart quotes and dashes, off to start with, and
+text replacement), Transformations (upper case, lower case or capitalized,
+for the selection or the word the cursor's in) and Speech, which reads the
+selection, or the whole message, aloud. Edit > Paste and Match Style (⌥⇧⌘V)
+pastes only the words, leaving out any picture or file that was copied with
+them. Windows and Linux have no spell checker here.
+
 A message shows in the thread as soon as you send it, faded, with a
 spinner beside it until the runner has it (a busy Mac can hold the runner
 up for a few seconds). A clock instead means it's waiting for the turn
@@ -1366,7 +1380,7 @@ In the file, a key is its modifiers and then the key, joined with `+`: `cmd`,
 to `f20`.
 
 The rest are every Mac app's own and can't be changed: the Edit menu's (⌘Z,
-⇧⌘Z, ⌘X, ⌘C, ⌘V, ⌘A, with Start Dictation and Emoji & Symbols under them),
+⇧⌘Z, ⌘X, ⌘C, ⌘V, ⌥⇧⌘V, ⌘A, with Start Dictation and Emoji & Symbols under them),
 ⌘W to close the window in front, ⌘M to minimize it, ⌃⌘F for full screen, and
 ⌘H and ⌥⌘H to hide. In Settings, the up and down arrows move through its
 sections.

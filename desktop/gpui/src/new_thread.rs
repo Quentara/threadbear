@@ -510,7 +510,7 @@ impl Threadbear {
             .child(div().text_size(px(size::LABEL)).font_weight(FontWeight::MEDIUM).child(format!("In {}", project.title)))
             .child(
                 div()
-                    .id("new-thread-project-clear")
+                    .id("new-thread-project-clear").role(Role::Button)
                     .cursor_pointer()
                     .text_color(style::quiet_text(cx))
                     .hover(|s| s.text_color(cx.theme().foreground))
@@ -559,7 +559,7 @@ impl Threadbear {
         v_flex()
             .id(ElementId::Name(format!("room-card-{id}").into()))
             .test_support()
-            .aria_label(tip.clone())
+            .role(Role::RadioButton).aria_toggled(if selected { Toggled::True } else { Toggled::False }).aria_label(tip.clone())
             .flex_1()
             .flex_basis(px(140.))
             .max_w(px(200.))

@@ -30,11 +30,15 @@ pub(crate) const HEADER_HEIGHT: f32 = 38.;
 /// A control's tooltip and the label scripts find it by (Swift's `.tip`), as
 /// `tipped!` in the sidebar: the element's result is whatever `test_support`
 /// makes of it, so this is a macro rather than a function.
+/// A button to VoiceOver, or what the third argument says.
 macro_rules! tipped {
-    ($el:expr, $tip:expr $(,)?) => {{
+    ($el:expr, $tip:expr $(,)?) => {
+        tipped!($el, $tip, gpui_kit::Role::Button)
+    };
+    ($el:expr, $tip:expr, $role:expr $(,)?) => {{
         let tip_text: SharedString = $tip.into();
         let shown = tip_text.clone();
-        crate::tips::Tip::tip($el.test_support().aria_label(tip_text), shown)
+        crate::tips::Tip::tip($el.test_support().role($role).aria_label(tip_text), shown)
     }};
 }
 
@@ -170,7 +174,7 @@ impl Threadbear {
             .child(title_el)
             .when(thread.is_archived(), |s| s.child(div().flex_none().text_color(faint).child("·  Archived")))
             .when(thread.on_old_runner == Some(true), |s| {
-                s.child(tipped!(div().id("old-runner").flex_none().text_color(faint), "This turn started before the runner updated, so it runs on the previous version. The thread moves to the new one when the turn ends.").child("·  Finishing on the previous version"))
+                s.child(tipped!(div().id("old-runner").flex_none().text_color(faint), "This turn started before the runner updated, so it runs on the previous version. The thread moves to the new one when the turn ends.", gpui_kit::Role::GenericContainer).child("·  Finishing on the previous version"))
             })
             .when_some(worktree, |s, branch| s.child(div().flex_none().text_color(faint).child(format!("·  {branch}"))))
             // A click opens the schedule in the editor, while it's still
@@ -205,7 +209,7 @@ impl Threadbear {
         if projects.is_empty() || !self.projects_supported {
             let tip = format!("In {}", abbreviate(&cwd));
             // SF's folder at 12 pt is about 13.5 wide; Lucide's is at 14.
-            return tipped!(div().id("header-folder").flex_none(), tip).child(icon("folder", 14., secondary)).into_any_element();
+            return tipped!(div().id("header-folder").flex_none(), tip, gpui_kit::Role::Image).child(icon("folder", 14., secondary)).into_any_element();
         }
         let hover = style::primary_opacity(cx, 0.08);
         let ring = secondary.opacity(0.5);
@@ -725,7 +729,7 @@ impl Threadbear {
             // A restart: grey words on the window's own background with a
             // hairline under them, so it reads as information, not a
             // problem. The threads it waits for are its tooltip.
-            let line = tipped!(div().id("banner-text").flex_1().min_w_0().truncate(), banner.detail.clone().unwrap_or_default()).child(banner.text);
+            let line = tipped!(div().id("banner-text").flex_1().min_w_0().truncate(), banner.detail.clone().unwrap_or_default(), gpui_kit::Role::GenericContainer).child(banner.text);
             return h_flex()
                 .flex_none()
                 .px(px(14.))
@@ -764,7 +768,7 @@ impl Threadbear {
             .bg(warning_fill)
             .text_size(px(style::size::LABEL))
             .child(icon(banner.icon.unwrap_or("bolt.horizontal"), 13., secondary))
-            .child(tipped!(div().id("connection-text").flex_1().min_w_0().truncate(), detail).child(banner.text))
+            .child(tipped!(div().id("connection-text").flex_1().min_w_0().truncate(), detail, gpui_kit::Role::GenericContainer).child(banner.text))
             // Regular push buttons, as the Swift bar's. Start runner spins
             // until launchctl has answered and the app has tried again, and
             // can't be pressed twice meanwhile.
@@ -796,7 +800,7 @@ impl Threadbear {
             .bg(fill)
             .text_size(px(style::size::LABEL))
             .child(icon("exclamationmark.triangle", 13., orange))
-            .child(tipped!(div().id("error-text").flex_1().min_w_0(), tip).child(div().line_clamp(2).child(error)))
+            .child(tipped!(div().id("error-text").flex_1().min_w_0(), tip, gpui_kit::Role::GenericContainer).child(div().line_clamp(2).child(error)))
             .when(self.own_checkout().is_some(), |s| s.child(self.render_investigate_button(cx)))
             .child(tipped!(div().id("error-dismiss").px(px(6.)).py(px(2.)).rounded(px(5.)).text_color(style::secondary_text(cx)), "Hide this message").on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.dismiss_error(cx))).child("Dismiss"))
             .into_any_element()
@@ -1002,7 +1006,7 @@ impl Threadbear {
             .border_color(hairline)
             .text_size(px(style::size::LABEL))
             .child(icon("person.crop.circle.badge.exclamationmark", 13., orange))
-            .child(tipped!(div().id("signin-text").flex_1().min_w_0().truncate(), tip).child(text))
+            .child(tipped!(div().id("signin-text").flex_1().min_w_0().truncate(), tip, gpui_kit::Role::GenericContainer).child(text))
             // Another Mac's login is signed in on that Mac: Terminal here would
             // sign in this Mac's CLI.
             .when_some(account, |s, account| {

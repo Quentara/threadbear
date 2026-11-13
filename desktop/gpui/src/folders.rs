@@ -596,7 +596,7 @@ impl SidePane {
         let (empty_key, click_key) = (key.to_owned(), key.to_owned());
         let _ = thread;
         div()
-            .id("folder-surface")
+            .id("folder-surface").role(Role::GenericContainer)
             .flex_1()
             .min_h_0()
             .on_click(cx.listener(move |this, ev: &ClickEvent, _, cx| {
@@ -710,7 +710,7 @@ impl SidePane {
             let (key2, thread2, preview2) = (key.to_owned(), thread.clone(), preview.clone());
             let tip = if last { crumb.path.clone() } else { format!("Go to {}", crumb.path) };
             let words = div()
-                .id(SharedString::from(format!("crumb-{i}")))
+                .id(SharedString::from(format!("crumb-{i}"))).role(Role::Button)
                 .px(px(CRUMB_PAD))
                 .rounded(px(4.))
                 // Only the last can still be too long, on its own: it truncates.

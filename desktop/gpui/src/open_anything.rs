@@ -534,7 +534,7 @@ impl AnythingBox {
         h_flex()
             .id(SharedString::from(format!("anything-row-{}", item.key)))
             .test_support()
-            .aria_label(tip.clone())
+            .role(Role::ListItem).aria_selected(on).aria_label(tip.clone())
             .h(px(ROW_HEIGHT + 4.))
             .px(px(16.))
             .gap(px(10.))

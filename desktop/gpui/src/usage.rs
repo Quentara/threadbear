@@ -346,12 +346,15 @@ fn tokens_chart(chart: &Chart, accounts: &[Account], hovered: Option<i64>, plot:
         .rounded(px(5.))
         .bg(p.track)
         .test_support()
-        .aria_label("Show today by the hour, or the last 7 days by the day".to_owned())
+        .role(Role::RadioGroup).aria_label("Show today by the hour, or the last 7 days by the day".to_owned())
         .tip("Show today by the hour, or the last 7 days by the day")
         .children([(Range::Today, "Today"), (Range::Week, "7 days")].map(|(r, title)| {
             let on = r == range;
             div()
                 .id(SharedString::from(format!("usage-range-{}", r.name())))
+                .role(Role::RadioButton)
+                .aria_toggled(if on { Toggled::True } else { Toggled::False })
+                .aria_label(title)
                 .w(px(53.))
                 .h_full()
                 .flex()
@@ -509,7 +512,7 @@ fn stat_tile(index: usize, tile: &Tile, content: f32, p: &Palette, window: &Wind
     let natural = text_width(&tile.value, size, FontWeight::SEMIBOLD, window);
     let value_size = if natural > inner && natural > 0. { (inner / natural).max(0.6) * 22. } else { 22. };
     let detail = tile.detail.clone().filter(|d| text_width(d, style::zoomed(11.), FontWeight::NORMAL, window) <= inner);
-    crate::highlights::tipped(card_box(div(), p).id(("usage-tile", index)).flex_1().min_w_0().p(px(10.)), tile.tip.clone())
+    crate::highlights::tipped_as(card_box(div(), p).id(("usage-tile", index)).flex_1().min_w_0().p(px(10.)), tile.tip.clone(), gpui_kit::Role::GenericContainer)
         .child(
             v_flex()
                 .gap(px(2.))
@@ -740,7 +743,7 @@ fn icon(symbol: &str, size: f32, colour: Hsla) -> Icon {
 
 /// "86M today", with its breakdown in the tip.
 fn today_words(id: SharedString, words: &str, tip: &str, p: &Palette) -> AnyElement {
-    crate::highlights::tipped(div().id(id).flex_none().text_size(px(11.)).line_height(px(14.)).font_features(tabular()).text_color(p.secondary).whitespace_nowrap(), tip.to_owned()).child(words.to_owned()).into_any_element()
+    crate::highlights::tipped_as(div().id(id).flex_none().text_size(px(11.)).line_height(px(14.)).font_features(tabular()).text_color(p.secondary).whitespace_nowrap(), tip.to_owned(), gpui_kit::Role::GenericContainer).child(words.to_owned()).into_any_element()
 }
 
 /// `LoginRow`: its colour's dot, its name and note and what it's spent
@@ -749,7 +752,7 @@ fn today_words(id: SharedString, words: &str, tip: &str, p: &Palette) -> AnyElem
 fn login_row(key: &str, login: &LoginRow, accounts: &[Account], content: f32, dark: bool, now: i64, p: &Palette) -> AnyElement {
     let colour = login_colour(&login.id, accounts, dark);
     let id = |part: &str| SharedString::from(format!("usage-{key}-{}-{part}", login.id));
-    let name_row = crate::highlights::tipped(h_flex().id(id("name")).gap(px(7.)).items_center(), login.tip.clone())
+    let name_row = crate::highlights::tipped_as(h_flex().id(id("name")).gap(px(7.)).items_center(), login.tip.clone(), gpui_kit::Role::GenericContainer)
         .when(login.dot, |s| s.child(dot(colour, p)))
         .child(div().min_w_0().text_size(px(12.5)).line_height(px(15.)).font_weight(FontWeight::MEDIUM).text_color(p.fg).truncate().child(login.name.clone()))
         .children(login.note.as_ref().map(|note| div().min_w_0().text_size(px(11.)).line_height(px(14.)).text_color(p.tertiary).truncate().child(note.clone())))
@@ -823,7 +826,7 @@ fn window_meter(key: &str, meter: &Meter, colour: Hsla, now: i64, p: &Palette) -
         };
         div().text_size(px(11.)).line_height(px(14.)).when(loud, |d| d.font_weight(FontWeight::MEDIUM)).text_color(tone).line_clamp(2).child(v.text.clone())
     });
-    crate::highlights::tipped(v_flex().id(SharedString::from(format!("usage-meter-{key}"))).flex_1().min_w(px(170.)).gap(px(4.)), meter.tip.clone()).child(header).child(picture).children(verdict).into_any_element()
+    crate::highlights::tipped_as(v_flex().id(SharedString::from(format!("usage-meter-{key}"))).flex_1().min_w(px(170.)).gap(px(4.)), meter.tip.clone(), gpui_kit::Role::GenericContainer).child(header).child(picture).children(verdict).into_any_element()
 }
 
 /// `WeekChart`: what was left over the last seven days, last week's readings

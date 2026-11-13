@@ -144,7 +144,7 @@ impl Threadbear {
         if list.left() > 0 {
             children.push(
                 div()
-                    .id("setup-hide")
+                    .id("setup-hide").role(Role::Button)
                     .cursor_pointer()
                     .text_size(px(style::size::DETAIL))
                     .text_color(secondary)

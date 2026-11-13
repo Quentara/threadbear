@@ -153,7 +153,7 @@ fn rail_button(button: RailButton, on_click: impl Fn(&mut Threadbear, &mut Windo
         .when(button.active && !button.lit_sliding, |s| s.bg(active_fill))
         .when(!button.active, |s| s.hover(move |h| h.bg(hover_fill).text_color(fg)))
         .test_support()
-        .aria_label(label)
+        .role(Role::Button).aria_toggled(if button.active { Toggled::True } else { Toggled::False }).aria_label(label)
         .tip(tip_for_tooltip.clone())
         .on_click(cx.listener(move |this, _: &ClickEvent, window, cx| {
             if !cx.reduce_motion() {

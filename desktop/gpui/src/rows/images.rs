@@ -115,7 +115,7 @@ impl ThreadPane {
                         .file_drag(Some(path.clone()))
                         .child(img(super::markdown::file_picture(&path)).w(px(frame.w)).h(px(frame.h)).rounded(px(8.)).object_fit(ObjectFit::Cover))
                         .test_support()
-                        .aria_label(label),
+                        .role(Role::Image).aria_label(label),
                 );
                 continue;
             };
@@ -141,7 +141,7 @@ impl ThreadPane {
                     )
                 })
                 .test_support()
-                .aria_label(label),
+                .role(Role::Image).aria_label(label),
             );
         }
         grid

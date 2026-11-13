@@ -16,7 +16,7 @@
 // it as diagrams do, says why when it can't, and offers Open in browser, so
 // the app works without it.
 use crate::app::Threadbear;
-use crate::highlights::{icon, palette, tipped, Palette};
+use crate::highlights::{icon, palette, tipped, tipped_as, Palette};
 use crate::push_button::PushButton;
 use crate::style::{self, px};
 use crate::web_runtime::{self, Engine};
@@ -933,7 +933,7 @@ fn convex_header(panels: &Entity<WebPanels>, state_key: &str, configured: &Deplo
     let note = state.and_then(|s| s.note.clone());
     let mut row = h_flex().gap(px(8.)).items_center().min_w_0();
     if let (Some(project), Some(tip)) = (&configured.project, configured.project_tip()) {
-        row = row.child(tipped(div().id("convex-project").flex_none().text_size(px(style::size::LABEL)).font_weight(FontWeight::SEMIBOLD).text_color(p.fg).child(project.clone()), tip));
+        row = row.child(tipped_as(div().id("convex-project").flex_none().text_size(px(style::size::LABEL)).font_weight(FontWeight::SEMIBOLD).text_color(p.fg).child(project.clone()), tip, gpui_kit::Role::GenericContainer));
     }
     let view = native_view(window);
     let (menu_panels, menu_key, menu_configured) = (panels.clone(), state_key.to_owned(), configured.clone());
@@ -961,14 +961,14 @@ fn convex_header(panels: &Entity<WebPanels>, state_key: &str, configured: &Deplo
         });
     }
     row = row.child(tipped(menu, "Choose the deployment shown in this panel"));
-    row = row.child(tipped(div().id("convex-deployment").min_w_0().truncate().font_family(cx.theme().mono_font_family.clone()).text_size(px(style::size::SMALL)).text_color(p.secondary).child(selected.to_owned()), selected.to_owned()));
+    row = row.child(tipped_as(div().id("convex-deployment").min_w_0().truncate().font_family(cx.theme().mono_font_family.clone()).text_size(px(style::size::SMALL)).text_color(p.secondary).child(selected.to_owned()), selected.to_owned(), gpui_kit::Role::GenericContainer));
     row = row.child(div().flex_1());
     if loading {
         row = row.child(Spinner::new().color(p.secondary).with_size(px(10.)));
     }
     let mut header = v_flex().flex_none().gap(px(6.)).px(px(12.)).py(px(8.)).child(row);
     if let Some(note) = note {
-        header = header.child(tipped(div().id("convex-choices-note").text_size(px(style::size::SMALL)).line_height(px(15.)).text_color(p.secondary).line_clamp(2).child(note.clone()), note));
+        header = header.child(tipped_as(div().id("convex-choices-note").text_size(px(style::size::SMALL)).line_height(px(15.)).text_color(p.secondary).line_clamp(2).child(note.clone()), note, gpui_kit::Role::GenericContainer));
     }
     header.into_any_element()
 }

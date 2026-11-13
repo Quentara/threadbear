@@ -210,7 +210,7 @@ impl SidePane {
             .px(px(12.))
             .py(px(10.))
             .child(
-                crate::highlights::tipped(div().id("explain-follow-up").flex_1().min_w_0(), "Ask more about this. It stays out of the thread.")
+                crate::highlights::tipped_as(div().id("explain-follow-up").flex_1().min_w_0(), "Ask more about this. It stays out of the thread.", gpui_kit::Role::GenericContainer)
                     .child(crate::composer::bare_textarea(Textarea::new(&input)).text_size(px(size::LABEL)).line_height(px(style::natural_line(size::LABEL) + 2.))),
             )
             .child(send);

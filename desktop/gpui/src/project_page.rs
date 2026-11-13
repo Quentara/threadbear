@@ -204,7 +204,7 @@ impl Threadbear {
                     cx.stop_propagation();
                 }
             }))
-            .child(crate::highlights::tipped(div().id("project-title"), "The project's name").child(Input::new(&title).appearance(false).pl(px(0.)).h(px(27.)).text_size(px(24.)).font_semibold()));
+            .child(crate::highlights::tipped_as(div().id("project-title"), "The project's name", gpui_kit::Role::GenericContainer).child(Input::new(&title).appearance(false).pl(px(0.)).h(px(27.)).text_size(px(24.)).font_semibold()));
         h_flex()
             .w_full()
             .items_center()
@@ -354,7 +354,7 @@ impl Threadbear {
         } else if text.trim().is_empty() {
             section = section.child(
                 div()
-                    .id(SharedString::from(format!("empty-{}", field.title())))
+                    .id(SharedString::from(format!("empty-{}", field.title()))).role(Role::Button)
                     .text_size(px(style::size::LABEL))
                     .line_height(px(16.))
                     .text_color(style::faint_text(cx))
@@ -743,7 +743,7 @@ pub(crate) fn small_push_button(id: impl Into<ElementId>, label: &'static str, t
     let color = style::label_text(cx);
     let ink = if cx.theme().is_dark() { 1. } else { 0. };
     crate::highlights::tipped(
-        div().id(id).flex_none().h(px(19.)).px(px(9.)).rounded(px(4.)).flex().items_center().text_size(px(11.)).line_height(px(14.)).text_color(color).bg(hsla(0., 0., ink, 0.08)).active(move |s| s.bg(hsla(0., 0., ink, 0.16))).on_click(on_click).child(label),
+        div().id(id).role(Role::Button).flex_none().h(px(19.)).px(px(9.)).rounded(px(4.)).flex().items_center().text_size(px(11.)).line_height(px(14.)).text_color(color).bg(hsla(0., 0., ink, 0.08)).active(move |s| s.bg(hsla(0., 0., ink, 0.16))).on_click(on_click).child(label),
         tip,
     )
     .into_any_element()
@@ -756,7 +756,7 @@ fn large_push_button(id: &'static str, symbol: &'static str, label: &'static str
     let ink = if cx.theme().is_dark() { 1. } else { 0. };
     crate::highlights::tipped(
         div()
-            .id(id)
+            .id(id).role(Role::Button)
             .flex_none()
             .h(px(28.))
             .px(px(14.))

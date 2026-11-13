@@ -218,7 +218,7 @@ impl MarkdownPlugin for Pills {
         let tip = buttons::tip(&button, look);
         let (thread, id) = (self.thread.clone(), pill.id.clone());
         let element = div()
-            .id(SharedString::from(format!("reply-pill-{}", pill.id)))
+            .id(SharedString::from(format!("reply-pill-{}", pill.id))).role(Role::Button)
             .flex_none()
             .mx(px(3.))
             .h(px(PILL_HEIGHT))

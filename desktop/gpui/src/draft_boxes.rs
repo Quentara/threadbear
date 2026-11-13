@@ -479,7 +479,7 @@ fn copy_button(draft: &DraftBlock, base: &str, window: &mut Window, cx: &App) ->
     let icon = if just { crate::icons::tall_checkmark() } else { crate::icons::symbol("doc.on.doc") }.size(px(11.)).text_color(color);
     let draft = draft.clone();
     let button = div()
-        .id(ElementId::Name(format!("draft-copy-{base}").into()))
+        .id(ElementId::Name(format!("draft-copy-{base}").into())).role(Role::Button)
         .relative()
         .flex_none()
         .w(width)

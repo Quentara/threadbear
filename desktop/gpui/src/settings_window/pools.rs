@@ -412,7 +412,7 @@ impl SettingsWindow {
             }
         }
         row_with(
-            crate::highlights::tipped(h_flex().id(SharedString::from(format!("settings-pool-login-row-{}", account.id))).gap(px(8.)).min_w_0().child(toggle).child(label), if included { format!("{title} is in this pool") } else { format!("Add {title} to this pool") }).into_any_element(),
+            crate::highlights::tipped_as(h_flex().id(SharedString::from(format!("settings-pool-login-row-{}", account.id))).gap(px(8.)).min_w_0().child(toggle).child(label), if included { format!("{title} is in this pool") } else { format!("Add {title} to this pool") }, gpui_kit::Role::GenericContainer).into_any_element(),
             controls.into_any_element(),
             cx,
         )

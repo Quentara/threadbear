@@ -7,7 +7,7 @@
 // (`set_runner_order`), here at once.
 use super::{plain_note, row_with, section, SettingsWindow};
 use crate::app::Threadbear;
-use crate::highlights::tipped;
+use crate::highlights::tipped_as;
 use crate::{icons, style};
 use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -143,7 +143,7 @@ impl SettingsWindow {
             }
             menu
         });
-        div().id("settings-default-runner-holder").test_support().aria_label(rules::DEFAULT_TIP).flex_none().child(button).into_any_element()
+        div().id("settings-default-runner-holder").test_support().role(Role::GenericContainer).aria_label(rules::DEFAULT_TIP).flex_none().child(button).into_any_element()
     }
 
     /// `RunnerRow`: a handle to drag it by when the order can change, its
@@ -153,12 +153,12 @@ impl SettingsWindow {
         let symbol = icons::runner_symbol(r.icon.as_deref());
         let mut line = h_flex().w_full().gap(px(8.)).items_center();
         if movable {
-            line = line.child(tipped(div().id(SharedString::from(format!("settings-runner-handle-{}", r.id))).flex_none().cursor_grab(), "Drag to change the order").child(handle_icon(tertiary)));
+            line = line.child(tipped_as(div().id(SharedString::from(format!("settings-runner-handle-{}", r.id))).flex_none().cursor_grab(), "Drag to change the order", gpui_kit::Role::GenericContainer).child(handle_icon(tertiary)));
         }
         line = line.child(runner_icon(symbol, secondary)).child(div().flex_none().child(r.name.clone()));
         if r.is_default {
             // SF's star.fill at 9 points, on the name's line.
-            line = line.child(tipped(div().id(SharedString::from(format!("settings-runner-star-{}", r.id))).flex_none(), "New threads start here").child(icons::symbol("star.fill").with_size(px(11.)).text_color(tertiary)));
+            line = line.child(tipped_as(div().id(SharedString::from(format!("settings-runner-star-{}", r.id))).flex_none(), "New threads start here", gpui_kit::Role::Image).child(icons::symbol("star.fill").with_size(px(11.)).text_color(tertiary)));
         }
         line = line.child(div().flex_1().min_w(px(8.))).child(div().flex_none().text_color(secondary).child(r.status.clone()));
         if !movable {

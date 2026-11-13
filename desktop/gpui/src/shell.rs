@@ -1241,7 +1241,7 @@ impl Threadbear {
                 {
                     use crate::window_menu::EditItem as E;
                     let edit = |e: E| MenuEntry::Edit(e);
-                    vec![edit(E::Undo), edit(E::Redo), Separator, edit(E::Cut), edit(E::Copy), edit(E::Paste), edit(E::Delete), edit(E::SelectAll)]
+                    vec![edit(E::Undo), edit(E::Redo), Separator, edit(E::Cut), edit(E::Copy), edit(E::Paste), edit(E::PasteAndMatchStyle), edit(E::Delete), edit(E::SelectAll)]
                 },
             ),
             TopMenu::new(

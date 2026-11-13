@@ -669,7 +669,7 @@ impl Threadbear {
         let current = cli.policy.clone();
         let app = cx.entity().downgrade();
         let words = format!("Updates: {}", rules::policy_title(&cli.policy));
-        let holder = div().id(SharedString::from(format!("updates-policy-{}", cli.provider))).flex_none().test_support().aria_label(tip).tip(tip);
+        let holder = div().id(SharedString::from(format!("updates-policy-{}", cli.provider))).flex_none().test_support().role(Role::GenericContainer).aria_label(tip).tip(tip);
         if busy {
             // Taking no other choice until the runner has this one.
             return holder.opacity(0.5).child(MenuLabel::new(SharedString::from(format!("updates-policy-{provider}-label")), words, 11., style::label_text(cx))).into_any_element();

@@ -187,7 +187,7 @@ impl SidePane {
             .on_click(cx.listener(|this, _: &ClickEvent, _, cx| this.close_viewer(cx)));
         let caption = if total > 1 { format!("{name}  ·  {} of {total}", index + 1) } else { name };
         let overlay = div()
-            .id("picture-viewer")
+            .id("picture-viewer").role(Role::GenericContainer)
             .track_focus(&self.viewer.focus)
             .w(bounds.width)
             .h(bounds.height)
@@ -211,7 +211,7 @@ impl SidePane {
                     .px(px(16.))
                     .child(div().w(px(44.)).when_some(prev, |s, b| s.child(b)))
                     // Clicks on the picture itself don't close it.
-                    .child(v_flex().flex_1().min_w_0().items_center().gap(px(10.)).child(div().id("viewer-body").on_click(|_, _, cx| cx.stop_propagation()).child(body)).child(div().text_size(px(style::size::DETAIL)).text_color(dim).child(caption)))
+                    .child(v_flex().flex_1().min_w_0().items_center().gap(px(10.)).child(div().id("viewer-body").role(Role::GenericContainer).on_click(|_, _, cx| cx.stop_propagation()).child(body)).child(div().text_size(px(style::size::DETAIL)).text_color(dim).child(caption)))
                     .child(div().w(px(44.)).when_some(next, |s, b| s.child(b))),
             )
             .child(div().absolute().top(px(16.)).right(px(16.)).child(close));

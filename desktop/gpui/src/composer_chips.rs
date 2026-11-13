@@ -536,7 +536,7 @@ impl Composer {
                 div()
                     .id("composer-runner-chip")
                     .test_support()
-                    .aria_label(tip.clone())
+                    .role(Role::Button).aria_label(tip.clone())
                     .flex()
                     .items_center()
                     .h(px(26.))
@@ -617,7 +617,7 @@ impl RenderOnce for ChipTrigger {
         // A chip spinning on a change says what it's waiting for; "+" keeps
         // its own tip, as the Swift PlusButton does.
         let tip: SharedString = if busy && matches!(self.kind, TriggerKind::Chip) { "Moving this thread".into() } else { tip };
-        let base = div().id(self.id).flex().items_center().when(!busy, |d| d.cursor_pointer()).test_support().aria_label(label).tip(tip.clone());
+        let base = div().id(self.id).flex().items_center().when(!busy, |d| d.cursor_pointer()).test_support().role(Role::Button).aria_label(label).tip(tip.clone());
         let spinner = |side: f32| gpui_kit::component::spinner::Spinner::new().color(style::secondary_text(cx)).with_size(px(side));
         match self.kind {
             TriggerKind::Plus => base
@@ -732,7 +732,7 @@ fn menu_row(id: impl Into<ElementId>, icon: Option<IconName>, title: &str, subti
     style::menu::row(id, icon.map(Icon::from), cx)
         // Found by its words, as scripts click a menu's line.
         .test_support()
-        .aria_label(title.to_owned())
+        .role(Role::MenuItem).aria_label(title.to_owned())
         .on_click(move |_, window, cx| action(window, cx))
         .child(
             v_flex()
@@ -917,7 +917,7 @@ impl Render for ModelPickerView {
                 let tip = effort_porridge(&level).unwrap_or(&title).to_owned();
                 let (composer, level2) = (composer_for_effort.clone(), level.clone());
                 div()
-                    .id(SharedString::from(format!("effort-{level}")))
+                    .id(SharedString::from(format!("effort-{level}"))).role(Role::Button)
                     .flex_1()
                     .h(px(22.))
                     .flex()
@@ -976,7 +976,7 @@ impl ModelPickerView {
         let header = h_flex()
             .id("picker-login")
             .test_support()
-            .aria_label(SharedString::from(line.clone()))
+            .role(Role::Button).aria_expanded(open).aria_label(SharedString::from(line.clone()))
             .px(px(12.))
             .py(px(9.))
             .gap(px(4.))
@@ -1041,7 +1041,7 @@ fn pool_login_row(row: threadbear_core::login_picker::PoolLoginRow, cx: &App, ac
     h_flex()
         .id(SharedString::from(format!("picker-login-{id}")))
         .test_support()
-        .aria_label(SharedString::from(name))
+        .role(Role::Button).aria_label(SharedString::from(name))
         .gap(px(8.))
         .px(px(8.))
         .py(px(5.))
@@ -1178,7 +1178,7 @@ fn model_row(row: PickerRow, provider: &str, cx: &App, action: impl Fn(&mut Wind
     let (fg, secondary) = (cx.theme().foreground, cx.theme().muted_foreground);
     let (selected_fill, hover_fill) = (style::primary_opacity(cx, 0.1), style::primary_opacity(cx, 0.06));
     h_flex()
-        .id(SharedString::from(format!("model-{}", row.id)))
+        .id(SharedString::from(format!("model-{}", row.id))).role(Role::Button)
         .gap(px(10.))
         .pl(px(6.))
         .pr(px(10.))

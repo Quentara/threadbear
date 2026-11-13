@@ -190,7 +190,7 @@ impl Threadbear {
             .gap(px(8.))
             .pt(px(4.))
             .child(
-                div().id("librarian-pause").test_support().aria_label(pause_tip.to_owned()).child(
+                div().id("librarian-pause").test_support().role(Role::GenericContainer).aria_label(pause_tip.to_owned()).child(
                     // Small and filled, as the Swift view's `.controlSize(.small)`.
                     Button::new("librarian-pause-button")
                         .label(if paused { "Resume" } else { "Pause" })
@@ -202,7 +202,7 @@ impl Threadbear {
                 ),
             )
             .child(
-                div().id("librarian-run").test_support().aria_label("Queue a look at every thread it hasn't looked at yet, newest first".to_owned()).child(
+                div().id("librarian-run").test_support().role(Role::GenericContainer).aria_label("Queue a look at every thread it hasn't looked at yet, newest first".to_owned()).child(
                     Button::new("librarian-run-button")
                         .label("Look at everything")
                         .xsmall()
@@ -230,7 +230,7 @@ impl Threadbear {
                     .child(div().text_size(px(style::size::SIDEBAR_TITLE)).line_height(px(17.)).text_color(fg).line_clamp(2).child(rules::state_text(status))),
             )
             .when_some(working, |s, line| s.child(div().text_size(px(style::size::SIDEBAR_PREVIEW)).line_height(px(16.)).text_color(secondary).line_clamp(2).child(line)))
-            .child(tipped!(div().text_size(px(style::size::SIDEBAR_META)).line_height(px(14.)).text_color(faint), "librarian-today", today_tip).child(rules::today(status)))
+            .child(tipped!(div().text_size(px(style::size::SIDEBAR_META)).line_height(px(14.)).text_color(faint), "librarian-today", today_tip, gpui_kit::Role::GenericContainer).child(rules::today(status)))
             .child(buttons)
             .into_any_element()
     }
@@ -317,7 +317,7 @@ impl Threadbear {
             }
             place = place.child(div().min_w_0().truncate().child(title.clone()));
         }
-        tipped!(v_flex().gap(px(3.)).pt(px(7.)).pb(px(7.)).pl(px(LEADING)).pr(px(TRAILING)), ElementId::Name(format!("librarian-entry-row-{}", entry.id).into()), tip)
+        tipped!(v_flex().gap(px(3.)).pt(px(7.)).pb(px(7.)).pl(px(LEADING)).pr(px(TRAILING)), ElementId::Name(format!("librarian-entry-row-{}", entry.id).into()), tip, gpui_kit::Role::ListItem)
             .child(
                 h_flex()
                     .items_start()
@@ -366,7 +366,7 @@ impl Threadbear {
         let paused = status.paused;
         let label = |text: &'static str| div().w(px(110.)).flex_none().text_size(px(style::size::LABEL)).line_height(px(16.)).text_color(secondary).child(text);
         let switch_tip = if paused { "Paused: what's queued waits. Turn it on to carry on" } else { "Turn it off to pause; what's queued waits" };
-        let switch = div().id("librarian-switch").test_support().aria_label(switch_tip.to_owned()).tip(switch_tip).child(
+        let switch = div().id("librarian-switch").test_support().role(Role::GenericContainer).aria_label(switch_tip.to_owned()).tip(switch_tip).child(
             Switch::new("librarian-look")
                 .checked(!paused)
                 .disabled(pausing)
@@ -383,7 +383,7 @@ impl Threadbear {
             .child(div().text_size(px(17.)).line_height(px(21.)).font_semibold().child("Settings"))
             .child(grid)
             .child(
-                div().id("librarian-more-settings").test_support().aria_label("Private folders, whose threads are never sent anywhere".to_owned()).child(
+                div().id("librarian-more-settings").test_support().role(Role::GenericContainer).aria_label("Private folders, whose threads are never sent anywhere".to_owned()).child(
                     Button::new("librarian-more-settings-button")
                         .label("More in Settings…")
                         .small()
@@ -424,7 +424,7 @@ impl Threadbear {
             div()
                 .id("librarian-pool")
                 .test_support()
-                .aria_label(tip.to_owned())
+                .role(Role::GenericContainer).aria_label(tip.to_owned())
                 .child(Button::new("librarian-pool-button").label(current).small().outline().dropdown_caret(true).tooltip(tip).dropdown_menu(move |menu: PopupMenu, _, _| {
                     let mut menu = menu;
                     for (id, title, symbol) in &choices {

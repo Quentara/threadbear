@@ -662,7 +662,7 @@ impl SettingsWindow {
             "Appearance",
             "Light or dark for Threadbear only. Same as the Mac follows System Settings > Appearance.",
             "change it for you.",
-            vec![row("Appearance", div().id("settings-appearance-holder").test_support().aria_label("Light or dark for Threadbear, whatever the Mac is set to").child(menu), cx)],
+            vec![row("Appearance", div().id("settings-appearance-holder").test_support().role(Role::GenericContainer).aria_label("Light or dark for Threadbear, whatever the Mac is set to").child(menu), cx)],
             cx,
         )
     }
@@ -742,7 +742,7 @@ impl SettingsWindow {
         let volume = h_flex()
             .gap(px(8.))
             .items_center()
-            .child(div().id("settings-ding-volume").test_support().aria_label("How loud the ding is").w(px(180.)).tip("How loud the ding is").child(Slider::new(&self.volume).horizontal()))
+            .child(div().id("settings-ding-volume").test_support().role(Role::GenericContainer).aria_label("How loud the ding is").w(px(180.)).tip("How loud the ding is").child(Slider::new(&self.volume).horizontal()))
             .child(self.button("settings-ding-play", "Play", "Hear the ding", cx, |this, _, cx| {
                 if let Some(app) = this.app.upgrade() {
                     let s = &app.read(cx).settings;
@@ -756,7 +756,7 @@ impl SettingsWindow {
             "change when the ding plays.",
             vec![
                 row("Play a sound when a thread finishes", switch, cx),
-                row("Sound", div().id("settings-ding-sound-holder").test_support().aria_label("Which ding plays").child(picker), cx),
+                row("Sound", div().id("settings-ding-sound-holder").test_support().role(Role::GenericContainer).aria_label("Which ding plays").child(picker), cx),
                 row("Volume", volume, cx),
             ],
             cx,
@@ -788,7 +788,7 @@ impl SettingsWindow {
                 .child(div().flex_1())
                 .child(self.button("settings-instructions-clear", "Clear", "Delete these, so agents are given no standing instructions", cx, |this, _, cx| this.resolve_outside(String::new(), cx)))
                 .child(
-                    div().id("settings-instructions-use").test_support().aria_label("Give every agent exactly the text shown here").child(
+                    div().id("settings-instructions-use").test_support().role(Role::GenericContainer).aria_label("Give every agent exactly the text shown here").child(
                         Button::new("settings-instructions-use-button")
                             .label("Use These")
                             .small()
@@ -819,7 +819,7 @@ impl SettingsWindow {
             v_flex()
                 .gap(px(6.))
                 .p(px(12.))
-                .child(div().id("settings-instructions").test_support().aria_label("What every thread's agent should always keep in mind").child(Textarea::new(&self.instructions).h(px(120.)).appearance(false)))
+                .child(div().id("settings-instructions").test_support().role(Role::GenericContainer).aria_label("What every thread's agent should always keep in mind").child(Textarea::new(&self.instructions).h(px(120.)).appearance(false)))
                 .when_some(self.instructions_status.clone(), |s, status| s.child(div().text_size(px(11.)).text_color(secondary).child(status)))
                 .into_any_element()
         };
@@ -903,7 +903,7 @@ impl SettingsWindow {
         div()
             .id(SharedString::from(format!("{id}-holder")))
             .test_support()
-            .aria_label(tip)
+            .role(Role::GenericContainer).aria_label(tip)
             .flex_none()
             .child(Button::new(id).label(label).small().secondary().tooltip(tip).on_click(cx.listener(move |this, _, window, cx| action(this, window, cx))))
             .into_any_element()
@@ -913,7 +913,7 @@ impl SettingsWindow {
         div()
             .id(SharedString::from(format!("{id}-holder")))
             .test_support()
-            .aria_label(tip.clone())
+            .role(Role::GenericContainer).aria_label(tip.clone())
             .flex_none()
             .child(Button::new(id).label(label).small().secondary().tooltip(tip).on_click(cx.listener(move |this, _, window, cx| action(this, window, cx))))
             .into_any_element()
@@ -946,7 +946,7 @@ impl SettingsWindow {
         div()
             .id(SharedString::from(format!("{id}-holder")))
             .test_support()
-            .aria_label(tip)
+            .role(Role::GenericContainer).aria_label(tip)
             .tip(shown.clone())
             .flex_none()
             .child(crate::mac_switch::MacSwitch::new(SharedString::from(id), on).on_change(move |on, _, cx| {
@@ -967,7 +967,7 @@ impl SettingsWindow {
         div()
             .id(SharedString::from(format!("{id}-holder")))
             .test_support()
-            .aria_label(tip)
+            .role(Role::GenericContainer).aria_label(tip)
             .flex_none()
             .child(button.dropdown_menu(move |menu: PopupMenu, _, _| {
                 let mut menu = menu;

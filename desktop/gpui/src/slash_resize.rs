@@ -198,7 +198,7 @@ pub(crate) fn edges(size: (f64, f64), cx: &mut Context<Composer>) -> Vec<AnyElem
         let band = div()
             .id(SharedString::from(format!("palette-edge-{name}")))
             .test_support()
-            .aria_label(name)
+            .role(Role::Splitter).aria_label(name)
             .absolute()
             .map(|d| match edge {
                 PaletteEdge::Top => d.top_0().left(style::px(BAND)).right(style::px(BAND)).h(style::px(BAND)).cursor(CursorStyle::ResizeUpDown),
@@ -238,7 +238,7 @@ pub(crate) fn column_rule(which: usize, width: f64, others: f64, total: f64, cx:
     div()
         .id(SharedString::from(format!("palette-column-{which}")))
         .test_support()
-        .aria_label(COLUMN_NAMES[which])
+        .role(Role::Splitter).aria_label(COLUMN_NAMES[which])
         .group(group.clone())
         .flex_none()
         .relative()

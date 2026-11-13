@@ -478,7 +478,7 @@ impl Composer {
                 // fills sit 6 apart.
                 column = column.child(
                     h_flex()
-                        .id(("follow-up", index))
+                        .id(("follow-up", index)).role(Role::Button)
                         .w_full()
                         .items_start()
                         .mt(px(if index == 0 { 3. } else { 6. }))
@@ -497,7 +497,7 @@ impl Composer {
                         .child(div().flex_1().min_w_0().text_size(px(style::size::BODY)).line_height(px(style::size::BODY_LINE)).text_color(style::label_text(cx)).child(follow_up.clone()))
                         .child(
                             div()
-                                .id(("follow-up-explain", index))
+                                .id(("follow-up-explain", index)).role(Role::Button)
                                 .flex_none()
                                 .mx(px(8.))
                                 .size(px(22.))
@@ -569,7 +569,7 @@ impl Composer {
         }
         right = right.child(
             div()
-                .id("card-collapse")
+                .id("card-collapse").role(Role::Button)
                 .flex_none()
                 .size(px(metrics::TOGGLE))
                 .flex()
@@ -894,7 +894,7 @@ pub(crate) trait AskHost: Sized + 'static {
             let note = (!own).then(|| ask.option_notes.get(n).cloned()).flatten().filter(|s| !s.is_empty());
             rows = rows.child(
                 h_flex()
-                    .id(("answer-row", index * 100 + n))
+                    .id(("answer-row", index * 100 + n)).role(Role::Button)
                     .w_full()
                     .items_start()
                     .gap(px(8.))
@@ -1033,7 +1033,7 @@ impl AskHost for Composer {
                 let group: SharedString = format!("answer-picture-{ask}-{n}").into();
                 row = row.child(
                     div()
-                        .id(("answer-picture", ask * 100 + n))
+                        .id(("answer-picture", ask * 100 + n)).role(Role::Button)
                         .group(group.clone())
                         .relative()
                         .cursor_pointer()
@@ -1050,7 +1050,7 @@ impl AskHost for Composer {
             row.into_any_element()
         });
         let add = div()
-            .id(("answer-add-pictures", ask))
+            .id(("answer-add-pictures", ask)).role(Role::Button)
             .flex_none()
             .size(px(22.))
             .mb(px((style::size::BODY_LINE - 22.) / 2.))
