@@ -2751,7 +2751,10 @@ export class ConvexSync {
         ...(this.backendApiVersion !== undefined ? { apiVersion: this.backendApiVersion } : {}),
         at: this.fullAt,
         threads: Object.fromEntries(this.sent),
-        heads: Object.fromEntries(this.heads),
+        // A thread still to come across keeps the head from before the
+        // handover's gap, or a restart before it came would lose the gap
+        // (Codex's review): its live messages since go again with it.
+        heads: Object.fromEntries([...this.heads].map(([id, seq]) => [id, Math.min(seq, this.arrivedFrom.get(id) ?? seq)])),
         ...(this.removed.size || this.removing.size ? { removed: [...new Set([...this.removed, ...this.removing])] } : {}),
         ...(this.projectsSent ? { projects: Object.fromEntries(this.projectsSent) } : {}),
         ...(this.accountsSent ? { accounts: Object.fromEntries(this.accountsSent) } : {}),

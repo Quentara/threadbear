@@ -863,3 +863,42 @@ test('a thread kept by the release before has what it wrote during the handover 
   assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
   await again.stop();
 });
+
+// From Codex's review of that fix: where the gap starts was kept only in
+// memory, and the file saved the head its live messages had moved on to,
+// so a second restart before the thread came across lost the gap.
+test('a kept thread still on the release before through a second restart still has its handover gap sent', async () => {
+  const s = setup();
+  const t = s.h.runner.create({ text: 'busy', cwd: s.h.cfg.defaults.cwd, accountId: 'claude-3' }).thread;
+  await firstStart(s);
+  s.h.runner.send(t.id, 'written during the handover');
+  await settle();
+  await s.h.runner.letGo(s.h.runner.threads.get(t.id)!);
+  s.elsewhere.add(t.id);
+  const second = s.make();
+  second.start();
+  await settle();
+  s.h.clock.advance(SETTLE_MS);
+  await settle();
+  // A live message from the old release, forwarded, moves its head on.
+  s.h.runner.publish({ method: 'thread.event', params: { threadId: t.id, event: { seq: 99, ts: new Date(s.h.clock.now()).toISOString(), threadId: t.id, type: 'user.message', text: 'forwarded live', images: [] } } } as never);
+  s.h.clock.advance(2000);
+  await settle();
+  await second.flushNow();
+  await second.stop();
+  s.calls.length = 0;
+  const third = s.make();
+  third.start();
+  await settle();
+  s.h.clock.advance(SETTLE_MS);
+  await settle();
+  await third.flushNow();
+  s.elsewhere.delete(t.id);
+  s.h.runner.adopt(t.id);
+  s.h.clock.advance(2000);
+  await settle();
+  await third.flushNow();
+  const sent = s.named('sync:appendMessages').flatMap((c) => c.args.messages as { threadId: string; text: string }[]).filter((m) => m.threadId === t.id).map((m) => m.text);
+  assert.ok(sent.includes('written during the handover'), JSON.stringify(sent));
+  await third.stop();
+});
