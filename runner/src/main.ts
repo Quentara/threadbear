@@ -748,8 +748,9 @@ async function main(): Promise<void> {
   setTimeout(() => {
     void lookForFullSyncReason();
     const look = setInterval(() => {
-      // Once it's asked, or been answered, there's nothing left to look for.
-      if (!fullSyncOffer.open) clearInterval(look);
+      // Once it's asked, or been answered, there's nothing left to look for. An
+      // offer waiting to open isn't that: it may fail and need the next look.
+      if (!fullSyncOffer.eligible) clearInterval(look);
       else void lookForFullSyncReason();
     }, ASK_FULL_SYNC_LOOK_MS);
     look.unref?.();

@@ -246,7 +246,12 @@ export class FullSyncOffer {
 
   /** Whether it could still ask, so a caller can skip a lookup. */
   get open(): boolean {
-    return !this.busy && shouldAskFullSync(this.deps.read());
+    return !this.busy && this.eligible;
+  }
+
+  /** Whether it may ever ask: asked, answered or a runner key means no, for good. */
+  get eligible(): boolean {
+    return shouldAskFullSync(this.deps.read());
   }
 
   trigger(reason: FullSyncReason | undefined): void {

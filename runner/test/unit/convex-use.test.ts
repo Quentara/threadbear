@@ -200,3 +200,16 @@ test('while the runner is stopping or handing over it waits, and a later trigger
   t.run();
   assert.deepEqual(t.started, ['machine']);
 });
+
+test("an offer waiting to open isn't the end: only asking or an answer is", () => {
+  const t = offer();
+  t.o.trigger('phone');
+  assert.equal(t.o.open, false, 'busy while it waits');
+  assert.equal(t.o.eligible, true, 'but still eligible, so the hourly look keeps going');
+  t.failOnce();
+  t.run();
+  assert.equal(t.o.eligible, true, 'a thread that would not open leaves it eligible');
+  t.o.trigger('phone');
+  t.run();
+  assert.equal(t.o.eligible, false, 'asked: done for good');
+});
