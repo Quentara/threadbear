@@ -1177,7 +1177,12 @@ impl PaneRow {
             wrapper = wrapper.on_click(cx.listener(move |this, _: &ClickEvent, window, cx| (click)(this, window, cx)));
         }
         if let Some(menu) = self.on_menu {
-            wrapper = wrapper.on_mouse_down(MouseButton::Right, cx.listener(move |this, ev: &MouseDownEvent, window, cx| (menu)(this, ev.position, window, cx)));
+            wrapper = wrapper.on_mouse_down(MouseButton::Right, cx.listener(move |this, ev: &MouseDownEvent, window, cx| {
+                // A row's own menu takes the press before the dock's panel
+                // menu sees it. This covers links, files, pins and schedules.
+                cx.stop_propagation();
+                (menu)(this, ev.position, window, cx);
+            }));
         }
         crate::file_drag::FileDragExt::file_drag(wrapper, self.drag)
     }

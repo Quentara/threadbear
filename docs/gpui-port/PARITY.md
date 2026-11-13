@@ -4950,3 +4950,13 @@ Fixes from Codex's review of the slice before:
   scrolling, ambiguous thread ids and the composer restore/focus paths.
   After rebasing onto current main, the board and ordinary page-navigation
   checks passed together: 11 scenarios and 103 steps on Tinker Desk.
+
+### 2026-11-13 A pane row opens only its own menu (`highlights.rowmenus`)
+
+- Right-clicking a pin, file, link or schedule opened its row menu and the
+  enclosing dock panel's menu. The shared row handler now stops that press
+  before the dock handles it. Board cards already do the same.
+- The regression right-clicks the rendered rows and reads every drawn
+  popup menu. Before the fix, a pinned file opened both menus; afterwards
+  it opens one, with its file actions and Remove. All five row-menu
+  scenarios pass, with 39 steps, on the Linux scripted app.

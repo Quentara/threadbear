@@ -370,6 +370,18 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
             }
             Ok(dump)
         }
+        // The actual menus drawn in this window, including a dock menu
+        // that accidentally opened behind a row's. No menu handlers called.
+        "context-menus" => {
+            window.render_frame(cx);
+            let mut menus = Vec::new();
+            for index in 0..16 {
+                let items: Vec<String> = crate::reply_links::open_menu_items(window, index).into_iter().map(|(title, _)| title).collect();
+                if items.is_empty() { break; }
+                menus.push(items);
+            }
+            Ok(json!(format!("ok {}", serde_json::to_string(&menus).unwrap_or_default())))
+        }
         "status" => Ok(json!("ok")),
         // Finish setting up (setup_panel.rs), as the Swift command.
         "setup" => Ok(json!(app.update(cx, |t, cx| t.setup_command(cmd, cx)))),

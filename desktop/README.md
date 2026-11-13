@@ -141,6 +141,10 @@ comes from embedded bytes, even when the registry is present.
 The printed build log receives both output streams as the build runs,
 whether here or on another Mac. Failed builds keep the full log.
 
+`context-menus` lists the popup menus actually drawn in the scripted window,
+with each menu's item titles. It reads the rendered menus rather than
+calling a menu builder, so a test can catch two menus opening for one click.
+
 ## Seeing it on a server
 
 `scripts/shot.sh OUT_DIR [--home DIR] [--click X,Y | --type TEXT | --key KEY]...`
