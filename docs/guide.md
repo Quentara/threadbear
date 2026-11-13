@@ -1239,7 +1239,7 @@ past this, as it could with anything on your Mac.
 <!-- slug: open-anything -->
 
 In the new desktop app (the `gpuiApp` experiment), with the Open Anything
-experiment on (Settings > General > Experiments; [Experiments](experiments.md)),
+experiment on (Settings > General > Experiments; [Experiments](#experiments)),
 ⌘K or ⌘P from anywhere in the main window puts a box over it, with the rest
 dimmed. Type part of a name and
 it finds threads, panels, projects and the app's own pages, in that order of
