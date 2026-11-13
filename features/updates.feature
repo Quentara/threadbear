@@ -118,6 +118,16 @@ Feature: The Updates panel
     When I write "not before Friday" as my own answer to ask 1
     Then a restart onto it waits for the words typed
 
+  # Which field, not just "a field": a hold on words typed somewhere sat for
+  # hours on 13 Nov with nobody able to find the box.
+  @system.selfupdate @swift-pending
+  Scenario: The next version names the field it's waiting for
+    When the app's next version, def5678, is ready
+    And I open the thread "Ship the beta to TestFlight"
+    And I write "not before Friday" as my own answer to ask 1
+    And I open the Updates panel
+    Then the Updates panel lists "The app's next version (def5678) is ready. It switches in once what you're typing in a card's Something else box is sent, saved or cleared, or now."
+
   # Windows has no foreground-process check for ConPTY yet. Every live shell
   # holds a restart, as it could be running a command the app cannot see.
   @system.selfupdate @swift-pending @windows-pending

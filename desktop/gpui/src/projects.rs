@@ -794,7 +794,7 @@ impl Threadbear {
         }
         let input = cx.new(|cx| InputState::new(window, cx).placeholder("Title").default_value(project.title.clone()));
         // A new title typed and not yet saved: an update's restart waits for it.
-        crate::unsent::watch(&input, cx);
+        crate::unsent::watch(&input, "a project's new title", cx);
         let id = project.id.clone();
         let events = cx.subscribe_in(&input, window, move |this, input, ev: &InputEvent, window, cx| match ev {
             InputEvent::PressEnter { .. } => {
@@ -843,7 +843,7 @@ impl Threadbear {
         let input = cx.new(|cx| TextareaState::new(window, cx).auto_grow(rows.0, rows.1).default_value(text));
         // Changes not yet saved (they're saved with Save, not as typed): an
         // update's restart waits for them.
-        crate::unsent::watch(&input, cx);
+        crate::unsent::watch(&input, "a project's goals, state or notes being edited", cx);
         let events = cx.subscribe_in(&input, window, |this, _, ev: &InputEvent, window, cx| {
             // ⌘Return saves, as the Swift box's Save shortcut does.
             if let InputEvent::PressEnter { secondary: true, .. } = ev {

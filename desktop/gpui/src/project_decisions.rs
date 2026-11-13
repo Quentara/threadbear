@@ -229,7 +229,7 @@ impl AskHost for DecisionCard {
         let input = cx.new(|cx| TextareaState::new(window, cx).placeholder("Say something else…").auto_grow(1, 8).submit_on_enter(true));
         // Its words are only here until they're sent, what was typed before
         // too: an update's restart waits for them (unsent.rs).
-        crate::unsent::watch(&input, cx);
+        crate::unsent::watch(&input, "a decision's Something else box on a project's page", cx);
         if !existing.is_empty() {
             input.update(cx, |s, cx| s.set_value(existing, window, cx));
         }

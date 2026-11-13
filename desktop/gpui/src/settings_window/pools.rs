@@ -142,7 +142,7 @@ impl SettingsWindow {
         let name = cx.new(|cx| InputState::new(window, cx).placeholder("Pool name").default_value(title));
         // A new name typed and not yet taken: an update's restart waits for
         // it. What it's filled with from the pool is saved (`fill_name`).
-        crate::unsent::watch(&name, cx);
+        crate::unsent::watch(&name, "a pool's name in Settings", cx);
         let sub = cx.subscribe_in(&name, window, |this, _, ev: &InputEvent, window, cx| {
             if matches!(ev, InputEvent::PressEnter { .. } | InputEvent::Blur) {
                 this.commit_pool_name(window, cx);

@@ -247,7 +247,7 @@ impl Composer {
         let input = cx.new(|cx| TextareaState::new(window, cx).placeholder("Say something else…").auto_grow(1, 8).submit_on_enter(true));
         // Its words are only here until they're sent: an update's restart
         // waits for them (unsent.rs).
-        crate::unsent::watch(&input, cx);
+        crate::unsent::watch(&input, "a card's Something else box", cx);
         // What was answered before (a refused send put back), its pictures
         // as chips again.
         if !existing.is_empty() {

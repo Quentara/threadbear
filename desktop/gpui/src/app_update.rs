@@ -585,8 +585,8 @@ impl Threadbear {
         if self.schedule_editor.is_some() {
             return s("the schedule you're editing is saved or closed");
         }
-        if crate::unsent::any(cx) {
-            return s("what you're typing in a field is saved or cleared");
+        if let Some(field) = crate::unsent::first(cx) {
+            return format!("what you're typing in {field} is sent, saved or cleared");
         }
         if crate::terminal::holds_a_restart(cx) {
             return s("the Terminal's shell is back at an empty prompt");
