@@ -202,4 +202,5 @@ test('post-gesture looks again before it touches and before every event', () => 
   assert.ok(fn < each && each < gesture.indexOf('cg.post(tap:'), 'every event is checked before it goes');
   assert.match(gesture, /timedOut/, 'the guard program has a deadline');
   assert.match(gesture, /terminationStatus == 0/, 'and must exit cleanly');
+  assert.match(gesture, /over\[\.\.<mine\]\.allSatisfy\(\{ \$0\.overlay \}\)/, 'only the Dock overlay may be over the app at the start');
 });

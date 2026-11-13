@@ -4,21 +4,26 @@ import CoreGraphics
 
 let app: Int32 = 100, target: Int32 = 555, alert: Int32 = 200, dock: Int32 = 10
 let from = CGPoint(x: 400, y: 300), to = CGPoint(x: 800, y: 300)
+let mine = [Over(number: 1, pid: app)]
+let overlay = Over(number: 9, pid: dock, overlay: true)
+let popup = Over(number: 7, pid: alert)
 
 struct Run { var code: Int32; var sent: [Input] }
-/// `owner` and `stack` answer from the step count so far: a window can come up mid-drag.
+/// `owner` and `stack` answer from the steps posted so far: a window can come up mid-drag.
 func run(_ f: CGPoint = from, _ t: CGPoint = to, pids: Pids? = Pids(press: app, drop: app),
          owner: @escaping (CGPoint, Int) -> Int32? = { _, _ in app },
-         stack: @escaping (CGPoint, Int) -> [(number: Int, pid: Int32)] = { _, _ in [(1, app)] }) -> Run {
+         stack: @escaping (CGPoint, Int) -> [Over] = { _, _ in mine },
+         front: Int32? = app) -> Run {
     var sent: [Input] = []
-    var dragged = 0
+    var posted = 0
     let code = drag(from: f, to: t, hold: 0, press: 0, pids: pids,
-                    look: Look(owner: { owner($0, dragged) }, stack: { stack($0, dragged) }),
-                    post: { if case .dragged = $0 { dragged += 1 }; sent.append($0) }, wait: { _ in }, shoot: {}, say: { _ in })
+                    look: Look(owner: { owner($0, posted) }, stack: { stack($0, posted) }, front: { front }),
+                    post: { if case .move = $0 {} else { posted += 1 }; sent.append($0) }, wait: { _ in }, shoot: {}, say: { _ in })
     return Run(code: code, sent: sent)
 }
 func check(_ ok: Bool, _ label: String) { precondition(ok, label) }
 func ups(_ r: Run) -> [CGPoint] { r.sent.compactMap { if case .up(let p) = $0 { return p } else { return nil } } }
+func steps(_ r: Run) -> [CGPoint] { r.sent.compactMap { if case .dragged(let p) = $0 { return p } else { return nil } } }
 let pressed = { (r: Run) in r.sent.contains { if case .down = $0 { return true } else { return false } } }
 
 // Unguarded, as the other tools use it: the same events as ever.
@@ -27,39 +32,61 @@ check(r.code == 0 && r.sent.count == 43 && r.sent.first == .move(from) && r.sent
 // Guarded and clear all the way: the same events.
 r = run()
 check(r.code == 0 && r.sent.count == 43 && r.sent.last == .up(to) && !r.sent.contains(.escape), "a clear drag")
-// The press point changed hands during the hover: only the move went out.
+
+// The press: changed hands during the hover, the guard failed, or a window
+// came up between the guard's answer and the window list.
 r = run(owner: { _, _ in alert })
 check(r.code == 3 && r.sent == [.move(from)], "press refused after the hover")
-// The guard program failed or hung (nil): the same.
 r = run(owner: { _, _ in nil })
 check(r.code == 3 && r.sent == [.move(from)], "guard failure presses nothing")
-// A click: looked at before the press.
-r = run(from, from, owner: { _, _ in alert })
-check(r.code == 3 && !pressed(r), "click refused")
-r = run(from, from)
-check(r.code == 0 && r.sent == [.move(from), .down(from), .up(from)], "a click")
-// An alert comes up over the path after 10 steps: Escape, back along the
-// path to the press point, released there; never a step or release on the alert.
-let alertFrom = { (p: CGPoint, n: Int) -> [(number: Int, pid: Int32)] in n >= 10 && p.x > 650 ? [(7, alert), (1, app)] : [(1, app)] }
-r = run(stack: alertFrom)
-check(r.code == 3 && r.sent.contains(.escape) && ups(r) == [from], "cancel goes back to the press point")
-check(!r.sent.contains { if case .dragged(let p) = $0 { return p.x > 650 } else { return false } }, "no step over the alert")
-// Back blocked too (something came up behind): released at the last clear step, which was the app's.
-r = run(stack: { p, n in n >= 10 && (p.x > 650 || p.x < 480) ? [(7, alert), (1, app)] : [(1, app)] })
-check(r.code == 3 && ups(r).count == 1 && ups(r)[0].x >= 480 && ups(r)[0].x <= 650, "released at the last clear step")
+r = run(stack: { _, _ in [popup] + mine })
+check(r.code == 3 && r.sent == [.move(from)], "a window over the app at the press isn't trusted, whatever the guard said")
+r = run(stack: { _, _ in [popup] })
+check(r.code == 3 && !pressed(r), "no app window under the press")
+
+// The Dock's overlay over everything, let through at the press: looked through all the way.
+r = run(stack: { _, _ in [overlay] + mine })
+check(r.code == 0 && r.sent.last == .up(to), "the Dock's overlay is looked through")
+// Another window of the Dock's, not the overlay, is not.
+r = run(stack: { p, _ in p.x > 600 ? [Over(number: 8, pid: dock)] + mine : [overlay] + mine })
+check(r.code == 3 && ups(r) == [from], "another Dock window stops the drag")
+
+// An alert comes up over the path after 10 steps: Escape (the app's in
+// front), straight back to the press point, released there.
+let late = { (p: CGPoint, n: Int) -> [Over] in n >= 11 && p.x > 650 ? [popup] + mine : mine }
+r = run(stack: late)
+check(r.code == 3 && r.sent.contains(.escape) && ups(r) == [from] && steps(r).last == from, "cancel jumps back to the press point")
+check(!steps(r).contains { $0.x > 650 }, "no step over the alert")
+// The alert's app came in front: no Escape for it.
+r = run(stack: late, front: alert)
+check(r.code == 3 && !r.sent.contains(.escape) && ups(r) == [from], "no Escape to another app")
+// The press point is covered by then: released at the nearest clear step on the way.
+r = run(stack: { p, n in n >= 11 && (p.x > 650 || p.x < 480) ? [popup] + mine : mine })
+check(r.code == 3 && ups(r).count == 1 && ups(r)[0].x >= 480 && ups(r)[0].x <= 650 && steps(r).last == ups(r)[0], "released at the nearest clear step")
+// The point it jumps back to is covered by the time it would let go: the next one.
+var looks = 0
+r = run(stack: { p, n in
+    guard n >= 11 else { return mine }
+    if p.x > 650 { return [popup] + mine }
+    if p == from { looks += 1; return looks > 1 ? [popup] + mine : mine }
+    return mine })
+check(r.code == 3 && ups(r).count == 1 && ups(r)[0] != from, "a fresh look before letting go")
+// Nowhere clear: let go where it is (the window server hands it to the app that had the press).
+r = run(stack: { _, n in n >= 11 ? [popup] + mine : mine })
+check(r.code == 3 && ups(r).count == 1, "nowhere clear still lets go once")
+
 // The drop's owner changed (or the guard failed) at the end: cancelled, back to the press point.
 r = run(owner: { p, _ in p == to ? nil : app })
 check(r.code == 3 && r.sent.contains(.escape) && ups(r) == [from], "drop refused")
 // A drop on our own target beside the app: steps over either are fine.
-r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p.x >= 600 ? target : app }, stack: { p, _ in p.x >= 600 ? [(5, target), (1, app)] : [(1, app)] })
+r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p.x >= 600 ? target : app }, stack: { p, _ in p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine })
 check(r.code == 0 && r.sent.last == .up(to), "drag to our drop target")
-// The Dock's overlay over everything, let through at the press: still let through.
-r = run(stack: { _, _ in [(9, dock), (1, app)] })
-check(r.code == 0, "overlay already over the press is let through")
-// But a different overlay window, even the same app's, is not.
-r = run(stack: { p, _ in p.x > 600 ? [(8, dock), (1, app)] : [(9, dock), (1, app)] })
-check(r.code == 3, "a new overlay window is not")
-// The app's window not under the press at all: nothing pressed.
-r = run(stack: { _, _ in [(7, alert)] })
-check(r.code == 3 && !pressed(r), "no app window under the press")
+
+// A click: looked at before the press and before letting go.
+r = run(from, from, owner: { _, _ in alert })
+check(r.code == 3 && !pressed(r), "click refused")
+r = run(from, from)
+check(r.code == 0 && r.sent == [.move(from), .down(from), .up(from)], "a click")
+r = run(from, from, stack: { _, n in n >= 1 ? [popup] + mine : mine }, front: alert)
+check(r.code == 3 && !r.sent.contains(.escape) && ups(r).count == 1, "something over a click before it lets go")
 print("realdrag checks passed")

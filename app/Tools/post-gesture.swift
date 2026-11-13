@@ -29,7 +29,15 @@ usleep(350_000)
 // the lift) if a window has come up over the point since. A guard program
 // that fails, hangs past 2 s or says nothing counts as changed. Exit 3 says so.
 let env = ProcessInfo.processInfo.environment
-func covering() -> [(number: Int, pid: Int32)] {
+// The Dock's whole-screen see-through window (the Dock's own, layer 20, named
+// Dock, a display's size): the one window the guard can let a click through,
+// and so the only one the fingers may be over besides the app.
+let dockPID = NSRunningApplication.runningApplications(withBundleIdentifier: "com.apple.dock")
+    .first { $0.bundleURL?.path == "/System/Library/CoreServices/Dock.app" }?.processIdentifier
+var displayIDs = [CGDirectDisplayID](repeating: 0, count: 32)
+var displayCount: UInt32 = 0
+let displays = CGGetActiveDisplayList(32, &displayIDs, &displayCount) == .success ? displayIDs.prefix(Int(displayCount)).map { CGDisplayBounds($0) } : []
+func covering() -> [(number: Int, pid: Int32, overlay: Bool)] {
     let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
     return list.compactMap { w in
         guard let b = w[kCGWindowBounds as String] as? [String: Double], (w[kCGWindowAlpha as String] as? Double ?? 1) > 0,
@@ -37,7 +45,9 @@ func covering() -> [(number: Int, pid: Int32)] {
               let x = b["X"], let y = b["Y"], let wd = b["Width"], let h = b["Height"],
               CGRect(x: x, y: y, width: wd, height: h).contains(p),
               let pid = w[kCGWindowOwnerPID as String] as? Int32 else { return nil }
-        return (w[kCGWindowNumber as String] as? Int ?? -1, pid)
+        let overlay = dockPID != nil && pid == dockPID && w[kCGWindowLayer as String] as? Int == 20
+            && w[kCGWindowName as String] as? String == "Dock" && displays.contains(CGRect(x: x, y: y, width: wd, height: h))
+        return (w[kCGWindowNumber as String] as? Int ?? -1, pid, overlay)
     }
 }
 var want: Int32?
@@ -58,7 +68,9 @@ if let tool = env["PG_GUARD"], let pid = env["PG_PID"].flatMap({ Int32($0) }) {
         }
     }
     let over = covering()
-    guard said.split(separator: " ").first.flatMap({ Int32($0) }) == pid, let mine = over.firstIndex(where: { $0.pid == pid }) else {
+    // Anything over the app there but the Dock's overlay came up between the two looks.
+    guard said.split(separator: " ").first.flatMap({ Int32($0) }) == pid, let mine = over.firstIndex(where: { $0.pid == pid }),
+          over[..<mine].allSatisfy({ $0.overlay }) else {
         fputs("post-gesture: the window at (\(Int(p.x)), \(Int(p.y))) isn't \(pid)'s any more; nothing posted\n", stderr)
         exit(3)
     }
