@@ -14,6 +14,7 @@ import { isMoved, mergeSummaries, type Bucket } from './handover.ts';
 import { AUTH_VERSION, authProof, isNonce, isThreadId, newNonce, proofMatches, threadKey, type AuthChannel } from './rpc-auth.ts';
 import type { CallerGate } from './rpc-gate.ts';
 import { cutSafely } from './safe-cut.ts';
+import { wellFormedJson } from './well-formed-json.ts';
 
 type Conn = {
   id: number;
@@ -398,7 +399,8 @@ export class RpcServer {
       return;
     }
     if (skippable && buffered > (this.opts.skipDeltasBytes ?? SKIP_DELTAS_BYTES)) return;
-    conn.ws.send(msg);
+    // No half emoji: the apps' JSON parsers refuse the message (well-formed-json.ts).
+    conn.ws.send(wellFormedJson(msg));
   }
 
   private broadcast(n: Notification): void {

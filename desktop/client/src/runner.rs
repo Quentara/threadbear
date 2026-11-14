@@ -717,7 +717,18 @@ impl Client {
                 Ok(Message::Close(_)) | Err(_) => break,
                 Ok(_) => continue,
             };
-            let Ok(v) = serde_json::from_str::<Value>(text.as_str()) else { continue };
+            let v = match serde_json::from_str::<Value>(text.as_str()) {
+                Ok(v) => v,
+                Err(e) => {
+                    // Say so: a reply dropped here leaves its call waiting
+                    // out its whole timeout with nothing in the log (14 Nov:
+                    // half an emoji in one event, a "\ud83e" serde refuses,
+                    // kept a thread from opening). Where it broke, never
+                    // what it says, as it may hold anything.
+                    log::write("rpc", &format!("dropped a message from the runner that isn't JSON ({} bytes): {e}", text.len()));
+                    continue;
+                }
+            };
             self.dispatch(v);
         }
         hello.abort();

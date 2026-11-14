@@ -4,6 +4,9 @@ The app and the runner talk JSON-RPC 2.0 over a WebSocket at
 `ws://127.0.0.1:8797/rpc`. One JSON object per WebSocket text message.
 Both sides must ignore unknown fields and unknown event types so either can be
 upgraded first. Times are ISO 8601 strings in UTC. Ids are strings.
+Strings are always well-formed: the runner sends half of a character past
+U+FFFF (a cut through an emoji, a `\ud83e` escape on its own) as U+FFFD, since
+strict JSON parsers (serde_json, Swift's) refuse the whole message over it.
 
 Readers keep valid fields and list entries when another field or entry has
 the wrong type. An unreadable identity drops that row. Routing and authorization
