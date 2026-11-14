@@ -60,8 +60,71 @@ sub stopping {
     return $cancelled;
 }
 
+# Who holds the perf lock, for whoever is waiting. lsof can't say: every
+# waiter has the file open too, and a waiter at 0% CPU looked like a holder
+# that never started its run (14 Nov: a thread killed its own queued --desk
+# run, three minutes after it had finally got the lock and started).
+my $holder_file = "$home/.cache/threadbear-perf.lock.holder";
+sub holder_text {
+    open(my $in, '<', $holder_file) or return 'whoever holds it left no note (an older perf-lock.pl or lockf)';
+    my ($pid, $since, $label) = map { my $l = $_ // ''; chomp $l; $l } (<$in>)[0 .. 2];
+    close $in;
+    return 'whoever holds it left no note' unless ($pid // '') =~ /^\d+$/ && ($since // '') =~ /^\d+$/;
+    my $mins = int((time - $since) / 60);
+    my $alive = kill(0, $pid) ? '' : '; its run has ended and its cleanup is stopping what it left';
+    return "held by perf-lock pid $pid for ${mins}m, running: $label$alive";
+}
+sub write_holder {
+    my $label = $ENV{THREADBEAR_PERF_LOCK_LABEL} // join(' ', @ARGV);
+    $label =~ s/\s+/ /g;
+    $label = substr($label, 0, 157) . '...' if length($label) > 160;
+    my $tmp = "$holder_file.$$";
+    open(my $out, '>', $tmp) or return;
+    print {$out} "$$\n", time, "\n$label\n";
+    close $out;
+    rename($tmp, $holder_file) or unlink($tmp);
+}
+my $wrote_holder = 0;
+# And how many runs are queued ahead: one file per waiter, named by its pid,
+# holding when it started waiting. Only a living pid counts.
+my $main_pid = $$;
+my $waiting_dir = "$holder_file" =~ s/\.holder$/.waiting/r;
+my $waiting_since;
+sub start_waiting {
+    make_path($waiting_dir);
+    $waiting_since = time;
+    open(my $out, '>', "$waiting_dir/$$") or return;
+    print {$out} "$waiting_since\n";
+    close $out;
+}
+sub stop_waiting { unlink("$waiting_dir/$main_pid") if defined $waiting_since; }
+sub queued_ahead {
+    return 0 unless defined $waiting_since && opendir(my $dir, $waiting_dir);
+    my $ahead = 0;
+    for my $pid (grep { /^\d+$/ && $_ != $$ } readdir $dir) {
+        open(my $in, '<', "$waiting_dir/$pid") or next;
+        my $since = <$in>; close $in;
+        $ahead++ if defined($since) && $since =~ /^(\d+)$/ && $1 <= $waiting_since && kill(0, $pid);
+    }
+    closedir $dir;
+    return $ahead;
+}
+sub queue_text {
+    my $n = queued_ahead();
+    return $n ? "; $n other run" . ($n == 1 ? '' : 's') . " waiting since before this one" : '';
+}
+END {
+    # The locker and watcher forks run END too: only the supervisor tidies.
+    stop_waiting() if $$ == $main_pid;
+    # Only our own note: a later holder may already have written its own.
+    if ($$ == $main_pid && $wrote_holder && open(my $in, '<', $holder_file)) {
+        my $pid = <$in>; close $in;
+        unlink($holder_file) if defined($pid) && $pid =~ /^(\d+)$/ && $1 == $$;
+    }
+}
+
 sub wait_for_lock {
-    my ($lock, @held) = @_;
+    my ($lock, $what, @held) = @_;
     pipe(my $ready_r, my $ready_w) or die "perf-lock: ready pipe: $!\n";
     pipe(my $live_r, my $live_w) or die "perf-lock: owner pipe: $!\n";
     my $locker = fork() // die "perf-lock: locker fork: $!\n";
@@ -91,8 +154,12 @@ sub wait_for_lock {
     }
     close $live_r;
     my $ready = IO::Select->new($ready_r);
+    my $next_note = time + 300;
     while (!$ready->can_read(0.1)) {
         last if stopping();
+        next unless $what && time >= $next_note;
+        $next_note = time + 300;
+        print STDERR "Still waiting for $what on $host: " . holder_text() . queue_text() . "\n";
     }
     close $live_w if $cancelled;
     my $count = $cancelled ? 0 : sysread($ready_r, my $byte, 1);
@@ -120,8 +187,10 @@ for my $spec (["$home/.cache/threadbear-perf.lock", 'another build or measuremen
         while (!$locked) {
             die "perf-lock: lock $spec->[0]: $!\n" unless $! == EAGAIN || $! == EWOULDBLOCK || $! == EINTR;
             exit $cancelled if stopping();
-            print STDERR "Waiting for $spec->[1] on $host ($spec->[0])...\n" unless $said++;
-            wait_for_lock($lock, @locks);
+            my $perf = $spec->[0] eq "$home/.cache/threadbear-perf.lock";
+            start_waiting() if $perf && !defined $waiting_since;
+            print STDERR "Waiting for $spec->[1] on $host ($spec->[0])" . ($perf ? ', ' . holder_text() . queue_text() : '') . "...\n" unless $said++;
+            wait_for_lock($lock, $perf ? $spec->[1] : '', @locks);
             $locked = 1;
         }
         exit $cancelled if stopping();
@@ -131,6 +200,7 @@ for my $spec (["$home/.cache/threadbear-perf.lock", 'another build or measuremen
         my @named = stat($spec->[0]);
         next unless @named && $opened[0] == $named[0] && $opened[1] == $named[1];
         push @locks, $lock;
+        if ($spec->[0] eq "$home/.cache/threadbear-perf.lock") { stop_waiting(); write_holder(); $wrote_holder = 1; }
         last;
     }
 }

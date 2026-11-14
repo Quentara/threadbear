@@ -76,6 +76,27 @@ test('measurements wait, explain why, and keep both locks for their whole run', 
   assert.match(second.output, /second/);
 });
 
+test('a waiter is told who holds the perf lock, and the note goes with the holder', async (t) => {
+  // lsof can't tell a holder from a waiter: both have the file open.
+  const h = host(t);
+  const note = path.join(h.home, '.cache/threadbear-perf.lock.holder');
+  const first = h.run(['sh', '-c', 'echo first; sleep 3'], { THREADBEAR_PERF_LOCK_LABEL: 'remote.sh from slot-9 --desk: film the paw' });
+  await until(() => first.output.includes('first'), 'first did not start');
+  assert.match(fs.readFileSync(note, 'utf8'), new RegExp(`^${first.pid}\\n\\d+\\nremote.sh from slot-9 --desk: film the paw\\n$`));
+  const second = h.run(['sh', '-c', 'echo second']);
+  await until(() => second.output.includes('Waiting for'), 'no waiting message');
+  assert.match(second.output, new RegExp(`held by perf-lock pid ${first.pid} for 0m, running: remote.sh from slot-9 --desk: film the paw\\.\\.\\.`));
+  await pause(1100); // the queue is ordered by whole seconds
+  const third = h.run(['sh', '-c', 'echo third']);
+  await until(() => third.output.includes('Waiting for'), 'third did not wait');
+  assert.match(third.output, /; 1 other run waiting since before this one\.\.\./);
+  assert.equal(await first.done, 0);
+  assert.equal(await second.done, 0);
+  assert.equal(await third.done, 0);
+  assert.ok(!fs.existsSync(note), 'the last holder left its note behind');
+  assert.deepEqual(fs.readdirSync(path.join(h.home, '.cache/threadbear-perf.lock.waiting')), [], 'a waiter left its file behind');
+});
+
 test('a check lock acquired first blocks measurement, and no check can start during it', async (t) => {
   const h = host(t);
   fs.mkdirSync(path.join(h.home, '.cache/threadbear-check'), { recursive: true });

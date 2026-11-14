@@ -300,7 +300,12 @@ File references are where to look.
   `~/.cache/threadbear-check/gpui` and copies the two binaries back with scp
   (`desktop/scripts/remote.sh`). Remote commands and performance tools keep
   `~/.cache/threadbear-perf.lock` and `~/.cache/threadbear-check/lock` on the
-  host while they run, waiting for other builds, checks and measurements.
+  host while they run, waiting for other builds, checks and measurements,
+  with a note beside the first (`threadbear-perf.lock.holder`: its pid, when
+  it took the lock and what it's running) so a waiting run can say who it's
+  waiting for. The holder deletes it when it finishes. Each waiting run keeps
+  a file in `threadbear-perf.lock.waiting` until it gets the lock, so the
+  others can say how many are queued ahead.
   Temporary wrappers under the run's temp folder background Cargo and Swift
   builds and are removed when the run ends. Performance runs register their
   process groups and start times in `~/.cache/threadbear-check/perf-children-*`

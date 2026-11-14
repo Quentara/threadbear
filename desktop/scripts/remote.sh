@@ -262,11 +262,16 @@ $postlude"
 script="$base/run-$tag.sh"
 "${SSH[@]}" "$host" "cat > $script" <<<"$run"
 alive_stdin 7
+# What a run waiting for the host's perf lock is told the holder is running
+# (perf-lock.pl's holder note): the checkout's folder, which names the thread's
+# slot, and the command.
+label="remote.sh from $(basename "$root")$([ "$desk" = 1 ] && printf ' --desk' || true): $*"
+label="THREADBEAR_PERF_LOCK_LABEL=$(single_quoted "${label:0:200}")"
 if [ "$desk" = 1 ]; then
   pidfile="$base/run-$tag.pid"
-  remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl --desk $pidfile bash $script $pidfile"
+  remote="env $label THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl --desk $pidfile bash $script $pidfile"
 else
-  remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl - bash $script"
+  remote="env $label THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl - bash $script"
 fi
 "${SSH[@]}" "$host" "$remote; rc=\$?; rm -f $script; rm -rf $boot; exit \$rc" <&7 &
 ssh_pid=$!

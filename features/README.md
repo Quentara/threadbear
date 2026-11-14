@@ -101,7 +101,13 @@ is delayed. Its script is temporary and no model runs.
 
 `desktop/scripts/remote.sh` takes `~/.cache/threadbear-perf.lock`, then
 `~/.cache/threadbear-check/lock`, for the whole command, including a build
-followed by a benchmark. It waits and says what it is waiting for. Other
+followed by a benchmark. It waits and says what it is waiting for, and who
+holds the lock (its pid, how long it has had it, what it's running) and how many
+runs are queued ahead, again every five minutes. The holder is in
+`~/.cache/threadbear-perf.lock.holder` on the host, the waiters in
+`~/.cache/threadbear-perf.lock.waiting`. Read that file, not `lsof`, to see who holds it: every waiter has the
+lock file open too, so a waiter at 0% CPU looks like a stuck holder. A thread
+killed its own queued run that way on 14 Nov. Other
 checkouts and landing checks cannot build over a measurement. Cargo and Swift
 build executables run at background priority; the benchmark keeps normal
 priority. Cancellation keeps the locks until the remote command has stopped.
