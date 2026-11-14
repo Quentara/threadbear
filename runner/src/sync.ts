@@ -11,6 +11,7 @@
 // key the deployment's RUNNER_KEY was set to (`npx convex env set`).
 // THREADBEAR_SYNC=off turns it off whatever runner.json says, which
 // check.sh sets so no test runner ever writes to the real project.
+import { wellFormedJson } from './well-formed-json.ts';
 import { moveInfoFrom, type MoveInfo, type MovePreview, type MoveRow, type MovesBackend } from './moves.ts';
 import { START_CARD } from './cross-runner.ts';
 import { asPushFailing, pushFailingText, type PushFailing } from './push-failing.ts';
@@ -719,7 +720,9 @@ export function convexPoster(url: string, fetchFn: typeof fetch = fetch): Post {
     const res = await fetchFn(`${base}/api/${kind}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: fn, args, format: 'json' }),
+      // No half emoji (a cut through one in a message or a tool line):
+      // the phone and the website read these back strictly too (well-formed-json.ts).
+      body: wellFormedJson(JSON.stringify({ path: fn, args, format: 'json' })),
       redirect: 'error',
       signal: AbortSignal.timeout(POST_TIMEOUT_MS),
     });

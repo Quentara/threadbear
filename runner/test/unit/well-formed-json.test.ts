@@ -12,6 +12,7 @@ import { makeHarness } from '../helpers/fakes.ts';
 import { wellFormedJson } from '../../src/well-formed-json.ts';
 import { cutSafely, safeEnd, safeStart, tailSafely } from '../../src/safe-cut.ts';
 import { toolTitle } from '../../src/tools.ts';
+import { convexPoster } from '../../src/sync.ts';
 
 const THREAD = '\u{1F9F5}'; // 🧵, two UTF-16 halves
 const HIGH = THREAD[0];
@@ -87,4 +88,18 @@ test('a transcript page with a lone half already saved reaches the app as JSON a
     c.close();
     await server.close();
   }
+});
+
+// Codex's review of the first fix: sync to Convex has cuts of its own (a
+// message at 8,000, a tool line at 200), and its posts didn't go through the
+// socket's repair.
+test('what goes to Convex has no lone half either', async () => {
+  const bodies: string[] = [];
+  const fetchFn = (async (_url: string, init: RequestInit) => {
+    bodies.push(init.body as string);
+    return { ok: true, status: 200, json: async () => ({ status: 'success', value: null }) } as Response;
+  }) as unknown as typeof fetch;
+  await convexPoster('https://x.convex.cloud', fetchFn)('mutation', 'sync:push', { text: `${'a'.repeat(7999)}${HIGH}`, whole: THREAD });
+  assert.ok(!hasLoneEscape(bodies[0]!));
+  assert.deepEqual(JSON.parse(bodies[0]!).args, { text: `${'a'.repeat(7999)}\uFFFD`, whole: THREAD });
 });
