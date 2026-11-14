@@ -81,6 +81,11 @@ export type RunnerStatus = {
   liveClis: number;
   running: string[]; // starting, running or waiting on an approval or a question
   background?: Background[]; // background shells and subagents still going
+  // Every thread a restart would wait for: running, background work, a
+  // turn-end hook, or between turns (busy() below). For deploy.mjs's
+  // --check-idle, which install-runner.sh asks again right before it stops
+  // the runner; running and background alone missed hooks.
+  busy?: string[];
   pendingRestart?: { when: RestartWhen; reason?: string; release?: string; resumeThreadId?: string; requestedAt: string; backgroundUntil?: string; waitingFor: string[] };
   // This release is running because launch.mjs went back to it from `from`,
   // which kept crashing at startup. A deploy's health check can pass before
@@ -321,6 +326,7 @@ export class Restarter {
       liveClis: all.filter((t) => t.live).length,
       running,
       background: this.deps.runner.backgroundWork(),
+      busy: this.busy(),
     };
     if (this.deps.release) out.release = this.deps.release;
     if (this.deps.branch) out.branch = this.deps.branch;

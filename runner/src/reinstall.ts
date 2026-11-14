@@ -128,18 +128,35 @@ export function installArgs(checkout: string, home: string, env: NodeJS.ProcessE
 }
 
 // This runner's launchd label: launchd sets XPC_SERVICE_NAME to it for
-// its jobs and their children.
-export function jobLabel(env: NodeJS.ProcessEnv, platform: NodeJS.Platform): string {
-  const name = env.XPC_SERVICE_NAME;
-  if (platform === 'darwin' && name && /^[A-Za-z0-9._-]+$/.test(name) && name !== '0') return name;
+// its jobs and their children. On Linux, the systemd unit it runs in, from
+// its cgroup (install-runner.sh names the unit <label>.service).
+export function jobLabel(env: NodeJS.ProcessEnv, platform: NodeJS.Platform, cgroup: () => string = readCgroup): string {
+  const ok = (s: string | undefined): s is string => Boolean(s && /^[A-Za-z0-9._-]+$/.test(s) && s !== '0');
+  if (platform === 'darwin') return ok(env.XPC_SERVICE_NAME) ? env.XPC_SERVICE_NAME : DEFAULT_LABEL;
+  if (platform === 'linux') {
+    const unit = /\/([^/\s]+)\.service\s*$/m.exec(cgroup())?.[1];
+    if (ok(unit)) return unit;
+  }
   return DEFAULT_LABEL;
+}
+
+function readCgroup(): string {
+  try {
+    return fs.readFileSync('/proc/self/cgroup', 'utf8');
+  } catch {
+    return '';
+  }
 }
 
 // The environment install-runner.sh gets: enough to find Node, git, swiftc
 // and the login shell's PATH, and nothing of a thread's (it refuses to run
 // from inside one) or a dev runner's THREADBEAR_HOME.
 export function jobEnv(env: NodeJS.ProcessEnv, resultFile: string): Record<string, string> {
-  const out: Record<string, string> = { THREADBEAR_INSTALL_QUIET: '1', TB_REINSTALL_RESULT: resultFile, THREADBEAR_NODE: process.execPath };
+  // No THREADBEAR_NODE: process.execPath is Node's real path, a Homebrew
+  // Cellar folder that `brew upgrade` deletes while this runner keeps
+  // running from it. The plist's PATH starts with the folder of the Node it
+  // pins (the opt/ link for Homebrew's), so install-runner.sh finds that.
+  const out: Record<string, string> = { THREADBEAR_INSTALL_QUIET: '1', TB_REINSTALL_RESULT: resultFile };
   for (const k of ['HOME', 'USER', 'LOGNAME', 'SHELL', 'PATH', 'LANG', 'TMPDIR', 'THREADBEAR_SIGN_IDENTITY']) {
     const v = env[k];
     if (v) out[k] = v;

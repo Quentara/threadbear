@@ -186,11 +186,15 @@ test("the job's arguments and environment: a sandbox names its home and label; n
   const sandbox = { ...env, XPC_SERVICE_NAME: 'com.mikerosoft.threadbear.runner.devtest', THREADBEAR_PORT: '0' };
   assert.deepEqual(installArgs('/c', '/tmp/sb', sandbox, 'darwin'), ['/c/runner/scripts/install-runner.sh', '--home', '/tmp/sb', '--label', 'com.mikerosoft.threadbear.runner.devtest', '--runner-app', '/Users/me/Applications/Threadbear Runner.app', '--port', '0']);
   assert.equal(jobLabel({ XPC_SERVICE_NAME: '0' }, 'darwin'), 'com.mikerosoft.threadbear.runner', 'a process launchd didn\'t start');
-  assert.equal(jobLabel({ XPC_SERVICE_NAME: 'x.y' }, 'linux'), 'com.mikerosoft.threadbear.runner');
-  const e = jobEnv(env, '/r');
+  assert.equal(jobLabel({ XPC_SERVICE_NAME: 'x.y' }, 'linux', () => ''), 'com.mikerosoft.threadbear.runner');
+  // Linux: the unit it runs in, so a custom --label goes with its --home.
+  assert.equal(jobLabel({}, 'linux', () => '0::/user.slice/user-1000.slice/user@1000.service/app.slice/com.example.runner.service\n'), 'com.example.runner');
+  const e = jobEnv({ ...env, THREADBEAR_NODE: '/opt/homebrew/Cellar/node/24.1.0/bin/node' }, '/r');
   assert.equal(e.TB_REINSTALL_RESULT, '/r');
   assert.equal(e.THREADBEAR_INSTALL_QUIET, '1');
-  assert.equal(e.THREADBEAR_NODE, process.execPath);
+  // Not the running Node's real path (a Cellar folder brew may have
+  // deleted): install-runner.sh finds the pinned one first on PATH.
+  assert.equal(e.THREADBEAR_NODE, undefined);
   for (const k of ['THREADBEAR_THREAD_ID', 'THREADBEAR_HOME', 'THREADBEAR_RUNNER_HOME']) assert.equal(e[k], undefined, k);
 });
 

@@ -711,8 +711,9 @@ async function main(): Promise<void> {
       const u = updater.status();
       return u.launcherChanged && u.launcherReason && u.launcherKey ? { reason: u.launcherReason, key: u.launcherKey } : undefined;
     },
-    // As a restart would wait: no busy thread, no old runner still finishing turns.
-    idle: () => !draining && restarter.busyThreads().length === 0 && peers.status().length === 0,
+    // As a restart would wait: no busy thread, no old runner still finishing
+    // turns, and no restart of its own on the way (it would race the reinstall).
+    idle: () => !draining && restarter.busyThreads().length === 0 && peers.status().length === 0 && !restarter.status().pendingRestart,
     auto: () => experimentOn(cfg.home, 'selfReinstall'),
     onChange: () => publishUpdates(),
   });

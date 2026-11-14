@@ -264,6 +264,9 @@ impl Threadbear {
                             r.reinstall = rules::Reinstall::decode(&v["reinstall"]);
                         }
                     }
+                    // A runner from before Reinstall now: it gets it with
+                    // its next update from main, a few minutes after this app.
+                    Err(e) if e.code == -32601 => t.show_error("This runner can't reinstall itself yet. It can once it updates to main, in a few minutes; try again then.".to_owned(), cx),
                     Err(e) => t.show_error(e.message, cx),
                 }
                 cx.notify();

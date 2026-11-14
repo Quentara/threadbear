@@ -502,6 +502,11 @@ async function busyThreads(c) {
     for (const b of s.background ?? []) {
       if (!busy.some((t) => t.id === b.threadId)) busy.push(threads.find((t) => t.id === b.threadId) ?? { id: b.threadId, title: '' });
     }
+    // And everything else a restart would wait for (runner.status's busy:
+    // a turn-end hook, a thread between turns), from runners since 14 Nov 2026.
+    for (const id of Array.isArray(s.busy) ? s.busy : []) {
+      if (typeof id === 'string' && !busy.some((t) => t.id === id)) busy.push(threads.find((t) => t.id === id) ?? { id, title: '' });
+    }
   } catch {
     // older runner
   }
