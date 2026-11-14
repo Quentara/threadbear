@@ -1,6 +1,7 @@
 Feature: How the window looks
   As someone who has Threadbear open all day
-  I want its words in Geist, over a frosted painting with the panels tinted glass
+  I want its words in Geist, over a frosted painting or a picture of mine,
+  with the panels tinted glass
   So the window is pleasant to look at and the words stay easy to read
 
   Background:
@@ -22,3 +23,16 @@ Feature: How the window looks
     When I start a new thread
     Then the new-thread page asks "What should we work on?"
     And the painting is behind the window
+
+  # Choose… opens the system's open panel, which a script can't answer, so
+  # the step hands the app the picture as the panel would (`backdrop`).
+  @settings.background @swift-pending
+  Scenario: A picture of mine can go behind the window, and the painting come back
+    When I open Settings
+    Then Settings says the background is the painting
+    When I choose "support/sample.png" as the background
+    Then my picture is behind the window
+    And Settings says the background is my picture
+    When I press "Go back to the painting Threadbear comes with" in Settings
+    Then the painting is behind the window
+    And Settings says the background is the painting

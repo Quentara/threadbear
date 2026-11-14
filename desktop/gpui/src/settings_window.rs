@@ -661,11 +661,37 @@ impl SettingsWindow {
         section(
             "settings-appearance-section",
             "Appearance",
-            "Light or dark for Threadbear only. Same as the Mac follows System Settings > Appearance.",
+            "Light or dark for Threadbear only. Same as the Mac follows System Settings > Appearance. The background is the picture behind the window, frosted: the painting Threadbear comes with, or one of yours.",
             "change it for you.",
-            vec![row("Appearance", div().id("settings-appearance-holder").test_support().a11y_role(Role::GenericContainer).aria_label("Light or dark for Threadbear, whatever the Mac is set to").child(menu), cx)],
+            vec![row("Appearance", div().id("settings-appearance-holder").test_support().a11y_role(Role::GenericContainer).aria_label("Light or dark for Threadbear, whatever the Mac is set to").child(menu), cx), row("Background", self.background_control(cx), cx)],
             cx,
         )
+    }
+
+    /// Appearance's Background row (the Swift app's `BackdropRow`): the
+    /// picture behind the window as a thumbnail, Choose… for one of yours,
+    /// and Use the painting to go back once you have.
+    fn background_control(&mut self, cx: &mut Context<Self>) -> AnyElement {
+        let shown = crate::backdrop::shown(cx).cloned();
+        let own = shown.as_ref().is_some_and(|s| s.own);
+        let edge = style::primary_opacity(cx, 0.12);
+        let thumbnail = shown.map(|s| {
+            div()
+                .id("settings-background-preview")
+                .w(px(72.))
+                .h(px(44.))
+                .rounded(px(5.))
+                .overflow_hidden()
+                .border_1()
+                .border_color(edge)
+                .test_support()
+                .a11y_role(Role::Image)
+                .aria_label(if own { "Your picture" } else { "The painting" })
+                .child(img(s.preview).size_full().object_fit(ObjectFit::Cover))
+        });
+        let choose = self.button("settings-background-choose", "Choose…", "Pick a picture from this Mac to show behind the window, frosted", cx, |_, window, cx| crate::backdrop::choose(window, cx));
+        let painting = own.then(|| self.button("settings-background-painting", "Use the painting", "Go back to the painting Threadbear comes with", cx, |_, _, cx| crate::backdrop::go_back_to_painting(cx)));
+        h_flex().gap(px(10.)).items_center().children(thumbnail).child(choose).children(painting).into_any_element()
     }
 
     /// Whether a press held on a panel's background picks it up, or only one
@@ -1141,6 +1167,8 @@ impl SettingsWindow {
         json!({
             "tab": self.tab.name(),
             "appearance": style::appearance().name(),
+            // Appearance's Background: "painting" or "own", once it's loaded.
+            "background": crate::backdrop::shown(cx).map(|b| if b.own { "own" } else { "painting" }),
             "defaultFolder": settings.as_ref().map(|s| s.default_cwd.clone()),
             "keepAwake": settings.as_ref().and_then(|s| s.keep_awake),
             "fullSync": settings.as_ref().and_then(|s| s.full_sync),

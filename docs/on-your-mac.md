@@ -140,7 +140,7 @@ File references are where to look.
   Keyboard, which the app reads and writes and never sends anywhere,
   `window-backdrop.<ext>`, a copy of the picture you chose as the
   background in Settings > General > Appearance, there only while one is
-  chosen, which the app reads and never sends anywhere,
+  chosen, which both Mac apps read and never send anywhere,
   `schedule-runs/`, schedule runs your Convex backend hasn't been told
   of yet, a file each, kept only until it has, `activity/`, the activity
   log, only while Keep an activity log is on in Settings > General (what

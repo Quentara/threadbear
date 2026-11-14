@@ -1,7 +1,11 @@
 // How the window looks (features/look.feature): the typefaces and the
 // picture behind the window, from the dump's `look`.
-import { Then } from '@cucumber/cucumber';
+import { Then, When } from '@cucumber/cucumber';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { ThreadbearWorld } from '../support/world.ts';
+
+const features = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** The dump's `look` (desktop/gpui/src/style.rs, `look_dump`). */
 type Look = {
@@ -10,7 +14,7 @@ type Look = {
   /** Whether Geist and Geist Mono are installed on this machine. */
   geist: boolean;
   geistMono: boolean;
-  /** "painting", or null before it's loaded. */
+  /** "painting", "own" (a picture chosen in Settings), or null before it's loaded. */
   backdrop: string | null;
   panelsSeeThrough: boolean;
 };
@@ -36,4 +40,23 @@ Then('the painting is behind the window', async function (this: ThreadbearWorld)
 
 Then('the panels are see-through over it', async function (this: ThreadbearWorld) {
   await this.until('see-through panels', (d) => look(d)?.panelsSeeThrough === true);
+});
+
+Then('my picture is behind the window', async function (this: ThreadbearWorld) {
+  await this.until('my picture behind the window', (d) => look(d)?.backdrop === 'own');
+});
+
+When('I choose {string} as the background', async function (this: ThreadbearWorld, file: string) {
+  await this.app.do({ cmd: 'backdrop', path: path.join(features, file) });
+});
+
+/** Settings > General > Appearance's Background, from the Settings window's dump. */
+const background = (d: unknown) => (d as { settingsWindow?: { background?: string | null } | null }).settingsWindow?.background;
+
+Then('Settings says the background is the painting', async function (this: ThreadbearWorld) {
+  await this.until('Background: the painting', (d) => background(d) === 'painting');
+});
+
+Then('Settings says the background is my picture', async function (this: ThreadbearWorld) {
+  await this.until('Background: my picture', (d) => background(d) === 'own');
 });

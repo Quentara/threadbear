@@ -566,7 +566,7 @@ fn step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App
         }
         // The window shell (shell.rs, rails.rs, header.rs), the Swift
         // app's commands of the same names.
-        "dock-move" | "panel" | "float" | "mode" | "zoom" | "rename" | "undo-archive" | "open-archived" | "error" | "mouse-button" | "copy-thread-id" | "menus" | "menu-item" | "app-menu" | "data-dir" | "share" | "signin" | "edit-message" | "message-words" | "refusal" | "appearance" | "resize" => shell_step(app, cmd, window, cx),
+        "dock-move" | "panel" | "float" | "mode" | "zoom" | "rename" | "undo-archive" | "open-archived" | "error" | "mouse-button" | "copy-thread-id" | "menus" | "menu-item" | "app-menu" | "data-dir" | "share" | "signin" | "edit-message" | "message-words" | "refusal" | "appearance" | "backdrop" | "resize" => shell_step(app, cmd, window, cx),
         "search" => {
             let words = text(cmd, "text").to_string();
             let search = app.read(cx).search.clone();
@@ -1320,6 +1320,19 @@ fn shell_step(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &m
                 other => return Err(format!("mode is light, dark or system, not {other:?}")),
             }
             Ok(json!(format!("ok {mode}")))
+        }
+        // `backdrop`: Settings' Background without the open panel, which a
+        // script can't answer: `path` for a picture of yours, `painting: true`
+        // to go back. The picture shows once it's frosted (`look`).
+        "backdrop" => {
+            let home = threadbear_client::config::RunnerConfig::from_env().home;
+            match cmd["path"].as_str() {
+                Some(path) => crate::backdrop::use_own(std::path::Path::new(path), &home)?,
+                None if cmd["painting"].as_bool() == Some(true) => crate::backdrop::use_painting(&home),
+                None => return Err("backdrop takes a path, or painting: true".into()),
+            }
+            crate::backdrop::load(cx);
+            Ok(json!("ok"))
         }
         // `resize`: the window's content size, as the Swift command sets it
         // (for pictures at a given size).

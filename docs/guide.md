@@ -2061,9 +2061,14 @@ Same as the Mac, Light and Dark. It changes straight away and stays picked
 the next time the app opens.
 
 Behind the window is a painting, frosted, with the panels tinted over it.
-Background in the same section shows it: Choose… picks a picture of
-yours instead (JPEG, PNG, HEIC), and Use the painting goes back. It
-changes straight away.
+It's always as tall as the window, and a window wider than the picture
+shows it mirrored either side. Background in the same section shows it:
+Choose… picks a picture of yours instead (JPEG, PNG, HEIC), and Use the
+painting goes back. It changes straight away, and the old and new apps
+share the one you chose.
+
+The words are in Geist and code in Geist Mono when those fonts are
+installed (from vercel.com/font); otherwise the system's own fonts.
 
 ### A ding when a thread is done
 

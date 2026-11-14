@@ -203,7 +203,7 @@ pub(crate) fn look_dump(cx: &App) -> serde_json::Value {
         "monoFont": theme.mono_font_family.to_string(),
         "geist": sans.is_some(),
         "geistMono": mono.is_some(),
-        "backdrop": crate::backdrop::shown(cx).map(|_| "painting"),
+        "backdrop": crate::backdrop::shown(cx).map(|b| if b.own { "own" } else { "painting" }),
         "panelsSeeThrough": crate::backdrop::glass(cx).is_some(),
     })
 }

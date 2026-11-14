@@ -377,6 +377,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 |---|---|---|---|---|---|---|
 | `settings.window` | Settings window | Tabbed, width draggable, up and down move through the sections | Own GPUI window with gpui-kit tabs and a resizable width. | kit | M | `SettingsView` |
 | `settings.general` | General | Appearance, ding with sound and volume, default folder, activity log, Updates from Mike | gpui-kit form, but GPUI has no sound API, so the ding needs an audio crate or code on macOS, Windows and Linux. | shim | M | `SettingsView`, `DingPlayer`, `CompletionSound` |
+| `settings.background` | Background | Settings > General > Appearance: the picture behind the window as a thumbnail, Choose… for one of yours (copied into the data folder, frosted, shown straight away), Use the painting to go back | GPUI's open panel; the picture shares the Swift app's `window-backdrop.<ext>`, with AppKit's NSImage for HEIC and TIFF on a Mac. | build | S | `SettingsView` (`BackdropRow`), `WindowBackdropStore` |
 | `settings.models` | Models | Small-jobs pool, private folders | gpui-kit form and GPUI path prompts. | kit | S | `SettingsView` |
 | `settings.pools` | Pools | List, rename, order, icon, logins, folders | Drawn, with `foundation.reorder`. | build | L | `SettingsView`, `PoolsModel` |
 | `settings.runners` | Runners | Reorder, default | Drawn, with `foundation.reorder`. | build | S | `RunnersSettings` |
@@ -495,23 +496,23 @@ Size is `none` throughout: the planning docs don't size these, and work the app 
 | Route | Inventory | Planned | All |
 |---|---|---|---|
 | kit | 65 | 1 | 66 |
-| build | 199 | 16 | 215 |
+| build | 200 | 16 | 216 |
 | web | 6 | 1 | 7 |
 | shim | 24 | 0 | 24 |
 | hard | 13 | 0 | 13 |
 | drop | 3 | 0 | 3 |
-| Total | 309 | 18 | 327 |
+| Total | 310 | 18 | 328 |
 
 **Per size**
 
 | Size | Inventory | Planned | All |
 |---|---|---|---|
-| S | 171 | 0 | 171 |
+| S | 172 | 0 | 172 |
 | M | 96 | 0 | 96 |
 | L | 33 | 0 | 33 |
 | XL | 5 | 0 | 5 |
 | none | 4 | 18 | 22 |
-| Total | 309 | 18 | 327 |
+| Total | 310 | 18 | 328 |
 
 **The `hard` rows**
 
