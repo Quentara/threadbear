@@ -115,11 +115,44 @@ about 5 ms before the app handles the move, about 28 ms to the frame being
 handed over (waiting for the display link's next update, then about 7 to 15
 ms of work), and about 31 ms from there to the glass.
 
-### Swift app against GPUI
+### Swift app against GPUI (14 Nov, Tinker at 60 Hz)
 
-`features/tools/hover-glass.ts` times both apps the same way from outside:
-a real pointer move onto a thread list row, and ScreenCaptureKit for when the
-row's pixels change. Not run yet: Tinker Desk was waiting on macOS setup
-after an update (14 Nov). Run it with
-`env TB_GPUI_BIN=<release build> node features/tools/hover-glass.ts` through
-`desktop/scripts/remote.sh tinker-desk --desk --perf`.
+`features/tools/hover-glass.ts` times both apps the same way from outside: a
+real pointer move onto a thread list row, and ScreenCaptureKit for when the
+row's pixels change, to within a refresh. Same mock data (1,400 real-sized
+threads), same 1180 x 800 window, GPUI and Swift turn about, two runs each.
+Load was 7.6 at the start and 3.2 at the end.
+
+| App | Moves timed | Median | 90% | Fastest | Slowest |
+|---|---|---|---|---|---|
+| GPUI, release, run 1 | 24 | 64.1 ms | 69.8 ms | 47.1 ms | 81.5 ms |
+| Swift, debug, run 1 | 30 | 130.0 ms | 147.2 ms | 112.7 ms | 165.6 ms |
+| GPUI, release, run 2 | 24 | 65.8 ms | 77.0 ms | 53.0 ms | 81.2 ms |
+| Swift, debug, run 2 | 30 | 133.8 ms | 144.3 ms | 119.1 ms | 161.3 ms |
+
+GPUI's 64 to 66 ms from outside agrees with the 63 to 66 ms its own probe
+gave above, so the two ways of timing agree. The Swift reference took about
+twice as long, but it isn't the app Mike runs: it's the debug build the
+specs start (features/support/swift.ts), launched directly rather than by
+Launch Services, which leaves it at a lower scheduling priority (37 against
+47). Read it as "GPUI isn't behind the Swift app here", not as a number
+for Swift's release. Two more things to label:
+
+- Both GPUI runs had accessibility on: the check that the window is in
+  front (real-screen.ts, an AX hit test) turns it on, and GPUI then
+  builds its accessibility update every frame. Any accessibility tool on
+  the Mac does the same. Without it GPUI would likely be a little faster.
+- 7 of GPUI's 31 moves a run showed no change in the strip watched (its
+  hover fill is fainter than Swift's); those are left out, not counted
+  as slow.
+
+So at 60 Hz GPUI is at about four refreshes from pointer to glass, and most
+of that is frame pacing (above), not the app's work. Mike's lag was the
+whole window drawing 93% of the time with 1,400 threads, which 795dd29cb
+fixed. If GPUI ever needs to get closer to one or two refreshes, the
+lever is the frame pipeline in gpui-pre's Mac platform (drawing as soon
+as an input dirties the window instead of waiting for the display link's
+next update, and a frame latency that really takes), which means patching
+gpui-pre-macos and gpui-pre-apple and keeping that patch across GPUI
+bumps. Taffy's layout is about half of each frame's work, but at 7 ms a
+frame it isn't what the user waits on.
