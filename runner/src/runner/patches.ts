@@ -830,6 +830,14 @@ export const patchesPart = {
     return [...this.threads.values()].filter((st) => st.rt.hooksRunning && !st.rt.deleted).map((st) => st.rec.id);
   },
 
+  // The threads running a card's Run command or a patch action. A release
+  // restart doesn't wait for these (it hands over); a LaunchAgent reinstall
+  // (reinstall.ts) does, as it stops every runner at once. Each has its
+  // own time limit.
+  threadsRunningActions(this: Runner): string[] {
+    return [...this.threads.values()].filter((st) => st.rt.runningActions?.size && !st.rt.deleted).map((st) => st.rec.id);
+  },
+
   // The threads a restart waits for between turns: one going back to an
   // earlier message (editMessage), as one cut off between putting the files
   // back and writing thread.rewound loses the edit but keeps the files'

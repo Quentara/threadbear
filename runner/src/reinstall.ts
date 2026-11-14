@@ -26,10 +26,13 @@ import type { Logger } from './log.ts';
 export const DEFAULT_LABEL = 'com.mikerosoft.threadbear.runner';
 // install-runner.sh's exit for "threads are busy, nothing changed".
 export const BUSY_EXIT = 75;
-// How long a reinstall with no result yet counts as running. Building a
-// release (npm ci, the checks) and waiting for the new runner to be marked
-// good is a few minutes; past this, the job died without saying.
+// How long a reinstall with no result yet counts as running when whether
+// its job is still going can't be asked (jobAlive). Otherwise it runs as
+// long as it runs: a check host can take hours, and a Mac asleep halfway
+// would pass any limit.
 export const RUNNING_LIMIT_MS = 30 * 60_000;
+// Right after it's started, launchd may not say it's running yet.
+export const START_GRACE_MS = 15_000;
 // How often a running reinstall's result is looked for, and how often one
 // waiting for busy threads checks whether they've finished.
 export const POLL_MS = 5_000;
@@ -56,6 +59,8 @@ type Saved = {
   // with the experiment off.
   requested?: boolean;
   startedAt?: string;
+  // The job's label, for asking whether it's still going.
+  label?: string;
   // Set once the result has been read.
   finished?: { code: number; at: string; reason?: string };
 };
@@ -90,6 +95,8 @@ export type ReinstallDeps = {
   platform?: NodeJS.Platform;
   // Starts the job; an error message when it couldn't.
   spawnJob?: (job: JobSpec) => string | undefined;
+  // Whether the job is still going; undefined when it can't be told.
+  jobAlive?: (label: string) => boolean | undefined;
 };
 
 export function reinstallDir(home: string): string {
@@ -228,6 +235,25 @@ export function spawnJob(job: JobSpec, platform: NodeJS.Platform = process.platf
   return r.status === 0 ? undefined : (r.stderr || r.error?.message || `launchctl bootstrap exited ${r.status}`).trim();
 }
 
+// Whether the job is still going: launchd's `state = running` (or about to
+// be), systemd's active. Undefined when neither can be asked.
+export function jobAlive(label: string, platform: NodeJS.Platform = process.platform): boolean | undefined {
+  if (platform === 'darwin') {
+    const r = spawnSync('launchctl', ['print', `gui/${process.getuid?.() ?? 501}/${label}`], { encoding: 'utf8', timeout: 5_000 });
+    if (r.error) return undefined;
+    if (r.status !== 0) return false; // not loaded at all
+    const state = /^\s*state = (.+)$/m.exec(r.stdout ?? '')?.[1]?.trim();
+    return state === undefined ? undefined : state !== 'not running';
+  }
+  if (platform === 'linux') {
+    const r = spawnSync('systemctl', ['--user', 'is-active', `${label}.service`], { encoding: 'utf8', timeout: 5_000 });
+    if (r.error) return undefined;
+    const said = (r.stdout ?? '').trim();
+    return said === 'active' || said === 'activating' || said === 'reloading';
+  }
+  return undefined;
+}
+
 // The last lines of the log that say something, for a failure's reason.
 export function lastWords(logFile: string, lines = 3): string | undefined {
   let text = '';
@@ -291,10 +317,37 @@ export class Reinstaller {
 
   // Started and not finished: no result yet, and not so long ago that the
   // job must have died.
+  // Started and not finished: the job is still going, or (when that can't
+  // be asked, or it was only just started) it isn't long since it started.
   private running(): boolean {
     const s = this.saved;
     if (!s.startedAt || s.finished) return false;
-    return this.deps.clock.now() - Date.parse(s.startedAt) < RUNNING_LIMIT_MS;
+    const since = this.deps.clock.now() - Date.parse(s.startedAt);
+    if (since < START_GRACE_MS) return true;
+    const alive = s.label ? this.alive(s.label) : undefined;
+    return alive ?? since < RUNNING_LIMIT_MS;
+  }
+
+  // jobAlive, asked at most every couple of seconds (status() is read on
+  // every runner.updates).
+  private aliveCache?: { label: string; at: number; alive: boolean | undefined };
+  private alive(label: string): boolean | undefined {
+    const now = this.deps.clock.now();
+    const c = this.aliveCache;
+    if (c && c.label === label && now - c.at < 2_000) return c.alive;
+    const platform = this.deps.platform ?? process.platform;
+    const alive = this.deps.jobAlive ? this.deps.jobAlive(label) : jobAlive(label, platform);
+    this.aliveCache = { label, at: now, alive };
+    return alive;
+  }
+
+  private readResult(): number | undefined {
+    try {
+      const text = fs.readFileSync(this.resultFile, 'utf8').trim();
+      return /^\d+$/.test(text) ? Number(text) : undefined;
+    } catch {
+      return undefined; // not yet
+    }
   }
 
   // Reads the job's result once it's there, or calls a job that's been
@@ -302,17 +355,13 @@ export class Reinstaller {
   collect(): void {
     const s = this.saved;
     if (!s.startedAt || s.finished) return;
-    let code: number | undefined;
-    try {
-      const text = fs.readFileSync(this.resultFile, 'utf8').trim();
-      if (/^\d+$/.test(text)) code = Number(text);
-    } catch {
-      // not yet
-    }
+    let code = this.readResult();
     const log = reinstallLogPath(this.deps.home);
+    if (code === undefined && this.running()) return;
+    // It may have written its result and exited since the read above.
+    if (code === undefined) code = this.readResult();
     if (code === undefined) {
-      if (this.running()) return;
-      s.finished = { code: -1, at: new Date(this.deps.clock.now()).toISOString(), reason: `install-runner.sh never finished: ${lastWords(log) ?? 'it said nothing'}` };
+      s.finished = { code: -1, at: new Date(this.deps.clock.now()).toISOString(), reason: `install-runner.sh stopped without finishing: ${lastWords(log) ?? 'it said nothing'}` };
     } else if (code === BUSY_EXIT) {
       // Threads got busy: nothing changed, so it goes again once they're
       // done (requested stays as it was; the experiment tries again anyway).
@@ -405,7 +454,8 @@ export class Reinstaller {
     const logFile = reinstallLogPath(home);
     fs.appendFileSync(logFile, `\n--- ${new Date(this.deps.clock.now()).toISOString()} reinstalling the LaunchAgent\n`);
     const job: JobSpec = { label: `${jobLabel(env, platform)}.reinstall`, args: installArgs(checkout, home, env, platform), env: jobEnv(env, this.resultFile), logFile, resultFile: this.resultFile, dir: this.dir };
-    this.saved = { key, requested: this.saved.requested, startedAt: new Date(this.deps.clock.now()).toISOString() };
+    this.saved = { key, requested: this.saved.requested, startedAt: new Date(this.deps.clock.now()).toISOString(), label: job.label };
+    this.aliveCache = undefined;
     const err = (this.deps.spawnJob ?? spawnJob)(job, platform);
     if (err) {
       this.saved.finished = { code: -1, at: this.saved.startedAt!, reason: `couldn't start install-runner.sh: ${err}` };

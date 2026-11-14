@@ -11,12 +11,12 @@ import { FakeClock } from '../../src/clock.ts';
 import { nullLogger } from '../../src/log.ts';
 import { BUSY_EXIT, RUNNING_LIMIT_MS, Reinstaller, installArgs, jobEnv, jobLabel, jobPlist, launcherKey, reinstallDir, reinstallLogPath, type JobSpec } from '../../src/reinstall.ts';
 
-type Setup = { behind?: { reason: string; key: string }; idle?: boolean; auto?: boolean; spawnError?: string };
+type Setup = { behind?: { reason: string; key: string }; idle?: boolean; auto?: boolean; spawnError?: string; alive?: boolean | undefined };
 
 function setup(s: Setup = {}) {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'tb-reinstall-'));
   const clock = new FakeClock();
-  const state = { behind: s.behind ?? { reason: "Threadbear Runner.app was built from older launcher sources than main's.", key: 'k1' } as { reason: string; key: string } | undefined, idle: s.idle ?? true, auto: s.auto ?? false };
+  const state = { behind: s.behind ?? { reason: "Threadbear Runner.app was built from older launcher sources than main's.", key: 'k1' } as { reason: string; key: string } | undefined, idle: s.idle ?? true, auto: s.auto ?? false, alive: ('alive' in s ? s.alive : true) as boolean | undefined };
   const jobs: JobSpec[] = [];
   let changes = 0;
   const make = () =>
@@ -31,6 +31,8 @@ function setup(s: Setup = {}) {
       onChange: () => changes++,
       env: { HOME: '/Users/me', PATH: '/usr/bin:/bin', XPC_SERVICE_NAME: 'com.mikerosoft.threadbear.runner', THREADBEAR_THREAD_ID: 'nope', THREADBEAR_HOME: '/elsewhere' },
       platform: 'darwin',
+      // The job is going until it writes its result (finish below).
+      jobAlive: () => (fs.existsSync(path.join(reinstallDir(home), 'result')) ? false : state.alive),
       spawnJob: (job) => {
         jobs.push(job);
         return s.spawnError;
@@ -151,14 +153,29 @@ test('finished but still behind is a failure, saying what is still behind', () =
   assert.match(s?.reason ?? '', /^install-runner\.sh finished, but threadbear Runner\.app was built/i);
 });
 
-test('a job that never reports is called dead after the limit', () => {
+test('a job still going stays running however long it takes; one that died without a result fails', () => {
   const t = setup();
   const r = t.make();
   r.request();
-  t.clock.advance(RUNNING_LIMIT_MS + 5_000);
+  t.clock.advance(3 * 60 * 60_000);
+  assert.equal(r.status()?.state, 'running', 'a check host can take hours');
+  assert.equal(r.request()?.state, 'running', 'Try again leaves a live job alone');
+  assert.equal(t.jobs.length, 1);
+  t.state.alive = false;
+  t.clock.advance(5_000);
   const s = r.status();
   assert.equal(s?.state, 'failed');
-  assert.match(s?.reason ?? '', /never finished/);
+  assert.match(s?.reason ?? '', /stopped without finishing/);
+});
+
+test("when whether the job is going can't be asked, it's called dead after the limit", () => {
+  const t = setup({ alive: undefined });
+  const r = t.make();
+  r.request();
+  t.clock.advance(60_000);
+  assert.equal(r.status()?.state, 'running');
+  t.clock.advance(RUNNING_LIMIT_MS);
+  assert.equal(r.status()?.state, 'failed');
 });
 
 test("a job launchd won't take is a failure straight away", () => {

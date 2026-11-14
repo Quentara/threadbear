@@ -507,6 +507,14 @@ async function busyThreads(c) {
     for (const id of Array.isArray(s.busy) ? s.busy : []) {
       if (typeof id === 'string' && !busy.some((t) => t.id === id)) busy.push(threads.find((t) => t.id === id) ?? { id, title: '' });
     }
+    // An older runner still finishing turns after a handover: stopping the
+    // LaunchAgent stops it too.
+    for (const d of Array.isArray(s.draining) ? s.draining : []) {
+      for (const id of Array.isArray(d?.threads) ? d.threads : []) {
+        if (typeof id === 'string' && !busy.some((t) => t.id === id)) busy.push(threads.find((t) => t.id === id) ?? { id, title: `finishing on the previous runner (${d.version ?? '?'})` });
+      }
+      if (!d?.threads?.length) busy.push({ id: '?', title: `the previous runner (pid ${d?.pid}) is still finishing` });
+    }
   } catch {
     // older runner
   }
