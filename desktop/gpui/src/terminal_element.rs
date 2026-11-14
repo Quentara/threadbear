@@ -108,14 +108,18 @@ fn hsla_rgb(colour: Hsla) -> Rgb8 {
     ((c.r * 255.).round() as u8, (c.g * 255.).round() as u8, (c.b * 255.).round() as u8)
 }
 
-/// The font: the Mac's own monospaced system font (SF Mono), as the Swift
-/// app's NSFont.monospacedSystemFont, one point over the transcript's code. It
-/// can only be named, not listed, so it's checked to have loaded as itself;
-/// elsewhere, or if it hasn't, the theme's monospaced font.
+/// The font: Geist Mono when it's installed (the Swift app's appMonoFont),
+/// else the Mac's own monospaced system font (SF Mono), as the Swift app's
+/// NSFont.monospacedSystemFont, one point over the transcript's code. SF
+/// Mono can only be named, not listed, so it's checked to have loaded as
+/// itself; elsewhere, or if it hasn't, the theme's monospaced font.
 fn family(cx: &App) -> SharedString {
     static FAMILY: OnceLock<SharedString> = OnceLock::new();
     FAMILY
         .get_or_init(|| {
+            if let Some(geist) = crate::style::app_mono_font(cx) {
+                return geist;
+            }
             if cfg!(target_os = "macos") {
                 let system = font(".AppleSystemUIFontMonospaced");
                 let text = cx.text_system();

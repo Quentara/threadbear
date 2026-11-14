@@ -34,6 +34,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `foundation.highlighting` | Code highlighting | Colours code in the file pane | gpui-kit's code editor highlighter (tree-sitter or syntect). | kit | M | `TextFileView` (`CodeHighlighter`) |
 | `foundation.zoom` | Zoom | ⌘= ⌘- ⌘0 scale everything together, remembered | One scale value applied to the type scale and spacing, saved in the config file. | build | S | `Theme` (`TextZoom`, `TypeScale`) |
 | `foundation.theme` | Theme and appearance | Light, dark or system, picked per app | Our own colour tokens over gpui-kit's theme; following the OS accent colour per OS is (unverified). | build | M | `Theme`, `AppAppearance` |
+| `foundation.fonts` | Typefaces | Geist for the interface and Geist Mono for code, when they're installed; the system's own faces stand in otherwise | Named on gpui-kit's light and dark themes, which every view takes its font from; the terminal names Geist Mono itself. | build | S | `AppFonts` |
 | `foundation.icons` | Icon set | About 116 distinct literal SF Symbols (a floor, from my grep) | Bundled icon set, with a name map so each symbol use moves across. | build | M | Every view |
 | `foundation.bear` | Bear glyphs | The mascot as stroked paths at any size | Not needed: Mike passed over the bears on 13 Nov. The About window draws its one bear from an SVG. | build | M | `BearGeometry`, `Bear` |
 | `foundation.logos` | Provider logos | Model picker marks from SVG path data | Ship the marks as SVG assets beside the icon set. | build | S | `ProviderLogo` |
@@ -493,23 +494,23 @@ Size is `none` throughout: the planning docs don't size these, and work the app 
 | Route | Inventory | Planned | All |
 |---|---|---|---|
 | kit | 65 | 1 | 66 |
-| build | 197 | 16 | 213 |
+| build | 198 | 16 | 214 |
 | web | 6 | 1 | 7 |
 | shim | 24 | 0 | 24 |
 | hard | 13 | 0 | 13 |
 | drop | 3 | 0 | 3 |
-| Total | 307 | 18 | 325 |
+| Total | 308 | 18 | 326 |
 
 **Per size**
 
 | Size | Inventory | Planned | All |
 |---|---|---|---|
-| S | 170 | 0 | 170 |
+| S | 171 | 0 | 171 |
 | M | 95 | 0 | 95 |
 | L | 33 | 0 | 33 |
 | XL | 5 | 0 | 5 |
 | none | 4 | 18 | 22 |
-| Total | 307 | 18 | 325 |
+| Total | 308 | 18 | 326 |
 
 **The `hard` rows**
 

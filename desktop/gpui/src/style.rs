@@ -166,15 +166,50 @@ pub(crate) fn install_window_colours(cx: &mut App) {
     let (light, dark) = window_backgrounds();
     let hex = |c: Rgba| -> SharedString { format!("#{:02x}{:02x}{:02x}", (c.r * 255.).round() as u8, (c.g * 255.).round() as u8, (c.b * 255.).round() as u8).into() };
     let lift = |c: Rgba, by: f32| Rgba { r: c.r + (1. - c.r) * by, g: c.g + (1. - c.g) * by, b: c.b + (1. - c.b) * by, a: 1. };
+    let (sans, mono) = app_fonts(&cx.text_system().all_font_names());
     let theme = Theme::global_mut(cx);
     for (config, background, popover) in [(&mut theme.light_theme, light, light), (&mut theme.dark_theme, dark, lift(dark, 0.06))] {
         let mut changed = (**config).clone();
         changed.colors.background = Some(hex(background));
         changed.colors.sidebar = Some(hex(background));
         changed.colors.popover = Some(hex(popover));
+        changed.font_family = sans.clone().or(changed.font_family);
+        changed.mono_font_family = mono.clone().or(changed.mono_font_family);
         *config = Rc::new(changed);
     }
     refresh_system_accent(cx);
+}
+
+/// The app's typefaces (the Swift app's AppFonts): Geist for the interface
+/// and Geist Mono for code, in place of the system's, when they're
+/// installed. Every view takes its font from the theme, so setting them
+/// there changes them all; `None` keeps the theme's own (the system font and
+/// its monospaced one), which stand in when Geist isn't on this machine.
+/// `installed` is the text system's family names.
+pub(crate) fn app_fonts(installed: &[String]) -> (Option<SharedString>, Option<SharedString>) {
+    let find = |names: &[&str]| names.iter().find(|n| installed.iter().any(|i| i == *n)).map(|n| SharedString::from(n.to_string()));
+    (find(&["Geist"]), find(&["Geist Mono", "GeistMono"]))
+}
+
+/// The dump's `look`: the typefaces, whether Geist is here to be used, and
+/// the picture behind the window (backdrop.rs).
+#[cfg(feature = "automation")]
+pub(crate) fn look_dump(cx: &App) -> serde_json::Value {
+    let theme = cx.theme();
+    let installed = cx.text_system().all_font_names();
+    let (sans, mono) = app_fonts(&installed);
+    serde_json::json!({
+        "font": theme.font_family.to_string(),
+        "monoFont": theme.mono_font_family.to_string(),
+        "geist": sans.is_some(),
+        "geistMono": mono.is_some(),
+    })
+}
+
+/// The monospaced family, for what names its font itself (the terminal):
+/// Geist Mono when it's installed, else `None`.
+pub(crate) fn app_mono_font(cx: &App) -> Option<SharedString> {
+    app_fonts(&cx.text_system().all_font_names()).1
 }
 
 #[derive(Clone, Copy, PartialEq)]

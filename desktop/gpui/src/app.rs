@@ -1558,6 +1558,8 @@ impl Threadbear {
         // What came across from the Swift app, while its note's up. Set
         // after, as the literal above is as long as serde_json's macro goes.
         dump["importNote"] = json!(self.import_note);
+        // The typefaces (style.rs).
+        dump["look"] = crate::style::look_dump(cx);
         // Panels pinned to their threads (pinned_panels.rs).
         dump["pinnedPanels"] = self.pinned_panels_dump(cx);
         // The tour or a page's intro on show, and Finish setting up (tour.rs, setup_panel.rs).
