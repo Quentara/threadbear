@@ -33,7 +33,7 @@ struct Pids { var press: Int32; var drop: Int32 }
 /// window (the Dock's own, layer 20, named Dock, a display's size): the one
 /// window the guard program can let a click through, and so the only one a
 /// drag may look through.
-struct Over { var number: Int; var pid: Int32; var overlay = false }
+struct Over { var number: Int; var pid: Int32; var overlay = false; var layer = 0 }
 /// What the drag reads from the screen, so a test can hand it a made-up one.
 struct Look {
     /// The guard program's answer at a point: the pid on top, nil if it failed.
@@ -59,7 +59,9 @@ func drag(from: CGPoint, to: CGPoint, hold: Double, press: Double, pids: Pids?, 
     }
     func clear(_ p: CGPoint) -> Bool {
         guard let pids else { return true }
-        guard let top = look.stack(p).first(where: { !through.contains($0.number) }) else { return false }
+        // Past the app's own windows above layer 0 (a drag-and-drop's image
+        // follows the pointer in one), so a third app's window under it counts.
+        guard let top = look.stack(p).first(where: { !through.contains($0.number) && !($0.pid == pids.press && $0.layer != 0) }) else { return false }
         return top.pid == pids.press || top.pid == pids.drop
     }
     let steps = 40
@@ -103,15 +105,14 @@ func drag(from: CGPoint, to: CGPoint, hold: Double, press: Double, pids: Pids?, 
     // The guard program, then the window list once more, judged as one
     // snapshot: something can come up while the program runs. A
     // drag-and-drop's image follows the pointer in a window of the app's own,
-    // so the app may be on top at the drop (Tinker Desk, 14 Nov). Whatever
-    // the program said, the first window there that isn't the app's has to be
-    // the drop target; with no separate target, the app has to be on top.
+    // high above ordinary windows, so the app may be on top at the drop
+    // (Tinker Desk, 14 Nov). Looking past the app's own windows above layer
+    // 0, the first window there has to be the app's own ordinary window or
+    // the drop target: never a third app's under the image.
     if let pids {
         let top = look.owner(to)
-        let seen = look.stack(to).filter { !through.contains($0.number) }
-        let lands = pids.drop == pids.press
-            ? top == pids.press && seen.first?.pid == pids.press
-            : (top == pids.press || top == pids.drop) && seen.first(where: { $0.pid != pids.press })?.pid == pids.drop
+        let under = look.stack(to).first { !through.contains($0.number) && !($0.pid == pids.press && $0.layer != 0) }
+        let lands = (top == pids.press || top == pids.drop) && (under.map { $0.pid == pids.drop || ($0.pid == pids.press && $0.layer == 0) } ?? false)
         if !lands { return cancel("the drop isn't the app's any more") }
     }
     post(.up(to)); wait(0.6)
@@ -159,7 +160,7 @@ func stack(_ p: CGPoint) -> [Over] {
               CGRect(x: x, y: y, width: wd, height: h).contains(p) else { return nil }
         let overlay = dockPID != nil && pid == dockPID && w[kCGWindowLayer as String] as? Int == 20
             && w[kCGWindowName as String] as? String == "Dock" && displays.contains(CGRect(x: x, y: y, width: wd, height: h))
-        return Over(number: w[kCGWindowNumber as String] as? Int ?? -1, pid: pid, overlay: overlay)
+        return Over(number: w[kCGWindowNumber as String] as? Int ?? -1, pid: pid, overlay: overlay, layer: w[kCGWindowLayer as String] as? Int ?? 0)
     }
 }
 func front() -> Int32? {

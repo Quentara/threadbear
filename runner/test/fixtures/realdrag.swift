@@ -104,15 +104,25 @@ check(r.code == 3 && ups(r) == [from], "the drop's window list is looked at afte
 // A drag-and-drop's image (the app's own window) under the pointer at the
 // drop, over our drop target: the guard says the app, and it's let go.
 r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p == to ? app : (p.x >= 600 ? target : app) },
-        stack: { p, _ in p.x >= 600 ? [Over(number: 3, pid: app), Over(number: 5, pid: target)] + mine : mine })
+        stack: { p, _ in p.x >= 600 ? [Over(number: 3, pid: app, layer: 500), Over(number: 5, pid: target)] + mine : mine })
 check(r.code == 0 && r.sent.last == .up(to), "the app's drag image over the drop target")
 // The same image, but over something else at the drop: cancelled.
 r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p == to ? app : (p.x >= 600 ? target : app) },
-        stack: { p, _ in p == to ? [Over(number: 3, pid: app), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
+        stack: { p, _ in p == to ? [Over(number: 3, pid: app, layer: 500), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
 check(r.code == 3 && ups(r) == [from], "the drag image over an alert at the drop")
 // Codex, round 5: the guard says the target, but the window list has a third
 // app between the drag image and the target: cancelled.
 r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p.x >= 600 ? target : app },
-        stack: { p, _ in p == to ? [Over(number: 3, pid: app), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
+        stack: { p, _ in p == to ? [Over(number: 3, pid: app, layer: 500), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
 check(r.code == 3 && ups(r) == [from], "a third app under the image at the drop, whatever the guard said")
+// Codex, round 5b: dropping on the app itself, its drag image over a third
+// app's window that has come up where the app's window was: cancelled.
+r = run(owner: { _, _ in app }, stack: { p, _ in p == to ? [Over(number: 3, pid: app, layer: 500), popup] : mine })
+check(r.code == 3 && ups(r) == [from], "a third app under the image when dropping on the app")
+// And over the app's own window: let go.
+r = run(owner: { _, _ in app }, stack: { p, _ in p == to ? [Over(number: 3, pid: app, layer: 500)] + mine : mine })
+check(r.code == 0 && r.sent.last == .up(to), "the image over the app's own window")
+// The same on the way: the image over a third app part way along stops the drag.
+r = run(stack: { p, n in n >= 5 && p.x > 600 ? [Over(number: 3, pid: app, layer: 500), popup] : (n >= 5 ? [Over(number: 3, pid: app, layer: 500)] + mine : mine) })
+check(r.code == 3 && !steps(r).contains { $0.x > 600 && $0 != from }, "a third app under the image on the way")
 print("realdrag checks passed")
