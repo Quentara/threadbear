@@ -138,6 +138,11 @@ Launch Services, which leaves it at a lower scheduling priority (37 against
 47). Read it as "GPUI isn't behind the Swift app here", not as a number
 for Swift's release. Two more things to label:
 
+- Whether the Swift app was the active app wasn't checked. The in-front
+  check only proves a click there reaches its window, not that macOS made
+  it the frontmost app, and perf 3 found the direct launch can leave the
+  window on top with the app inactive, where AppKit may handle hovers
+  differently. The Swift numbers are activation-uncontrolled.
 - Both GPUI runs had accessibility on: the check that the window is in
   front (real-screen.ts, an AX hit test) turns it on, and GPUI then
   builds its accessibility update every frame. Any accessibility tool on
