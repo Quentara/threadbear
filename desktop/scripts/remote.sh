@@ -87,10 +87,14 @@ lock_pid=""
 # next run mustn't copy over its folder while it's still going (Codex's
 # review). [r] so the pgrep's own shell, whose command line has the pattern
 # in it, doesn't count. A host that can't be reached says nothing either way.
+# Every child of this script goes first, the turn's waiter among them even in
+# the moment before lock_pid is set. || true throughout: under set -e a kill
+# of one that has just exited would end the trap before its exit (Codex).
 on_signal() {
-  [ -z "$lock_pid" ] || kill "$lock_pid" 2>/dev/null
+  [ -z "$lock_pid" ] || kill "$lock_pid" 2>/dev/null || true
+  pkill -TERM -P $$ 2>/dev/null || true
   if [ -n "$ssh_pid" ]; then
-    kill "$ssh_pid" 2>/dev/null
+    kill "$ssh_pid" 2>/dev/null || true
     "${SSH[@]}" -o BatchMode=yes -o ConnectTimeout=5 "$host" \
       "i=0; while pgrep -f '[r]un-$tag' >/dev/null && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i + 1)); done" </dev/null >/dev/null 2>&1 || true
   fi
@@ -108,17 +112,20 @@ waiting="Waiting for another remote.sh run from this checkout on $host to finish
 # another run held the turn went unanswered until that run finished (14 Nov,
 # d7aca215). The lock is the open file's, so the child taking it on fd 9
 # takes it for this script too, and it stays after the child exits.
-# take_turn <block>: 0 with the turn, 1 if <block> is 0 and it's taken.
-take_turn() {
-  if command -v flock >/dev/null 2>&1; then
-    if [ "$1" = 0 ]; then flock -n 9; else flock 9; fi
-  else
-    BLOCK="$1" perl -e 'use Fcntl ":flock"; open(my $f, ">&=", 9) or die "remote.sh: no lock file: $!\n"; flock($f, $ENV{BLOCK} ? LOCK_EX : LOCK_EX | LOCK_NB) or exit 1'
-  fi
-}
-if ! take_turn 0; then
+# turn_cmd <block>: the command that takes the turn, blocking or not (exit 1
+# if it's taken). Run directly, never through a function, so a background one's
+# $! is the flock or perl itself, not a subshell above it that a kill would
+# leave it behind (Codex's review).
+if command -v flock >/dev/null 2>&1; then
+  turn_cmd() { if [ "$1" = 0 ]; then turn=(flock -n 9); else turn=(flock 9); fi; }
+else
+  turn_cmd() { turn=(perl -e 'use Fcntl ":flock"; open(my $f, ">&=", 9) or die "remote.sh: no lock file: $!\n"; flock($f, $ARGV[0] ? LOCK_EX : LOCK_EX | LOCK_NB) or exit 1' "$1"); }
+fi
+turn_cmd 0
+if ! "${turn[@]}"; then
   echo "$waiting" >&2
-  take_turn 1 &
+  turn_cmd 1
+  "${turn[@]}" &
   lock_pid=$!
   wait "$lock_pid" || { echo "remote.sh: couldn't take the turn lock." >&2; exit 1; }
   lock_pid=""

@@ -39,16 +39,20 @@ test('a run waiting for its turn stops at once on TERM, and never reaches the ho
   t.after(() => run.kill('SIGKILL'));
   let stderr = '';
   run.stderr.on('data', (d) => (stderr += d));
-  const exited = new Promise<number | null>((r) => run.on('exit', (code) => r(code)));
+  // close, not exit: it waits for everything holding the run's stderr, so a
+  // lock waiter left behind (still holding it) fails this too (Codex).
+  const closed = new Promise<number | null>((r) => run.on('close', (code) => r(code)));
   const end = Date.now() + 15_000;
   while (!stderr.includes('Waiting for another remote.sh run')) {
     assert.ok(Date.now() < end, `never said it was waiting: ${stderr}`);
     await new Promise((r) => setTimeout(r, 50));
   }
-  const sent = Date.now();
+  // The message comes just before the blocking wait: give that a moment to
+  // start, so this is a TERM during the wait.
+  await new Promise((r) => setTimeout(r, 500));
   run.kill('SIGTERM');
-  const code = await exited;
+  const code = await Promise.race([closed, new Promise<'late'>((r) => setTimeout(() => r('late'), 5000))]);
+  assert.notEqual(code, 'late', 'still going 5 s after TERM');
   assert.equal(code, 143, stderr);
-  assert.ok(Date.now() - sent < 3000, `took ${Date.now() - sent} ms to stop`);
   assert.ok(!fs.existsSync(called), `reached the host: ${fs.existsSync(called) ? fs.readFileSync(called, 'utf8') : ''}`);
 });
