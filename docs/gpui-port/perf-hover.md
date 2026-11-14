@@ -142,7 +142,10 @@ for Swift's release. Two more things to label:
   check only proves a click there reaches its window, not that macOS made
   it the frontmost app, and perf 3 found the direct launch can leave the
   window on top with the app inactive, where AppKit may handle hovers
-  differently. The Swift numbers are activation-uncontrolled.
+  differently. The Swift numbers are activation-uncontrolled, and a
+  UserNotificationCenter alert was up on Tinker Desk during the runs.
+  Mike tried 795dd29cb and found the hovers fine (14 Nov), so the frame
+  pipeline patch below wasn't started.
 - Both GPUI runs had accessibility on: the check that the window is in
   front (real-screen.ts, an AX hit test) turns it on, and GPUI then
   builds its accessibility update every frame. Any accessibility tool on
