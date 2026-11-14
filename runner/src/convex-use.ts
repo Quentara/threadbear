@@ -236,7 +236,9 @@ export function fullSyncAnswer(answers: { action: string; answer: string }[] | u
       !a.why &&
       !a.where &&
       !a.reply &&
-      !a.links?.length,
+      !a.links?.length &&
+      // A card's command from Run on the card (taken out 14 Nov 2026) can still be in an old record.
+      !('run' in a),
   );
   const picked = ask && answers?.find((a) => a.action === ask.action)?.answer;
   return picked === FULL_SYNC_ON ? true : picked === FULL_SYNC_OFF ? false : undefined;
