@@ -50,6 +50,8 @@ impl SidebarView {
 
 impl Render for SidebarView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        // Its rows place their turning arcs afresh as they paint (spinner.rs).
+        crate::spinner::view_drawing(window);
         let Some(app) = self.app.upgrade() else { return div().into_any_element() };
         let focus = app.read(cx).sidebar.focus.clone();
         let content = app.update(cx, |t, cx| t.render_threads_panel(window, cx));

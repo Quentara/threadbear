@@ -285,6 +285,8 @@ pub struct Threadbear {
     pub(crate) flight: crate::archive_flight::Flights,
     /// How the next thread opens, and the new-thread page coming up (open_motion.rs).
     pub(crate) opening: crate::open_motion::Openings,
+    /// The layer the sidebar's turning arcs are drawn in (spinner.rs).
+    pub(crate) arc_layer: Option<Entity<crate::spinner::ArcLayer>>,
     /// The first-run tour and the pages' intros (tour.rs).
     pub(crate) tour: crate::tour::TourState,
     /// Finish setting up's devices (setup_panel.rs).
@@ -583,6 +585,7 @@ impl Threadbear {
             swipe_nav: Default::default(),
             flight: Default::default(),
             opening: Default::default(),
+            arc_layer: None,
             tour: crate::tour::TourState::new(),
             setup: Default::default(),
             _events: events,

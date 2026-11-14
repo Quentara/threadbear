@@ -1419,6 +1419,11 @@ impl Threadbear {
 
     pub(crate) fn render_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Stateful<Div> {
         self.sync_window_title(window);
+        // The layer the sidebar's arcs turn in (spinner.rs), told how the
+        // dock is laid out so it notices a panel closing.
+        let arc_layer = self.arc_layer.get_or_insert_with(|| cx.new(|_| crate::spinner::ArcLayer::new())).clone();
+        let dock_layout = self.dock.read(cx).layout().summary();
+        arc_layer.update(cx, |l, _| l.dock_is(dock_layout));
         // With nothing focused GPUI's key dispatch doesn't reach this element's
         // key context or actions, so the shell keeps the keyboard when nothing
         // else has it (no thread open, a closed dialog).
@@ -1456,7 +1461,7 @@ impl Threadbear {
             // heading, over the sidebar and the panel alike (archive_flight.rs).
             // The sidebar's turning arcs, drawn here so a turn doesn't
             // redraw the sidebar (spinner.rs).
-            .child(crate::spinner::layer())
+            .child(div().absolute().top_0().left_0().size_full().child(arc_layer))
             .child(self.flight.overlay(cx))
             .children(self.render_swipe_card(cx).map(|card| deferred(card).with_priority(1)))
             // The tour and the pages' intros, over everything (tour.rs).

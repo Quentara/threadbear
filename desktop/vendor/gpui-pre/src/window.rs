@@ -4529,7 +4529,9 @@ impl Window {
     /// Obtain the current element opacity. This method should only be called during the
     /// prepaint phase of element drawing.
     #[inline]
-    pub(crate) fn element_opacity(&self) -> f32 {
+    // Threadbear: public, so the sidebar's turning arcs can fade with their
+    // rows when a layer paints them (gpui/src/spinner.rs).
+    pub fn element_opacity(&self) -> f32 {
         self.invalidator.debug_assert_paint_or_prepaint();
         self.element_opacity
     }
