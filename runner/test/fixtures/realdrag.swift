@@ -101,4 +101,13 @@ check(r.code == 3 && ups(r) == [from] && steps(r).last == from, "lets go where t
 // The guard said the app at the drop, then a window came up there before letting go.
 r = run(stack: { p, n in n >= 40 && p == to ? [popup] + mine : mine })
 check(r.code == 3 && ups(r) == [from], "the drop's window list is looked at after the guard")
+// A drag-and-drop's image (the app's own window) under the pointer at the
+// drop, over our drop target: the guard says the app, and it's let go.
+r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p == to ? app : (p.x >= 600 ? target : app) },
+        stack: { p, _ in p.x >= 600 ? [Over(number: 3, pid: app), Over(number: 5, pid: target)] + mine : mine })
+check(r.code == 0 && r.sent.last == .up(to), "the app's drag image over the drop target")
+// The same image, but over something else at the drop: cancelled.
+r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p == to ? app : (p.x >= 600 ? target : app) },
+        stack: { p, _ in p == to ? [Over(number: 3, pid: app), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
+check(r.code == 3 && ups(r) == [from], "the drag image over an alert at the drop")
 print("realdrag checks passed")
