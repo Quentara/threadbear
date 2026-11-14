@@ -236,8 +236,7 @@ export function fullSyncAnswer(answers: { action: string; answer: string }[] | u
       !a.why &&
       !a.where &&
       !a.reply &&
-      !a.links?.length &&
-      !a.run,
+      !a.links?.length,
   );
   const picked = ask && answers?.find((a) => a.action === ask.action)?.answer;
   return picked === FULL_SYNC_ON ? true : picked === FULL_SYNC_OFF ? false : undefined;

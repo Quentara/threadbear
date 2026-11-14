@@ -20,8 +20,8 @@ you go.
 - [x] Projects: the Projects page and sidebar view, a project's page, its
   decisions, Projects ▸ in the row and ... menus, the header's project tiles
   opening the page, New Thread in a project (`projects.*`, `header.projectchip`)
-- [x] The Terminal: ⌘J with a shell per thread, Run on an ask with a command,
-  the play icon on a reply's shell block (`terminal.*`, `cards.run`)
+- [x] The Terminal: ⌘J with a shell per thread and the play icon on a
+  reply's shell block (`terminal.*`)
 - [x] Slack, email and draft boxes in replies with Copy, and chips in your
   bubbles: pictures, thread ids and card mentions (`rich.draft`,
   `rich.*chips`, `transcript.user`, `transcript.agentmessage`)

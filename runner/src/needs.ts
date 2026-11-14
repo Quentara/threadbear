@@ -49,19 +49,6 @@ export function endTurnForm(input: unknown): 'oneReply' | 'bullets' | undefined 
   return undefined;
 }
 
-export const MAX_RUN_COMMAND = 8000;
-
-// Why a command can't go on a card, if it can't. What's on the card is what
-// Mike is agreeing to, so it has to be what runs: a control character can
-// redraw what's shown, and invisible or bidi ones can show a different
-// command. ShellBlock.swift holds the Mac's ▶ to the same rule.
-export function runCommandProblem(command: string): string | undefined {
-  if (!command.trim()) return 'run is empty.';
-  if (command.length > MAX_RUN_COMMAND) return `run is over ${MAX_RUN_COMMAND} characters: put it in a script and run that.`;
-  if (/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Co}\p{Cs}\p{Cn}]/u.test(command.replace(/[\n\t]/g, ''))) return 'run has control or invisible characters in it, so the card could show something other than what runs. Take them out.';
-  return undefined;
-}
-
 // end_turn's input, checked. Undefined when it isn't usable, so the turn
 // falls back to the text.
 export function needsFromTool(input: unknown): Needs | undefined {
@@ -102,7 +89,6 @@ export function needsFromTool(input: unknown): Needs | undefined {
     }
     const links = linksFrom(r.links);
     if (links.length) ask.links = links;
-    if (typeof r.run === 'string' && !runCommandProblem(r.run)) ask.run = { command: r.run.replace(/\s+$/, '') };
     asks.push(ask);
     if (asks.length === MAX_ASKS) break;
   }

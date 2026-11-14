@@ -158,12 +158,6 @@ impl AskHost for DecisionCard {
         self.place.clone()
     }
 
-    /// Run on an ask with a command (card_run.rs): through the app's runner,
-    /// as its answers go (`send_decision`).
-    fn ask_run_target(&self, _cx: &App) -> Option<crate::card_run::RunTarget> {
-        Some(crate::card_run::RunTarget { client: None, thread: self.thread.clone(), app: self.app.clone() })
-    }
-
     fn ask_reading_style(&mut self, cx: &App) -> gpui_kit::base::TextViewStyle {
         let key = (cx.theme().is_dark(), style::zoom_percent());
         match &self.style {

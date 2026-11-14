@@ -12,7 +12,6 @@ import { api } from '../../convex/_generated/api';
 import type { Id } from '../../convex/_generated/dataModel';
 import { go, threadPath, useRoute } from './route';
 import { useToken } from './token';
-import { RunCommand } from './run-command';
 import { MessageText, Pictures, picturesByRow, ToolRun, Worked, type PageMessage } from './messages';
 import { ReplyButton } from './reply-button';
 import { CommandState } from './command-state';
@@ -408,7 +407,6 @@ function Dock({ token, thread: t, lastSeq, onSent, onArchive }: { token: string;
               </div>
             ) : null}
           </div>
-          {a.run ? <RunCommand token={token} threadId={t.threadId} run={a.run} /> : null}
           {a.links?.length ? (
             <div className="ask-links">
               {a.links.map((l) => (

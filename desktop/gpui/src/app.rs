@@ -1651,9 +1651,6 @@ impl Threadbear {
             if let Some(answers) = composer.answer_chip_lines(cx) {
                 out["answers"] = json!(answers);
             }
-            if let Some(runs) = crate::card_run::composer_lines(composer, cx) {
-                out["cardRuns"] = json!(runs);
-            }
         }
         out
     }

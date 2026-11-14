@@ -337,7 +337,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | ID | Feature | What it does | How in GPUI | Route | Size | Swift |
 |---|---|---|---|---|---|---|
 | `terminal.panel` | Terminal panel | Full emulator, per-thread shell, ⌘J, New Shell | `alacritty_terminal` drawn as our own GPUI element, as Ghostex does with libghostty-vt. | build | L | `TerminalPanel` |
-| `cards.run` | Run on the card | An ask with a command shows it whole with Run, which runs once on the thread's machine and tells the agent | Drawn on the card, pressed through the button RPC. | build | S | `RowRenderer` (`appendRun`), `AppModel+ThreadActions` (`pressRunButton`) |
+| `cards.run` | Run on the card | Taken out 14 Nov 2026: the runAsks experiment was turned off and removed | Not ported: the Swift app's is frozen and the runner no longer offers it. | drop | none | `RowRenderer` (`appendRun`), `AppModel+ThreadActions` (`pressRunButton`) |
 | `terminal.putcommand` | Put a command in the Terminal | Play icon on a shell block types it at the prompt, never presses Return, replaces its own unrun command, copies instead if the shell is busy | Icons on the code block, then the terminal's own paste. | build | S | `ShellBlockIcons`, `ShellBlock`, `TerminalPanel` (`Terminals.put`) |
 | `terminal.lifecycle` | Shell lifecycle | Starts on request, stops on archive or quit | Unix pty on macOS and Linux, ConPTY on Windows. | shim | M | `TerminalPanel` (`Terminals`) |
 

@@ -1177,28 +1177,6 @@ final class AppModel {
         }
     }
 
-    /// Run buttons tapped and not yet taken by the Mac: spinning, and no
-    /// more taps. After that the card's own `running` says so.
-    private(set) var pressingRuns: Set<String> = []
-
-    /// Run on an ask card (backend API 71), which runs on the thread's Mac.
-    func pressRun(threadId: String, buttonId: String) {
-        guard let backend, pressingRuns.insert(buttonId).inserted else { return }
-        Task {
-            defer { pressingRuns.remove(buttonId) }
-            do {
-                let command = try await backend.press(threadId: threadId, buttonId: buttonId)
-                for try await status in backend.command(command) {
-                    guard let status, status.state == .done || status.state == .failed else { continue }
-                    if status.state == .failed { report(TransportError.server(status.note ?? "That Mac couldn't run it.")) }
-                    return
-                }
-            } catch {
-                report(error)
-            }
-        }
-    }
-
     /// Threads whose Stop has been tapped and whose turn hasn't stopped
     /// yet: Stop shows a spinner and takes no more taps meanwhile.
     private(set) var stopping: Set<String> = []

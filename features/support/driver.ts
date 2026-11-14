@@ -69,7 +69,7 @@ export type Dump = {
   };
   /** The line under the bar when the thread can't go on where it is (LimitBanner). */
   limit?: { text: string; button?: string | null; carryOn?: string | null } | null;
-  composer: { draft: string; text: string; images?: number; editing?: number | null; chip?: string; chipBadge?: string | null; mode?: string; card?: string[] | null; cardRuns?: string[] | null; cwd?: string; runner?: string | null; creating?: boolean };
+  composer: { draft: string; text: string; images?: number; editing?: number | null; chip?: string; chipBadge?: string | null; mode?: string; card?: string[] | null; cwd?: string; runner?: string | null; creating?: boolean };
   /** The new-thread page while it's showing. */
   newThread?: { heading: string; note: string; project?: string | null; rooms: { label: string; line: string; selected: boolean; note?: string | null }[] } | null;
   /** The slash palette over the composer while it's open. */

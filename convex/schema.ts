@@ -95,7 +95,8 @@ export const threadFields = {
         suggested: v.optional(v.number()),
         links: v.optional(v.array(v.object({ title: v.string(), url: v.string() }))),
         ticked: v.optional(v.boolean()),
-        // A command with a Run button, pressed like a reply button (phone:press). Since API 71.
+        // Run on the card's command (API 71). Taken out 14 Nov 2026: no runner sends it
+        // now, but rows from before can still have it, so it stays until a schema tidy.
         run: v.optional(v.object({ command: v.string(), buttonId: v.string(), cwd: v.optional(v.string()), running: v.optional(v.boolean()), failed: v.optional(v.string()) })),
       }),
     ),

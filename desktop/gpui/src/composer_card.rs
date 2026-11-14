@@ -697,11 +697,6 @@ pub(crate) trait AskHost: Sized + 'static {
     fn ask_answer_box(&mut self, ask: usize, window: &mut Window, cx: &mut Context<Self>) -> Entity<TextareaState>;
     /// Return in an ask's box; `command` is ⌘Return.
     fn ask_box_return(&mut self, ask: usize, command: bool, window: &mut Window, cx: &mut Context<Self>);
-    /// Where an ask's command is run from (card_run.rs): its thread and that
-    /// thread's runner. None shows the command with no Run.
-    fn ask_run_target(&self, _cx: &App) -> Option<crate::card_run::RunTarget> {
-        None
-    }
     /// The box's text field, given its chips and paste where a host takes
     /// pictures in it (the composer's card does).
     fn ask_box_field(&mut self, _ask: usize, field: Textarea, _cx: &mut Context<Self>) -> Textarea {
@@ -747,11 +742,6 @@ pub(crate) trait AskHost: Sized + 'static {
         // A quiet line of its own, 2 under the paragraph.
         if let Some(place) = ask.where_.as_deref().filter(|w| !w.is_empty()) {
             block = block.child(div().pl(indent).mt(px(metrics::ASK_AFTER)).text_size(px(style::size::SMALL)).line_height(px(metrics::WHERE_LINE)).text_color(style::faint_text(cx)).child(place.to_owned()));
-        }
-        // A command it carries, whole, with Run (card_run.rs).
-        if let Some(run) = &ask.run {
-            let target = self.ask_run_target(cx);
-            block = block.child(crate::card_run::render_run(index, run, indent, target, cx));
         }
         let this = cx.entity().downgrade();
         let half = (metrics::BUTTON_LINE - metrics::BUTTON_HEIGHT) / 2.;
@@ -974,12 +964,6 @@ impl AskHost for Composer {
 
     fn ask_box_return(&mut self, ask: usize, command: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.answer_box_return(ask, command, window, cx);
-    }
-
-    fn ask_run_target(&self, cx: &App) -> Option<crate::card_run::RunTarget> {
-        let pane = self.pane.upgrade()?;
-        let pane = pane.read(cx);
-        Some(crate::card_run::RunTarget { client: Some(pane.client_handle()), thread: pane.summary.id.clone(), app: self.app.clone() })
     }
 
     /// Pictures pasted in an ask's box go in as chips where the cursor is,
@@ -1247,10 +1231,6 @@ impl Composer {
                 crate::chips::show_card(None);
                 window.refresh();
             }
-            ["run", a, _] => {
-                let run = card.asks.get(a.parse::<usize>().map_err(|_| "bad ask")?).and_then(|ask| ask.run.clone()).ok_or("no command on that ask")?;
-                crate::card_run::press_ask(self, &run, cx)?;
-            }
             _ => return Err(format!("unknown card action {action}")),
         }
         Ok(())
@@ -1286,9 +1266,6 @@ impl Composer {
                 let picked = self.card.picks.get(&(i as i64));
                 let mark = if picked.is_some() { "[x]" } else { "[ ]" };
                 lines.push(format!("{mark} {}. {}", i + 1, ask.action));
-                if let Some(run) = &ask.run {
-                    lines.push(format!("    $ {}", run.command));
-                }
             }
         }
         if let Some((title, detail)) = peek {

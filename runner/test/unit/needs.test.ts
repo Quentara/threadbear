@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { PersistedEvent } from '../../src/protocol.ts';
-import { runCommandProblem, offersToTakeItBack, TRY_IT_FIRST, archiveFromTool, snoozeFromTool, bylineFromTool, endedThisTurn, CODEX_END_TURN_DESCRIPTION, CODEX_ONE_REPLY_DESCRIPTION, END_TURN_DESCRIPTION, END_TURN_FULL_NAME, endTurnDescription, needsFromText, needsFromTool, ONE_REPLY_DESCRIPTION, replyAsks, replyAsksNudge, replyWithoutRepeat, splitReplySection, summaryFromTool, summaryMarkdown, turnReply } from '../../src/needs.ts';
+import { offersToTakeItBack, TRY_IT_FIRST, archiveFromTool, snoozeFromTool, bylineFromTool, endedThisTurn, CODEX_END_TURN_DESCRIPTION, CODEX_ONE_REPLY_DESCRIPTION, END_TURN_DESCRIPTION, END_TURN_FULL_NAME, endTurnDescription, needsFromText, needsFromTool, ONE_REPLY_DESCRIPTION, replyAsks, replyAsksNudge, replyWithoutRepeat, splitReplySection, summaryFromTool, summaryMarkdown, turnReply } from '../../src/needs.ts';
 import { END_TURN_TOOL } from '../../src/needs.ts';
 import { SERVER_NAME } from '../../src/threadbear-mcp.ts';
 import { ClaudeNormalizer, fileContext } from '../../src/adapters/claude/normalize.ts';
@@ -453,14 +453,11 @@ test('offersToTakeItBack knows the answers real cards used, and leaves others al
   assert.ok(!offersToTakeItBack([{ action: 'Can you do it?' }]));
 });
 
-test('a command on an ask has to be what it looks like', () => {
-  const asks = (run: string) => needsFromTool({ needs: 'you', asks: [{ question: 'Run it?', run }] })?.asks;
-  assert.equal(asks('npm test\n')?.[0].run?.command, 'npm test');
-  assert.equal(asks('a\n\tb')?.[0].run?.command, 'a\n\tb');
-  for (const bad of ['echo\u001b[201~', 'rm​ x', 'echo ‮oc', 'a b', ' ', 'x'.repeat(8001)]) {
-    assert.ok(runCommandProblem(bad), JSON.stringify(bad));
-    assert.equal(asks(bad)?.[0].run, undefined);
-  }
+// Run on the card was taken out (14 Nov 2026): a session that loaded
+// end_turn while it was on can still pass asks[].run, which is ignored.
+test("an ask's old run argument is dropped", () => {
+  const asks = needsFromTool({ needs: 'you', asks: [{ question: 'Run it?', run: 'npm test' }] })?.asks;
+  assert.deepEqual(asks, [{ action: 'Run it?' }]);
 });
 
 // Thread dcdc60a3 (11 Nov 2026), and Codex's review of the fix: a notice

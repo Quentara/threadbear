@@ -37,9 +37,9 @@ earlier four-platform run.
 
 <!-- parity:start -->
 
-126 of 329 features have a spec so far, across 226 scenarios.
+125 of 329 features have a spec so far, across 225 scenarios.
 
-Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linux: 214 of 226.
+Scenarios passing: Swift: 207 of 225, Mac: 214 of 225, Windows: 192 of 225, Linux: 214 of 225.
 
 
 ### 0. Foundations everything else needs
@@ -216,7 +216,6 @@ Scenarios passing: Swift: 207 of 226, Mac: 214 of 226, Windows: 192 of 226, Linu
 | Feature | Swift | Mac | Windows | Linux |
 |---|---|---|---|---|
 | `terminal.panel` Terminal panel | pending | pending | pending | pending |
-| `cards.run` Run on the card | pending | pending | pending | pending |
 | `terminal.putcommand` Put a command in the Terminal | pending | pending | pending | pending |
 
 ### 14. Projects, Librarian, Schedules, Usage, Runners, Connectors, Updates
@@ -3769,6 +3768,14 @@ Fixes from Codex's review of the slice before:
 - Verification: the scenarios for each (`@sidebar.sections`, `@reply-buttons`,
   `@composer.textbox`, `@menu.app`, `@card.needsyou`) on Tinker Desk, as each
   slice landed.
+### 2026-11-14 Run on the card taken out (`cards.run`)
+
+- Mike turned the `runAsks` experiment off on 10 Nov and asked on 14 Nov for
+  it to go: the play icon on a reply's shell block (`terminal.putcommand`)
+  is what he wanted. `card_run.rs` (core and app), `Ask.run`, the
+  `cardRuns` dump and its scenario are gone; an ask that still carries
+  `run` from an older runner decodes as before, without it.
+
 ### 2026-11-11 Run on the card (`cards.run`)
 
 - An ask that carries a command (`end_turn`'s `run`, behind the runner's

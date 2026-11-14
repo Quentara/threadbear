@@ -664,8 +664,6 @@ function setupFull(opts: { heads?: { threadId: string; lastSeq: number }[]; take
         applied.push(`press ${id} ${buttonId}`);
         return h.runner.pressButton(id, buttonId);
       },
-      // As handover.ts's phoneCommands has it: where the thread is now.
-      listButtons: (id) => h.runner.listButtons(id),
       schedule: (p) => {
         applied.push(`schedule ${p.scheduleId} ${p.action}`);
       },
@@ -3835,66 +3833,6 @@ test("commands: a page asked for while a row sharing the thread is on its way wa
   release!();
   await flushing;
   await sync.stop();
-});
-
-// Daybreak, 10 Nov (finding 61): a card's Run is pressed by its id alone, so
-// it runs the command on this Mac, never what the phone showed. Comment lines
-// dressed as a PEM key around a statement were scrubbed out of the row, and
-// Run ran the statement. Now a Run the scrub would change goes up without its
-// button, and a press from off the Mac is refused all the same.
-import { REMOTE_RUN_REFUSED } from '../../src/tools.ts';
-import { RUN_ASKS_API_VERSION, toPhoneAsk } from '../../src/sync.ts';
-const HIDDEN_RUN = "printf 'Health check OK\\n'\n# -----BEGIN PRIVATE KEY-----\ntouch hidden-execution.txt\n# -----END PRIVATE KEY-----";
-
-test("a card's Run the scrub would change goes up without its button, and a press from the phone is refused", async () => {
-  const { h, sync, calls, push, applied } = setupFull({ apiVersion: RUN_ASKS_API_VERSION });
-  sync.start();
-  await sync.flushNow();
-  fs.writeFileSync(path.join(h.cfg.home, 'runner.json'), JSON.stringify({ ...readRunnerJson(h.cfg.home), experiments: { runAsks: true } }));
-  const t = h.runner.create({ text: 'Health', cwd: h.cfg.defaults.cwd, accountId: 'claude-3', permissionMode: 'ask' }).thread;
-  const s = session(h, t.id);
-  s.init();
-  s.result('completed');
-  await tick();
-  const st = (h.runner as any).threads.get(t.id);
-  const asks = h.runner.armRunAsks(st, [{ action: 'Check health?', why: 'It prints OK.', run: { command: HIDDEN_RUN } }, { action: 'List it?', run: { command: 'ls -la' } }], 'turn_x');
-  st.rec.needs = { seq: st.rec.lastTurnCompletedSeq, needs: 'you', asks };
-  h.runner.update({ threadId: t.id, title: 'Health check' });
-  h.clock.advance(SYNC_COALESCE_MS);
-  await tick();
-  const rows = calls.filter((c) => c.fn === 'sync:upsertThreads').flatMap((c) => c.args.threads as ThreadDoc[]).filter((d) => d.threadId === t.id && d.asks);
-  const up = rows.at(-1)!.asks!;
-  assert.equal(up[0]!.run, undefined, 'no button for what the phone would show scrubbed');
-  assert.equal(up[0]!.why, `It prints OK. ${REMOTE_RUN_REFUSED}`);
-  assert.ok(!JSON.stringify(up).includes(asks[0]!.run!.buttonId!), 'its id never goes up');
-  assert.equal(up[1]!.run?.command, 'ls -la', 'one that shows whole keeps its Run');
-  assert.equal(up[1]!.run?.buttonId, asks[1]!.run!.buttonId);
-
-  // The id sent anyway (a phone or backend that kept it): refused before the runner.
-  push([{ commandId: 'r1', kind: 'press', threadId: t.id, args: { buttonId: asks[0]!.run!.buttonId }, createdAt: 1 }]);
-  await tick(10);
-  const r1 = calls.find((c) => c.fn === 'sync:finishCommand' && c.args.commandId === 'r1')!;
-  assert.equal(r1.args.ok, false);
-  assert.match(String(r1.args.note), /can only be run in the Mac app/);
-  assert.deepEqual(applied.filter((a) => a.startsWith('press')), []);
-  assert.ok(!fs.existsSync(path.join(h.cfg.defaults.cwd, 'hidden-execution.txt')));
-  // The whole one still presses from the phone.
-  push([{ commandId: 'r2', kind: 'press', threadId: t.id, args: { buttonId: asks[1]!.run!.buttonId }, createdAt: 2 }]);
-  await tick(10);
-  assert.deepEqual(applied.filter((a) => a.startsWith('press')), [`press ${t.id} ${asks[1]!.run!.buttonId}`]);
-  await sync.stop();
-});
-
-test("a Run is checked against the runner's own scrub: a value it knows, in the command or its folder, holds it on the Mac", () => {
-  const scrubber = new Scrubber({ env: {}, folders: false });
-  scrubber.known.add('Zq9vLm2Xw8Kp4Rt7');
-  const ask = (command: string, cwd = '/w') => toPhoneAsk({ action: 'Go?', run: { command, cwd, buttonId: 'abcd1234' } }, scrubber.safeText);
-  assert.equal(ask('deploy --token Zq9vLm2Xw8Kp4Rt7').run, undefined);
-  assert.equal(ask('ls', '/w/Zq9vLm2Xw8Kp4Rt7').run, undefined);
-  assert.equal(ask(HIDDEN_RUN).run, undefined);
-  assert.equal(ask('ls').run?.buttonId, 'abcd1234');
-  // A scrub that fails holds it too.
-  assert.equal(toPhoneAsk({ action: 'Go?', run: { command: 'ls', cwd: '/w', buttonId: 'abcd1234' } }, () => { throw new Error('boom'); }).run, undefined);
 });
 
 import { LOOSE_ENDS_API_VERSION } from '../../src/sync.ts';

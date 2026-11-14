@@ -28,7 +28,7 @@ const RUNNER = 'bruce0000001';
 const END_TURN = 'mcp__threadbear__end_turn';
 
 // What a person sees of a thread, on any of the three: its card and its messages.
-export type Ask = { action: string; options?: string[]; optionNotes?: string[]; suggested?: number; links?: { title: string; url: string }[]; run?: { command: string; buttonId?: string; cwd?: string } };
+export type Ask = { action: string; options?: string[]; optionNotes?: string[]; suggested?: number; links?: { title: string; url: string }[] };
 export type View = {
   needs?: string;
   asks: Ask[];
@@ -58,8 +58,6 @@ export type Play = {
   send(text: string, images?: ImageRef[]): void;
   /** Mike sends from his phone, so every surface can mark where it came from. */
   sendFromPhone(text: string): void;
-  /** Turns on Run on the card, for the next end_turn. */
-  runAsks(): void;
   /** Mike presses Go ahead on the last plan (plans.approve). */
   approvePlan(): void;
   /** The agent puts a Plan first plan to Mike (plan.proposed). */
@@ -201,11 +199,6 @@ export async function playInto(post: Post, runner: { key: string; runnerId: stri
       },
       reviewed: (ledger) => {
         h.runner.threads.get(thread.id)!.rec.labReview = { ...ledger, delivered: ledger.rounds };
-      },
-      runAsks: () => {
-        const file = path.join(h.cfg.home, 'runner.json');
-        const json = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
-        fs.writeFileSync(file, JSON.stringify({ ...json, experiments: { ...json.experiments, runAsks: true } }));
       },
       looseEnds: (checkIn) => {
         const file = path.join(h.cfg.home, 'runner.json');

@@ -95,15 +95,6 @@ export const SCENARIOS: Scenario[] = [
     },
   },
   {
-    name: 'a card with a command to run',
-    shows: ['Backfill the titles on prod?', 'npx convex run --prod migrations:backfill'],
-    play: (p) => {
-      p.say('It needs your OK for prod.');
-      p.runAsks();
-      p.endTurn({ needs: 'you', asks: [{ question: 'Backfill the titles on prod?', run: 'npx convex run --prod migrations:backfill' }] });
-    },
-  },
-  {
     name: 'a done card with follow-ups',
     shows: ['Landed it.', 'Make the phone show Stop on a running thread', 'Check the website draws the new card'],
     play: (p) => {

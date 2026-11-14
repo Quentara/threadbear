@@ -516,10 +516,6 @@ button.fold:hover > svg:last-child, button.fold:focus-visible > svg:last-child {
 :root[data-theme='dark'] .reply-button.rb-pressed { color: #5fd17f; }
 :root[data-theme='light'] .reply-button.rb-pressed { color: #23863f; }
 
-.ask-run { margin: 10px 0; }
-.ask-run-command { margin: 0 0 6px; padding: 10px 12px; background: var(--hover); border: 1px solid var(--line); border-radius: 8px; font: 12.5px/1.5 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; }
-.ask-run-note { font-size: 12px; color: var(--muted, #888); margin-bottom: 4px; }
-.ask-run-failed { color: #d9534f; }
 
 /* Another lab's review over its turn's reply (review-row.tsx): small and
    quiet, as on the Mac, since it happens in the background. */

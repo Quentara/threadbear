@@ -12,9 +12,6 @@ struct AsksCard: View {
     /// Its answer is on its way: spinning, and nothing more to press.
     var busy: Bool
     var send: () -> Void
-    /// Run on an ask's command, and which of them are on their way.
-    var run: (PhoneAskRun) -> Void = { _ in }
-    var pressingRuns: Set<String> = []
     /// Goes up with each pick, for its tick. Not the picks themselves, which a
     /// new card clears.
     @State private var pickTaps = 0
@@ -56,7 +53,6 @@ struct AsksCard: View {
                     .textSelection(.enabled)
                     .foregroundStyle(ticked ? .secondary : .primary)
             }
-            if !ticked, let run = ask.run { runView(run) }
             if !ticked, ask.hasNotes {
                 // Each answer says what it does: rows, the note under its
                 // label, as the Mac draws them; links in a row above.
@@ -77,37 +73,6 @@ struct AsksCard: View {
                 }
                 .controlSize(.small)
             }
-        }
-    }
-
-    /// The whole command, as it's what the press agrees to; where it runs;
-    /// and Run, which spins and takes no more taps while it's going.
-    private func runView(_ run: PhoneAskRun) -> some View {
-        let going = run.running == true || pressingRuns.contains(run.buttonId)
-        return VStack(alignment: .leading, spacing: 6) {
-            Text(run.command)
-                .font(.system(.footnote, design: .monospaced))
-                .textSelection(.enabled)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.tertiarySystemBackground), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            if let cwd = run.cwd {
-                Text("In \(cwd)").font(.caption).foregroundStyle(.secondary)
-            }
-            if let failed = run.failed {
-                Text(failed).font(.caption).foregroundStyle(.red)
-            }
-            Button {
-                guard !going else { return }
-                sendTaps += 1
-                self.run(run)
-            } label: {
-                Label(going ? "Running" : run.failed == nil ? "Run" : "Run again", systemImage: "play")
-                    .spinning(going, tint: .white)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-            .allowsHitTesting(!going)
         }
     }
 

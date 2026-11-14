@@ -1007,35 +1007,11 @@ access can't make a button for more than it has: a new thread's
 message to a thread with more access is refused (send_message, which
 asks first, is for that). A thread keeps its last 200 buttons.
 
-#### Run on the card
-
-Behind the `runAsks` experiment. `end_turn`'s asks can carry `run`, a shell
-command at most 8000 characters with no control or invisible characters
-(`end_turn` refuses one that has them). As the card is made the runner gives
-each a button with `run: { command, cwd }` and sets the ask's `run` to
-`{ command, cwd, buttonId }`; the agent never sees the id, so its replies
-can't link one, and `[...](button:<id>)` to a run isn't drawn as a pill or
-mirrored, as a pill couldn't show the command.
-
-`buttons.press` on one starts the command in `cwd` on the thread's runner
-(stdin closed, ten-minute limit, whole process group ended), and answers
-straight away with `running: { at }`; pressing again returns it as it is.
-Only the open card's command can be pressed. When it ends the button gets
-`pressed` and `ran: { ok, exitCode?, durationMs }`, an `action.run` event
-(`patch: "card"`) carries the output, and the agent is told as a runner
-message, last 8000 characters of output. The ask's `run` mirrors `running`
-and `failed` so the phone can draw them. A press that can't start is
-`failed` and can be pressed again; so is one a restart cut off, which says
-it may have partly run, and the agent is told.
-
-A press is by id, so it runs the command as the runner has it, not as a
-client showed it. So an ask whose `command` or `cwd` the sync's scrub would
-change (a secret in it, or comment lines dressed as a PEM key around a
-statement) goes up with no `run`, its `why` saying it can only be run in the
-Mac app connected straight to the runner, and a `press` command for a run
-whose command or folder the runner's scrub changes, checked again when it
-comes, fails with that. The Mac app connected straight to the runner shows
-the command unscrubbed and presses it as before.
+Run on the card (asks carrying a `run` command with a Run button) was
+taken out on 14 Nov 2026. `end_turn` ignores an ask's `run`, a button left
+over from it (one with `run` and neither `start` nor `send`) refuses a
+press, and clients ignore `run` on an ask. Backend API 71 still lets an
+ask carry it, for rows written then.
 
 On the phone and the website (Sync, backend API 59), pressing calls
 `phone:press({ threadId, buttonId })`, which queues a `press` command with

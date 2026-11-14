@@ -203,9 +203,9 @@ struct ThreadView: View {
                         WorkingLine(text: thread.working)
                             .id("working:\(thread.status == .running)")
                     } else if let asks = thread.asks, !asks.isEmpty, showsAsks(thread) {
-                        AsksCard(asks: asks, picks: $picks, busy: sendingCard, send: {
+                        AsksCard(asks: asks, picks: $picks, busy: sendingCard) {
                             sendCard(thread, lastSeq: messages.last?.seq)
-                        }, run: { model.pressRun(threadId: thread.threadId, buttonId: $0.buttonId) }, pressingRuns: model.pressingRuns)
+                        }
                         .onChange(of: thread.asksSeq, initial: true) {
                             // A new card starts with nothing picked.
                             if pickedFor != thread.asksSeq { picks = [:]; pickedFor = thread.asksSeq }

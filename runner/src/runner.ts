@@ -2586,7 +2586,6 @@ export class Runner {
     // What it needs from Mike: its end_turn call, else its closing "What I
     // need from you". Only a turn it finished; a stopped one says nothing.
     const said = outcome === 'completed' ? turnNeeds(turn) : undefined;
-    if (said?.asks) said.asks = this.armRunAsks(st, said.asks, turn.turnId);
     if (said) {
       body.needs = said.needs;
       if (said.asks) body.asks = said.asks;
