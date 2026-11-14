@@ -180,17 +180,21 @@ impl DockView {
         self.last_motion.as_ref().map(|(from, to)| (from, to, self.motion.is_some()))
     }
 
-    /// Whether `panel` is drawn in this window now: the front panel of one of
-    /// its groups, as drawn (a panel with nothing to show is left out and
-    /// another tab stands in, as `group` does), not out in a window of its own.
+    /// Whether `panel` is drawn in this window now: the front panel of a group
+    /// the dock draws, walking the layout as `node` and `split` do (a split
+    /// leaves out children with nothing to show, unless none has anything;
+    /// a group's front is the first tab with something to show, as `group`
+    /// has it). Not one out in a window of its own.
     pub fn shows(&self, panel: &str, cx: &App) -> bool {
-        let layout = self.model.read(cx).layout();
         let content = self.content.clone();
-        if !content.available(panel, cx) {
-            return false;
-        }
         let is_available = |p: &str| content.available(p, cx);
-        layout.groups().into_iter().any(|g| g.panels.iter().any(|p| is_available(p)) && dl::visible_group(&g, &is_available).selected == panel)
+        fn walk(node: &DockNode, panel: &str, is_available: &dyn Fn(&str) -> bool) -> bool {
+            match node {
+                DockNode::Group(g) => dl::visible_group(g, is_available).selected == panel,
+                DockNode::Split(s) => dl::shown_indices(s, is_available).into_iter().any(|i| walk(&s.children[i], panel, is_available)),
+            }
+        }
+        walk(&self.model.read(cx).layout().root, panel, &is_available)
     }
 
     /// Whether a dropped panel's ghost is still flying to where it landed.
