@@ -1576,6 +1576,16 @@ the restart is asked for.
 
 ### App restarts
 
+The GPUI app waits until main's `desktop/` tree has stayed the same for ten
+minutes before requesting an update build. Landings outside that tree do not
+restart the wait. It observes changes during a build too, keeps one build
+at a time, lets a staged version go in before building another, and considers
+only the latest tree afterwards. Automatic remote update builds try both
+host leases without queueing; a busy host or a live
+measurement waiter defers the update until a later look. A build already
+running keeps its leases until its work and cleanup finish. Only
+`updateBuildHosts` can supply the binaries, as before.
+
 An agent that changed the Mac app lands it; the app restarts onto the new
 build by itself once Mike leaves it idle, or sooner if he picks Restart to
 Update. The agent wants to know when it has, to check the change in the
@@ -4917,6 +4927,12 @@ clears it too: he has seen the reply it went with. The tool waits up to 2
 seconds for `threads.panelShown`, so its answer says whether Mike has the
 panel in front of him now or will when he next looks.
 
+A request naming a pin waits for a successful highlights answer requested
+for that pin before a missing pin falls back to Highlights. Other pane or
+thread updates and failed fetches leave the request waiting; later fetches
+from a busy turn do not hold back the answer it needed.
+Transient fetch errors are retried while Mike is looking at that thread.
+
 During a handover the request stays with the thread on the runner that
 has it, and the primary passes `threads.panelShown` on as it does any
 thread's request.
@@ -5412,7 +5428,13 @@ kept in `schedules.json` in the data dir.
   process that has gone) changes nothing but the claim. A runner key's
   schedule keeps 400 bytes of its 16 KB for that run record. Making, changing and
   deleting go straight to the backend and answer once it has them; with
-  no backend reachable they fail with `-32000` saying so. Nothing fires
+  no backend reachable they fail with `-32000` saying so. A transport
+  failure includes known network error codes or timeout/abort names from
+  its causes (for example `ECONNRESET` or `TimeoutError`), without copying
+  cause messages, addresses or request data.
+  Saves are not retried automatically: a lost reply may follow a committed
+  write. Pausing, deleting or editing a schedule leaves messages already accepted
+  into a busy thread's queue as they were when sent. Nothing fires
   without the backend. After a failed first heartbeat, the runner retries
   after 1 second, doubling the delay up to a minute until it hears the
   backend, so a brief startup outage doesn't hold schedules for a minute.

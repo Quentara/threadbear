@@ -62,7 +62,7 @@ impl Threadbear {
     /// has none, and `clis.list` tells which.
     pub(crate) fn updates_from_hello(&mut self, hello: &Value) {
         let panel = &mut self.updates_panel;
-        panel.clis = rules::decode_clis(&hello["clis"]);
+        panel.clis = rules::decode_clis_with(&hello["clis"], &self.logins);
         panel.clis_supported = if panel.clis.is_empty() { None } else { Some(true) };
         panel.runner = RunnerUpdates::decode(&hello["updates"]);
         panel.busy.clear();
@@ -79,7 +79,7 @@ impl Threadbear {
             this.update(cx, |t, cx| {
                 match res {
                     Ok(v) => {
-                        t.updates_panel.clis = rules::decode_clis(&v["clis"]);
+                        t.updates_panel.clis = rules::decode_clis_with(&v["clis"], &t.logins);
                         t.updates_panel.clis_supported = Some(true);
                     }
                     Err(e) if e.code == -32601 => {
@@ -97,7 +97,7 @@ impl Threadbear {
 
     /// `clis.updated`: the latest list wins.
     pub(crate) fn clis_updated(&mut self, params: &Value) {
-        self.updates_panel.clis = rules::decode_clis(&params["clis"]);
+        self.updates_panel.clis = rules::decode_clis_with(&params["clis"], &self.logins);
         self.updates_panel.clis_supported = Some(true);
     }
 
@@ -142,7 +142,7 @@ impl Threadbear {
                 t.updates_panel.busy.remove(&key);
                 match res {
                     Ok(v) => {
-                        t.updates_panel.clis = rules::decode_clis(&v["clis"]);
+                        t.updates_panel.clis = rules::decode_clis_with(&v["clis"], &t.logins);
                         t.updates_panel.clis_supported = Some(true);
                     }
                     Err(e) => {
@@ -428,7 +428,7 @@ impl Threadbear {
         let line = h_flex()
             .gap(px(7.))
             .items_center()
-            .when(side.building && side.staged.is_none(), |s| s.child(div().size(px(11.)).child(gpui_kit::component::spinner::Spinner::new().icon(gpui_kit::assets::IconName::LoaderCircle).color(secondary).with_size(px(11.)))))
+            .when(side.building && side.staged.is_none(), |s| s.child(div().size(px(11.)).child(crate::spinner::Spinner::new().icon(gpui_kit::assets::IconName::LoaderCircle).color(secondary).with_size(px(11.)))))
             .child(div().whitespace_nowrap().text_size(px(12.)).text_color(style::label_text(cx)).child(rules::popover_line(&side)));
         let button = match &staged {
             // Return takes it, as the popover is there for this.
@@ -778,7 +778,7 @@ fn section(title: &'static str, content: Vec<AnyElement>, cx: &App) -> AnyElemen
 /// The automation's `updates` (the Swift app's): `show` opens or closes the
 /// panel; with nothing, whether the icon has its dot, its tooltip, and what
 /// the panel says about the app and the runner. `preview` makes up the app's
-/// own update first (`staged`, `building`, `failed`, `waiting` or `none`), as
+/// own update first (`staged`, `building`, `settling`, `failed`, `waiting` or `none`), as
 /// the Swift app's; this app has no right-click popover (`rightClick`).
 pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Window, cx: &mut App) -> Result<Value, String> {
     // What a restart onto an update leaves for the next launch, put back as
@@ -805,8 +805,8 @@ pub(crate) fn automation(app: &Entity<Threadbear>, cmd: &Value, window: &mut Win
         return Ok(json!("ok"));
     }
     if let Some(state) = cmd["preview"].as_str() {
-        if !["staged", "building", "failed", "waiting", "no-builder", "none"].contains(&state) {
-            return Err("preview is staged, building, failed, waiting, no-builder or none".into());
+        if !["staged", "building", "settling", "failed", "waiting", "no-builder", "none"].contains(&state) {
+            return Err("preview is staged, building, settling, failed, waiting, no-builder or none".into());
         }
         app.update(cx, |t, cx| t.preview_update(state, cx));
     }

@@ -33,7 +33,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `foundation.markdown` | Markdown renderer | GFM to styled blocks, each block cached by its text | `TextView` for Markdown, with our own per-block cache so only the open block re-renders. | kit | L | `MarkdownRenderer`, `MarkdownBlocks`, `MarkdownNesting` |
 | `foundation.highlighting` | Code highlighting | Colours code in the file pane | gpui-kit's code editor highlighter (tree-sitter or syntect). | kit | M | `TextFileView` (`CodeHighlighter`) |
 | `foundation.zoom` | Zoom | ⌘= ⌘- ⌘0 scale everything together, remembered | One scale value applied to the type scale and spacing, saved in the config file. | build | S | `Theme` (`TextZoom`, `TypeScale`) |
-| `foundation.theme` | Theme and appearance | Light, dark or system, picked per app | Our own colour tokens over gpui-kit's theme; following the OS accent colour per OS is (unverified). | build | M | `Theme`, `AppAppearance` |
+| `foundation.theme` | Theme and appearance | Light, dark or system, picked per app | Our colour tokens over gpui-kit's theme; Mac accent and Increase Contrast follow AppKit, read at launch and on return. Other systems' accent is unverified. | build | M | `Theme`, `AppAppearance` |
 | `foundation.fonts` | Typefaces | Geist for the interface and Geist Mono for code, when they're installed; the system's own faces stand in otherwise | Named on gpui-kit's light and dark themes, which every view takes its font from; the terminal names Geist Mono itself. | build | S | `AppFonts` |
 | `foundation.backdrop` | The picture behind the window | Bierstadt's painting, frosted, behind the activity bar, every panel and the rail, as tall as the window and mirrored either side when it's wider; the panels, bar and rail tinted glass over it, the seams between panels a faint line | Blurred once as it loads, on the background executor; BearDock's `PanelFill` for the panels and their seams. | build | M | `WindowBackdrop`, `WindowBackdropStore`, `DockView` (`panelFill`, `gapFill`) |
 | `foundation.icons` | Icon set | About 116 distinct literal SF Symbols (a floor, from my grep) | Bundled icon set, with a name map so each symbol use moves across. | build | M | Every view |
@@ -47,7 +47,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `foundation.dialogs` | Confirm dialogs | Delete, going back with jobs running, odd link schemes | gpui-kit dialog. | kit | S | 7 files |
 | `foundation.filepicker` | Native file pickers | Attach, folder choose, project icon | GPUI path prompts. | kit | S | 6 files, `ProjectFilePicker` |
 | `foundation.opengate` | Open gate | The one route to open links and files, with trust rules | Port the trust rules, then per-OS open and default-app lookup on macOS, Windows and Linux, and re-prove the security checks on each. | shim | M | `OpenGate`, `LinkPolicy` |
-| `foundation.spinner` | Spinner | Turning arc run by the render server | GPUI `Animation` on an arc, which stops if the foreground thread stalls because GPUI has no render-server equivalent. | build | S | `Spinner` |
+| `foundation.spinner` | Spinner | Turning arc run by the render server | Kit-style loaders share the display link and stay static under Reduce Motion. Working arcs keep their window layer and timer. GPUI still draws them on the main thread. | build | S | `Spinner` |
 | `foundation.busy` | Busy and optimistic pattern | Every click shows at once, double click blocked | Shared busy-key helper on entities, with a rule check like `EveryClickShowsTests`. | build | S | `AppModel+Busy`, `BusyControl` |
 | `foundation.firstclick` | First click counts | Clicks work with the app in the background | macOS: GPUI's window accepts the first mouse, and so do the web panels' pages (real clicks on Tinker Desk, `features/tools/first-click.ts`, 13 Nov); confirm the same on Windows and Linux. | shim | S | `FirstClick` |
 | `foundation.scrollers` | Overlay scrollers | Always overlay, so the reading column stays centred | Draw our own overlay scrollbar over the list (unverified whether stock scrollbars can stay overlay; Ghostex's fork added scrollbar control). | build | S | `Spinner` (`OverlayScrollView`) |
@@ -142,7 +142,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `toast.milestone` | Milestone toast | Thread count passes 100 and each thousand | `Toast`, using time since the last in-app input in place of the system idle time. | kit | S | `DetailView`, `AppModel+Milestones` |
 | `thread.newpage` | New-thread page | Centred composer, heading, project chip, note, room card | Drawn page reusing the composer. | build | M | `DetailView` (`ComposerPlacement`, `NewThreadHeading`, `AccountRoomCard`) |
 | `thread.loadfailure` | Load failure states | Couldn't load, Try again, no record, Nothing yet | Drawn. | build | S | `DetailView` |
-| `thread.loading` | Reading a thread | A small spinner in the middle of the transcript, no words, until its rows are read | Kit spinner over the list while the pane isn't loaded. | build | S | `DetailView` |
+| `thread.loading` | Reading a thread | A small spinner in the middle of the transcript, no words, until its rows are read | Loader over the list while the pane isn't loaded, on the shared loading-spinner clock. | build | S | `DetailView` |
 | `thread.kept` | Threads kept loaded | The last 24 threads opened stay loaded, so switching back shows one at once and catches up from its last seq | `PaneCache` of panes, still subscribed; least recently shown goes first. | build | M | `AppModel+Selection` (`sessions`, `maxSessions`) |
 
 ## 5. Transcript row kinds
@@ -210,6 +210,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | `rich.picturechips` | Picture chips | "Picture 1" in sent words, hover picture, click Quick Look | Drawn chip, `Popover` picture, and `file.quicklook`'s in-app viewer. | build | M | `PictureChips`, `InlinePictures` |
 | `rich.worklinks` | Work links | ↑ link jumps to the step | Port the link parsing and scroll to the row. | build | S | `WorkLinks`, `TranscriptController` |
 | `rich.filerefs` | File path refs | Paths in text become links, relative to the thread folder | Port the parsing and add click runs. | build | S | `FilePathRefs`, `TextKit` |
+| `rich.textservices` | Mac text services | Look Up, Translate, Writing Tools and Services for selected words | Shared selection getter, checked undoable returns, AppKit responder proxy and system popovers. Other systems omit these Mac services. | shim | M | `ComposerTextView`, `TextKit` |
 | `rich.linkpeek` | Link hover peek | File picture or page address after a pause | macOS: `QLThumbnailGenerator`; Windows and Linux: images decoded in-app and addresses only, shown in a `Popover`. | shim | M | `LinkPeek`, `ThreadChips` (`ChipCardWindow`) |
 | `rich.filemenu` | File link menu | Open ways, Copy Path, Default sets the click | gpui-kit menu, with the list of apps coming from per-OS code on macOS, Windows and Linux. | shim | M | `FileLinks` |
 | `rich.webmenu` | Web link menu | Browser, panel, per Chrome profile, Copy Link, Default | gpui-kit menu, with Chrome's profile list read from a per-OS path on macOS, Windows and Linux. | shim | M | `FileLinks`, `ChromeProfiles` |
@@ -226,6 +227,7 @@ It comes from reading code, not from running anything, so "(unverified)" means n
 | ID | Feature | What it does | How in GPUI | Route | Size | Swift |
 |---|---|---|---|---|---|---|
 | `composer.textbox` | Text box | Multi-line, grows, undo, wrap, per-thread drafts | `Textarea`, tested early with IME and dictation (XIM on X11, text-input on Wayland). | kit | L | `ComposerView` (`ComposerTextView`) |
+| `composer.idle` | Idle text box | Keeps an untouched draft and accepts editing again | The caret stays visible after ten seconds without editing or cursor movement, then resumes on activity. | kit | S | `ComposerView` |
 | `composer.spelling` | Spelling | Misspelled words marked, guesses, Ignore and Learn Spelling on right-click, autocorrect and text replacements as a word ends, the right-click menu's Spelling and Grammar, Substitutions, Transformations and Speech | The Mac's spell checker (NSSpellChecker) and speech through objc2, the marks drawn by the kit's textarea (our `set_text_marks`); none on Windows or Linux. | build | M | `ComposerView` (`ComposerTextView`, NSTextView's own) |
 | `composer.return` | Return, Shift-Return | Send, new line | Key bindings on `Textarea`. | build | S | `ComposerView` |
 | `composer.listcontinue` | List continuation | "2. " after "1. x", empty item ends it, one undo | Port the rule on `Textarea` (unverified that it can make one undo step). | build | S | `ComposerView` (`insertLineContinuingList`) |
@@ -495,24 +497,24 @@ Size is `none` throughout: the planning docs don't size these, and work the app 
 
 | Route | Inventory | Planned | All |
 |---|---|---|---|
-| kit | 65 | 1 | 66 |
+| kit | 66 | 1 | 67 |
 | build | 200 | 16 | 216 |
 | web | 6 | 1 | 7 |
-| shim | 24 | 0 | 24 |
+| shim | 25 | 0 | 25 |
 | hard | 13 | 0 | 13 |
 | drop | 3 | 0 | 3 |
-| Total | 310 | 18 | 328 |
+| Total | 312 | 18 | 330 |
 
 **Per size**
 
 | Size | Inventory | Planned | All |
 |---|---|---|---|
-| S | 172 | 0 | 172 |
-| M | 96 | 0 | 96 |
+| S | 173 | 0 | 173 |
+| M | 97 | 0 | 97 |
 | L | 33 | 0 | 33 |
 | XL | 5 | 0 | 5 |
 | none | 4 | 18 | 22 |
-| Total | 310 | 18 | 328 |
+| Total | 312 | 18 | 330 |
 
 **The `hard` rows**
 

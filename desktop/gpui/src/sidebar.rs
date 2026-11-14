@@ -13,7 +13,7 @@ use gpui_kit::base::TestSupportExt as _;
 use gpui_kit::component::dialog::DialogButtonProps;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::menu::{PopupMenu, PopupMenuItem};
-use gpui_kit::component::spinner::Spinner;
+use crate::spinner::Spinner;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme as _, Icon, Sizable as _, StyledExt as _, WindowExt as _};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -25,6 +25,7 @@ use std::rc::Rc;
 use std::time::Duration;
 
 use threadbear_core::inbox::{iso_time, InboxOrder, ThreadSummary};
+use threadbear_core::juice;
 use threadbear_core::sidebar::{self as rows, RowAction, RowLook, RowMode, Tile, TrailingKind};
 use crate::tips::Tip as _;
 
@@ -1048,33 +1049,46 @@ impl Threadbear {
     /// "Pick a time…": a calendar and a time, and a word if it's already
     /// gone (`SnoozePicker`).
     pub(crate) fn open_pick_time(&mut self, id: String, window: &mut Window, cx: &mut Context<Self>) {
-        use gpui_kit::component::date_picker::{DatePicker, DatePickerState};
-        use gpui_kit::component::time_field::TimePrecision;
+        style::refresh_system_clock();
+        use gpui_kit::component::calendar::{Calendar, CalendarState, Matcher};
+        use gpui_kit::component::time_field::{HourCycle, TimeField, TimeFieldState, TimePrecision};
         use threadbear_core::chrono::{Duration as ChronoDuration, Local, NaiveDateTime, TimeZone as _};
         let entity = cx.entity().downgrade();
         let start: NaiveDateTime = (Local::now() + ChronoDuration::hours(3)).naive_local();
-        let picker = cx.new(|cx| {
-            let mut state = DatePickerState::new(window, cx).time_precision(TimePrecision::Minute);
-            state.set_date_time(start, window, cx);
+        let calendar = cx.new(|cx| {
+            let mut state = CalendarState::new(window, cx).disabled_matcher(Matcher::interval(Some(Local::now().date_naive()), None));
+            state.set_date(start.date(), window, cx);
             state
         });
-        window.open_alert_dialog(cx, move |dialog, _, _| {
-            let (entity, picker_read, id) = (entity.clone(), picker.clone(), id.clone());
+        let time = cx.new(|cx| {
+            let cycle = if style::uses_24_hour_clock() { HourCycle::H23 } else { HourCycle::H12 };
+            let mut state = TimeFieldState::new(window, cx).precision(TimePrecision::Minute).hour_cycle(cycle);
+            state.set_time(start.time(), window, cx);
+            state
+        });
+        let already_gone = Rc::new(std::cell::Cell::new(false));
+        window.open_alert_dialog(cx, move |dialog, _, cx| {
+            let (entity, calendar_read, time_read, id, already_gone_read) = (entity.clone(), calendar.clone(), time.clone(), id.clone(), already_gone.clone());
             dialog
                 .title("Hibernate until")
                 .width(px(360.))
-                .child(DatePicker::new(&picker))
+                .child(v_flex().items_center().gap(px(10.))
+                    .child(div().id("snooze-day").tip("Day to wake it").child(Calendar::new(&calendar)))
+                    .child(div().id("snooze-time").w(px(125.)).tip("Time to wake it").child(TimeField::new(&time))))
+                .when(already_gone.get(), |dialog| dialog.description(div().text_color(style::failed_text(cx)).child("That time has already gone. Pick a later one.")))
                 .button_props(DialogButtonProps::default().ok_text("Hibernate").show_cancel(true))
                 .on_ok(move |_, window, cx| {
-                    let when = picker_read.read(cx).date_time().start();
-                    let Some(ms) = when.and_then(|w| Local.from_local_datetime(&w).earliest()).map(|d| d.timestamp_millis()) else { return true };
-                    if ms <= now_ms() {
-                        // An earlier time today would wake it straight back up.
-                        window.push_notification("That time has already gone. Pick a later one.", cx);
+                    let when = calendar_read.read(cx).date().start().map(|day| day.and_time(time_read.read(cx).time()));
+                    let ms = when.and_then(|w| Local.from_local_datetime(&w).earliest()).map(|d| d.timestamp_millis());
+                    if ms.is_none_or(|ms| ms <= now_ms()) {
+                        // Keep the chosen day and time in place so they can be
+                        // corrected, including a time skipped by the local clock.
+                        already_gone_read.set(true);
+                        window.refresh();
                         return false;
                     }
                     let id = id.clone();
-                    entity.update(cx, |this, cx| this.snooze_row(id, ms, window, cx)).ok();
+                    entity.update(cx, |this, cx| this.snooze_row(id, ms.unwrap(), window, cx)).ok();
                     true
                 })
         });
@@ -1105,7 +1119,8 @@ impl Threadbear {
 
     /// The whole list: search and new-thread line, then the sections.
     pub(crate) fn render_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let p = palette(cx);
+        let mut p = palette(cx);
+        p.selected = style::sidebar_selection(cx, self.milestone.active);
         let now = now_ms();
         let clock: Clock = rows::local_now();
         let query = self.search.read(cx).value().trim().to_lowercase();
@@ -1591,7 +1606,7 @@ impl Threadbear {
             // project line ran on under them (Mike, 12 Nov). It's cut short
             // before them instead.
             .child(div().flex_1().min_w(px(if show_buttons { actions_room } else { 6. })))
-            .when(!show_buttons, |s| s.child(render_trailing(&trailing, id.clone(), p)));
+            .when(!show_buttons, |s| s.child(render_trailing(&trailing, id.clone(), p, cx.reduce_motion())));
 
         let actions = mode.actions();
         let is_sample = t.sample == Some(true);
@@ -1895,8 +1910,54 @@ fn render_tile(t: &ThreadSummary, look: &RowLook, behind: Hsla, project_icon: Op
         .when_some(mark, |s, m| s.child(m))
 }
 
-/// What the right of the second line says: a word or the time, with its look.
-fn render_trailing(trailing: &rows::Trailing, id: String, p: &Palette) -> AnyElement {
+thread_local! {
+    /// What each row's status said when last drawn, and the one before while
+    /// it's still fading out, by thread.
+    static STATUSES: std::cell::RefCell<HashMap<String, (rows::Trailing, Option<(rows::Trailing, std::time::Instant)>)>> = std::cell::RefCell::new(HashMap::new());
+}
+
+/// A row's status words, changing with a short fade when the status does
+/// ("Working 41s" to "now"): the old words fade out as the new ones fade up
+/// from 3 pt above (juice::status_swap). The Swift app blurs them, which GPUI
+/// can't; Mike left the lighter take to us (14 Nov). The words changing
+/// within a status (the clock going on) don't fade, nor under Reduce Motion.
+fn render_trailing(trailing: &rows::Trailing, id: String, p: &Palette, reduce: bool) -> AnyElement {
+    let swapping = STATUSES.with(|m| {
+        let mut m = m.borrow_mut();
+        let entry = m.entry(id.clone()).or_insert_with(|| (trailing.clone(), None));
+        if entry.0.kind != trailing.kind && !reduce {
+            entry.1 = Some((entry.0.clone(), std::time::Instant::now()));
+        }
+        entry.0 = trailing.clone();
+        entry.1.clone().filter(|(_, at)| at.elapsed() < juice::STATUS_IN)
+    });
+    let words = trailing_words(trailing, id.clone(), p);
+    let Some((before, at)) = swapping else { return words };
+    let old = trailing_words(&before, format!("{id}-before"), p);
+    // Laid out as the words alone are: a working clock keeps its width, other
+    // words give way to the folder beside them.
+    let mut frame = div().relative();
+    if matches!(trailing.kind, TrailingKind::Working | TrailingKind::Background) {
+        frame = frame.flex_none();
+    } else {
+        frame = frame.min_w_0();
+        frame.style().flex_shrink = Some(20.);
+    }
+    let key = format!("{id}-{at:?}");
+    frame
+        .child(div().relative().child(words).with_animation(SharedString::from(format!("status-in-{key}")), Animation::new(juice::STATUS_IN), |el, t| {
+            let (shown, above, _) = juice::status_swap(juice::STATUS_IN.mul_f32(t));
+            el.opacity(shown).top(px(-above))
+        }))
+        .child(div().absolute().top_0().right_0().child(old).with_animation(SharedString::from(format!("status-out-{key}")), Animation::new(juice::STATUS_IN), |el, t| {
+            el.opacity(juice::status_swap(juice::STATUS_IN.mul_f32(t)).2)
+        }))
+        .into_any_element()
+}
+
+/// What the right of the second line says: a word or the time, with its look
+/// (`ThreadRowView.trailing`).
+fn trailing_words(trailing: &rows::Trailing, id: String, p: &Palette) -> AnyElement {
     let text = trailing.text.clone();
     let meta = px(style::size::SIDEBAR_META);
     let tip = trailing.tip.clone();

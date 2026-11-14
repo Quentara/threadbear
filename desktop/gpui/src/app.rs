@@ -207,9 +207,9 @@ pub struct Threadbear {
     /// pane opens by itself when it changes (agent_browser.rs).
     pub(crate) browser_handoff_seen: Option<String>,
     browser_generation: u64,
-    /// Pin requests whose highlights have been fetched once for them, so a
-    /// pin unpinned since opens Highlights rather than fetching for good.
-    pub(crate) pins_fetched: HashSet<String>,
+    /// The highlights fetch each pin request needs an answer from, so an
+    /// older answer or a failed fetch cannot consume the request.
+    pub(crate) pins_fetched: HashMap<String, u64>,
     /// Why the connection last went, kept while it tries again, so the banner
     /// says what's wrong rather than flicking to "Connecting" on each try
     /// (`connection()`). Cleared when it's back, and by Try again.
@@ -316,6 +316,7 @@ impl Threadbear {
         crate::style::set_appearance(crate::style::Appearance::from_name(settings.saved.appearance.as_deref().unwrap_or("system")), window, cx);
         let appearance = window.observe_window_appearance(|window, cx| {
             crate::style::refresh_system_accent(cx);
+            crate::style::refresh_system_contrast(cx);
             if crate::style::appearance() == crate::style::Appearance::System {
                 Theme::sync_system_appearance(Some(window), cx);
             }
@@ -432,6 +433,7 @@ impl Threadbear {
         crate::thread::set_looking(crate::thread::window_key(window), window.is_window_active());
         let looking = cx.observe_window_activation(window, |this, window, cx| {
             this.milestone.active = window.is_window_active();
+            cx.notify();
             this.looking_changed(crate::thread::window_key(window), window.is_window_active(), cx);
         });
         // A pin an agent asked to show may only be in Highlights once they've
@@ -559,7 +561,7 @@ impl Threadbear {
             subagent: None,
             subagent_pane: None,
             subagent_events: None,
-            pins_fetched: HashSet::new(),
+            pins_fetched: HashMap::new(),
             last_drop: None,
             starting_runner: false,
             runner_checkout: None,
@@ -680,6 +682,8 @@ impl Threadbear {
         crate::thread::set_looking(window, active);
         if active {
             crate::style::refresh_system_accent(cx);
+            crate::style::refresh_system_contrast(cx);
+            crate::style::refresh_system_clock();
             // A script's explicit motion choice is independent of the test
             // host's setting, including when both happened to start equal.
             if !cfg!(feature = "automation") || !matches!(std::env::var("THREADBEAR_REDUCE_MOTION").as_deref(), Ok("on" | "off")) {
@@ -714,12 +718,31 @@ impl Threadbear {
         let Some(request) = self.panel_gate.take(Some(&thread), crate::thread::is_looking()) else { return };
         if let Some(pin) = request.highlight.clone() {
             let item = self.side.read(cx).highlights.get(&thread.id).and_then(|h| h.highlights.iter().find(|x| x.id == pin).cloned());
-            if item.is_none() && self.pins_fetched.insert(request.id.clone()) {
-                // Fetched first; their coming tries it again.
-                self.panel_gate.release(&request.id);
-                let id = thread.id.clone();
-                self.side.update(cx, |side, cx| side.refresh_highlights(id, std::time::Duration::ZERO, cx));
-                return;
+            if item.is_none() {
+                let target = match self.pins_fetched.get(&request.id).copied() {
+                    Some(target) => target,
+                    None => {
+                        let id = thread.id.clone();
+                        let target = self.side.update(cx, |side, cx| {
+                            side.refresh_highlights(id.clone(), std::time::Duration::ZERO, cx);
+                            side.highlights_wanted(&id)
+                        });
+                        self.pins_fetched.insert(request.id.clone(), target);
+                        target
+                    }
+                };
+                if !self.side.read(cx).highlights_answered(&thread.id, target) {
+                    // A busy turn may keep fetching newer snapshots, but the
+                    // first successful answer for this request is enough.
+                    self.panel_gate.release(&request.id);
+                    // Returning after an error stopped retries while away
+                    // needs a new fetch even when the thread stayed quiet.
+                    if !self.side.read(cx).highlights_fetching(&thread.id) {
+                        let id = thread.id.clone();
+                        self.side.update(cx, |side, cx| side.refresh_highlights(id, std::time::Duration::ZERO, cx));
+                    }
+                    return;
+                }
             }
             self.show_requested(&RequestedPanel::Section(requests::HIGHLIGHTS.to_owned()), &RequestedPlace::Usual, &thread, cx);
             // Only the pane: an agent showing a file never starts its app.
@@ -974,6 +997,13 @@ impl Threadbear {
                     if let Some(pane) = self.kept.get(id, cx) {
                         pane.update(cx, |p, cx| p.event(&params, cx));
                     }
+                    // Each pane draws its own events again, a few at a time
+                    // (its 33 ms flush), so the app isn't told: telling it
+                    // drew the sidebar, the main panel and the side pane
+                    // again for every word of a reply coming in, for any
+                    // thread kept loaded too. What else an event changes
+                    // (a title, its status) comes as `thread.updated`.
+                    return;
                 }
                 _ => {}
             },
@@ -1577,6 +1607,8 @@ impl Threadbear {
         dump["flight"] = self.flight.dump();
         // Whether motion is reduced (automation.rs): no flights or glides then.
         dump["reduceMotion"] = json!(cx.reduce_motion());
+        dump["increaseContrast"] = json!(crate::style::increase_contrast(cx));
+        dump["sidebarSelectionAlpha"] = json!(crate::style::sidebar_selection(cx, self.milestone.active).a);
         // How the last thread opened, and from the new-thread page, how far
         // its box dropped (open_motion.rs).
         dump["opening"] = self.opening.last.as_ref().map_or(Value::Null, |(id, how)| {

@@ -1305,9 +1305,17 @@ async function dispatch(client, method, p) {
     }
     case 'threads.highlights': {
       const t = need(p.threadId);
+      const delay = Number(process.env.THREADBEAR_MOCK_HIGHLIGHTS_DELAY_MS ?? 0);
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (t.highlightsFailures > 0) {
+        t.highlightsFailures -= 1;
+        t.highlightsFailed = (t.highlightsFailed ?? 0) + 1;
+        throw rpcError(-32000, 'Highlights are temporarily unavailable');
+      }
       return highlights.get(t.summary.id) ?? { highlights: [], edited: [] };
     }
-    case 'threads.removeHighlight': {
+    case 'threads.removeHighlight':
+    case 'mock.unpin': {
       const t = need(p.threadId);
       const list = highlights.get(t.summary.id);
       if (!list?.highlights.some((h) => h.id === p.highlightId)) throw rpcError(-32602, `This thread has no highlight ${p.highlightId}`);
@@ -1345,10 +1353,14 @@ async function dispatch(client, method, p) {
       broadcastSummary(t.summary.id);
       return { request: t.summary.panelRequest };
     }
+    case 'mock.failHighlights': {
+      need(p.threadId).highlightsFailures = Number(p.count ?? 1);
+      return {};
+    }
     case 'mock.panelState': {
       // What's waiting on the thread and what the app has said it showed.
       const t = need(p.threadId);
-      return { request: t.summary.panelRequest ?? null, shown: t.panelsShown ?? [] };
+      return { request: t.summary.panelRequest ?? null, shown: t.panelsShown ?? [], highlightsFailed: t.highlightsFailed ?? 0 };
     }
     case 'threads.panelShown': {
       const t = need(p.threadId);
@@ -1867,6 +1879,16 @@ async function dispatch(client, method, p) {
     case 'mock.notice':
       broadcastNotice(p.level ?? 'warning', String(p.message ?? ''));
       return { ok: true };
+    // A final/corrected text event for an existing assistant item. Its
+    // identity stays the same, so the app replaces the visible markdown
+    // rather than appending a different reply (selection invalidation specs).
+    case 'mock.replaceReply': {
+      const thread = need(p.threadId);
+      const before = [...thread.events].reverse().find(event => event.type === 'assistant.text');
+      if (!before) throw { code: -32602, message: 'no reply to replace' };
+      persist(thread.summary.id, { type: 'assistant.text', itemId: before.itemId, text: String(p.text ?? '') }, before.turnId);
+      return { itemId: before.itemId };
+    }
     case 'mock.stream':
       return startStream(need(p.threadId).summary.id, p);
     // A thread with the id and title given, idle with nothing in it, for a

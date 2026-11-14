@@ -265,6 +265,15 @@ plain document (a `.command`, an app, a kind Threadbear can't place).
 Another Mac's program never opens here, and its replies never show
 pictures from this Mac.
 
+On a Mac, selected words offer Look Up, Translate, Services and, where the
+Mac supports it, Writing Tools. The app menu's Services uses the selection
+in the focused text box, or the selected words in a reply. Passwords and
+one-time codes stay out of these menus. A Service can replace an unchanged
+selection in a text box, and Undo restores it. Replies, picture selections,
+multiple cursors and an active input-method composition are copy-only.
+Control-Command-D looks up selected words. Writing Tools opens the Mac's
+native commands, including Show Writing Tools, Proofread and Rewrite.
+
 On Windows, file links and their hover cards only read local drives. A UNC
 share, mapped network drive or device path is refused, including through a
 local symbolic link or junction. A local link to another local file works.
@@ -523,6 +532,9 @@ They go with your next message, including after you switch models or restart
 Threadbear. Stop on its own doesn't retry them. Clearing the conversation
 discards them. Moving the thread to another runner keeps the original messages
 in its history, but you need to send the stopped request again there.
+
+The caret stays visible after ten seconds without editing or moving it,
+and starts blinking again when you continue typing or refocus the box.
 
 On a Mac the composer checks your spelling as the Mac's own text boxes do. A
 misspelled word gets a red wavy line once you've finished typing it, and
@@ -999,6 +1011,10 @@ A schedule's message brings an archived thread out of the archive while it
 runs. If the run ends with nothing for you, the thread goes back into the
 archive, so a watcher you've put away only lands in your inbox when it has
 something you need to act on.
+
+If a scheduled message has already entered a busy thread's queue, pausing,
+deleting or editing its schedule doesn't take it back. It keeps the words
+it had when sent.
 
 If an update leaves a thread on the old runner while a command finishes,
 its scheduled messages can still start turns there. An old runner from before
@@ -1932,7 +1948,13 @@ see it pick back up rather than go quiet.
 
 The new desktop app follows `main` too, from the
 checkout you installed it from. Its build takes every core of a Mac for
-minutes, so it builds on another Mac you name for it (`updateBuildHosts`
+minutes. It waits for ten minutes with no changes to the desktop app before
+asking for a build, so several landings close together become one update.
+If the build Mac is busy or has tests or timings queued, it tries again
+later, trying the other Macs on your build list first. While changes keep
+landing or those Macs stay busy, the update keeps waiting. A build already
+running finishes before anything else uses that Mac.
+It builds on another Mac you name for it (`updateBuildHosts`
 in `runner.json`, a list of ssh hosts) and only the finished app comes
 back. That Mac's build is what yours runs next, so name one you trust as
 much as this one: a check host (`checkHosts`) only runs tests and never
@@ -2069,6 +2091,10 @@ share the one you chose.
 
 The words are in Geist and code in Geist Mono when those fonts are
 installed (from vercel.com/font); otherwise the system's own fonts.
+
+On Mac, Increase Contrast in System Settings > Accessibility > Display
+also strengthens text and borders. It is read at launch and when you return
+to Threadbear.
 
 ### A ding when a thread is done
 

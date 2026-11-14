@@ -19,6 +19,8 @@ mod app_update;
 mod automation;
 #[cfg(feature = "automation")]
 mod automation_compat;
+#[cfg(any(test, feature = "automation"))]
+mod automation_screenshot;
 mod chips;
 mod colour_space;
 mod composer_media;
@@ -118,6 +120,7 @@ mod terminal;
 mod terminal_element;
 mod thread;
 mod text_services;
+mod native_text;
 mod thread_map;
 mod tips;
 mod thread_panels;
@@ -252,6 +255,12 @@ fn main() {
     let links = deep_links::receive(&application);
     application.run(|cx| {
         gpui_kit::init(cx);
+        // An untouched caret should not redraw the window indefinitely.
+        // It stays visible after ten seconds and resumes on editing or focus.
+        gpui_kit::component::Theme::update(cx, |theme| {
+            theme.cursor_blink = theme.cursor_blink.with_idle_timeout(std::time::Duration::from_secs(10));
+        });
+        native_text::init(cx);
         // Every window's colours as sRGB, before the first opens (colour_space.rs).
         colour_space::install(cx);
         composer_media::install(cx);

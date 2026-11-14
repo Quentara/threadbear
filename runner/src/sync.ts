@@ -50,6 +50,7 @@ import { BodyCollector, prepareBody, type BodyDoc, type RawBody } from './full-s
 import type { ConvexUse, ConvexUseTally } from './convex-use.ts';
 import { cutSafely } from './safe-cut.ts';
 import { siteOf } from './convex-admin.ts';
+import { withNetworkCause } from './network-cause.ts';
 import { credentialUrlProblem } from './secure-url.ts';
 // How soon what the backend left out of a closed thread id goes again.
 const CLOSED_RETRY_MS = 30_000;
@@ -725,8 +726,12 @@ export function convexPoster(url: string, fetchFn: typeof fetch = fetch): Post {
       body: wellFormedJson(JSON.stringify({ path: fn, args, format: 'json' })),
       redirect: 'error',
       signal: AbortSignal.timeout(POST_TIMEOUT_MS),
-    });
-    const body = (await res.json().catch(() => undefined)) as { status?: string; value?: unknown; errorMessage?: string; errorData?: unknown } | undefined;
+    }).catch((e: unknown) => { throw withNetworkCause(e); });
+    const body = (await res.json().catch((e: unknown) => {
+      // A write may already have committed. Keep the read failure useful
+      // without copying JSON parser snippets from the private response.
+      throw withNetworkCause(new Error(`Couldn't read the Convex reply (HTTP ${res.status})`, { cause: e }));
+    })) as { status?: string; value?: unknown; errorMessage?: string; errorData?: unknown } | undefined;
     if (!res.ok || !body || body.status !== 'success') {
       // A ConvexError's data (`{ kind, message }`), as the Convex client
       // keeps it, so forbiddenText can tell a runner key's refusal.

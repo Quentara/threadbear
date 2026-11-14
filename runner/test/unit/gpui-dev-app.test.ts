@@ -143,7 +143,9 @@ process.exit(21);
     const log = path.join(fs.realpathSync(temp), 'threadbear-gpui-dev-app', 'build-logs', `${id}.log`);
     const observed = path.join(tmp, `observed-${code}`);
     const copied = path.join(tmp, `copied-${code}`);
-    // A prior build's child can outlive its owner and still hold its log.
+    // A prior build's child can outlive its owner and still hold its log. The state folder is
+    // made 0700, as dev-app.ts uses no other (Daybreak 116).
+    fs.mkdirSync(path.dirname(path.dirname(log)), { recursive: true, mode: 0o700 });
     fs.mkdirSync(path.dirname(log), { recursive: true });
     const oldLog = fs.openSync(log, 'w');
     fs.writeSync(oldLog, 'old build\n');

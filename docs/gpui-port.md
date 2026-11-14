@@ -192,6 +192,13 @@ Screenshots use `render_to_image` on Mac and Linux, and a window grab on
 Windows. On the Mac the window stays tucked behind Mike's work. On Linux it's
 Xvfb with software Vulkan, as `desktop/scripts/shot.sh` already does.
 
+The scripted screenshot command reads a fresh frame on the app's thread,
+then encodes and saves on a worker. PNGs use a fixed Sub filter to avoid
+trying every filter in debug builds at background priority. Encoding finishes
+before the destination is opened. Normal file writes keep its permissions
+and write through links; new files follow the process umask. The reply waits
+for the write, and errors stay errors even if an older screenshot exists.
+
 ### First-run tour
 
 The dimmed window, the lit-up part and the card. A dark overlay with a hole

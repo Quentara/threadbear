@@ -848,7 +848,7 @@ while :; do
     # By content (-c), not size and time: an edit that keeps both would
     # otherwise leave the mirror's old copy in the run.
     copy_it() {
-      "${SSH[@]}" "$HOST" "umask 022 && mkdir -p '$mirror' '$remote_run' && touch '$mirror'" \
+      "${SSH[@]}" "$HOST" "umask 022 && mkdir -p '$mirror' '$remote_run' && touch '$mirror' && for d in '$remote_base/mirror' '$mirror' '$remote_run'; do [ -d \"\$d\" ] && [ ! -L \"\$d\" ] && [ -O \"\$d\" ] && chmod go-w \"\$d\" || { echo \"\$d on the check host isn't this account's own\" >&2; exit 1; }; done" \
         && rsync -azc --from0 --files-from="$files" -e "${SSH[*]}" "$ROOT/" "$HOST:$mirror/" \
         && rsync -a -e "${SSH[*]}" "$files" "$HOST:$remote_run.files" \
         && "${SSH[@]}" "$HOST" "rsync -a --from0 --files-from='$remote_run.files' '$mirror/' '$remote_run/' && rm -f '$remote_run.files'" \

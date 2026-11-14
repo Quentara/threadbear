@@ -4999,3 +4999,58 @@ Fixes from Codex's review of the slice before:
   systems keep the file symbol.
 - Native regression tests synthesize their own film and PDF, including path
   replacement, size/output caps, version mismatch and delayed callbacks.
+
+### 2026-11-14 The Mac’s services for selected words (`rich.textservices`)
+
+- AppKit receives a frozen plain-text selection from the focused Input,
+  Textarea or Editor, otherwise the reply’s selected words. Passwords,
+  revealed secret fields and one-time-code fields suppress older reply selections.
+- Look Up uses the public definition popover (also Control-Command-D and
+  a force-pressure hook), Translate the public macOS 14.4+ SwiftUI presentation,
+  and Services/Writing Tools the custom-view AppKit requestor experience.
+  Writing Tools is offered only when macOS says it is available. Share uses
+  the system’s picker. No hidden text editor stands in for these actions.
+- Returns recheck the original window/field/range/text and editability, then
+  make one undoable edit. Reply, picture, multi-cursor and active IME selections
+  are send-only. Late, duplicate or invalid returns cannot overwrite another draft.
+- The window root observes focus and actual selection/document changes;
+  caret blinks do not recopy long selected drafts. Native pages keep their own
+  responder chain and selection. Reply-menu Copy keeps plain text and HTML.
+- Shared selection tests cover Unicode/Undo, stale ranges/text, read-only and
+  expired fields, secrets, extra cursors/pictures and IME clause/preedit boundaries.
+  Native focus specs exercise actual AppKit requestors on private pasteboards.
+- All six Mac scenarios pass (73 steps), including a shortcut regression that
+  fails with the old sibling-overlay routing. Signed GPUI examples show the
+  real Translate, Look Up and Writing Tools popovers. Both simulated and
+  physical Control-Command-D open Look Up; AppKit handles the physical key
+  directly. The native Writing Tools menu and its opened panel were inspected
+  in window captures, without accepting system privacy prompts.
+- A physical trackpad force click has not been tried; its public pressure-stage
+  hook is wired. Other systems omit the Mac services.
+
+### 2026-11-14 Final parity leftovers
+
+- The composer's + menu deliberately keeps folders in the same popover,
+  under Folder, rather than opening Swift's submenu. This follows menu
+  style C: the current folder and the other choices stay visible together.
+- Wait-line tips include the local start and end times and all finished
+  jobs. Sending and queued messages have Swift's tips, and review answers
+  begin with the review icon.
+- Attach images filters supported image types in the Mac's native sheet.
+  On Windows and Linux the kit cannot filter the dialog; nonimage selections
+  are rejected before they can become attachments.
+- Pick a time has a month calendar and a separate time field. A past time
+  leaves the dialog open with its warning inside it.
+- A selected sidebar row dims from 8% to 6% when its window is behind.
+  Increase Contrast reads the Mac's setting at launch and on return to the
+  front, using AppKit's effective accessibility appearance for text, borders
+  and kit controls, with stronger semantic colours for the other look. The scripted app can use `THREADBEAR_INCREASE_CONTRAST=on|off`
+  to compare them without changing the system setting.
+- Provider names, Auto behaviour, effort and rewind follow ProviderInfo
+  where supplied, with the existing rules for fields older runners omit.
+  The relay currently supplies accounts without ProviderInfo, so remote
+  threads use those fallbacks until the runner sends its capabilities.
+  Activity dates fall back through updatedAt and createdAt; seq and count
+  readers accept numeric strings. Unreadable event payloads log their shape
+  without including the payload's private text.
+- Status-word blur and the Activity badge's entrance remain undecided.
