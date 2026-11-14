@@ -544,7 +544,7 @@ impl DockView {
         let mut layer = div().absolute().top_0().left_0().size_full();
         // Under the rest, which take its room as it goes.
         for r in &motion.leaving {
-            layer = layer.child(place(*r).bg(theme.panel).opacity(1. - fade));
+            layer = layer.child(place(*r).bg(theme.group_fill).opacity(1. - fade));
         }
         for (id, to) in dl::group_frames(&layout.root, bounds, &is_available, GAP as f64) {
             let Some(group) = layout.group(&id) else { continue };
@@ -575,7 +575,7 @@ impl DockView {
             let child = self.node(&split.children[i], layout, theme, available, window, cx);
             row = row.child(flex_cell(fractions[k]).child(child));
             if k + 1 < shown.len() {
-                row = row.child(gap_cell(horizontal));
+                row = row.child(theme.gap_fill(gap_cell(horizontal)));
             }
         }
 
@@ -710,7 +710,7 @@ impl DockView {
             .min_w(px(0.))
             .min_h(px(0.))
             .overflow_hidden()
-            .bg(theme.panel)
+            .bg(theme.group_fill)
             .when(landing, |d| d.opacity(0.))
             .child(measure(move |bounds, _, cx| {
                 let origin = root_bounds.get().origin;
@@ -1074,7 +1074,10 @@ impl DockView {
 
 impl Render for DockView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let theme = DockTheme::new(cx, self.options.accent);
+        let mut theme = DockTheme::new(cx, self.options.accent);
+        if let Some((fill, seam)) = self.options.panel_fill.as_ref().and_then(|f| f(cx)) {
+            theme = theme.see_through(fill, seam);
+        }
         let layout = self.model.read(cx).controller.layout.clone();
         let available: Rc<HashSet<PanelId>> = {
             let content = self.content.clone();
@@ -1138,10 +1141,12 @@ impl Render for DockView {
             .overflow_hidden()
             // The hairlines between panels, showing through the 1 pt gaps:
             // the separator colour over the panel colour, as Swift's are.
-            .bg(theme.panel)
+            // See-through panels leave the picture behind them, and fill
+            // their gaps themselves (`DockTheme::gap_fill`).
+            .when(theme.seam.is_none(), |d| d.bg(theme.panel))
             .text_color(theme.header_text)
             .child(measure_root)
-            .child(div().absolute().top_0().left_0().size_full().bg(theme.hairline))
+            .when(theme.seam.is_none(), |d| d.child(div().absolute().top_0().left_0().size_full().bg(theme.hairline)))
             .child(tree)
             .child(overlay)
             // Last, so the drag's cursor wins over what's under the pointer.

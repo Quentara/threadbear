@@ -1675,7 +1675,7 @@ impl Render for ThreadPane {
         // Coming in as it opens, once it has its rows (open_motion.rs).
         let entering = self.entering.transcript(self.loaded, window);
         let theme = cx.theme();
-        let (muted, danger, bg) = (theme.muted_foreground, theme.danger, theme.background);
+        let (muted, danger) = (theme.muted_foreground, theme.danger);
         self.rows.list_width = f32::from(self.scroller.read(cx).viewport().size.width);
         let composer = self.composer.clone();
         // The thread's title and project line are in the panel's bar (header.rs).
@@ -1788,7 +1788,7 @@ impl Render for ThreadPane {
                     div()
                         .relative()
                         .size_full()
-                        .child(transcript_list(&self.scroller, bg, cx.processor(|this, ix: usize, window, cx| this.render_item(ix, window, cx)), cx))
+                        .child(transcript_list(&self.scroller, crate::backdrop::ground(cx), cx.processor(|this, ix: usize, window, cx| this.render_item(ix, window, cx)), cx))
                         // A small spinner in the middle of where the transcript
                         // will be, and no words, from the moment it's opened
                         // (DetailView's `ProgressView().controlSize(.small)`

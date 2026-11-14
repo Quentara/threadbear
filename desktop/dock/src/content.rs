@@ -95,6 +95,14 @@ pub type PrepareWindow = Rc<dyn Fn(&mut Window, &mut App)>;
 /// closing included, with that window.
 pub type WindowActivation = Rc<dyn Fn(bool, &mut Window, &mut App)>;
 
+/// For an app with a picture behind the whole window: what each panel is
+/// filled with in place of the window's colour (a see-through tint), and
+/// the line drawn along each seam between panels over that tint, so the
+/// picture never shows through a gap as a bright line. `None` keeps the
+/// solid panels and their hairlines. Asked each time the dock draws, so it
+/// can follow light and dark, and the picture coming and going.
+pub type PanelFill = Rc<dyn Fn(&App) -> Option<(Hsla, Hsla)>>;
+
 /// How the dock fits the app around it.
 #[derive(Clone)]
 pub struct DockOptions {
@@ -129,6 +137,10 @@ pub struct DockOptions {
     pub prepare_window: Option<PrepareWindow>,
     /// Called as a panel's window of its own comes to the front or goes.
     pub window_activation: Option<WindowActivation>,
+    /// See-through panels over a picture behind the window (`PanelFill`).
+    /// Only the main window's: a panel's window of its own keeps the
+    /// window's colour.
+    pub panel_fill: Option<PanelFill>,
 }
 
 impl Default for DockOptions {
@@ -144,6 +156,7 @@ impl Default for DockOptions {
             window_content: None,
             prepare_window: None,
             window_activation: None,
+            panel_fill: None,
         }
     }
 }

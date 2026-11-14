@@ -349,6 +349,8 @@ impl Threadbear {
             .flex_none()
             .w(px(BAR_WIDTH))
             .h_full()
+            // Tinted like the panels, over the picture behind the window.
+            .when_some(crate::backdrop::tint(cx), |d, tint| d.bg(tint))
             // Starts under the title bar strip: the traffic lights are wider
             // than the bar, so a full-height line cut between the yellow and
             // green dots (ActivityBar).
@@ -429,7 +431,7 @@ impl Threadbear {
             b.badge = Some(patches);
             rail = rail.child(rail_button(b, |this, _, cx| this.click_rail(shell::PATCHES, cx), cx));
         }
-        div().relative().flex_none().w(px(BAR_WIDTH)).h_full().child(div().absolute().top(px(4.)).bottom(px(4.)).left_0().w(gpui_kit::px(1.)).bg(hairline.opacity(0.7))).child(rail).into_any_element()
+        div().relative().flex_none().w(px(BAR_WIDTH)).h_full().when_some(crate::backdrop::tint(cx), |d, tint| d.bg(tint)).child(div().absolute().top(px(4.)).bottom(px(4.)).left_0().w(gpui_kit::px(1.)).bg(hairline.opacity(0.7))).child(rail).into_any_element()
     }
 
     /// The rails as `dump` reports them, with the fields the Swift app's has.

@@ -13,6 +13,7 @@ mod alert;
 mod app;
 mod app_log;
 mod archive_flight;
+mod backdrop;
 mod app_update;
 #[cfg(feature = "automation")]
 mod automation;

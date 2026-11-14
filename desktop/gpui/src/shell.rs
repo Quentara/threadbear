@@ -125,6 +125,9 @@ pub(crate) fn dock_options(app: WeakEntity<Threadbear>, settings: &crate::settin
         // A panel's window of its own in front counts as Mike looking, as
         // the main window does (`Threadbear::looking_changed`). Going, it's
         // only noted: that can come in the middle of the app's own update.
+        // The panels tinted glass over the picture behind the window, once
+        // it's there (backdrop.rs).
+        panel_fill: Some(std::rc::Rc::new(crate::backdrop::glass)),
         window_activation: Some(std::rc::Rc::new(move |active: bool, window: &mut Window, cx: &mut App| {
             // A script's click in that window isn't Mike looking.
             if active && crate::thread::input_is_scripted() {
@@ -1451,6 +1454,9 @@ impl Threadbear {
             // does, as the Swift app's monitors do, and a scroll view's own
             // (the kit's bounce, which keeps a short scroll's momentum from
             // the list) can't take the start of a swipe from them.
+            // The picture behind everything: the bars and panels are tinted
+            // glass over it (backdrop.rs). First, so it's under them.
+            .children(crate::backdrop::layer(window, cx))
             .child(self.page_swipe_watch(cx))
             .child(self.row_press_watch(cx))
             .child(self.render_activity_bar(window, cx))

@@ -24,10 +24,35 @@ pub struct DockTheme {
     pub ghost_border: Hsla,
     pub shadow: Hsla,
     pub is_dark: bool,
+    /// What the main window's panels are filled with: `panel`, or a
+    /// see-through tint over a picture behind the window (`PanelFill`).
+    pub group_fill: Hsla,
+    /// With a see-through `group_fill`: the line along each seam between
+    /// panels, drawn over the tint in the gap.
+    pub seam: Option<Hsla>,
 }
 
 /// The gap between panels: the hairlines are what shows through it.
 pub const GAP: f32 = 1.;
+
+impl DockTheme {
+    /// See-through panels over a picture (`PanelFill`): filled with `fill`,
+    /// the gaps between them `fill` with `seam` over it.
+    pub fn see_through(mut self, fill: Hsla, seam: Hsla) -> Self {
+        self.group_fill = fill;
+        self.seam = Some(seam);
+        self
+    }
+
+    /// A gap between two panels: the hairline shows through it from under
+    /// the panels, or with see-through panels it's the tint and the seam.
+    pub(crate) fn gap_fill(&self, cell: Div) -> Div {
+        match self.seam {
+            Some(seam) => cell.bg(self.group_fill).child(div().size_full().bg(seam)),
+            None => cell,
+        }
+    }
+}
 
 impl DockTheme {
     pub fn new(cx: &App, accent: Option<Hsla>) -> Self {
@@ -50,6 +75,8 @@ impl DockTheme {
             ghost_border: primary.opacity(0.14),
             shadow: hsla(0., 0., 0., 0.5),
             is_dark,
+            group_fill: theme.background,
+            seam: None,
         }
     }
 }

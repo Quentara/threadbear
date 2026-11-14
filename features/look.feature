@@ -1,6 +1,6 @@
 Feature: How the window looks
   As someone who has Threadbear open all day
-  I want its words in Geist
+  I want its words in Geist, over a frosted painting with the panels tinted glass
   So the window is pleasant to look at and the words stay easy to read
 
   Background:
@@ -11,3 +11,14 @@ Feature: How the window looks
   Scenario: The words are in Geist and code in Geist Mono
     Then the words are in Geist, or the system's font where it isn't installed
     And code is in Geist Mono, or the system's monospaced font where it isn't installed
+
+  @foundation.backdrop @swift-pending
+  Scenario: The painting is behind the window, with the panels tinted over it
+    Then the painting is behind the window
+    And the panels are see-through over it
+
+  @foundation.backdrop @swift-pending
+  Scenario: A new thread's page has the painting behind it too
+    When I start a new thread
+    Then the new-thread page asks "What should we work on?"
+    And the painting is behind the window

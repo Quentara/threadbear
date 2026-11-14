@@ -477,7 +477,8 @@ pub(crate) fn palette(cx: &App) -> Palette {
         icon_pressed: style::primary_opacity(cx, 0.14),
         guide: style::primary_opacity(cx, 0.16),
         skeleton: style::primary_opacity(cx, 0.07),
-        side: theme.sidebar,
+        // Clear over the picture behind the window (backdrop.rs).
+        side: if crate::backdrop::shown(cx).is_some() { transparent_black() } else { theme.sidebar },
     }
 }
 

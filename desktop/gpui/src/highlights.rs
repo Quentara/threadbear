@@ -1695,7 +1695,8 @@ impl SidePane {
     /// draws on its own, so Highlights beside Files shows both.
     pub(crate) fn render_section(&mut self, section: &str, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = palette(cx);
-        let bg = cx.theme().background;
+        // Clear over the picture behind the window (backdrop.rs).
+        let bg = crate::backdrop::ground(cx);
         if let Some(width) = self.widths.get(section) {
             self.width = *width;
         }

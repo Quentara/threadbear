@@ -1,5 +1,5 @@
-// How the window looks (features/look.feature): the typefaces, from the
-// dump's `look`.
+// How the window looks (features/look.feature): the typefaces and the
+// picture behind the window, from the dump's `look`.
 import { Then } from '@cucumber/cucumber';
 import type { ThreadbearWorld } from '../support/world.ts';
 
@@ -10,6 +10,9 @@ type Look = {
   /** Whether Geist and Geist Mono are installed on this machine. */
   geist: boolean;
   geistMono: boolean;
+  /** "painting", or null before it's loaded. */
+  backdrop: string | null;
+  panelsSeeThrough: boolean;
 };
 const look = (d: unknown) => (d as { look?: Look | null }).look;
 
@@ -25,4 +28,12 @@ Then("code is in Geist Mono, or the system's monospaced font where it isn't inst
     const l = look(d);
     return l && (l.geistMono ? /^Geist ?Mono$/.test(l.monoFont) : !/^Geist ?Mono$/.test(l.monoFont));
   });
+});
+
+Then('the painting is behind the window', async function (this: ThreadbearWorld) {
+  await this.until('the painting behind the window', (d) => look(d)?.backdrop === 'painting');
+});
+
+Then('the panels are see-through over it', async function (this: ThreadbearWorld) {
+  await this.until('see-through panels', (d) => look(d)?.panelsSeeThrough === true);
 });

@@ -308,6 +308,8 @@ impl Threadbear {
         // while scrolling, whatever the system's set to, as the Swift app's
         // transcript and composer have them (`scrollerStyle = .overlay`).
         crate::style::install_window_colours(cx);
+        // The painting behind the window, frosted as it loads (backdrop.rs).
+        crate::backdrop::load(cx);
         Theme::set_scrollbar_mode(gpui_kit::component::scroll::ScrollbarMode::Scrolling, cx);
         // Light or dark as Settings › General says, else the Mac's, followed
         // as it changes.
@@ -1558,7 +1560,8 @@ impl Threadbear {
         // What came across from the Swift app, while its note's up. Set
         // after, as the literal above is as long as serde_json's macro goes.
         dump["importNote"] = json!(self.import_note);
-        // The typefaces (style.rs).
+        // The typefaces and the picture behind the window (style.rs,
+        // backdrop.rs).
         dump["look"] = crate::style::look_dump(cx);
         // Panels pinned to their threads (pinned_panels.rs).
         dump["pinnedPanels"] = self.pinned_panels_dump(cx);
