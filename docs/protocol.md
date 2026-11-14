@@ -3111,7 +3111,15 @@ the thread if a sub-agent stalls, so an ask can't stay hidden for good.
   refuse to snooze the thread they run in. The description also has an
   agent hibernate when what's left waits on another thread or a job that
   will message it back (a message wakes it, see `threads.send`), with a
-  time by which that should have happened. On 5 Nov 2026 a thread
+  time by which that should have happened. Hibernating or archiving releases
+  this thread's CLI and stops its background jobs, including shell jobs waiting
+  in a queue.
+  A saved scheduled message does not preserve those jobs. To keep one running,
+  end the turn without `archive`, `snooze` or `waitFor`; use `schedule_message`
+  separately if the agent needs to check it later. Runner updates still apply
+  the time limits under [Handovers](#handovers). Jobs owned by another
+  thread keep running when this thread hibernates to wait for their report.
+  On 5 Nov 2026 a thread
   waiting on another thread's report ended as done in Mike's inbox,
   as the description then allowed it only when he asked.
 - **Schedule checks** (`runner/src/schedule-check.ts`; an experiment,
