@@ -1,3 +1,4 @@
+import './clean-env.ts';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -52,6 +53,8 @@ export class FakeSession implements AgentSession {
   }
   // Only on an adapter that moves folders (FakeAdapter sets it up).
   setCwd?: (cwd: string) => Promise<void>;
+  // Set by a test of a message end_turn's call was written without.
+  unreadMessage?: () => boolean;
   // Set by a test of the context breakdown (Claude's getContextUsage).
   contextUsage?: () => Promise<Omit<import('../../src/protocol.ts').ContextUsage, 'at'> | undefined>;
   async end(opts: { hard?: boolean } = {}): Promise<void> {
@@ -159,6 +162,8 @@ export function testConfig(home: string, extra: Partial<Config> = {}): Config {
   fs.mkdirSync(cwd, { recursive: true });
   return {
     home,
+    userHome: home,
+    pathEnv: '',
     port: 0,
     host: '127.0.0.1',
     logFile: path.join(home, 'runner.log'),
@@ -285,11 +290,13 @@ export function makeHarness(home = tmpDir(), cfgExtra: Partial<Config> = {}, dep
     // would run its live commands (gh and the like) in every test's runner.
     // Tyler Lusk's fork found it: a Mac with a few home patches took over 40
     // minutes on the quick check and failed its timing tests (9 Nov 2026).
-    // And a home patch with a `when` ran
-    // its commands against the Mac's live runner from every test, and the
-    // slow read it made saved an old runner's record over a restarted
-    // one's (reviews.test.ts, 12 Nov). The same folder across restart().
-    panelsRoot: path.join(home, 'user-home'),
+    // And a home patch with a `when` ran its commands against the Mac's live
+    // runner from every test, and the slow read it made saved an old
+    // runner's record over a restarted one's (reviews.test.ts, 12 Nov).
+    // The preload makes HOME private, and all fixture temps live under it
+    // (a sibling temp root would make ancestor scans walk past HOME); it's
+    // the same folder across restart().
+    panelsRoot: os.homedir(),
     ...depsExtra,
   });
   const notes: Notification[] = [];

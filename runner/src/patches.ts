@@ -786,9 +786,14 @@ export function slug(title: string): string {
     .replace(/^-+|-+$/g, '') || 'untitled';
 }
 
+// At most ERROR_LINE_CHARS: it goes to clients as a panel's note or a
+// patch's liveError, and a function can throw anything (a command's 12 MB
+// last line, Codex's review of the 16 MB sh cap, 13 Nov).
+const ERROR_LINE_CHARS = 500;
 function firstLine(e: unknown): string {
   const text = String((e as Error)?.message ?? e);
-  return text.split('\n').find((l) => l.trim()) ?? 'Unknown error';
+  const line = text.split('\n').find((l) => l.trim()) ?? 'Unknown error';
+  return line.length > ERROR_LINE_CHARS ? `${line.slice(0, ERROR_LINE_CHARS)}…` : line;
 }
 
 // The built-in set alone, synchronous: what the first summary of a thread
@@ -968,7 +973,7 @@ export type PanelRender = { image?: ImageRef; items?: PanelItem[]; note?: string
 export type LiveContext = {
   cwd: string;
   threadId: string;
-  projects?: PatchProject[];
+  thread?: PatchThread;
   run: (command: string, cwd: string) => Promise<CommandOutcome>;
   verify?: (file: string, hash: string) => boolean;
   timeoutMs?: number;
@@ -976,12 +981,31 @@ export type LiveContext = {
 
 // A copy for each call, so one patch's function changing what it was
 // handed can't change what the next one sees.
-const projectsFor = (ctx: LiveContext): PatchProject[] => (ctx.projects ?? []).map((p) => ({ ...p }));
+const threadFor = (ctx: LiveContext): { thread: PatchThread; projects: PatchProject[] } => {
+  const projects = (ctx.thread?.projects ?? []).map((p) => ({ ...p, ...(p.parent ? { parent: { ...p.parent } } : {}) }));
+  return { thread: { title: ctx.thread?.title ?? '', projects }, projects };
+};
 
 // `key`: what a command's output is shared under in one read; a bound
 // patch's checks are its own, so its refusals don't reach another's.
 // `close`: the function's call is over (it returned, threw or timed
 // out); a command it starts after that isn't run.
+// How much of a command's output a patch function's sh gets
+// (runPatchCommand). Was the 64 KB a message keeps, cut silently, so
+// `tandem waiting --json` on a folder of 32 projects (310 KB) reached the
+// Tandem patch as half a JSON document and its JSON.parse threw (13 Nov).
+export const PATCH_SH_MAX_BYTES = 16 * 1024 * 1024;
+
+// What sh resolves to: the command's whole output, or an error. Never
+// part of it: a function parsing it would fail somewhere far from the
+// cause, as Tandem's did.
+function shText(command: string, out: CommandOutcome): string {
+  // Only the start of its last line: the output can be megabytes now.
+  if (!out.ok) throw new Error(`${command} failed${out.exitCode !== undefined ? ` (exit ${out.exitCode})` : ''}: ${(out.text.trim().split('\n').pop() ?? '').slice(0, 1000)}`);
+  if (out.truncated) throw new Error(`${command} printed more than the ${Math.round(PATCH_SH_MAX_BYTES / 1024 / 1024)} MB a patch's sh reads`);
+  return out.text;
+}
+
 type LiveSh = { dir: string; key: string; run: (command: string) => Promise<CommandOutcome>; close: () => void };
 
 // How a patch's live function runs a command. A trusted-by-hash patch's
@@ -1040,10 +1064,15 @@ function callThenClose(call: () => unknown, shIn: LiveSh): unknown {
 // and only what trusting it covers (liveSh).
 // `matched` is what made a tool patch apply: the paths its appliesTo
 // found (two .tandem files in a folder are two), and empty otherwise.
-// `projects`: the thread's projects that aren't archived, so a chip can
-// follow what's set on them (the Notion page) without asking the runner.
-export type PatchProject = { id: string; title: string; notion?: string };
-export type ItemsContext = { cwd: string; threadId: string; matched: string[]; projects: PatchProject[]; sh: (command: string) => Promise<string> };
+// `thread` is the thread it's for: its title and its projects that aren't
+// archived (a part carries its parent, and `notion` is the Notion page set
+// on it), so a patch in a folder many threads share can show in only some
+// of them (`when: ({ thread }) => thread.projects.some(...)`) and a chip can
+// follow what's set on them without asking the runner. `projects` is the
+// same list as `thread.projects`, kept for patches written before `thread`.
+export type PatchProject = { id: string; title: string; notion?: string; parent?: { id: string; title: string } };
+export type PatchThread = { title: string; projects: PatchProject[] };
+export type ItemsContext = { cwd: string; threadId: string; thread: PatchThread; projects: PatchProject[]; matched: string[]; sh: (command: string) => Promise<string> };
 type ItemsFunction = (ctx: ItemsContext) => unknown;
 
 // The `items` functions of loaded patch files, by file and the panel's id
@@ -1070,15 +1099,11 @@ export async function renderListPanel(
   // A project folder's patch runs in that folder, as its actions do.
   const cwd = info?.folder ?? ctx.cwd;
   const shIn = liveSh(info?.file, cwd, ctx);
-  const sh = async (command: string) => {
-    const out = await shIn.run(command);
-    if (!out.ok) throw new Error(`${command} failed${out.exitCode !== undefined ? ` (exit ${out.exitCode})` : ''}: ${out.text.trim().split('\n').pop() ?? ''}`);
-    return out.text;
-  };
+  const sh = async (command: string) => shText(command, await shIn.run(command));
   let timer: NodeJS.Timeout | undefined;
   try {
     const value = await Promise.race([
-      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], projects: projectsFor(ctx), sh }), shIn)),
+      Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, ...threadFor(ctx), matched: info?.matched ?? [], sh }), shIn)),
       new Promise((_, reject) => {
         timer = setTimeout(() => reject(new Error(`took over ${Math.round((ctx.timeoutMs ?? LIST_TIMEOUT_MS) / 1000)} seconds`)), ctx.timeoutMs ?? LIST_TIMEOUT_MS);
       }),
@@ -1134,10 +1159,7 @@ export async function applyLive(set: PatchSet, ctx: LiveContext): Promise<PatchS
       const key = `${shIn.key}\u0000${command}`;
       let out = ran.get(key);
       if (!out) {
-        out = shIn.run(command).then((o) => {
-          if (!o.ok) throw new Error(`${command} failed${o.exitCode !== undefined ? ` (exit ${o.exitCode})` : ''}: ${o.text.trim().split('\n').pop() ?? ''}`);
-          return o.text;
-        });
+        out = shIn.run(command).then((o) => shText(command, o));
         ran.set(key, out);
       }
       return out;
@@ -1145,7 +1167,7 @@ export async function applyLive(set: PatchSet, ctx: LiveContext): Promise<PatchS
     let timer: NodeJS.Timeout | undefined;
     try {
       return await Promise.race([
-        Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, matched: info?.matched ?? [], projects: projectsFor(ctx), sh }), shIn)),
+        Promise.resolve().then(() => callThenClose(() => fn({ cwd, threadId: ctx.threadId, ...threadFor(ctx), matched: info?.matched ?? [], sh }), shIn)),
         new Promise((_, reject) => {
           timer = setTimeout(() => reject(new Error(`took over ${Math.round(timeoutMs / 1000)} seconds`)), timeoutMs);
         }),
@@ -1291,9 +1313,13 @@ export function runCommand(
   // can't outlive it (shell-allowlist.ts). A program that leaves the group
   // (setsid, setpgid, a daemon that forks away) isn't reached; none on the
   // live list does.
-  opts: { cwd: string; env: Record<string, string | undefined>; shell?: string[]; timeoutMs?: number; background?: boolean; killGroup?: boolean; killGraceMs?: number },
+  // `maxBytes`: how much of what it printed is kept, 64 KB unless said
+  // (what fits in a message). A patch function's sh asks for far more
+  // (PATCH_SH_MAX_BYTES): it parses the output itself, never sends it on.
+  opts: { cwd: string; env: Record<string, string | undefined>; shell?: string[]; timeoutMs?: number; background?: boolean; killGroup?: boolean; killGraceMs?: number; maxBytes?: number },
 ): Promise<CommandOutcome> {
   const started = Date.now();
+  const maxBytes = opts.maxBytes ?? LIMITS.toolResultText;
   const [shellBin, ...shellArgs] = opts.shell ?? loginShell();
   const [bin, args] = opts.background ? inBackground(shellBin, [...shellArgs, command]) : [shellBin, [...shellArgs, command]];
   return new Promise((resolve) => {
@@ -1303,7 +1329,7 @@ export function runCommand(
     // A little past the limit is read, so the cut back to it can be placed
     // where no secret is split (safe-cut.ts): what's kept goes to Convex in a
     // hook's message.
-    const limit = LIMITS.toolResultText + CUT_LOOKAHEAD;
+    const limit = maxBytes + CUT_LOOKAHEAD;
     const take = (chunk: Buffer) => {
       if (size >= limit) {
         truncated = true;
@@ -1373,7 +1399,7 @@ export function runCommand(
       let text = Buffer.concat(chunks).toString('utf8');
       // What fits in the limit, cut where no secret is split; stopped reading
       // part way, never in the run reading stopped in either (safe-cut.ts).
-      const fits = Buffer.byteLength(text, 'utf8') > LIMITS.toolResultText ? Buffer.from(text, 'utf8').subarray(0, LIMITS.toolResultText).toString('utf8').replace(/\uFFFD$/, '').length : text.length;
+      const fits = Buffer.byteLength(text, 'utf8') > maxBytes ? Buffer.from(text, 'utf8').subarray(0, maxBytes).toString('utf8').replace(/\uFFFD$/, '').length : text.length;
       if (truncated) text = text.slice(0, safeEndOfPartial(text, fits));
       else if (fits < text.length) {
         truncated = true;

@@ -227,6 +227,8 @@ enum Art {
     /// The painting behind the whole main window (Bierstadt, public
     /// domain), sharp; WindowBackdropStore frosts it, or a picked picture.
     @MainActor static let windowPainting: NSImage? = image("window-backdrop", type: "jpg")
+    /// The GPUI app's icon (desktop/gpui/icons), for NewApp.swift.
+    @MainActor static let gpuiApp: NSImage? = image("gpui-app")
 
     private static let bundle: Bundle? = {
         let name = "Threadbear_Threadbear.bundle"
