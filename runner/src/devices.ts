@@ -97,7 +97,7 @@ export function devicesMethods(sync: ConvexSync, onPaired?: (kind: DeviceKind) =
   };
 }
 
-export const LOCAL_ONLY_PHONE = "Your backend is on this Mac only (setup --self-hosted --local), so a phone can't reach it. To use the iPhone app, install Tailscale and run ./threadbear setup --self-hosted --tailnet (docs/self-hosting.md).";
+export const LOCAL_ONLY_PHONE = "Your backend is on this Mac only (setup --self-hosted --local), so a phone can't reach it. To use the iPhone app, run ./threadbear setup --self-hosted --tailnet (with Tailscale), or --self-hosted --url and --site-url if you reach this Mac your own way (docs/self-hosting.md).";
 
 function defaultName(kind: DeviceKind): string {
   return kind === 'phone' ? 'iPhone' : 'Browser';

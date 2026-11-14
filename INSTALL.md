@@ -100,6 +100,22 @@ Running setup again later keeps it local. To move it onto a tailnet once
 they have Tailscale, `./threadbear setup --self-hosted --tailnet`; their
 threads stay.
 
+**If their phone already reaches this Mac their own way** (a reverse
+proxy such as Caddy or nginx, cloudflared, their own Tailscale or VPN),
+`--url` and `--site-url` take the two https addresses their proxy answers
+on, pointed at `127.0.0.1:13210` and `127.0.0.1:13211`, and setup leaves
+Tailscale alone. **Ask** them for both addresses; don't make them up or set
+up their proxy for them unless they ask. Check `docker info` as above, then:
+
+```sh
+./threadbear setup --self-hosted --url https://<their api address> --site-url https://<their site address> --dry-run --yes
+./threadbear setup --self-hosted --url https://<their api address> --site-url https://<their site address> --yes
+```
+
+If it stops because an address doesn't reach the backend, it says which
+one and from where (this Mac or inside Docker): pass that on, as it's
+their proxy or DNS to fix.
+
 If your own permission check refuses to run setup (Claude Code's auto mode
 does: it's a script you've just downloaded), that's its job, so don't try to
 get round it. **Ask** them to allow it, by running the command themselves

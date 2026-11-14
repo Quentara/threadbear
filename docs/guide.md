@@ -1642,7 +1642,7 @@ for one Mac's ordinary use.
 
 If you'd rather keep everything on your own machine, setup can run
 Convex's open source backend in Docker on your Mac instead, and reach it
-over Tailscale. It's the same backend and the same features, with these
+over Tailscale (or your own way, below). It's the same backend and the same features, with these
 limits:
 
 - **No phone notifications.** The push relay only works with Convex
@@ -1707,6 +1707,31 @@ The dashboard is at `http://127.0.0.1:16791`, with the same admin key.
 Running setup again keeps it local. If you get Tailscale later and want
 the phone, run `./threadbear setup --self-hosted --tailnet`: it moves the
 backend onto your tailnet and your threads stay. `--local` moves it back.
+
+### At your own address
+
+If your phone already reaches your Mac your own way (Caddy, nginx,
+cloudflared, your own Tailscale or a VPN), give setup the two https
+addresses your proxy answers on, and Threadbear leaves the rest to you:
+
+```sh
+./threadbear setup --self-hosted --yes \
+  --url https://threadbear.example.com \
+  --site-url https://threadbear-site.example.com
+```
+
+The backend stays on this Mac's `127.0.0.1`, and your proxy points `--url`
+at `127.0.0.1:13210` and `--site-url` at `127.0.0.1:13211` (your website
+and share links). Setup checks both work, from this Mac and from inside
+Docker, before it carries on, and says which one didn't. Then pair your
+phone from Settings › Phone & browser as usual. That needs iPhone 1.0.5 or
+later.
+
+The limits are the tailnet way's, except that Tailscale isn't needed:
+**no phone notifications**, **nothing works while your Mac sleeps**, Docker
+is stopped or your proxy is down, and share links open for **whoever can
+reach your address**. `--local` or `--tailnet` move it off your address,
+and your threads stay.
 
 ## Patches: your own buttons and panels
 <!-- slug: patches -->
