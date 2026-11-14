@@ -26,7 +26,7 @@ async function serve(extra: Opts = {}) {
   const token = readToken(h.home);
   const scheduler = new Scheduler({ runner: h.runner, home: h.home, clock: h.clock, log: nullLogger, zone: () => 'UTC' });
   const gate = new CallerGate({ runner: h.runner, schedules: scheduler });
-  const server = new RpcServer({ host: '127.0.0.1', port: 0, token, runner: h.runner, log: nullLogger, gate, methods: { ...scheduleMethods(scheduler), 'runner.restart': () => ({}), 'instructions.set': () => ({}), 'settings.update': () => ({}), 'pools.save': () => ({}), 'devices.pair': () => ({}) }, ...extra });
+  const server = new RpcServer({ host: '127.0.0.1', port: 0, token, runner: h.runner, log: nullLogger, gate, methods: { ...scheduleMethods(scheduler), 'runner.restart': () => ({}), 'runner.reinstall': () => ({ reinstall: null }), 'instructions.set': () => ({}), 'settings.update': () => ({}), 'pools.save': () => ({}), 'devices.pair': () => ({}) }, ...extra });
   const { port } = await server.listen();
   return { h, server, token, port, url: `ws://127.0.0.1:${port}/rpc`, scheduler };
 }
@@ -214,6 +214,9 @@ test('a thread on Full access still has the lot, through its key', async () => {
     assert.equal(made?.permissionMode, 'full');
     const c = await as(url, token, me.id);
     assert.equal((await c.call<{ limited: boolean }>('auth.whoami')).limited, false);
+    // Except reinstalling the runner, which stops every thread: the user's,
+    // from the Updates panel, on any mode.
+    await assert.rejects(c.call('runner.reinstall'), (e: { code?: number; message?: string }) => refused(e) && /Updates panel/.test(e.message ?? ''));
     c.close();
   } finally {
     await server.close();

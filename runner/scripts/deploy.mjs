@@ -515,8 +515,10 @@ async function busyThreads(c) {
       }
       if (!d?.threads?.length) busy.push({ id: '?', title: `the previous runner (pid ${d?.pid}) is still finishing` });
     }
-  } catch {
-    // older runner
+  } catch (e) {
+    // Only a runner from before runner.status gets by on threads.list
+    // alone; one that didn't answer it can't be shown to be idle.
+    if (e?.code !== -32601) busy.push({ id: '?', title: `the runner didn't say what else it's doing (${e?.message ?? e})` });
   }
   return busy;
 }
