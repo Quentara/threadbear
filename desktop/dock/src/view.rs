@@ -180,6 +180,19 @@ impl DockView {
         self.last_motion.as_ref().map(|(from, to)| (from, to, self.motion.is_some()))
     }
 
+    /// Whether `panel` is drawn in this window now: the front panel of one of
+    /// its groups, as drawn (a panel with nothing to show is left out and
+    /// another tab stands in, as `group` does), not out in a window of its own.
+    pub fn shows(&self, panel: &str, cx: &App) -> bool {
+        let layout = self.model.read(cx).layout();
+        let content = self.content.clone();
+        if !content.available(panel, cx) {
+            return false;
+        }
+        let is_available = |p: &str| content.available(p, cx);
+        layout.groups().into_iter().any(|g| g.panels.iter().any(|p| is_available(p)) && dl::visible_group(&g, &is_available).selected == panel)
+    }
+
     /// Whether a dropped panel's ghost is still flying to where it landed.
     /// Something drawn over the dock (the app's turning arcs) keeps out of
     /// the way while it does, as while the panel's dragged.
