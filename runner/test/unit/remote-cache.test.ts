@@ -53,6 +53,9 @@ echo "fake 0 0 $f 0% /"
   return { root, bin, base, env, left, trim };
 }
 
+// An ssh that runs the command here, stdin and all, past remote.sh's -o options.
+const FAKE_SSH = `#!/bin/bash\nwhile [ "$1" = -o ]; do shift 2; done\nshift\ncd "$HOME" && eval "$*"\n`;
+
 const WORK = {
   'src-aaa': 0, 'target-aaa': 0, // this checkout
   'src-bbb': 30, 'target-bbb': 30, // idle the longest
@@ -135,8 +138,7 @@ test('a df reporting less than nothing counts as full, and one it can not read b
 test('remote.sh stops before copying anything when the host refuses, and marks its target as used', (t) => {
   const h = host(t, 2, {});
   const log = path.join(h.root, 'rsync-ran');
-  // An ssh that runs the command here, stdin and all.
-  fs.writeFileSync(path.join(h.bin, 'ssh'), `#!/bin/bash\nshift\ncd "$HOME" && eval "$*"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h.bin, 'ssh'), FAKE_SSH, { mode: 0o755 });
   fs.writeFileSync(path.join(h.bin, 'rsync'), `#!/bin/bash\ntouch ${JSON.stringify(log)}\n`, { mode: 0o755 });
   const r = spawnSync('/bin/bash', [path.join(SCRIPTS, 'remote.sh'), 'somehost', '--', 'true'], { env: h.env, encoding: 'utf8', timeout: 20_000 });
   assert.equal(r.status, 3, r.stderr);
@@ -148,7 +150,7 @@ test('remote.sh stops before copying anything when the host refuses, and marks i
 
 test('a run marks its target in use and its copy as used, and ssh does not wait on the marking', (t) => {
   const h = host(t, 40, {});
-  fs.writeFileSync(path.join(h.bin, 'ssh'), `#!/bin/bash\nshift\ncd "$HOME" && eval "$*"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h.bin, 'ssh'), FAKE_SSH, { mode: 0o755 });
   fs.writeFileSync(path.join(h.bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
   // The real rsync sets the copy's time to the Mac's, which is the point here.
   const findNode = path.join(import.meta.dirname, '..', '..', 'scripts', 'find-node.sh');
@@ -266,7 +268,7 @@ test("a trim waits for another one on the same host, so a run can't start betwee
 test('a run that leaves the host nearly full fails, whatever its command said, and says why', (t) => {
   const h = host(t, 40, {});
   const full = path.join(h.root, 'full');
-  fs.writeFileSync(path.join(h.bin, 'ssh'), `#!/bin/bash\nshift\ncd "$HOME" && eval "$*"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h.bin, 'ssh'), FAKE_SSH, { mode: 0o755 });
   fs.writeFileSync(path.join(h.bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
   // Room to start, then 300 MiB once the command has run.
   fs.writeFileSync(path.join(h.bin, 'df'), `#!/bin/bash
@@ -387,7 +389,7 @@ test("a checkout with no build of its own isn't cold when a shared target is war
 
 test("remote.sh puts the shared cargo first and clears a checkout's target from before", (t) => {
   const h = host(t, 40, {});
-  fs.writeFileSync(path.join(h.bin, 'ssh'), `#!/bin/bash\nshift\ncd "$HOME" && eval "$*"\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(h.bin, 'ssh'), FAKE_SSH, { mode: 0o755 });
   fs.writeFileSync(path.join(h.bin, 'npm'), '#!/bin/bash\nexit 0\n', { mode: 0o755 });
   const findNode = path.join(import.meta.dirname, '..', '..', 'scripts', 'find-node.sh');
   // The shim's own copy, from the checkout's copy to its slot, is a real one.

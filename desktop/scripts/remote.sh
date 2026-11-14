@@ -61,6 +61,25 @@ target="$base/target-$key"
 # The folder is fixed, not TMPDIR, so every run from the checkout finds
 # the same file. perl for macOS, which has no flock command.
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/scripts/remote-guard-lib.sh"
+# Every ssh here (rsync's too) sends a keep-alive every 30 s and gives up after
+# 4 unanswered, so a connection that dies quietly fails in about 2 minutes. On
+# 14 Nov a network drop to Tinker Desk left a --desk --perf run sitting on a
+# dead connection after "Waiting for another build or measurement...", twice,
+# for over half an hour: the host had already ended its side, and with no
+# traffic this ssh never found out. scripts/check-remote.sh has the same.
+# An array, not a function: a background function is a subshell, and its $!
+# isn't the ssh the signal trap has to kill.
+SSH=(ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=4)
+# wait_run: waits for the background ssh, and says when it was ssh itself that
+# failed (255: the connection dropped, or never came up), so a drop doesn't
+# read as the lock wait or build step that was last printed.
+wait_run() {
+  local rc=0
+  wait "$ssh_pid" || rc=$?
+  ssh_pid=""
+  [ "$rc" != 255 ] || echo "remote.sh: lost the ssh connection to $host (ssh exited 255; a dropped connection fails within about 2 minutes). Whatever it last said it was doing, including waiting for a lock, didn't finish. The host stops its side when it sees the connection go. Run it again once $host answers." >&2
+  return "$rc"
+}
 ssh_pid=""
 # The turn is kept until the host says the run has gone (30 s at most): the
 # guard there takes up to 5 s to stop a command that ignores TERM, and the
@@ -70,7 +89,7 @@ ssh_pid=""
 on_signal() {
   if [ -n "$ssh_pid" ]; then
     kill "$ssh_pid" 2>/dev/null
-    ssh -o BatchMode=yes -o ConnectTimeout=5 "$host" \
+    "${SSH[@]}" -o BatchMode=yes -o ConnectTimeout=5 "$host" \
       "i=0; while pgrep -f '[r]un-$tag' >/dev/null && [ \$i -lt 60 ]; do sleep 0.5; i=\$((i + 1)); done" </dev/null >/dev/null 2>&1 || true
   fi
   exit "$1"
@@ -104,11 +123,11 @@ fi
 # guard files first: the worktree copy may not exist yet, or be queued for
 # eviction. No build or capture starts until the final whole-command turn.
 boot="$base/run-$tag-tools"
-ssh "$host" "mkdir -p $boot"
+"${SSH[@]}" "$host" "mkdir -p $boot"
 for helper in perf-lock.pl perf-children.pl hangup-guard.sh; do
-  ssh "$host" "cat > $boot/$helper" <"$root/scripts/$helper"
+  "${SSH[@]}" "$host" "cat > $boot/$helper" <"$root/scripts/$helper"
 done
-ssh "$host" "cat > $boot/trim-remote-cache.sh" <"$root/desktop/scripts/trim-remote-cache.sh"
+"${SSH[@]}" "$host" "cat > $boot/trim-remote-cache.sh" <"$root/desktop/scripts/trim-remote-cache.sh"
 # The age limit goes by the folder's own time, which a long run inside it
 # doesn't move: one with anything changed inside in the last 15 minutes (a
 # run's .in-use marker, perf-lock.pl's heartbeat) stays, as the trim's do
@@ -127,11 +146,10 @@ cd \"\$HOME/$base\"
 bash \"\$HOME/$boot/trim-remote-cache.sh\" $key ${target##*/}"
 alive_stdin 7
 remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" THREADBEAR_REMOTE_TOOLS=\"\$HOME/$boot\" perl $boot/perf-lock.pl - bash -c $(single_quoted "$precopy")"
-ssh "$host" "$remote" <&7 &
+"${SSH[@]}" "$host" "$remote" <&7 &
 ssh_pid=$!
 rc=0
-wait "$ssh_pid" || rc=$?
-ssh_pid=""
+wait_run || rc=$?
 if [ "$rc" = 9 ]; then
   echo "Couldn't mark this checkout's copy on $host to build again, so it may hold a stale build. Not running." >&2
   exit 1
@@ -149,7 +167,7 @@ fi
 # passed on stale code (11 Nov, thread 699f31d2). Unchanged files keep their
 # time, so they don't rebuild. desktop/scripts/test-remote-freshness.sh <host>
 # plays that case.
-rsync -rlpDcz --delete --exclude .git --exclude node_modules --exclude .build --exclude target --exclude reports \
+rsync -rlpDcz -e "${SSH[*]}" --delete --exclude .git --exclude node_modules --exclude .build --exclude target --exclude reports \
   --exclude .fixtures --exclude .swiftpm --exclude dist --exclude DerivedData --exclude .DS_Store \
   "$root/" "$host:$src/"
 
@@ -242,7 +260,7 @@ $postlude"
 # Named by this run alone: a stopped --desk run's .gone file stays there (the
 # guard's comment says why) until the clear-out above, half a day on.
 script="$base/run-$tag.sh"
-ssh "$host" "cat > $script" <<<"$run"
+"${SSH[@]}" "$host" "cat > $script" <<<"$run"
 alive_stdin 7
 if [ "$desk" = 1 ]; then
   pidfile="$base/run-$tag.pid"
@@ -250,8 +268,8 @@ if [ "$desk" = 1 ]; then
 else
   remote="env THREADBEAR_REMOTE_SOURCE=\"\$HOME/$src\" THREADBEAR_REMOTE_TARGET=\"\$HOME/$target\" perl $src/scripts/perf-lock.pl - bash $script"
 fi
-ssh "$host" "$remote; rc=\$?; rm -f $script; rm -rf $boot; exit \$rc" <&7 &
+"${SSH[@]}" "$host" "$remote; rc=\$?; rm -f $script; rm -rf $boot; exit \$rc" <&7 &
 ssh_pid=$!
 rc=0
-wait "$ssh_pid" || rc=$?
+wait_run || rc=$?
 exit "$rc"
