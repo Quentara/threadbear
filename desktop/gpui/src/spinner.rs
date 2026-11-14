@@ -77,8 +77,13 @@ impl RenderOnce for TurningArc {
             |_, _, _| {},
             move |bounds, _, window, cx| {
                 let id = window.window_handle().window_id();
-                if layered && LAYERED.with(|l| l.borrow().contains_key(&id)) {
-                    let color = color.opacity(color.a * window.element_opacity());
+                // Layered only where its view has said it's drawing this frame
+                // (`view_drawing`), so it clears them next time: not in the
+                // dock's drag ghost, which draws the sidebar under the dock's
+                // name and turns its arcs itself as it's drawn every frame.
+                if layered && LAYERED.with(|l| l.borrow().contains_key(&id)) && drawing_now(window.current_view()) {
+                    // `opacity` scales the alpha: the row's own opacity, once.
+                    let color = color.opacity(window.element_opacity());
                     place(id, window.current_view(), bounds, window.content_mask(), color);
                 } else {
                     // A window with no layer (a panel in one of its own)
@@ -129,8 +134,8 @@ thread_local! {
     static PLACED: RefCell<HashMap<WindowId, Vec<Placed>>> = RefCell::new(HashMap::new());
     /// Counts the frames layers draw: one ends as its layer's paint does.
     static FRAMES: Cell<u64> = const { Cell::new(0) };
-    /// The frame each view with layered arcs last drew in.
-    static DRAWN: RefCell<HashMap<EntityId, u64>> = RefCell::new(HashMap::new());
+    /// The frame each view with layered arcs last drew in, and when.
+    static DRAWN: RefCell<HashMap<EntityId, (u64, Instant)>> = RefCell::new(HashMap::new());
     /// Views asked to draw again: the frame they were asked in, and when.
     static ASKED: RefCell<HashMap<EntityId, (u64, Instant)>> = RefCell::new(HashMap::new());
     /// Every view with arcs is to be asked at the next turn (the dock changed).
@@ -151,7 +156,7 @@ struct Placed {
 /// paints, so the ones from before go. Call it from the view's render.
 pub(crate) fn view_drawing(window: &Window) {
     let view = window.current_view();
-    DRAWN.with(|d| d.borrow_mut().insert(view, FRAMES.get()));
+    DRAWN.with(|d| d.borrow_mut().insert(view, (FRAMES.get(), Instant::now())));
     PLACED.with(|p| {
         if let Some(arcs) = p.borrow_mut().get_mut(&window.window_handle().window_id()) {
             arcs.retain(|a| a.view != view);
@@ -159,8 +164,12 @@ pub(crate) fn view_drawing(window: &Window) {
     });
 }
 
+/// Whether `view` has said it's drawing in this frame.
+fn drawing_now(view: EntityId) -> bool {
+    DRAWN.with(|d| d.borrow().get(&view).is_some_and(|(frame, _)| *frame == FRAMES.get()))
+}
+
 fn place(window: WindowId, view: EntityId, bounds: Bounds<Pixels>, mask: ContentMask<Pixels>, color: Hsla) {
-    DRAWN.with(|d| d.borrow_mut().insert(view, FRAMES.get()));
     PLACED.with(|p| p.borrow_mut().entry(window).or_default().push(Placed { view, bounds, mask, color }));
 }
 
@@ -212,17 +221,35 @@ struct Turn {
 }
 
 /// `frame` is the one ending; `views` those with arcs in this window.
-fn turn(frame: u64, now: Instant, views: &HashSet<EntityId>, drawn: &HashMap<EntityId, u64>, asked: &HashMap<EntityId, (u64, Instant)>, ask_all: bool) -> Turn {
+///
+/// GPUI only redraws a view it was asked to in a window whose last finished
+/// frame had it, so a view is asked only once a frame has passed since it
+/// drew: one that has just come back (its tab brought in front) would
+/// otherwise miss the ask and lose the arcs it had only just placed.
+fn turn(frame: u64, now: Instant, views: &HashSet<EntityId>, drawn: &HashMap<EntityId, (u64, Instant)>, asked: &HashMap<EntityId, (u64, Instant)>, ask_all: bool) -> Turn {
     let mut out = Turn::default();
     for view in views {
-        let last_drawn = drawn.get(view).copied();
+        let Some(&(drew, drew_at)) = drawn.get(view) else {
+            // Placed without drawing: can't be (place needs it). Let it go.
+            out.gone.push(*view);
+            continue;
+        };
         match asked.get(view) {
             // Asked, and not drawn in the two frames since: not on screen.
-            Some((at, _)) if frame >= at + 2 && last_drawn.is_none_or(|d| d <= *at) => out.gone.push(*view),
+            Some((at, _)) if drew <= *at && frame >= at + 2 => out.gone.push(*view),
             // Asked a moment ago and not answered yet: wait.
-            Some((at, _)) if last_drawn.is_none_or(|d| d <= *at) => {}
-            Some((_, when)) if !ask_all && now.duration_since(*when) < CONFIRM => {}
-            _ => out.ask.push(*view),
+            Some((at, _)) if drew <= *at => {}
+            _ => {
+                // Drew this very frame: on screen, and not yet one the window
+                // would pass an ask on to.
+                if drew >= frame {
+                    continue;
+                }
+                let last = asked.get(view).map_or(drew_at, |(_, when)| (*when).max(drew_at));
+                if ask_all || now.duration_since(last) >= CONFIRM {
+                    out.ask.push(*view);
+                }
+            }
         }
     }
     out.gone.sort();
@@ -263,12 +290,17 @@ fn paint_layer(window: &mut Window, cx: &mut App) {
         ASKED.with(|a| a.borrow_mut().insert(*view, (frame, now)));
         cx.notify(*view);
     }
+    // What's kept of views that have no arcs anywhere now (their last
+    // working thread done, their window closed) goes.
+    let placed: HashSet<EntityId> = PLACED.with(|p| p.borrow().values().flatten().map(|a| a.view).collect());
+    DRAWN.with(|d| d.borrow_mut().retain(|v, _| placed.contains(v)));
+    ASKED.with(|a| a.borrow_mut().retain(|v, _| placed.contains(v)));
     let arcs = PLACED.with(|p| p.borrow().get(&id).cloned().unwrap_or_default());
     for arc in &arcs {
         // At the sidebar list's foot its rows fade into the background.
         let bottom = f32::from(arc.mask.bounds.bottom());
         let shown = ((bottom - f32::from(arc.bounds.center().y)) / FOOT_FADE).clamp(0., 1.);
-        let color = arc.color.opacity(arc.color.a * shown);
+        let color = arc.color.opacity(shown);
         window.with_content_mask(Some(arc.mask.clone()), |window| paint_arc(arc.bounds, color, window));
     }
     FRAMES.set(frame + 1);
@@ -309,34 +341,43 @@ mod tests {
     fn a_view_drawn_lately_is_left_alone() {
         let now = Instant::now();
         let views = HashSet::from([view(1)]);
-        let drawn = HashMap::from([(view(1), 10)]);
-        let asked = HashMap::from([(view(1), (9, now - Duration::from_millis(100)))]);
-        assert_eq!(turn(10, now, &views, &drawn, &asked, false), Turn::default());
+        let drawn = HashMap::from([(view(1), (10, now - Duration::from_millis(100)))]);
+        assert_eq!(turn(11, now, &views, &drawn, &HashMap::new(), false), Turn::default());
     }
 
     #[test]
-    fn a_view_not_asked_for_a_while_is_asked() {
+    fn a_view_not_drawn_for_a_while_is_asked() {
         let now = Instant::now();
         let views = HashSet::from([view(1)]);
-        let drawn = HashMap::from([(view(1), 10)]);
-        let asked = HashMap::from([(view(1), (5, now - CONFIRM))]);
-        assert_eq!(turn(20, now, &views, &drawn, &asked, false).ask, vec![view(1)]);
-        // Never asked yet: asked straight away.
+        let drawn = HashMap::from([(view(1), (10, now - CONFIRM))]);
         assert_eq!(turn(20, now, &views, &drawn, &HashMap::new(), false).ask, vec![view(1)]);
+        // Answered an ask lately: not asked again yet.
+        let asked = HashMap::from([(view(1), (9, now - Duration::from_millis(100)))]);
+        assert_eq!(turn(20, now, &views, &drawn, &asked, false), Turn::default());
+    }
+
+    #[test]
+    fn a_view_isnt_asked_in_the_frame_it_drew() {
+        // Just back on screen: the window wouldn't pass the ask on yet.
+        let now = Instant::now();
+        let views = HashSet::from([view(1)]);
+        let drawn = HashMap::from([(view(1), (20, now - CONFIRM))]);
+        assert_eq!(turn(20, now, &views, &drawn, &HashMap::new(), true), Turn::default());
+        assert_eq!(turn(21, now, &views, &drawn, &HashMap::new(), true).ask, vec![view(1)]);
     }
 
     #[test]
     fn a_view_that_doesnt_answer_within_two_frames_loses_its_arcs() {
         let now = Instant::now();
         let views = HashSet::from([view(1)]);
-        let drawn = HashMap::from([(view(1), 10)]);
+        let drawn = HashMap::from([(view(1), (10, now))]);
         let asked = HashMap::from([(view(1), (12, now))]);
         // Frame 13: give it a frame to draw.
         assert_eq!(turn(13, now, &views, &drawn, &asked, false), Turn::default());
         // Frame 14 and still not drawn: its panel's gone.
         assert_eq!(turn(14, now, &views, &drawn, &asked, false).gone, vec![view(1)]);
         // Drawn in answer: kept.
-        let answered = HashMap::from([(view(1), 13)]);
+        let answered = HashMap::from([(view(1), (13, now))]);
         assert_eq!(turn(14, now, &views, &answered, &asked, false), Turn::default());
     }
 
@@ -344,8 +385,8 @@ mod tests {
     fn a_dock_change_asks_every_view_at_once() {
         let now = Instant::now();
         let views = HashSet::from([view(1), view(2)]);
-        let drawn = HashMap::from([(view(1), 10), (view(2), 10)]);
+        let drawn = HashMap::from([(view(1), (10, now)), (view(2), (10, now))]);
         let asked = HashMap::from([(view(1), (9, now)), (view(2), (9, now))]);
-        assert_eq!(turn(10, now, &views, &drawn, &asked, true).ask, vec![view(1), view(2)]);
+        assert_eq!(turn(11, now, &views, &drawn, &asked, true).ask, vec![view(1), view(2)]);
     }
 }
