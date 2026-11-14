@@ -81,12 +81,14 @@ wait_run() {
   return "$rc"
 }
 ssh_pid=""
+lock_pid=""
 # The turn is kept until the host says the run has gone (30 s at most): the
 # guard there takes up to 5 s to stop a command that ignores TERM, and the
 # next run mustn't copy over its folder while it's still going (Codex's
 # review). [r] so the pgrep's own shell, whose command line has the pattern
 # in it, doesn't count. A host that can't be reached says nothing either way.
 on_signal() {
+  [ -z "$lock_pid" ] || kill "$lock_pid" 2>/dev/null
   if [ -n "$ssh_pid" ]; then
     kill "$ssh_pid" 2>/dev/null
     "${SSH[@]}" -o BatchMode=yes -o ConnectTimeout=5 "$host" \
@@ -101,10 +103,25 @@ if [ "$(uname -s)" = Darwin ]; then turns="$HOME/Library/Caches/Threadbear"; els
 mkdir -p "$turns/remote"
 exec 9>>"$turns/remote/$key-$(printf '%s' "$host" | tr -c 'A-Za-z0-9.-' _).lock"
 waiting="Waiting for another remote.sh run from this checkout on $host to finish..."
-if command -v flock >/dev/null 2>&1; then
-  flock -n 9 || { echo "$waiting" >&2; flock 9; }
-else
-  WAITING="$waiting" perl -e 'use Fcntl ":flock"; open(my $f, ">&=", 9) or die "remote.sh: no lock file: $!\n"; flock($f, LOCK_EX | LOCK_NB) or do { print STDERR "$ENV{WAITING}\n"; flock($f, LOCK_EX) or die "remote.sh: lock: $!\n" }'
+# The wait for the turn is a background child this waits for, like the run's
+# ssh: bash holds a trap until a foreground child ends, so a TERM while
+# another run held the turn went unanswered until that run finished (14 Nov,
+# d7aca215). The lock is the open file's, so the child taking it on fd 9
+# takes it for this script too, and it stays after the child exits.
+# take_turn <block>: 0 with the turn, 1 if <block> is 0 and it's taken.
+take_turn() {
+  if command -v flock >/dev/null 2>&1; then
+    if [ "$1" = 0 ]; then flock -n 9; else flock 9; fi
+  else
+    BLOCK="$1" perl -e 'use Fcntl ":flock"; open(my $f, ">&=", 9) or die "remote.sh: no lock file: $!\n"; flock($f, $ENV{BLOCK} ? LOCK_EX : LOCK_EX | LOCK_NB) or exit 1'
+  fi
+}
+if ! take_turn 0; then
+  echo "$waiting" >&2
+  take_turn 1 &
+  lock_pid=$!
+  wait "$lock_pid" || { echo "remote.sh: couldn't take the turn lock." >&2; exit 1; }
+  lock_pid=""
 fi
 
 # A checkout that hasn't been run for a few days gives its folders back: a
