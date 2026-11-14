@@ -1421,9 +1421,13 @@ impl Threadbear {
         self.sync_window_title(window);
         // The layer the sidebar's arcs turn in (spinner.rs), told how the
         // dock is laid out so it notices a panel closing.
-        let arc_layer = self.arc_layer.get_or_insert_with(|| cx.new(|_| crate::spinner::ArcLayer::new())).clone();
-        let dock_layout = self.dock.read(cx).layout().summary();
-        arc_layer.update(cx, |l, _| l.dock_is(dock_layout));
+        let app_id = cx.entity_id();
+        let arc_layer = self.arc_layer.get_or_insert_with(|| cx.new(|_| crate::spinner::ArcLayer::new(app_id))).clone();
+        // Which panels are showing, not their sizes: a divider dragged
+        // elsewhere doesn't take the sidebar away.
+        let showing = crate::activity::showing(self.dock.read(cx).layout()).join(",");
+        let window_id = window.window_handle().window_id();
+        arc_layer.update(cx, |l, _| l.dock_is(showing, window_id));
         // With nothing focused GPUI's key dispatch doesn't reach this element's
         // key context or actions, so the shell keeps the keyboard when nothing
         // else has it (no thread open, a closed dialog).
