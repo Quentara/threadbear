@@ -24,14 +24,11 @@
 // view would have the sidebar, which watches it, draw again every turn too.)
 //
 // A sidebar drawing again forgets its arcs and places the ones it still has,
-// so a row whose arc goes (its thread done, hovered) loses it then. The
-// sidebar stops being drawn only when the dock changes (its panel closed,
-// another tab in front, taken out into a window of its own): the layer
-// watches the dock's layout, and when it changes forgets the window's arcs
-// and has the app draw again, which has a sidebar still there place its own.
-// (Asking the sidebar alone whether it's still there didn't work: GPUI passes
-// an ask on only to a window it knows is showing the view, and it can lose
-// track of a cached one. Codex, 14 Nov.)
+// so a row whose arc goes (its thread done, hovered) loses it then. One taken
+// off screen never draws to say so; the layer sees that in the dock (see
+// `ArcLayer`). Asking the sidebar to draw to show it's still there didn't
+// work: GPUI passes an ask on only to a window it knows shows the view, and
+// can lose track of a cached one (Codex, 14 Nov).
 use crate::style::{self, px};
 use gpui_kit::*;
 use std::cell::{Cell, RefCell};
@@ -174,49 +171,41 @@ fn place(window: WindowId, view: EntityId, bounds: Bounds<Pixels>, mask: Content
 /// The window's arcs, turned: drawn last over the window's own content, and
 /// under anything deferred (menus, tooltips, the archive flight). One per
 /// window, after the dock in its root view.
+///
+/// The sidebar stops being drawn only when the dock changes, and it can't
+/// say so, so the layer looks at the dock as it paints: with the Threads
+/// panel not in front in this window (another tab, closed, or out in a window
+/// of its own) the window's arcs go. A sidebar moved or resized draws again
+/// and places its own. While a panel's dragged, or its ghost lands, the arcs
+/// aren't drawn: the ghost is drawn in the dock, under them.
 pub(crate) struct ArcLayer {
-    /// The app's view, drawn again when the dock changes.
-    app: EntityId,
-    /// The dock's layout when last drawn, to notice it changing.
-    dock: Option<String>,
-    /// The dock changed: the app draws again at the next turn.
-    redraw_app: bool,
+    dock: Entity<threadbear_dock::DockModel>,
+    dock_view: Entity<threadbear_dock::DockView>,
+    /// The panel the arcs are in.
+    panel: &'static str,
 }
 
 impl ArcLayer {
-    pub(crate) fn new(app: EntityId) -> Self {
-        Self { app, dock: None, redraw_app: false }
-    }
-
-    /// The dock's layout as `summary` says it, from the root's render before
-    /// anything in it draws. A change can take the sidebar off screen, which
-    /// then never draws to say so: the window's arcs are forgotten now, a
-    /// sidebar drawing in this frame places its own again, and one that isn't
-    /// is drawn at the next turn, as the app draws again.
-    pub(crate) fn dock_is(&mut self, summary: String, window: WindowId) {
-        if self.dock.as_ref() == Some(&summary) {
-            return;
-        }
-        if self.dock.is_some() {
-            PLACED.with(|p| p.borrow_mut().remove(&window));
-            self.redraw_app = true;
-        }
-        self.dock = Some(summary);
+    pub(crate) fn new(dock: Entity<threadbear_dock::DockModel>, dock_view: Entity<threadbear_dock::DockView>, panel: &'static str) -> Self {
+        Self { dock, dock_view, panel }
     }
 }
 
 impl Render for ArcLayer {
     fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
-        let redraw_app = std::mem::take(&mut self.redraw_app).then_some(self.app);
+        let (dock, dock_view, panel) = (self.dock.clone(), self.dock_view.clone(), self.panel);
         canvas(
             |_, window, _| {
                 LAYERED.with(|l| l.borrow_mut().insert(window.window_handle().window_id(), Instant::now()));
             },
             move |_, _, window, cx| {
-                if let Some(app) = redraw_app {
-                    cx.notify(app);
+                let model = dock.read(cx);
+                let in_front = model.layout().groups().into_iter().any(|g| g.selected == panel);
+                let dragging = model.controller.drag.is_some() || dock_view.read(cx).is_landing();
+                if !in_front {
+                    PLACED.with(|p| p.borrow_mut().remove(&window.window_handle().window_id()));
                 }
-                paint_layer(window, cx)
+                paint_layer(!dragging, window, cx)
             },
         )
         .absolute()
@@ -232,7 +221,7 @@ fn foot_shown(bottom: f32, y: f32) -> f32 {
     ((bottom - y) / FOOT_FADE).clamp(0., 1.)
 }
 
-fn paint_layer(window: &mut Window, cx: &mut App) {
+fn paint_layer(draw: bool, window: &mut Window, cx: &mut App) {
     let id = window.window_handle().window_id();
     let now = Instant::now();
     let frame = FRAMES.get();
@@ -250,7 +239,7 @@ fn paint_layer(window: &mut Window, cx: &mut App) {
     // What's kept of views that drew no arcs, or not lately, goes.
     let placed: HashSet<(WindowId, EntityId)> = PLACED.with(|p| p.borrow().iter().flat_map(|(w, arcs)| arcs.iter().map(move |a| (*w, a.view))).collect());
     DRAWN.with(|d| d.borrow_mut().retain(|key, drew| *drew == frame || placed.contains(key)));
-    for arc in &arcs {
+    for arc in arcs.iter().filter(|_| draw) {
         let shown = foot_shown(f32::from(arc.mask.bounds.bottom()), f32::from(arc.bounds.center().y));
         let color = arc.color.opacity(shown);
         window.with_content_mask(Some(arc.mask.clone()), |window| paint_arc(arc.bounds, color, window));

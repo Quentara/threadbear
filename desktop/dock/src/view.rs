@@ -180,6 +180,13 @@ impl DockView {
         self.last_motion.as_ref().map(|(from, to)| (from, to, self.motion.is_some()))
     }
 
+    /// Whether a dropped panel's ghost is still flying to where it landed.
+    /// Something drawn over the dock (the app's turning arcs) keeps out of
+    /// the way while it does, as while the panel's dragged.
+    pub fn is_landing(&self) -> bool {
+        self.landing.is_some()
+    }
+
     /// Whether the last press on a bar moved the window or picked up a panel.
     /// Something in a bar that acts on a click (the thread's title renames)
     /// checks this from its click handler, which runs on the same release,
