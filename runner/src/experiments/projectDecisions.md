@@ -4,7 +4,7 @@ name: Decisions on the Projects page
 title: Decisions on the Projects page: every open question from a project's threads in one place, answered in a row
 added: 2026-11-10
 on: false
-reminder: a708aa86
+reminder: fb4dcba3
 ---
 
 ## What it does
