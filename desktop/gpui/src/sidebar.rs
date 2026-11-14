@@ -1915,7 +1915,7 @@ fn render_trailing(trailing: &rows::Trailing, id: String, p: &Palette) -> AnyEle
             .text_size(meta).line_height(px(15.))
             .font_medium()
             .text_color(p.accent)
-            .child(crate::spinner::TurningArc::new(12., p.accent))
+            .child(crate::spinner::TurningArc::new(12., p.accent).layered())
             .child(text)
             .into_any_element(),
         TrailingKind::Background => h_flex()
@@ -1925,7 +1925,7 @@ fn render_trailing(trailing: &rows::Trailing, id: String, p: &Palette) -> AnyEle
             .text_size(meta).line_height(px(15.))
             .font_medium()
             .text_color(p.secondary)
-            .child(crate::spinner::TurningArc::new(12., p.secondary))
+            .child(crate::spinner::TurningArc::new(12., p.secondary).layered())
             .child(text)
             .into_any_element(),
         TrailingKind::Failed => gives_way(div()).text_size(meta).line_height(px(15.)).font_medium().text_color(p.failed).child(text).into_any_element(),
@@ -1972,7 +1972,7 @@ fn render_subagent_row(t: &ThreadSummary, row: &rows::SubagentRow, first: bool, 
     let (guide, secondary, faint, fg, failed) = (p.guide, p.secondary, p.faint, p.fg, p.failed);
     let running = sub.running();
     let glyph: AnyElement = match sub.status.as_str() {
-        "running" => crate::spinner::TurningArc::new(11., secondary).into_any_element(),
+        "running" => crate::spinner::TurningArc::new(11., secondary).layered().into_any_element(),
         "completed" => icon("checkmark", 9., faint).into_any_element(),
         "failed" => icon("xmark", 9., failed).into_any_element(),
         _ => icon("minus", 9., faint).into_any_element(),

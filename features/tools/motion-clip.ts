@@ -301,6 +301,20 @@ const scenes: Record<string, Scene> = {
   },
   // ⌘N, then a message from the new-thread page: the page fades up, and the
   // box drops to the bottom as the thread opens.
+  // A thread at work in the background: its row's arc turning in the
+  // sidebar (spinner.rs's layer in the GPUI app). Swift's turns in Core
+  // Animation, so the two should look alike.
+  spinner: {
+    setup: async (app) => {
+      await scenes.archive.setup(app);
+      const d = await app.dump();
+      const other = d.sidebar.sections.filter((s) => !s.collapsed).flatMap((s) => s.threads).find((t) => t.id !== d.selection?.id);
+      if (!other) throw new Error('no other thread to set working');
+      await app.do({ cmd: 'mock', method: 'background', params: { threadId: other.id, tasks: [{ kind: 'shell', description: 'npm test' }] } });
+      await sleep(1200);
+    },
+    act: async () => {},
+  },
   'new-thread': {
     seconds: 4,
     setup: async (app) => scenes.archive.setup(app),
