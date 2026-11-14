@@ -100,15 +100,19 @@ func drag(from: CGPoint, to: CGPoint, hold: Double, press: Double, pids: Pids?, 
     }
     wait(hold)
     shoot()
-    // The guard program, then the window list again: something can come up
-    // while it runs. A drag-and-drop's image follows the pointer in a window
-    // of the app's own, so the app may be on top at the drop: what counts is
-    // the first window under it that isn't the app's (Tinker Desk, 14 Nov).
+    // The guard program, then the window list once more, judged as one
+    // snapshot: something can come up while the program runs. A
+    // drag-and-drop's image follows the pointer in a window of the app's own,
+    // so the app may be on top at the drop (Tinker Desk, 14 Nov). Whatever
+    // the program said, the first window there that isn't the app's has to be
+    // the drop target; with no separate target, the app has to be on top.
     if let pids {
         let top = look.owner(to)
-        let under = look.stack(to).first { !through.contains($0.number) && $0.pid != pids.press }
-        let landsOnDrop = pids.drop == pids.press ? top == pids.press : (top == pids.drop || (top == pids.press && under?.pid == pids.drop))
-        if !landsOnDrop || !clear(to) { return cancel("the drop isn't the app's any more") }
+        let seen = look.stack(to).filter { !through.contains($0.number) }
+        let lands = pids.drop == pids.press
+            ? top == pids.press && seen.first?.pid == pids.press
+            : (top == pids.press || top == pids.drop) && seen.first(where: { $0.pid != pids.press })?.pid == pids.drop
+        if !lands { return cancel("the drop isn't the app's any more") }
     }
     post(.up(to)); wait(0.6)
     return 0

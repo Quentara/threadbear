@@ -110,4 +110,9 @@ check(r.code == 0 && r.sent.last == .up(to), "the app's drag image over the drop
 r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p == to ? app : (p.x >= 600 ? target : app) },
         stack: { p, _ in p == to ? [Over(number: 3, pid: app), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
 check(r.code == 3 && ups(r) == [from], "the drag image over an alert at the drop")
+// Codex, round 5: the guard says the target, but the window list has a third
+// app between the drag image and the target: cancelled.
+r = run(pids: Pids(press: app, drop: target), owner: { p, _ in p.x >= 600 ? target : app },
+        stack: { p, _ in p == to ? [Over(number: 3, pid: app), popup, Over(number: 5, pid: target)] : (p.x >= 600 ? [Over(number: 5, pid: target)] + mine : mine) })
+check(r.code == 3 && ups(r) == [from], "a third app under the image at the drop, whatever the guard said")
 print("realdrag checks passed")
